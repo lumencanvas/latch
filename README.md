@@ -6,6 +6,8 @@ CLASP Flow is an open-source visual flow/node programming environment that combi
 
 Built with Vue 3 + TypeScript. Runs in the browser and as a desktop app (Electron).
 
+> **Status**: Phase 0 Complete ✅ | Phase 1 In Progress
+
 ---
 
 ## Features
@@ -78,10 +80,10 @@ cd clasp-flow
 npm install
 
 # Start development server (web)
-npm run dev:web
+npm run dev
 
 # Start development server (Electron)
-npm run dev:electron
+npm run electron:dev
 ```
 
 ### Building
@@ -91,10 +93,16 @@ npm run dev:electron
 npm run build:web
 
 # Build Electron app for current platform
+npm run package
+
+# Create distributable installers
 npm run make
 
-# Build for all platforms (via CI)
-# See .github/workflows/build-electron.yml
+# Run tests
+npm run test
+
+# Type check
+npx vue-tsc --noEmit
 ```
 
 ---
@@ -193,8 +201,8 @@ Connections are color-coded by data type:
 
 ## Roadmap
 
-- [x] Phase 0: Foundation & Planning
-- [ ] Phase 1: Core Editor
+- [x] **Phase 0: Foundation** - Project setup, Vue Flow, Pinia stores, design system, CI/CD ✅
+- [ ] **Phase 1: Core Editor** (Current) - Selection, undo/redo, persistence, keyboard shortcuts
 - [ ] Phase 2: Data Flow Engine
 - [ ] Phase 3: Audio System
 - [ ] Phase 4: Visual System
