@@ -30,8 +30,20 @@ function setCached(key: string, value: unknown): void {
 
 export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
-  const prompt = (ctx.inputs.get('prompt') as string) ?? (ctx.controls.get('prompt') as string) ?? ''
   const trigger = ctx.inputs.get('trigger')
+
+  // Get prompt from: 1) prompt input, 2) trigger value if string, 3) control
+  let prompt = (ctx.inputs.get('prompt') as string) ?? ''
+
+  // If trigger is a non-empty string and no prompt input, use trigger as prompt
+  if (!prompt && typeof trigger === 'string' && trigger.trim()) {
+    prompt = trigger
+  }
+
+  // Fall back to control value if still no prompt
+  if (!prompt) {
+    prompt = (ctx.controls.get('prompt') as string) ?? ''
+  }
 
   // Check if model is loaded (non-blocking)
   const modelId = ctx.controls.get('model') as string | undefined
@@ -39,11 +51,7 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
 
   // Debug logging - log every frame when trigger is present
   if (trigger !== undefined) {
-    console.log('[AI TextGen] TRIGGER RECEIVED:', trigger, 'Type:', typeof trigger, 'Prompt:', prompt.substring(0, 20))
-  }
-  // Also periodic status logging
-  if (ctx.frameCount % 120 === 0) {
-    console.log('[AI TextGen] Status - Model:', isLoaded, 'Inputs:', Array.from(ctx.inputs.entries()))
+    console.log('[AI TextGen] TRIGGER RECEIVED:', trigger, 'Type:', typeof trigger, 'Prompt:', prompt.substring(0, 50))
   }
 
   if (!isLoaded) {
