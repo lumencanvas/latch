@@ -20,6 +20,10 @@
   <em>Status: Phase 9 Complete + Stability Polish | MiniMap with node colors | AI Model Manager | Debug Nodes</em>
 </p>
 
+<p align="center">
+  <a href="https://latch.design"><strong>🌐 Try the Demo</strong></a>
+</p>
+
 ---
 
 ## Screenshots

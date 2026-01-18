@@ -24,7 +24,7 @@ export const claspConnectionNode: NodeDefinition = {
   controls: [
     { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default', props: { placeholder: 'Unique ID to reference this connection' } },
     { id: 'url', type: 'text', label: 'URL', default: 'ws://localhost:7330', props: { placeholder: 'ws://host:port' } },
-    { id: 'name', type: 'text', label: 'Client Name', default: 'clasp-flow' },
+    { id: 'name', type: 'text', label: 'Client Name', default: 'latch' },
     { id: 'token', type: 'text', label: 'Token', default: '', props: { placeholder: 'cpsk_... or empty for open' } },
     { id: 'autoConnect', type: 'toggle', label: 'Auto Connect', default: true },
     { id: 'autoReconnect', type: 'toggle', label: 'Auto Reconnect', default: true },

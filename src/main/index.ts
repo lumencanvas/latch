@@ -45,7 +45,7 @@ function createWindow(): void {
 // App lifecycle
 app.whenReady().then(() => {
   // Set app user model id for Windows
-  electronApp.setAppUserModelId('com.lumencanvas.clasp-flow')
+  electronApp.setAppUserModelId('com.lumencanvas.latch')
 
   // Default open or close DevTools by F12 in dev mode
   // and ignore CommandOrControl + R in production

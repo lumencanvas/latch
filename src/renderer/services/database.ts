@@ -26,14 +26,14 @@ export interface AppSettings {
 }
 
 /**
- * Dexie database class for CLASP Flow
+ * Dexie database class for Latch
  */
-class ClaspFlowDatabase extends Dexie {
+class LatchDatabase extends Dexie {
   flows!: Table<PersistedFlow, string>
   settings!: Table<AppSettings, string>
 
   constructor() {
-    super('clasp-flow')
+    super('latch')
 
     // Version 1 schema
     this.version(1).stores({
@@ -44,7 +44,7 @@ class ClaspFlowDatabase extends Dexie {
 }
 
 // Singleton database instance
-export const db = new ClaspFlowDatabase()
+export const db = new LatchDatabase()
 
 /**
  * Flow persistence operations

@@ -670,7 +670,7 @@ function disconnect(connection: ClaspConnection): void {
 export const claspConnectionExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.controls.get('connectionId') as string) ?? 'default'
   const url = (ctx.inputs.get('url') as string) ?? (ctx.controls.get('url') as string) ?? 'ws://localhost:7330'
-  const name = (ctx.controls.get('name') as string) ?? 'clasp-flow'
+  const name = (ctx.controls.get('name') as string) ?? 'latch'
   const token = (ctx.controls.get('token') as string) ?? ''
   const autoConnect = (ctx.controls.get('autoConnect') as boolean) ?? true
   const autoReconnect = (ctx.controls.get('autoReconnect') as boolean) ?? true

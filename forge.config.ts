@@ -7,17 +7,17 @@ import { MakerDMG } from '@electron-forge/maker-dmg'
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: 'CLASP Flow',
-    executableName: 'clasp-flow',
+    name: 'Latch',
+    executableName: 'latch',
     asar: true,
     icon: './public/icon',
-    appBundleId: 'com.lumencanvas.clasp-flow',
+    appBundleId: 'com.lumencanvas.latch',
     appCategoryType: 'public.app-category.developer-tools',
   },
   rebuildConfig: {},
   makers: [
     new MakerSquirrel({
-      name: 'clasp-flow',
+      name: 'latch',
     }),
     new MakerZIP({}, ['darwin', 'linux', 'win32']),
     new MakerDMG({
@@ -26,12 +26,12 @@ const config: ForgeConfig = {
     new MakerDeb({
       options: {
         maintainer: 'LumenCanvas',
-        homepage: 'https://github.com/lumencanvas/clasp-flow',
+        homepage: 'https://github.com/lumencanvas/latch',
       },
     }),
     new MakerRpm({
       options: {
-        homepage: 'https://github.com/lumencanvas/clasp-flow',
+        homepage: 'https://github.com/lumencanvas/latch',
       },
     }),
   ],
