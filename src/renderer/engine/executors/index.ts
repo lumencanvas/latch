@@ -40,6 +40,11 @@ export const triggerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const shouldFire = boolValue && !prevPressed
   triggerPrevPressed.set(ctx.nodeId, boolValue)
 
+  // Debug: log when trigger fires
+  if (shouldFire) {
+    console.log('[Trigger] FIRING! OutputType:', outputType, 'Value:', boolValue)
+  }
+
   // Don't output anything if not firing
   if (!shouldFire) {
     return new Map()
@@ -71,6 +76,7 @@ export const triggerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
       output = true
   }
 
+  console.log('[Trigger] Output:', output)
   return new Map([['trigger', output]])
 }
 

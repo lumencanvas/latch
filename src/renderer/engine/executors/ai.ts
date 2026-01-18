@@ -37,9 +37,13 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
   const modelId = ctx.controls.get('model') as string | undefined
   const isLoaded = aiInference.isModelLoaded('text-generation', modelId)
 
-  // Debug logging
-  if (ctx.frameCount % 60 === 0) {
-    console.log('[AI TextGen] Model loaded:', isLoaded, 'Trigger:', trigger, 'Prompt:', prompt.substring(0, 20))
+  // Debug logging - log every frame when trigger is present
+  if (trigger !== undefined) {
+    console.log('[AI TextGen] TRIGGER RECEIVED:', trigger, 'Type:', typeof trigger, 'Prompt:', prompt.substring(0, 20))
+  }
+  // Also periodic status logging
+  if (ctx.frameCount % 120 === 0) {
+    console.log('[AI TextGen] Status - Model:', isLoaded, 'Inputs:', Array.from(ctx.inputs.entries()))
   }
 
   if (!isLoaded) {
