@@ -343,16 +343,38 @@ export const blendExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // Main Output Node (viewer)
 // ============================================================================
 
-export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
+// Cache for canvas-to-texture conversions (one per node that outputs canvas)
+const canvasTextureCache = new Map<string, WebGLTexture>()
 
-  if (!texture) {
+export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const textureInput = ctx.inputs.get('texture') as WebGLTexture | HTMLCanvasElement | null
+
+  if (!textureInput) {
     const outputs = new Map<string, unknown>()
     outputs.set('_input_texture', null)
     return outputs
   }
 
   const renderer = getShaderRenderer()
+
+  // Convert canvas to texture if needed (for 3D rendering)
+  let texture: WebGLTexture
+  if (textureInput instanceof HTMLCanvasElement) {
+    // Get or create cached texture for this canvas
+    const cacheKey = `canvas_${ctx.nodeId}`
+    let cachedTexture = canvasTextureCache.get(cacheKey)
+
+    if (!cachedTexture) {
+      cachedTexture = renderer.createTexture(textureInput)
+      canvasTextureCache.set(cacheKey, cachedTexture)
+    } else {
+      // Update the existing texture with new canvas content
+      renderer.updateTexture(cachedTexture, textureInput)
+    }
+    texture = cachedTexture
+  } else {
+    texture = textureInput
+  }
 
   // Get or compile display shader
   let shader = compiledShaders.get('_display_shader')

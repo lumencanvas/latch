@@ -39,6 +39,17 @@ function selectFlow(flowId: string) {
   flowsStore.setActiveFlow(flowId)
 }
 
+function startRenameFlow(flowId: string) {
+  const flow = flowsStore.getFlowById(flowId)
+  if (flow) {
+    renameModal.value = {
+      visible: true,
+      flowId: flow.id,
+      name: flow.name,
+    }
+  }
+}
+
 async function createNewFlow() {
   const flow = flowsStore.createFlow('Untitled Flow')
   // Save the new flow to the database
@@ -139,6 +150,7 @@ function handleRenameKeydown(event: KeyboardEvent) {
         class="flow-tab"
         :class="{ active: flow.id === activeFlowId }"
         @click="selectFlow(flow.id)"
+        @dblclick="startRenameFlow(flow.id)"
         @contextmenu="showContextMenu(flow.id, $event)"
       >
         <span class="tab-name">

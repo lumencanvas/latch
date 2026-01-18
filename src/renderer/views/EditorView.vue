@@ -1479,6 +1479,201 @@ function registerDemoNodes() {
   })
 
   // ============================================================================
+  // CLASP Protocol Nodes
+  // ============================================================================
+
+  nodesStore.register({
+    id: 'clasp-connection',
+    name: 'CLASP Connection',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Manage a named CLASP connection (can be shared across nodes)',
+    icon: 'network',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'url', type: 'string', label: 'URL' },
+      { id: 'connect', type: 'trigger', label: 'Connect' },
+      { id: 'disconnect', type: 'trigger', label: 'Disconnect' },
+    ],
+    outputs: [
+      { id: 'connected', type: 'boolean', label: 'Connected' },
+      { id: 'status', type: 'string', label: 'Status' },
+      { id: 'error', type: 'string', label: 'Error' },
+      { id: 'session', type: 'string', label: 'Session ID' },
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default', props: { placeholder: 'Unique ID to reference this connection' } },
+      { id: 'url', type: 'text', label: 'URL', default: 'ws://localhost:7330', props: { placeholder: 'ws://host:port' } },
+      { id: 'name', type: 'text', label: 'Client Name', default: 'clasp-flow' },
+      { id: 'token', type: 'text', label: 'Token', default: '', props: { placeholder: 'cpsk_... or empty for open' } },
+      { id: 'autoConnect', type: 'toggle', label: 'Auto Connect', default: true },
+      { id: 'autoReconnect', type: 'toggle', label: 'Auto Reconnect', default: true },
+      { id: 'reconnectDelay', type: 'number', label: 'Reconnect Delay (ms)', default: 5000, props: { min: 1000, max: 60000 } },
+    ],
+    tags: ['clasp', 'protocol', 'connection', 'websocket'],
+  })
+
+  nodesStore.register({
+    id: 'clasp-subscribe',
+    name: 'CLASP Subscribe',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Subscribe to CLASP address patterns and receive values',
+    icon: 'bell',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+      { id: 'pattern', type: 'string', label: 'Pattern' },
+    ],
+    outputs: [
+      { id: 'value', type: 'any', label: 'Value' },
+      { id: 'address', type: 'string', label: 'Address' },
+      { id: 'type', type: 'string', label: 'Signal Type' },
+      { id: 'revision', type: 'number', label: 'Revision' },
+      { id: 'subscribed', type: 'boolean', label: 'Subscribed' },
+      { id: 'updated', type: 'boolean', label: 'Updated' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default' },
+      { id: 'pattern', type: 'text', label: 'Pattern', default: '/**', props: { placeholder: '/lights/** or /param/*' } },
+      { id: 'types', type: 'select', label: 'Signal Types', default: 'all', props: { options: ['all', 'param', 'event', 'stream', 'gesture'] } },
+      { id: 'maxRate', type: 'number', label: 'Max Rate (Hz)', default: 0, props: { min: 0, max: 120, step: 1 } },
+      { id: 'epsilon', type: 'number', label: 'Change Threshold', default: 0, props: { min: 0, max: 1, step: 0.01 } },
+    ],
+    tags: ['clasp', 'subscribe', 'listen', 'receive'],
+  })
+
+  nodesStore.register({
+    id: 'clasp-set',
+    name: 'CLASP Set',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Set a CLASP parameter value (persistent state)',
+    icon: 'edit-3',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+      { id: 'address', type: 'string', label: 'Address' },
+      { id: 'value', type: 'any', label: 'Value' },
+      { id: 'trigger', type: 'trigger', label: 'Send' },
+    ],
+    outputs: [
+      { id: 'sent', type: 'boolean', label: 'Sent' },
+      { id: 'error', type: 'string', label: 'Error' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default' },
+      { id: 'address', type: 'text', label: 'Address', default: '/param', props: { placeholder: '/lights/strip1/brightness' } },
+    ],
+    tags: ['clasp', 'set', 'parameter', 'send'],
+  })
+
+  nodesStore.register({
+    id: 'clasp-emit',
+    name: 'CLASP Emit',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Emit a CLASP event (one-time trigger)',
+    icon: 'zap',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+      { id: 'address', type: 'string', label: 'Address' },
+      { id: 'payload', type: 'any', label: 'Payload' },
+      { id: 'trigger', type: 'trigger', label: 'Emit' },
+    ],
+    outputs: [
+      { id: 'sent', type: 'boolean', label: 'Sent' },
+      { id: 'error', type: 'string', label: 'Error' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default' },
+      { id: 'address', type: 'text', label: 'Event Address', default: '/event', props: { placeholder: '/cue/fire' } },
+    ],
+    tags: ['clasp', 'emit', 'event', 'trigger'],
+  })
+
+  nodesStore.register({
+    id: 'clasp-get',
+    name: 'CLASP Get',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Get current value of a CLASP parameter',
+    icon: 'download',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+      { id: 'address', type: 'string', label: 'Address' },
+      { id: 'trigger', type: 'trigger', label: 'Get' },
+    ],
+    outputs: [
+      { id: 'value', type: 'any', label: 'Value' },
+      { id: 'error', type: 'string', label: 'Error' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default' },
+      { id: 'address', type: 'text', label: 'Address', default: '/param', props: { placeholder: '/lights/strip1/brightness' } },
+    ],
+    tags: ['clasp', 'get', 'read', 'fetch'],
+  })
+
+  nodesStore.register({
+    id: 'clasp-stream',
+    name: 'CLASP Stream',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Stream high-rate data (continuous updates)',
+    icon: 'activity',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+      { id: 'address', type: 'string', label: 'Address' },
+      { id: 'value', type: 'any', label: 'Value' },
+    ],
+    outputs: [
+      { id: 'sent', type: 'boolean', label: 'Sent' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default' },
+      { id: 'address', type: 'text', label: 'Address', default: '/stream', props: { placeholder: '/sensor/temperature' } },
+      { id: 'enabled', type: 'toggle', label: 'Enabled', default: true },
+    ],
+    tags: ['clasp', 'stream', 'continuous', 'high-rate'],
+  })
+
+  nodesStore.register({
+    id: 'clasp-bundle',
+    name: 'CLASP Bundle',
+    version: '1.0.0',
+    category: 'connectivity',
+    description: 'Send atomic bundles of operations',
+    icon: 'package',
+    color: '#6366f1',
+    platforms: ['web', 'electron'],
+    inputs: [
+      { id: 'connectionId', type: 'string', label: 'Connection ID' },
+      { id: 'messages', type: 'data', label: 'Messages' },
+      { id: 'at', type: 'number', label: 'Schedule At (µs)' },
+      { id: 'trigger', type: 'trigger', label: 'Send' },
+    ],
+    outputs: [
+      { id: 'sent', type: 'boolean', label: 'Sent' },
+      { id: 'error', type: 'string', label: 'Error' },
+    ],
+    controls: [
+      { id: 'connectionId', type: 'text', label: 'Connection ID', default: 'default' },
+    ],
+    tags: ['clasp', 'bundle', 'atomic', 'batch'],
+  })
+
+  // ============================================================================
   // Code / Advanced Nodes
   // ============================================================================
 

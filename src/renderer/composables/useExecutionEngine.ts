@@ -3,6 +3,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import { builtinExecutors } from '@/engine/executors'
+import { audioManager } from '@/services/audio/AudioManager'
 
 /**
  * Composable for integrating the execution engine with the editor
@@ -33,7 +34,14 @@ export function useExecutionEngine() {
   /**
    * Start execution
    */
-  function start() {
+  async function start() {
+    // Initialize audio system (requires user gesture - play button click satisfies this)
+    try {
+      await audioManager.initialize()
+    } catch (error) {
+      console.warn('[ExecutionEngine] Failed to initialize audio:', error)
+    }
+
     syncGraph()
     engine.start()
   }

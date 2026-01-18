@@ -279,6 +279,27 @@ export class ThreeRenderer {
   }
 
   /**
+   * Render a scene directly to the canvas (for sharing with other renderers)
+   */
+  renderToCanvas(
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+    width: number = this.defaultSize.width,
+    height: number = this.defaultSize.height
+  ): void {
+    // Resize canvas and renderer if needed
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width
+      this.canvas.height = height
+      this.renderer.setSize(width, height)
+    }
+
+    // Render directly to canvas (no render target)
+    this.renderer.setRenderTarget(null)
+    this.renderer.render(scene, camera)
+  }
+
+  /**
    * Create a Box geometry mesh
    */
   createBox(

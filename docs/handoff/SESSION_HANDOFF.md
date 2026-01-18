@@ -17,9 +17,50 @@
 ## Current Status
 
 ### Phase: 9 Complete - 3D System + Polish + UX/Debug Node Improvements
-### Next Step: Phase 10 - Node UX Review & Export / Testing
+### Next Step: EditorView Componentization & Registry Extraction
 
-### Latest Session Accomplishments (Memory Leaks, AI Fixes, UI Polish):
+### Latest Session Accomplishments (Trigger Fixes, Flow Rename, Executor Cleanup):
+
+**Trigger Node Fix - Edge Detection:**
+- Trigger now only outputs when button is pressed (rising edge detection)
+- Returns empty `Map()` when not firing - no output at all
+- Prevents trigger from firing on flow start or continuously
+
+**Flow Rename:**
+- Already had right-click context menu with Rename option
+- Added double-click on tab name to trigger rename modal
+- Rename modal with input field, Enter to confirm, Escape to cancel
+
+**Executor Output Cleanup - Proper Value Holding:**
+- `Monitor` - now holds last received value (doesn't go blank)
+- `Gate` - holds last value that passed through when open
+- `Delay` - holds last delayed value that fired
+- `Start` - only outputs on first frame, nothing after
+- `Interval` - only outputs when interval elapses, nothing between
+
+**Files Modified:**
+- `src/renderer/engine/executors/index.ts` - Fixed trigger, monitor, gate, delay, start, interval executors
+- `src/renderer/components/layout/FlowTabs.vue` - Added double-click rename
+
+---
+
+### Previous Session (XY Pad, Equalizer, Audio Fixes):
+
+**XY Pad Executor Fix:**
+- Added `xyPadExecutor` to builtinExecutors registry
+- XY Pad now outputs rawX, rawY, normX, normY values correctly
+
+**Equalizer Persistence Fix:**
+- Added `graph`, `equalizer`, `textbox` to specialNodeTypes in `usePersistence.ts`
+- Now saved flows correctly restore custom node types on load
+
+**Audio System Initialization:**
+- Added `audioManager.initialize()` call in `useExecutionEngine.start()`
+- Now audio system initializes when play button is pressed (user gesture)
+
+---
+
+### Previous Session Accomplishments (Memory Leaks, AI Fixes, UI Polish):
 
 **Memory Leak Fixes:**
 - Fixed nested `onUnmounted` anti-pattern in AppSidebar, AppHeader, AIModelManagerModal
@@ -42,15 +83,35 @@
 - Click-outside closes dropdown
 
 **Equalizer Node Improvement:**
-- Demo animation shows when not running (animated wave pattern)
-- Live FFT visualization when running with audio
-- Shows "DEMO" label in demo mode
+- Static "NO SIGNAL" display when not receiving audio
+- Live FFT visualization when running with audio input
 - Fixed: Added `equalizer` and `graph` to specialNodeTypes in flows.ts (was rendering as BaseNode)
 
 **Bug Fix - Custom Node Types:**
 - `equalizer` and `graph` were missing from `specialNodeTypes` array in flows.ts
 - This caused them to render as BaseNode instead of their custom components
 - Fix: Added to specialNodeTypes list alongside monitor, oscilloscope, etc.
+- NOTE: Fixed persistence migration to also remap these types on load
+
+**3D Rendering Fix:**
+- Issue: 3D scenes rendered black because WebGL textures can't be shared between contexts
+- ThreeRenderer and ShaderRenderer have separate WebGL contexts
+- Fix: Added `renderToCanvas()` method to ThreeRenderer
+- Fix: Updated mainOutputExecutor to accept HTMLCanvasElement and convert to texture
+- Added default directional light (intensity 0.8) + ambient light (intensity 0.6) to scenes
+- Lights connect to Scene 3D's "objects" input (not a separate "lights" input)
+
+**AI Web Workers Plan:**
+- Created detailed implementation plan at `docs/plans/AI_WEB_WORKERS_PLAN.md`
+- Moves Transformers.js inference to dedicated Web Worker
+- Prevents UI freezing during model inference
+- Uses message passing with transferable objects for images
+
+**AI Executors Updated:**
+- All AI executors now use `setTimeout(0)` to defer to next event loop tick
+- Text generation now REQUIRES explicit trigger (won't auto-run on text change)
+- Increased default throttle intervals for image operations (60-120 frames)
+- Executors are no longer async functions - they return immediately
 
 ---
 
@@ -133,6 +194,7 @@
 |----------|----------|---------|
 | Master Plan | `docs/plans/MASTER_PLAN.md` | Complete project roadmap, phases, node types |
 | UI Redesign Plan | `docs/plans/UI_REDESIGN_PLAN.md` | UI enhancement design document |
+| AI Web Workers Plan | `docs/plans/AI_WEB_WORKERS_PLAN.md` | Plan for moving AI to Web Workers |
 | Architecture | `docs/architecture/ARCHITECTURE.md` | Technical architecture, file structure, APIs |
 | This Handoff | `docs/handoff/SESSION_HANDOFF.md` | Session continuity |
 
@@ -381,24 +443,33 @@ npm run electron:dev
 
 ---
 
+## Known Issues
+
+| Issue | Description | Workaround |
+|-------|-------------|------------|
+| AI freezes UI | Transformers.js runs on main thread | Implement Web Workers (plan created) |
+| EditorView monolith | 2700+ line file with inline node registry | Needs componentization |
+
 ## Immediate TODOs for Next Session
 
 ```markdown
+## CRITICAL - Code Architecture
+- [ ] Break up EditorView.vue (2700+ lines) into proper components
+- [ ] Extract node registry into separate file(s)
+- [ ] Create proper separation of concerns
+- [ ] Ensure 100% feature parity after refactor
+
+## High Priority
+- [ ] Implement AI Web Workers (see docs/plans/AI_WEB_WORKERS_PLAN.md)
+
 ## Testing
-- [ ] Test new debug nodes (Graph, Equalizer) with live data
-- [ ] Test Oscilloscope with audio input
-- [ ] Test collapsed node handle stacking
-- [ ] Test label editing on nodes
-- [ ] Test properties panel reactivity when changing values on nodes
+- [ ] Test trigger edge detection
+- [ ] Test flow rename (double-click and context menu)
+- [ ] Test monitor value persistence
 
 ## Features Pending
-- [ ] AI Model Loading UI with modal and quick-load button
 - [ ] Video file player node (use ffmpeg.wasm)
 - [ ] Node development documentation for custom nodes
-
-## Polish
-- [ ] Review all node handle positioning consistency
-- [ ] Test control panel with new debug nodes
 ```
 
 ---
@@ -415,6 +486,9 @@ npm run electron:dev
 | 2026-01-17 | UX Fixes | Handle positioning, control data flow, Oscilloscope node |
 | 2026-01-17 | Debug Nodes & UX | Label editing, compact nodes, collapsed node fixes, Graph node, Equalizer node, Oscilloscope audio support, Properties panel reactivity |
 | 2026-01-17 | Stability & Polish | Memory leak fixes, AI executor fixes (non-blocking, progress bar), MiniMap colors, category dropdown colors, Equalizer demo animation, 3D documentation |
+| 2026-01-17 | 3D & AI Fixes | Fixed 3D black rendering (WebGL context sharing), AI Web Workers plan, AI executors with setTimeout defer, custom node type fixes |
+| 2026-01-17 | XY Pad & Audio | Fixed XY Pad executor missing, fixed Equalizer persistence, added audioManager initialization on play |
+| 2026-01-17 | Trigger & Cleanup | Trigger edge detection, flow rename UI, executor output cleanup (monitor/gate/delay hold values) |
 
 ---
 

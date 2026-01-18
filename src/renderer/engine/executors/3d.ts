@@ -201,10 +201,16 @@ export const scene3DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     }
   }
 
-  // Add default ambient light if no lights present
+  // Add default lighting if no lights present
   if (!hasLight) {
-    const defaultAmbient = new THREE.AmbientLight(0xffffff, 0.4)
+    // Ambient light for overall illumination
+    const defaultAmbient = new THREE.AmbientLight(0xffffff, 0.6)
     sceneData.scene.add(defaultAmbient)
+
+    // Directional light for shape/depth
+    const defaultDirectional = new THREE.DirectionalLight(0xffffff, 0.8)
+    defaultDirectional.position.set(5, 10, 7)
+    sceneData.scene.add(defaultDirectional)
   }
 
   nodeSceneRefs.set(ctx.nodeId, sceneRef)
@@ -271,11 +277,13 @@ export const render3DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const height = (ctx.controls.get('height') as number) ?? 512
   const includeDepth = (ctx.controls.get('includeDepth') as boolean) ?? false
 
-  const result = renderer.render(scene, camera, ctx.nodeId, width, height, includeDepth)
+  // Render to default framebuffer (canvas) so we can share it
+  renderer.renderToCanvas(scene, camera, width, height)
 
+  // Return the canvas element - this can be used by visual nodes
   const outputs = new Map<string, unknown>()
-  outputs.set('texture', result.texture)
-  outputs.set('depth', result.depthTexture ?? null)
+  outputs.set('texture', renderer.getCanvas())
+  outputs.set('depth', null) // Depth not supported in canvas mode
   return outputs
 }
 

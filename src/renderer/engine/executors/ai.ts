@@ -28,7 +28,7 @@ function setCached(key: string, value: unknown): void {
 // Text Generation Node
 // ============================================================================
 
-export const textGenerationExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const prompt = (ctx.inputs.get('prompt') as string) ?? (ctx.controls.get('prompt') as string) ?? ''
   const trigger = ctx.inputs.get('trigger')
@@ -44,13 +44,10 @@ export const textGenerationExecutor: NodeExecutorFn = async (ctx: ExecutionConte
     return outputs
   }
 
-  // Return cached if no trigger and prompt unchanged
-  const lastPrompt = getCached<string>(`${ctx.nodeId}:lastPrompt`, '')
-  // Only consider it a trigger if it's explicitly true or 1 (not just any truthy value)
+  // ONLY run on explicit trigger (true or 1), NOT on text change
   const hasTrigger = trigger === true || trigger === 1
-  const promptChanged = prompt !== lastPrompt && prompt.trim() !== ''
 
-  if (!hasTrigger && !promptChanged) {
+  if (!hasTrigger) {
     outputs.set('text', getCached(`${ctx.nodeId}:lastOutput`, ''))
     outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
     return outputs
@@ -69,28 +66,31 @@ export const textGenerationExecutor: NodeExecutorFn = async (ctx: ExecutionConte
     return outputs
   }
 
-  // Start async generation (non-blocking)
+  // Start async generation in next tick to not block current frame
   setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastPrompt`, prompt)
 
   const maxTokens = (ctx.controls.get('maxTokens') as number) ?? 50
   const temperature = (ctx.controls.get('temperature') as number) ?? 0.7
 
-  const operation = (async () => {
-    try {
-      const result = await aiInference.generateText(prompt, {
-        maxLength: maxTokens,
-        temperature,
-      }, modelId)
-      setCached(`${ctx.nodeId}:lastOutput`, result)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Text generation error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Use setTimeout to defer to next event loop, preventing frame blocking
+  const operation = new Promise<void>((resolve) => {
+    setTimeout(async () => {
+      try {
+        const result = await aiInference.generateText(prompt, {
+          maxLength: maxTokens,
+          temperature,
+        }, modelId)
+        setCached(`${ctx.nodeId}:lastOutput`, result)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Text generation error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+        resolve()
+      }
+    }, 0)
+  })
 
   pendingOperations.set(ctx.nodeId, operation)
 
@@ -103,9 +103,10 @@ export const textGenerationExecutor: NodeExecutorFn = async (ctx: ExecutionConte
 // Image Classification Node
 // ============================================================================
 
-export const imageClassificationExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+export const imageClassificationExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const imageData = ctx.inputs.get('image') as ImageData | HTMLCanvasElement | null
+  const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
@@ -128,12 +129,13 @@ export const imageClassificationExecutor: NodeExecutorFn = async (ctx: Execution
     return outputs
   }
 
-  // Frame-based throttling
+  // Only run on explicit trigger or frame interval (default 60 frames = ~1 sec)
+  const hasTrigger = trigger === true || trigger === 1
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
-  const interval = (ctx.controls.get('interval') as number) ?? 30
+  const interval = (ctx.controls.get('interval') as number) ?? 60
 
-  if (lastFrame && (currentFrame - lastFrame) < interval) {
+  if (!hasTrigger && lastFrame && (currentFrame - lastFrame) < interval) {
     outputs.set('labels', getCached(`${ctx.nodeId}:labels`, []))
     outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
     outputs.set('topScore', getCached(`${ctx.nodeId}:topScore`, 0))
@@ -155,21 +157,25 @@ export const imageClassificationExecutor: NodeExecutorFn = async (ctx: Execution
 
   const topK = (ctx.controls.get('topK') as number) ?? 5
 
-  const operation = (async () => {
-    try {
-      const results = await aiInference.classifyImage(imageData, topK, modelId)
-      setCached(`${ctx.nodeId}:labels`, results)
-      const topResult = results[0]
-      setCached(`${ctx.nodeId}:topLabel`, topResult?.label ?? '')
-      setCached(`${ctx.nodeId}:topScore`, topResult?.score ?? 0)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Image classification error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Defer to next event loop tick
+  const operation = new Promise<void>((resolve) => {
+    setTimeout(async () => {
+      try {
+        const results = await aiInference.classifyImage(imageData, topK, modelId)
+        setCached(`${ctx.nodeId}:labels`, results)
+        const topResult = results[0]
+        setCached(`${ctx.nodeId}:topLabel`, topResult?.label ?? '')
+        setCached(`${ctx.nodeId}:topScore`, topResult?.score ?? 0)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Image classification error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+        resolve()
+      }
+    }, 0)
+  })
 
   pendingOperations.set(ctx.nodeId, operation)
 
@@ -184,9 +190,10 @@ export const imageClassificationExecutor: NodeExecutorFn = async (ctx: Execution
 // Sentiment Analysis Node
 // ============================================================================
 
-export const sentimentAnalysisExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+export const sentimentAnalysisExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const text = (ctx.inputs.get('text') as string) ?? ''
+  const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
@@ -211,9 +218,12 @@ export const sentimentAnalysisExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     return outputs
   }
 
-  // Return cached if text unchanged
+  // Only run on explicit trigger or text change
+  const hasTrigger = trigger === true || trigger === 1
   const lastText = getCached<string>(`${ctx.nodeId}:lastText`, '')
-  if (text === lastText) {
+  const textChanged = text !== lastText
+
+  if (!hasTrigger && !textChanged) {
     outputs.set('sentiment', getCached(`${ctx.nodeId}:sentiment`, ''))
     outputs.set('score', getCached(`${ctx.nodeId}:score`, 0))
     outputs.set('positive', getCached(`${ctx.nodeId}:positive`, 0))
@@ -235,33 +245,37 @@ export const sentimentAnalysisExecutor: NodeExecutorFn = async (ctx: ExecutionCo
   setCached(`${ctx.nodeId}:loading`, true)
   setCached(`${ctx.nodeId}:lastText`, text)
 
-  const operation = (async () => {
-    try {
-      const results = await aiInference.analyzeSentiment(text, modelId)
+  // Defer to next event loop tick
+  const operation = new Promise<void>((resolve) => {
+    setTimeout(async () => {
+      try {
+        const results = await aiInference.analyzeSentiment(text, modelId)
 
-      let positive = 0
-      let negative = 0
-      for (const result of results) {
-        if (result.label.toLowerCase().includes('positive')) {
-          positive = result.score
-        } else if (result.label.toLowerCase().includes('negative')) {
-          negative = result.score
+        let positive = 0
+        let negative = 0
+        for (const result of results) {
+          if (result.label.toLowerCase().includes('positive')) {
+            positive = result.score
+          } else if (result.label.toLowerCase().includes('negative')) {
+            negative = result.score
+          }
         }
-      }
 
-      const topResult = results[0]
-      setCached(`${ctx.nodeId}:sentiment`, topResult?.label ?? '')
-      setCached(`${ctx.nodeId}:score`, topResult?.score ?? 0)
-      setCached(`${ctx.nodeId}:positive`, positive)
-      setCached(`${ctx.nodeId}:negative`, negative)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Sentiment analysis error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+        const topResult = results[0]
+        setCached(`${ctx.nodeId}:sentiment`, topResult?.label ?? '')
+        setCached(`${ctx.nodeId}:score`, topResult?.score ?? 0)
+        setCached(`${ctx.nodeId}:positive`, positive)
+        setCached(`${ctx.nodeId}:negative`, negative)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Sentiment analysis error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+        resolve()
+      }
+    }, 0)
+  })
 
   pendingOperations.set(ctx.nodeId, operation)
 
@@ -277,7 +291,7 @@ export const sentimentAnalysisExecutor: NodeExecutorFn = async (ctx: ExecutionCo
 // Image Captioning Node
 // ============================================================================
 
-export const imageCaptioningExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const imageData = ctx.inputs.get('image') as ImageData | HTMLCanvasElement | null
   const trigger = ctx.inputs.get('trigger')
@@ -299,15 +313,13 @@ export const imageCaptioningExecutor: NodeExecutorFn = async (ctx: ExecutionCont
     return outputs
   }
 
-  // Check trigger or interval
+  // Only run on explicit trigger or frame interval (default 120 frames = ~2 sec)
+  const hasTrigger = trigger === true || trigger === 1
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
-  const interval = (ctx.controls.get('interval') as number) ?? 60
-  // Only consider it a trigger if it's explicitly true or 1
-  const hasTrigger = trigger === true || trigger === 1
-  const shouldCaption = hasTrigger || !lastFrame || (currentFrame - lastFrame) >= interval
+  const interval = (ctx.controls.get('interval') as number) ?? 120
 
-  if (!shouldCaption) {
+  if (!hasTrigger && lastFrame && (currentFrame - lastFrame) < interval) {
     outputs.set('caption', getCached(`${ctx.nodeId}:caption`, ''))
     outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
     return outputs
@@ -323,18 +335,22 @@ export const imageCaptioningExecutor: NodeExecutorFn = async (ctx: ExecutionCont
   setCached(`${ctx.nodeId}:loading`, true)
   setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
 
-  const operation = (async () => {
-    try {
-      const caption = await aiInference.captionImage(imageData, modelId)
-      setCached(`${ctx.nodeId}:caption`, caption)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Image captioning error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Defer to next event loop tick
+  const operation = new Promise<void>((resolve) => {
+    setTimeout(async () => {
+      try {
+        const caption = await aiInference.captionImage(imageData, modelId)
+        setCached(`${ctx.nodeId}:caption`, caption)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Image captioning error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+        resolve()
+      }
+    }, 0)
+  })
 
   pendingOperations.set(ctx.nodeId, operation)
 
@@ -347,9 +363,10 @@ export const imageCaptioningExecutor: NodeExecutorFn = async (ctx: ExecutionCont
 // Feature Extraction (Embeddings) Node
 // ============================================================================
 
-export const featureExtractionExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+export const featureExtractionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const text = (ctx.inputs.get('text') as string) ?? ''
+  const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
@@ -370,9 +387,12 @@ export const featureExtractionExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     return outputs
   }
 
-  // Return cached if text unchanged
+  // Only run on explicit trigger or text change
+  const hasTrigger = trigger === true || trigger === 1
   const lastText = getCached<string>(`${ctx.nodeId}:lastText`, '')
-  if (text === lastText) {
+  const textChanged = text !== lastText
+
+  if (!hasTrigger && !textChanged) {
     outputs.set('embedding', getCached(`${ctx.nodeId}:embedding`, []))
     outputs.set('dimensions', getCached(`${ctx.nodeId}:dimensions`, 0))
     outputs.set('loading', false)
@@ -390,19 +410,23 @@ export const featureExtractionExecutor: NodeExecutorFn = async (ctx: ExecutionCo
   setCached(`${ctx.nodeId}:loading`, true)
   setCached(`${ctx.nodeId}:lastText`, text)
 
-  const operation = (async () => {
-    try {
-      const embedding = await aiInference.extractFeatures(text, modelId)
-      setCached(`${ctx.nodeId}:embedding`, embedding)
-      setCached(`${ctx.nodeId}:dimensions`, embedding.length)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Feature extraction error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Defer to next event loop tick
+  const operation = new Promise<void>((resolve) => {
+    setTimeout(async () => {
+      try {
+        const embedding = await aiInference.extractFeatures(text, modelId)
+        setCached(`${ctx.nodeId}:embedding`, embedding)
+        setCached(`${ctx.nodeId}:dimensions`, embedding.length)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Feature extraction error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+        resolve()
+      }
+    }, 0)
+  })
 
   pendingOperations.set(ctx.nodeId, operation)
 
@@ -416,9 +440,10 @@ export const featureExtractionExecutor: NodeExecutorFn = async (ctx: ExecutionCo
 // Object Detection Node
 // ============================================================================
 
-export const objectDetectionExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const imageData = ctx.inputs.get('image') as ImageData | HTMLCanvasElement | null
+  const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
@@ -439,12 +464,13 @@ export const objectDetectionExecutor: NodeExecutorFn = async (ctx: ExecutionCont
     return outputs
   }
 
-  // Frame-based throttling
+  // Only run on explicit trigger or frame interval (default 60 frames = ~1 sec)
+  const hasTrigger = trigger === true || trigger === 1
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
-  const interval = (ctx.controls.get('interval') as number) ?? 30
+  const interval = (ctx.controls.get('interval') as number) ?? 60
 
-  if (lastFrame && (currentFrame - lastFrame) < interval) {
+  if (!hasTrigger && lastFrame && (currentFrame - lastFrame) < interval) {
     outputs.set('objects', getCached(`${ctx.nodeId}:objects`, []))
     outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
     outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
@@ -464,19 +490,23 @@ export const objectDetectionExecutor: NodeExecutorFn = async (ctx: ExecutionCont
 
   const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
 
-  const operation = (async () => {
-    try {
-      const objects = await aiInference.detectObjects(imageData, threshold, modelId)
-      setCached(`${ctx.nodeId}:objects`, objects)
-      setCached(`${ctx.nodeId}:count`, objects.length)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Object detection error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Defer to next event loop tick
+  const operation = new Promise<void>((resolve) => {
+    setTimeout(async () => {
+      try {
+        const objects = await aiInference.detectObjects(imageData, threshold, modelId)
+        setCached(`${ctx.nodeId}:objects`, objects)
+        setCached(`${ctx.nodeId}:count`, objects.length)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Object detection error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+        resolve()
+      }
+    }, 0)
+  })
 
   pendingOperations.set(ctx.nodeId, operation)
 
