@@ -911,6 +911,12 @@ export const useFlowsStore = defineStore('flows', {
           console.log('[Flows] Loaded sample flow for first-time user')
           // Mark as visited so we don't load it again
           localStorage.setItem(FIRST_VISIT_KEY, 'true')
+
+          // Mark all flows as dirty so they get auto-saved to IndexedDB
+          for (const flow of this.flows) {
+            flow.dirty = true
+          }
+
           return true
         }
 
