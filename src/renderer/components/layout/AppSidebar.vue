@@ -8,17 +8,13 @@ import { aiInference } from '@/services/ai/AIInference'
 const uiStore = useUIStore()
 const nodesStore = useNodesStore()
 
-// Categories to keep EXPANDED by default (first 3)
-const defaultExpanded = new Set(['debug', 'inputs', 'outputs', 'timing'])
-
-// Get all categories that should be collapsed (everything except the first few)
-function getDefaultCollapsed(): Set<string> {
-  const allCategories = Object.keys(categoryMeta)
-  return new Set(allCategories.filter(cat => !defaultExpanded.has(cat)))
+// All categories collapsed by default
+function getAllCategoriesCollapsed(): Set<string> {
+  return new Set(Object.keys(categoryMeta))
 }
 
 // Track collapsed categories (stored locally, could be persisted)
-const collapsedCategories = ref<Set<string>>(getDefaultCollapsed())
+const collapsedCategories = ref<Set<string>>(getAllCategoriesCollapsed())
 
 // Track dropdown open state
 const dropdownOpen = ref(false)
