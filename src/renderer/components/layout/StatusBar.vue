@@ -44,11 +44,17 @@ const isElectron = computed(() => {
       <span :class="statusClass" />
       <span class="status-text">{{ statusText }}</span>
 
-      <span v-if="runtimeStore.isRunning" class="status-fps">
+      <span
+        v-if="runtimeStore.isRunning"
+        class="status-fps"
+      >
         <span class="status-value">{{ runtimeStore.fps }}</span> fps
       </span>
 
-      <span v-if="errorCount > 0" class="status-errors">
+      <span
+        v-if="errorCount > 0"
+        class="status-errors"
+      >
         <span class="status-value error">{{ errorCount }}</span> errors
       </span>
     </div>

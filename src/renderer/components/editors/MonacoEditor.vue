@@ -102,7 +102,7 @@ function registerGLSL() {
         '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>',
         '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=',
       ],
-      symbols: /[=><!~?:&|+\-*\/\^%]+/,
+      symbols: /[=><!~?:&|+\-*/^%]+/,
       tokenizer: {
         root: [
           // Shadertoy uniforms (special highlight)
@@ -119,7 +119,7 @@ function registerGLSL() {
           // Whitespace
           { include: '@whitespace' },
           // Delimiters
-          [/[{}()\[\]]/, '@brackets'],
+          [/[{}()[\]]/, '@brackets'],
           [/[<>](?!@symbols)/, '@brackets'],
           [/@symbols/, {
             cases: {
@@ -128,7 +128,7 @@ function registerGLSL() {
             },
           }],
           // Numbers
-          [/\d*\.\d+([eE][\-+]?\d+)?[fF]?/, 'number.float'],
+          [/\d*\.\d+([eE][-+]?\d+)?[fF]?/, 'number.float'],
           [/0[xX][0-9a-fA-F]+[uU]?/, 'number.hex'],
           [/\d+[uU]?/, 'number'],
           // Preprocessor
@@ -140,9 +140,9 @@ function registerGLSL() {
           [/\/\/.*$/, 'comment'],
         ],
         comment: [
-          [/[^\/*]+/, 'comment'],
+          [/[^/*]+/, 'comment'],
           [/\*\//, 'comment', '@pop'],
-          [/[\/*]/, 'comment'],
+          [/[/*]/, 'comment'],
         ],
       },
     })
@@ -286,7 +286,10 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="containerRef" class="monaco-editor-container" />
+  <div
+    ref="containerRef"
+    class="monaco-editor-container"
+  />
 </template>
 
 <style scoped>

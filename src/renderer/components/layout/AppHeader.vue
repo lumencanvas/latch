@@ -19,15 +19,18 @@ import {
   Sliders,
   Code2,
   Brain,
+  Plug,
 } from 'lucide-vue-next'
 import LatchLogo from '@/components/branding/LatchLogo.vue'
 import { aiInference } from '@/services/ai/AIInference'
+import { useConnectionsStore } from '@/stores/connections'
 
 const route = useRoute()
 const router = useRouter()
 const flowsStore = useFlowsStore()
 const runtimeStore = useRuntimeStore()
 const uiStore = useUIStore()
+const connectionsStore = useConnectionsStore()
 
 // Track if AI models are loaded
 const hasLoadedModels = ref(false)
@@ -98,6 +101,34 @@ function togglePropertiesPanel() {
 function openAIModelManager() {
   uiStore.openAIModelManager()
 }
+
+function openConnectionManager() {
+  connectionsStore.openModal()
+}
+
+function exportProject() {
+  flowsStore.exportAllFlows()
+}
+
+async function importProject() {
+  const result = await flowsStore.promptImport({ replace: false })
+  if (result.success) {
+    console.log(result.message)
+  } else if (result.message !== 'Import cancelled') {
+    console.error(result.message)
+    alert(result.message)
+  }
+}
+
+function saveProject() {
+  // Mark current flow as saved
+  if (flowsStore.activeFlow) {
+    flowsStore.activeFlow.dirty = false
+    flowsStore.activeFlow.updatedAt = new Date()
+  }
+  // Also trigger export for persistent save
+  flowsStore.exportAllFlows()
+}
 </script>
 
 <template>
@@ -105,15 +136,19 @@ function openAIModelManager() {
     <div class="header-left">
       <button
         class="btn btn-icon btn-ghost header-sidebar-toggle"
-        @click="toggleSidebar"
         :title="uiStore.sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
+        @click="toggleSidebar"
       >
         <PanelLeftClose v-if="uiStore.sidebarOpen" />
         <PanelLeft v-else />
       </button>
 
       <div class="header-brand">
-        <LatchLogo :size="24" variant="dark" class="brand-icon" />
+        <LatchLogo
+          :size="24"
+          variant="dark"
+          class="brand-icon"
+        />
         <span class="brand-title">LATCH</span>
       </div>
 
@@ -121,7 +156,10 @@ function openAIModelManager() {
 
       <span class="header-flow-name">
         {{ flowName }}
-        <span v-if="isDirty" class="dirty-indicator">*</span>
+        <span
+          v-if="isDirty"
+          class="dirty-indicator"
+        >*</span>
       </span>
     </div>
 
@@ -130,8 +168,8 @@ function openAIModelManager() {
         <button
           class="btn btn-icon"
           :class="isRunning ? 'btn-primary' : 'btn-secondary'"
-          @click="togglePlayback"
           :title="isRunning ? 'Pause' : 'Play'"
+          @click="togglePlayback"
         >
           <Pause v-if="isRunning" />
           <Play v-else />
@@ -139,9 +177,9 @@ function openAIModelManager() {
 
         <button
           class="btn btn-icon btn-secondary"
-          @click="stop"
           :disabled="runtimeStore.isStopped"
           title="Stop"
+          @click="stop"
         >
           <Square />
         </button>
@@ -153,8 +191,8 @@ function openAIModelManager() {
         <button
           class="btn btn-sm view-btn"
           :class="{ active: isEditorView }"
-          @click="goToEditor"
           title="Editor View"
+          @click="goToEditor"
         >
           <Code2 />
           <span>Editor</span>
@@ -162,8 +200,8 @@ function openAIModelManager() {
         <button
           class="btn btn-sm view-btn"
           :class="{ active: isControlPanelView }"
-          @click="goToControlPanel"
           title="Control Panel"
+          @click="goToControlPanel"
         >
           <Sliders />
           <span>Controls</span>
@@ -175,14 +213,17 @@ function openAIModelManager() {
       <button
         v-if="isEditorView"
         class="btn btn-icon btn-ghost header-panel-toggle"
-        @click="togglePropertiesPanel"
         :title="uiStore.propertiesPanelOpen ? 'Hide properties' : 'Show properties'"
+        @click="togglePropertiesPanel"
       >
         <PanelRightClose v-if="uiStore.propertiesPanelOpen" />
         <PanelRight v-else />
       </button>
 
-      <span v-if="isEditorView" class="header-divider" />
+      <span
+        v-if="isEditorView"
+        class="header-divider"
+      />
 
       <!-- AI Button: Full text when no models loaded, icon only when loaded -->
       <button
@@ -203,18 +244,42 @@ function openAIModelManager() {
         <Brain />
       </button>
 
+      <button
+        class="btn btn-icon btn-ghost connections-btn"
+        :class="{ 'has-connections': connectionsStore.connections.length > 0 }"
+        title="Connection Manager"
+        @click="openConnectionManager"
+      >
+        <Plug />
+      </button>
+
       <span class="header-divider" />
 
-      <button class="btn btn-icon btn-ghost" title="Save">
+      <button
+        class="btn btn-icon btn-ghost"
+        title="Save Project"
+        @click="saveProject"
+      >
         <Save />
       </button>
-      <button class="btn btn-icon btn-ghost" title="Export">
+      <button
+        class="btn btn-icon btn-ghost"
+        title="Export Project"
+        @click="exportProject"
+      >
         <Download />
       </button>
-      <button class="btn btn-icon btn-ghost" title="Import">
+      <button
+        class="btn btn-icon btn-ghost"
+        title="Import Project"
+        @click="importProject"
+      >
         <Upload />
       </button>
-      <button class="btn btn-icon btn-ghost" title="Settings">
+      <button
+        class="btn btn-icon btn-ghost"
+        title="Settings"
+      >
         <Settings />
       </button>
 
@@ -343,6 +408,19 @@ function openAIModelManager() {
 .ai-btn-loaded:hover {
   color: #C084FC;
   background: var(--color-neutral-700);
+}
+
+.connections-btn {
+  color: var(--color-neutral-400);
+}
+
+.connections-btn:hover {
+  color: #6366f1;
+  background: var(--color-neutral-700);
+}
+
+.connections-btn.has-connections {
+  color: #6366f1;
 }
 
 .header-version {

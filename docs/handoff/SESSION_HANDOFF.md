@@ -16,10 +16,68 @@
 
 ## Current Status
 
-### Phase: 9 Complete - 3D System + Polish + UX/Debug Node Improvements
-### Next Step: EditorView Componentization & Registry Extraction
+### Phase: 9 Complete - 3D System + Polish + Full Feature Set
+### Next Step: Phase 10 - Polish & Export
 
-### Latest Session Accomplishments (Trigger Fixes, Flow Rename, Executor Cleanup):
+### Latest Session Accomplishments (Shader Node, Wire Colors, Import/Export, Logo):
+
+**Shader Node Improvements:**
+- Created ShaderPresets.ts with 17 built-in shaders:
+  - Generators: gradient, noise, plasma, circles, waves, voronoi
+  - Effects: chromatic-aberration, pixelate, vignette, glitch, edge-detect, kaleidoscope
+  - Utility: solid-color, uv-debug, passthrough
+  - Artistic: watercolor, halftone
+- Preset selector dropdown in node UI
+- Uniform auto-detection from GLSL code (`parseUniformsFromCode()`)
+- Custom vertex shader support
+- 4 texture inputs (iChannel0-3 / u_texture0-3)
+- Better error handling
+
+**Wire Colors by Data Type:**
+- Wires now colored by their data type using dataTypeMeta colors
+- Selection highlights with animated chase effect on connected edges
+- Chase animation flows in direction of data flow
+- Chase uses same color as wire (brighter version)
+
+**Import/Export System:**
+- Export button downloads all flows as JSON file
+- Import button opens file picker to restore flows
+- Save button exports + marks flow as saved
+- Added `exportAllFlows()`, `importFlows()`, `promptImport()` to flows store
+
+**Webcam Fix:**
+- Fixed webcam node showing 3D scene content instead of webcam feed
+- TexturePreview now prioritizes video element output over WebGL texture
+
+**Equalizer/Oscilloscope Fix:**
+- Fixed Tone.js import (was using non-existent `window.Tone`)
+
+**AI Fix:**
+- Fixed image captioning model URL to `Xenova/blip-image-captioning-base`
+
+**Logo & README:**
+- Updated public/icon.svg with new LATCH logo
+- Created public/logo-dark.svg for README display
+- Added logo and screenshots to README.md
+- Screenshots: flow.png, control.png, local-models.png, connection-manager.png
+
+**Files Created/Modified:**
+- `src/renderer/services/visual/ShaderPresets.ts` - NEW: Shader preset library
+- `src/renderer/registry/visual/shader.ts` - Updated with preset selector
+- `src/renderer/engine/executors/visual.ts` - Updated shaderExecutor
+- `src/renderer/components/edges/AnimatedEdge.vue` - Wire colors & chase animation
+- `src/renderer/stores/flows.ts` - Import/export functions
+- `src/renderer/components/layout/AppHeader.vue` - Wired up save/export/import
+- `src/renderer/components/preview/TexturePreview.vue` - Webcam fix
+- `src/renderer/engine/executors/index.ts` - Tone.js import fix
+- `src/renderer/services/ai/AIInference.ts` - Fixed model URL
+- `public/icon.svg` - New logo
+- `public/logo-dark.svg` - Logo with dark background for README
+- `README.md` - Added logo and screenshots
+
+---
+
+### Previous Session (Trigger Fixes, Flow Rename, Executor Cleanup):
 
 **Trigger Node Fix - Edge Detection:**
 - Trigger now only outputs when button is pressed (rising edge detection)
@@ -448,28 +506,31 @@ npm run electron:dev
 | Issue | Description | Workaround |
 |-------|-------------|------------|
 | AI freezes UI | Transformers.js runs on main thread | Implement Web Workers (plan created) |
-| EditorView monolith | 2700+ line file with inline node registry | Needs componentization |
+| MqttAdapter type error | TS2345 in MqttAdapter.ts line 50 | Pre-existing, non-critical |
 
 ## Immediate TODOs for Next Session
 
 ```markdown
-## CRITICAL - Code Architecture
-- [ ] Break up EditorView.vue (2700+ lines) into proper components
-- [ ] Extract node registry into separate file(s)
-- [ ] Create proper separation of concerns
-- [ ] Ensure 100% feature parity after refactor
-
 ## High Priority
 - [ ] Implement AI Web Workers (see docs/plans/AI_WEB_WORKERS_PLAN.md)
+- [ ] Test shader presets thoroughly
 
 ## Testing
-- [ ] Test trigger edge detection
-- [ ] Test flow rename (double-click and context menu)
-- [ ] Test monitor value persistence
+- [ ] Test shader node with all 17 presets
+- [ ] Test wire color matching
+- [ ] Test import/export round-trip
+- [ ] Test webcam node display
 
 ## Features Pending
 - [ ] Video file player node (use ffmpeg.wasm)
+- [ ] OSC protocol support
 - [ ] Node development documentation for custom nodes
+
+## Completed
+- [x] Break up EditorView.vue - Node registry extracted to src/renderer/registry/
+- [x] Shader node improvements with presets and uniform detection
+- [x] Wire colors by data type
+- [x] Import/export functionality
 ```
 
 ---
@@ -489,6 +550,9 @@ npm run electron:dev
 | 2026-01-17 | 3D & AI Fixes | Fixed 3D black rendering (WebGL context sharing), AI Web Workers plan, AI executors with setTimeout defer, custom node type fixes |
 | 2026-01-17 | XY Pad & Audio | Fixed XY Pad executor missing, fixed Equalizer persistence, added audioManager initialization on play |
 | 2026-01-17 | Trigger & Cleanup | Trigger edge detection, flow rename UI, executor output cleanup (monitor/gate/delay hold values) |
+| 2026-01-18 | Registry Extraction | Extracted 94 node definitions to src/renderer/registry/, reduced EditorView from 3062 to 776 lines |
+| 2026-01-18 | Wire Colors & UX | Wire colors by data type, selection chase animation, import/export, webcam fix, equalizer Tone.js fix |
+| 2026-01-18 | Shader & Logo | 17 shader presets, uniform auto-detection, vertex shader support, new LATCH logo, README with screenshots |
 
 ---
 

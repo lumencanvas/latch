@@ -10,6 +10,7 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 
 // Cache for compiled functions and state
+// eslint-disable-next-line @typescript-eslint/ban-types
 const compiledFunctions = new Map<string, Function>()
 const nodeState = new Map<string, unknown>()
 

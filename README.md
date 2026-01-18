@@ -1,12 +1,52 @@
-# LATCH
+<p align="center">
+  <img src="public/logo-dark.svg" alt="LATCH Logo" width="120" height="120">
+</p>
 
-**Live Art Tool for Creative Humans**
+<h1 align="center">LATCH</h1>
 
-LATCH is an open-source visual flow/node programming environment that combines the best of TouchDesigner, PureData, Max/MSP, and Node-RED. Build complex audio-visual pipelines, 3D scenes, IoT integrations, AI workflows, and interactive experiences through an intuitive node-based interface.
+<p align="center">
+  <strong>Live Art Tool for Creative Humans</strong>
+</p>
 
-Built with Vue 3 + TypeScript. Runs in the browser and as a desktop app (Electron).
+<p align="center">
+  LATCH is an open-source visual flow/node programming environment that combines the best of TouchDesigner, PureData, Max/MSP, and Node-RED. Build complex audio-visual pipelines, 3D scenes, IoT integrations, AI workflows, and interactive experiences through an intuitive node-based interface.
+</p>
 
-> **Status**: Phase 9 Complete + Stability Polish | MiniMap with node colors | AI Model Manager | Debug Nodes: Oscilloscope, Graph, Equalizer
+<p align="center">
+  Built with Vue 3 + TypeScript. Runs in the browser and as a desktop app (Electron).
+</p>
+
+<p align="center">
+  <em>Status: Phase 9 Complete + Stability Polish | MiniMap with node colors | AI Model Manager | Debug Nodes</em>
+</p>
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="public/screenshots/flow.png" alt="Flow Editor" width="800">
+  <br>
+  <em>Node-based flow editor with type-safe connections</em>
+</p>
+
+<p align="center">
+  <img src="public/screenshots/control.png" alt="Control Panel" width="800">
+  <br>
+  <em>Live performance control panel with exposed parameters</em>
+</p>
+
+<p align="center">
+  <img src="public/screenshots/local-models.png" alt="Local AI Models" width="800">
+  <br>
+  <em>Browser-based AI with local model management</em>
+</p>
+
+<p align="center">
+  <img src="public/screenshots/connection-manager.png" alt="Connection Manager" width="800">
+  <br>
+  <em>External connectivity: MIDI, WebSocket, HTTP, OSC</em>
+</p>
 
 ---
 

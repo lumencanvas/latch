@@ -155,20 +155,27 @@ function handleRenameKeydown(event: KeyboardEvent) {
       >
         <span class="tab-name">
           {{ flow.name }}
-          <span v-if="flow.dirty" class="dirty-dot">*</span>
+          <span
+            v-if="flow.dirty"
+            class="dirty-dot"
+          >*</span>
         </span>
         <button
           v-if="openFlows.length > 1"
           class="close-btn"
-          @click="closeFlow(flow.id, $event)"
           title="Close flow"
+          @click="closeFlow(flow.id, $event)"
         >
           <X :size="12" />
         </button>
       </div>
     </div>
 
-    <button class="new-tab-btn" @click="createNewFlow" title="New Flow">
+    <button
+      class="new-tab-btn"
+      title="New Flow"
+      @click="createNewFlow"
+    >
       <Plus :size="16" />
     </button>
 
@@ -179,10 +186,16 @@ function handleRenameKeydown(event: KeyboardEvent) {
         class="context-menu"
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
       >
-        <button class="menu-item" @click="renameFlow">
+        <button
+          class="menu-item"
+          @click="renameFlow"
+        >
           Rename
         </button>
-        <button class="menu-item" @click="duplicateFlow">
+        <button
+          class="menu-item"
+          @click="duplicateFlow"
+        >
           Duplicate
         </button>
         <div class="menu-divider" />
@@ -198,21 +211,35 @@ function handleRenameKeydown(event: KeyboardEvent) {
 
     <!-- Rename Modal -->
     <Teleport to="body">
-      <div v-if="renameModal.visible" class="modal-overlay" @click.self="cancelRename">
+      <div
+        v-if="renameModal.visible"
+        class="modal-overlay"
+        @click.self="cancelRename"
+      >
         <div class="rename-modal">
           <h3>Rename Flow</h3>
           <input
+            ref="renameInput"
             v-model="renameModal.name"
             type="text"
             class="rename-input"
             placeholder="Flow name"
-            @keydown="handleRenameKeydown"
-            ref="renameInput"
             autofocus
-          />
+            @keydown="handleRenameKeydown"
+          >
           <div class="modal-actions">
-            <button class="btn btn-secondary" @click="cancelRename">Cancel</button>
-            <button class="btn btn-primary" @click="confirmRename">Rename</button>
+            <button
+              class="btn btn-secondary"
+              @click="cancelRename"
+            >
+              Cancel
+            </button>
+            <button
+              class="btn btn-primary"
+              @click="confirmRename"
+            >
+              Rename
+            </button>
           </div>
         </div>
       </div>

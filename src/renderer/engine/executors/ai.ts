@@ -37,6 +37,11 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
   const modelId = ctx.controls.get('model') as string | undefined
   const isLoaded = aiInference.isModelLoaded('text-generation', modelId)
 
+  // Debug logging
+  if (ctx.frameCount % 60 === 0) {
+    console.log('[AI TextGen] Model loaded:', isLoaded, 'Trigger:', trigger, 'Prompt:', prompt.substring(0, 20))
+  }
+
   if (!isLoaded) {
     outputs.set('text', getCached(`${ctx.nodeId}:lastOutput`, ''))
     outputs.set('loading', false)

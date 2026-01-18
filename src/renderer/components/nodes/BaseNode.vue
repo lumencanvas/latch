@@ -272,7 +272,10 @@ function onLabelKeydown(e: KeyboardEvent) {
           :class="{ visible: hoveredPort === `in-${input.id}` || props.selected }"
         >
           <span class="label-text">{{ input.label }}</span>
-          <span class="label-type" :style="{ color: getTypeColor(input.type) }">{{ getSemanticLabel(input.id, input.type) }}</span>
+          <span
+            class="label-type"
+            :style="{ color: getTypeColor(input.type) }"
+          >{{ getSemanticLabel(input.id, input.type) }}</span>
         </div>
       </div>
     </div>
@@ -299,7 +302,10 @@ function onLabelKeydown(e: KeyboardEvent) {
           :class="{ visible: hoveredPort === `out-${output.id}` || props.selected }"
         >
           <span class="label-text">{{ output.label }}</span>
-          <span class="label-type" :style="{ color: getTypeColor(output.type) }">{{ getSemanticLabel(output.id, output.type) }}</span>
+          <span
+            class="label-type"
+            :style="{ color: getTypeColor(output.type) }"
+          >{{ getSemanticLabel(output.id, output.type) }}</span>
         </div>
       </div>
     </div>
@@ -307,8 +313,16 @@ function onLabelKeydown(e: KeyboardEvent) {
     <!-- Node Content -->
     <div class="node-content">
       <!-- Header -->
-      <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-        <component :is="categoryIcon" :size="14" class="node-icon" :style="{ color: categoryColor }" />
+      <div
+        class="node-header"
+        :style="{ borderLeftColor: categoryColor }"
+      >
+        <component
+          :is="categoryIcon"
+          :size="14"
+          class="node-icon"
+          :style="{ color: categoryColor }"
+        />
         <input
           v-if="isEditingLabel"
           ref="labelInputRef"
@@ -319,28 +333,52 @@ function onLabelKeydown(e: KeyboardEvent) {
           @keydown="onLabelKeydown"
           @mousedown.stop
           @click.stop
-        />
+        >
         <span
           v-else
           class="node-title"
-          @dblclick.stop.prevent="startEditingLabel"
           title="Double-click to edit label"
+          @dblclick.stop.prevent="startEditingLabel"
         >{{ nodeLabel }}</span>
-        <button v-if="!isSimpleNode" class="node-collapse-btn" @click.stop="toggleCollapse">
-          <ChevronDown v-if="!isCollapsed" :size="14" />
-          <ChevronRight v-else :size="14" />
+        <button
+          v-if="!isSimpleNode"
+          class="node-collapse-btn"
+          @click.stop="toggleCollapse"
+        >
+          <ChevronDown
+            v-if="!isCollapsed"
+            :size="14"
+          />
+          <ChevronRight
+            v-else
+            :size="14"
+          />
         </button>
       </div>
 
       <!-- Compact Body - just icon with category color -->
-      <div v-if="isCompactNode && !isCollapsed" class="compact-body" :style="{ background: categoryColor }">
-        <component :is="categoryIcon" :size="32" class="compact-icon" />
+      <div
+        v-if="isCompactNode && !isCollapsed"
+        class="compact-body"
+        :style="{ background: categoryColor }"
+      >
+        <component
+          :is="categoryIcon"
+          :size="32"
+          class="compact-icon"
+        />
       </div>
 
       <!-- Body - only shown for non-simple, non-compact nodes when not collapsed -->
-      <div v-else-if="!isSimpleNode && !isCollapsed" class="node-body">
+      <div
+        v-else-if="!isSimpleNode && !isCollapsed"
+        class="node-body"
+      >
         <!-- Texture Preview -->
-        <div v-if="hasTextureOutput" class="node-preview">
+        <div
+          v-if="hasTextureOutput"
+          class="node-preview"
+        >
           <TexturePreview
             :node-id="props.id"
             :width="120"
@@ -350,7 +388,10 @@ function onLabelKeydown(e: KeyboardEvent) {
         </div>
 
         <!-- Inline Controls -->
-        <div v-if="hasInlineControls && inlineControls.length > 0" class="node-controls">
+        <div
+          v-if="hasInlineControls && inlineControls.length > 0"
+          class="node-controls"
+        >
           <div
             v-for="control in inlineControls"
             :key="control.id"
@@ -359,7 +400,10 @@ function onLabelKeydown(e: KeyboardEvent) {
             <label class="control-label">{{ control.label }}</label>
 
             <!-- Slider -->
-            <div v-if="control.type === 'slider'" class="control-slider">
+            <div
+              v-if="control.type === 'slider'"
+              class="control-slider"
+            >
               <input
                 type="range"
                 :value="(controlValues[control.id] as number) ?? 0"
@@ -368,17 +412,21 @@ function onLabelKeydown(e: KeyboardEvent) {
                 :step="(control.props?.step as number) ?? 0.01"
                 @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value))"
                 @mousedown.stop
-              />
+              >
               <span class="slider-value">{{ ((controlValues[control.id] as number) ?? 0).toFixed(2) }}</span>
             </div>
 
             <!-- Toggle -->
-            <label v-else-if="control.type === 'toggle'" class="control-toggle" @mousedown.stop>
+            <label
+              v-else-if="control.type === 'toggle'"
+              class="control-toggle"
+              @mousedown.stop
+            >
               <input
                 type="checkbox"
                 :checked="controlValues[control.id] as boolean"
                 @change="updateControl(control.id, ($event.target as HTMLInputElement).checked)"
-              />
+              >
               <span class="toggle-track">
                 <span class="toggle-thumb" />
               </span>
@@ -411,7 +459,7 @@ function onLabelKeydown(e: KeyboardEvent) {
               :step="(control.props?.step as number) ?? 1"
               @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value) || 0)"
               @mousedown.stop
-            />
+            >
 
             <!-- Text -->
             <input
@@ -422,15 +470,19 @@ function onLabelKeydown(e: KeyboardEvent) {
               :placeholder="(control.props?.placeholder as string) ?? ''"
               @input="updateControl(control.id, ($event.target as HTMLInputElement).value)"
               @mousedown.stop
-            />
+            >
 
             <!-- Color -->
-            <div v-else-if="control.type === 'color'" class="control-color" @mousedown.stop>
+            <div
+              v-else-if="control.type === 'color'"
+              class="control-color"
+              @mousedown.stop
+            >
               <input
                 type="color"
                 :value="(controlValues[control.id] as string) ?? '#808080'"
                 @input="updateControl(control.id, ($event.target as HTMLInputElement).value)"
-              />
+              >
               <span class="color-value">{{ controlValues[control.id] }}</span>
             </div>
           </div>

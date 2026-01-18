@@ -11,10 +11,13 @@ import {
   type ShaderUniform,
 } from '@/services/visual/ShaderRenderer'
 import { webcamCapture } from '@/services/visual/WebcamCapture'
+import { getPresetById, parseUniformsFromCode } from '@/services/visual/ShaderPresets'
 
 // Store for compiled shaders and textures
 const compiledShaders = new Map<string, CompiledShader>()
 const nodeTextures = new Map<string, WebGLTexture>()
+// Track last preset to detect changes
+const lastPreset = new Map<string, string>()
 
 /**
  * Dispose visual resources for a node
@@ -37,72 +40,137 @@ export function disposeAllVisualNodes(): void {
 // ============================================================================
 
 export const shaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const fragmentCode = (ctx.controls.get('code') as string) ?? ''
-  const isShadertoy = (ctx.controls.get('shadertoy') as boolean) ?? false
-
-  // Get uniform inputs
-  const u_param1 = (ctx.inputs.get('param1') as number) ?? 0
-  const u_param2 = (ctx.inputs.get('param2') as number) ?? 0
-  const u_param3 = (ctx.inputs.get('param3') as number) ?? 0
-  const u_param4 = (ctx.inputs.get('param4') as number) ?? 0
+  const preset = (ctx.controls.get('preset') as string) ?? 'custom'
+  let fragmentCode = (ctx.controls.get('code') as string) ?? ''
+  const vertexCode = (ctx.controls.get('vertexCode') as string) ?? ''
+  const isShadertoy = (ctx.controls.get('shadertoy') as boolean) ?? true
 
   const renderer = getShaderRenderer()
+  const outputs = new Map<string, unknown>()
 
-  // Compile shader if needed
-  let shader = compiledShaders.get(ctx.nodeId)
-  const cacheKey = `${ctx.nodeId}_${fragmentCode}_${isShadertoy}`
-
-  if (!shader || !compiledShaders.has(cacheKey)) {
-    if (!fragmentCode.trim()) {
-      const outputs = new Map<string, unknown>()
-      outputs.set('texture', null)
-      outputs.set('_error', 'No shader code')
-      return outputs
+  // Check if preset changed - load preset code
+  const prevPreset = lastPreset.get(ctx.nodeId)
+  if (preset !== 'custom' && !preset.startsWith('---') && preset !== prevPreset) {
+    const presetData = getPresetById(preset)
+    if (presetData) {
+      fragmentCode = presetData.fragmentCode
+      // Store in node data so UI updates
+      outputs.set('_preset_code', fragmentCode)
+      outputs.set('_preset_uniforms', presetData.uniforms)
     }
+    lastPreset.set(ctx.nodeId, preset)
+  } else if (preset === 'custom') {
+    lastPreset.set(ctx.nodeId, 'custom')
+  }
 
-    const result = renderer.compileShader(fragmentCode, undefined, isShadertoy)
+  // Skip separator options
+  if (preset.startsWith('---')) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Select a preset or use custom')
+    return outputs
+  }
+
+  if (!fragmentCode.trim()) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'No shader code')
+    return outputs
+  }
+
+  // Get or compile shader
+  const customVertex = vertexCode.trim() ? vertexCode : undefined
+  const cacheKey = `${ctx.nodeId}_${fragmentCode}_${customVertex ?? ''}_${isShadertoy}`
+
+  let shader = compiledShaders.get(cacheKey)
+  if (!shader) {
+    const result = renderer.compileShader(fragmentCode, customVertex, isShadertoy)
 
     if ('error' in result) {
-      const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('_error', result.error)
       return outputs
     }
 
     shader = result
-    compiledShaders.set(ctx.nodeId, shader)
     compiledShaders.set(cacheKey, shader)
+    compiledShaders.set(ctx.nodeId, shader)
   }
 
   // Set time for animation
   renderer.setTime(ctx.totalTime)
 
-  // Build uniforms array
-  const uniforms: ShaderUniform[] = [
-    { name: 'u_param1', type: 'float', value: u_param1 },
-    { name: 'u_param2', type: 'float', value: u_param2 },
-    { name: 'u_param3', type: 'float', value: u_param3 },
-    { name: 'u_param4', type: 'float', value: u_param4 },
-  ]
+  // Build uniforms array from inputs and controls
+  const uniforms: ShaderUniform[] = []
 
-  // Add texture inputs if connected
-  const texture0 = ctx.inputs.get('texture0') as WebGLTexture | undefined
-  const texture1 = ctx.inputs.get('texture1') as WebGLTexture | undefined
-
-  if (texture0) {
-    uniforms.push({ name: 'iChannel0', type: 'sampler2D', value: texture0 })
-    uniforms.push({ name: 'u_texture0', type: 'sampler2D', value: texture0 })
+  // Standard param uniforms (from both inputs and controls)
+  for (let i = 1; i <= 4; i++) {
+    const inputVal = ctx.inputs.get(`u_param${i}`) as number | undefined
+    const controlVal = ctx.controls.get(`u_param${i}`) as number | undefined
+    const value = inputVal ?? controlVal ?? 0.5
+    uniforms.push({ name: `u_param${i}`, type: 'float', value })
   }
-  if (texture1) {
-    uniforms.push({ name: 'iChannel1', type: 'sampler2D', value: texture1 })
-    uniforms.push({ name: 'u_texture1', type: 'sampler2D', value: texture1 })
+
+  // Auto-detect uniforms from code and set values
+  const detectedUniforms = parseUniformsFromCode(fragmentCode)
+  for (const def of detectedUniforms) {
+    // Check if we already have this uniform
+    if (uniforms.some(u => u.name === def.name)) continue
+
+    // Get value from input or control
+    const inputVal = ctx.inputs.get(def.name)
+    const controlVal = ctx.controls.get(def.name)
+    const value = inputVal ?? controlVal ?? def.default
+
+    // Handle vec types from array inputs
+    if (Array.isArray(value)) {
+      switch (def.type) {
+        case 'vec2':
+          uniforms.push({ name: def.name, type: 'vec2', value: value.slice(0, 2) as number[] })
+          break
+        case 'vec3':
+          uniforms.push({ name: def.name, type: 'vec3', value: value.slice(0, 3) as number[] })
+          break
+        case 'vec4':
+          uniforms.push({ name: def.name, type: 'vec4', value: value.slice(0, 4) as number[] })
+          break
+      }
+    } else if (def.type === 'float' || def.type === 'int') {
+      uniforms.push({ name: def.name, type: 'float', value: Number(value) || 0 })
+    }
+  }
+
+  // Color uniform (common for many shaders)
+  const colorInput = ctx.inputs.get('u_color')
+  if (colorInput && Array.isArray(colorInput)) {
+    uniforms.push({ name: 'u_color', type: 'vec3', value: colorInput.slice(0, 3) as number[] })
+    uniforms.push({ name: 'u_color1', type: 'vec3', value: colorInput.slice(0, 3) as number[] })
+  }
+
+  // Vec2 uniform
+  const vec2Input = ctx.inputs.get('u_vec2')
+  if (vec2Input && Array.isArray(vec2Input)) {
+    uniforms.push({ name: 'u_vec2', type: 'vec2', value: vec2Input.slice(0, 2) as number[] })
+  }
+
+  // Add texture inputs (iChannel0-3 for Shadertoy compatibility)
+  for (let i = 0; i < 4; i++) {
+    const texture = ctx.inputs.get(`texture${i}`) as WebGLTexture | undefined
+    if (texture) {
+      uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: texture })
+      uniforms.push({ name: `u_texture${i}`, type: 'sampler2D', value: texture })
+    }
   }
 
   // Render to framebuffer
-  renderer.render(shader, uniforms, ctx.nodeId)
+  try {
+    renderer.render(shader, uniforms, ctx.nodeId)
+    outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
+    outputs.set('_error', null)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Render failed'
+    outputs.set('texture', null)
+    outputs.set('_error', msg)
+  }
 
-  const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
   return outputs
 }
 

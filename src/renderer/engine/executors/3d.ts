@@ -275,7 +275,8 @@ export const render3DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const renderer = getThreeRenderer()
   const width = (ctx.controls.get('width') as number) ?? 512
   const height = (ctx.controls.get('height') as number) ?? 512
-  const includeDepth = (ctx.controls.get('includeDepth') as boolean) ?? false
+  // TODO: Use includeDepth when depth buffer rendering is implemented
+  // const includeDepth = (ctx.controls.get('includeDepth') as boolean) ?? false
 
   // Render to default framebuffer (canvas) so we can share it
   renderer.renderToCanvas(scene, camera, width, height)

@@ -25,7 +25,12 @@ onMounted(() => {
     <div class="loading-content">
       <!-- Animated Logo -->
       <div class="logo-container">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="150" height="150">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 200 200"
+          width="150"
+          height="150"
+        >
           <!-- Left bracket -->
           <path
             class="left-bracket"
@@ -47,23 +52,58 @@ onMounted(() => {
           />
 
           <!-- Horizontal flow lines -->
-          <line class="flow-line-1" x1="50" y1="75" x2="150" y2="75" stroke="#2a2a2a" stroke-width="4"/>
-          <line class="flow-line-2" x1="50" y1="125" x2="150" y2="125" stroke="#2a2a2a" stroke-width="4"/>
+          <line
+            class="flow-line-1"
+            x1="50"
+            y1="75"
+            x2="150"
+            y2="75"
+            stroke="#2a2a2a"
+            stroke-width="4"
+          />
+          <line
+            class="flow-line-2"
+            x1="50"
+            y1="125"
+            x2="150"
+            y2="125"
+            stroke="#2a2a2a"
+            stroke-width="4"
+          />
 
           <!-- Diagonal latch bar - pivots from right catch point -->
           <line
             class="latch-bar"
-            x1="65" y1="115" x2="135" y2="85"
+            x1="65"
+            y1="115"
+            x2="135"
+            y2="85"
             stroke="#2a2a2a"
             stroke-width="8"
             stroke-linecap="round"
           />
 
           <!-- Orange accent at pivot/hinge point -->
-          <rect class="pivot-point" x="58" y="108" width="18" height="14" rx="3" fill="#e85d3b"/>
+          <rect
+            class="pivot-point"
+            x="58"
+            y="108"
+            width="18"
+            height="14"
+            rx="3"
+            fill="#e85d3b"
+          />
 
           <!-- Catch point on right -->
-          <rect class="catch-point" x="130" y="80" width="14" height="10" rx="2" fill="#e85d3b"/>
+          <rect
+            class="catch-point"
+            x="130"
+            y="80"
+            width="14"
+            height="10"
+            rx="2"
+            fill="#e85d3b"
+          />
         </svg>
       </div>
 

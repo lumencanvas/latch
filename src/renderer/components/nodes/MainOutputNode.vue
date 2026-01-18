@@ -106,11 +106,23 @@ function getTypeColor(type: string): string {
     }"
   >
     <!-- Header -->
-    <div class="node-header" :style="{ borderLeftColor: categoryColor }">
+    <div
+      class="node-header"
+      :style="{ borderLeftColor: categoryColor }"
+    >
       <span class="node-title">OUTPUT</span>
-      <button class="expand-btn" @click.stop="toggleExpanded">
-        <Minimize2 v-if="isExpanded" :size="14" />
-        <Maximize2 v-else :size="14" />
+      <button
+        class="expand-btn"
+        @click.stop="toggleExpanded"
+      >
+        <Minimize2
+          v-if="isExpanded"
+          :size="14"
+        />
+        <Maximize2
+          v-else
+          :size="14"
+        />
       </button>
     </div>
 

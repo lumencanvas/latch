@@ -659,7 +659,10 @@ onUnmounted(() => {
         :node-color="getNodeMinimapColor"
       />
 
-      <Panel position="top-right" class="canvas-panel">
+      <Panel
+        position="top-right"
+        class="canvas-panel"
+      >
         <div class="panel-info">
           <span>{{ flowsStore.activeNodes.length }} nodes</span>
           <span>{{ flowsStore.activeEdges.length }} connections</span>
@@ -677,7 +680,10 @@ onUnmounted(() => {
 
     <!-- Connection error toast -->
     <Transition name="toast">
-      <div v-if="connectionError" class="connection-error">
+      <div
+        v-if="connectionError"
+        class="connection-error"
+      >
         {{ connectionError }}
       </div>
     </Transition>

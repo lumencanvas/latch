@@ -281,7 +281,10 @@ function getTypeColor(type: string): string {
   >
     <!-- Input Handles Column -->
     <div class="handles-column handles-left">
-      <template v-for="i in pointCount" :key="`point-${i}`">
+      <template
+        v-for="i in pointCount"
+        :key="`point-${i}`"
+      >
         <div class="handle-slot">
           <Handle
             :id="`x${i - 1}`"
@@ -308,15 +311,32 @@ function getTypeColor(type: string): string {
     <!-- Node Content -->
     <div class="node-content">
       <!-- Header -->
-      <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-        <LineChart :size="14" class="node-icon" :style="{ color: categoryColor }" />
+      <div
+        class="node-header"
+        :style="{ borderLeftColor: categoryColor }"
+      >
+        <LineChart
+          :size="14"
+          class="node-icon"
+          :style="{ color: categoryColor }"
+        />
         <span class="node-title">Graph</span>
         <div class="point-controls">
-          <button class="point-btn" @click.stop="removePoint" @mousedown.stop :disabled="pointCount <= 1">
+          <button
+            class="point-btn"
+            :disabled="pointCount <= 1"
+            @click.stop="removePoint"
+            @mousedown.stop
+          >
             <Minus :size="12" />
           </button>
           <span class="point-count">{{ pointCount }}</span>
-          <button class="point-btn" @click.stop="addPoint" @mousedown.stop :disabled="pointCount >= 8">
+          <button
+            class="point-btn"
+            :disabled="pointCount >= 8"
+            @click.stop="addPoint"
+            @mousedown.stop
+          >
             <Plus :size="12" />
           </button>
         </div>
@@ -341,25 +361,35 @@ function getTypeColor(type: string): string {
             @change="updateControl('displayMode', ($event.target as HTMLSelectElement).value)"
             @mousedown.stop
           >
-            <option value="line">Line</option>
-            <option value="scatter">Scatter</option>
+            <option value="line">
+              Line
+            </option>
+            <option value="scatter">
+              Scatter
+            </option>
           </select>
         </div>
         <div class="control-row">
-          <label class="toggle-label" @mousedown.stop>
+          <label
+            class="toggle-label"
+            @mousedown.stop
+          >
             <input
               type="checkbox"
               :checked="showGrid"
               @change="updateControl('showGrid', ($event.target as HTMLInputElement).checked)"
-            />
+            >
             Grid
           </label>
-          <label class="toggle-label" @mousedown.stop>
+          <label
+            class="toggle-label"
+            @mousedown.stop
+          >
             <input
               type="checkbox"
               :checked="autoScale"
               @change="updateControl('autoScale', ($event.target as HTMLInputElement).checked)"
-            />
+            >
             Auto
           </label>
         </div>

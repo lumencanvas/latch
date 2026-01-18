@@ -6,6 +6,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, categoryMeta, type NodeDefinition } from '@/stores/nodes'
 import { useRuntimeStore } from '@/stores/runtime'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
+import ConnectionSelect from '@/components/connections/ConnectionSelect.vue'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
@@ -211,23 +212,38 @@ watch(inspectedNode, () => {
 </script>
 
 <template>
-  <aside class="properties-panel" :style="panelStyle">
-    <div v-if="uiStore.propertiesPanelOpen" class="panel-content">
+  <aside
+    class="properties-panel"
+    :style="panelStyle"
+  >
+    <div
+      v-if="uiStore.propertiesPanelOpen"
+      class="panel-content"
+    >
       <!-- Header -->
       <div class="panel-header">
         <span class="panel-title">Properties</span>
-        <button class="close-btn" @click="uiStore.closePropertiesPanel">
+        <button
+          class="close-btn"
+          @click="uiStore.closePropertiesPanel"
+        >
           <X :size="16" />
         </button>
       </div>
 
       <!-- No selection state -->
-      <div v-if="!inspectedNode" class="empty-state">
+      <div
+        v-if="!inspectedNode"
+        class="empty-state"
+      >
         <p>Select a node to view properties</p>
       </div>
 
       <!-- Node properties -->
-      <div v-else class="node-properties">
+      <div
+        v-else
+        class="node-properties"
+      >
         <!-- Node info header -->
         <div class="node-info">
           <div class="node-info-top">
@@ -237,7 +253,11 @@ watch(inspectedNode, () => {
             >
               {{ categoryInfo?.label ?? 'Unknown' }}
             </div>
-            <button class="delete-node-btn" @click="deleteNode" title="Delete node">
+            <button
+              class="delete-node-btn"
+              title="Delete node"
+              @click="deleteNode"
+            >
               <Trash2 :size="14" />
             </button>
           </div>
@@ -250,19 +270,34 @@ watch(inspectedNode, () => {
               class="node-name-input"
               @blur="saveLabel"
               @keydown="onLabelKeydown"
-            />
-            <h3 v-else class="node-name" @click="startEditingLabel" title="Click to edit label">
+            >
+            <h3
+              v-else
+              class="node-name"
+              title="Click to edit label"
+              @click="startEditingLabel"
+            >
               {{ nodeLabel }}
             </h3>
-            <button v-if="!isEditingLabel" class="edit-label-btn" @click="startEditingLabel" title="Edit label">
+            <button
+              v-if="!isEditingLabel"
+              class="edit-label-btn"
+              title="Edit label"
+              @click="startEditingLabel"
+            >
               <Pencil :size="12" />
             </button>
           </div>
-          <p class="node-description">{{ nodeDefinition?.description }}</p>
+          <p class="node-description">
+            {{ nodeDefinition?.description }}
+          </p>
         </div>
 
         <!-- Texture Preview for visual nodes -->
-        <div v-if="hasTextureOutput" class="texture-preview-section">
+        <div
+          v-if="hasTextureOutput"
+          class="texture-preview-section"
+        >
           <div class="section-header">
             <span>Preview</span>
           </div>
@@ -274,8 +309,14 @@ watch(inspectedNode, () => {
         </div>
 
         <!-- Shader Editor Button -->
-        <div v-if="isShaderNode" class="shader-editor-section">
-          <button class="shader-editor-btn" @click="openShaderEditor">
+        <div
+          v-if="isShaderNode"
+          class="shader-editor-section"
+        >
+          <button
+            class="shader-editor-btn"
+            @click="openShaderEditor"
+          >
             <Code :size="16" />
             <span>Open Shader Editor</span>
             <ChevronRight :size="16" />
@@ -283,7 +324,10 @@ watch(inspectedNode, () => {
         </div>
 
         <!-- Controls Section -->
-        <div v-if="nodeDefinition && nodeDefinition.controls.length > 0" class="controls-section">
+        <div
+          v-if="nodeDefinition && nodeDefinition.controls.length > 0"
+          class="controls-section"
+        >
           <div class="section-header">
             <span>Controls</span>
           </div>
@@ -303,8 +347,14 @@ watch(inspectedNode, () => {
                   :title="isExposed(control.id) ? 'Remove from Control Panel' : 'Expose to Control Panel'"
                   @click="toggleControlExposure(control.id, control.label)"
                 >
-                  <Check v-if="isExposed(control.id)" :size="12" />
-                  <Crosshair v-else :size="12" />
+                  <Check
+                    v-if="isExposed(control.id)"
+                    :size="12"
+                  />
+                  <Crosshair
+                    v-else
+                    :size="12"
+                  />
                 </button>
               </div>
 
@@ -316,10 +366,13 @@ watch(inspectedNode, () => {
                 :value="(controlValues[control.id] as number) ?? 0"
                 :step="(control.props?.step as number) ?? 1"
                 @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value) || 0)"
-              />
+              >
 
               <!-- Slider -->
-              <div v-else-if="control.type === 'slider'" class="control-slider">
+              <div
+                v-else-if="control.type === 'slider'"
+                class="control-slider"
+              >
                 <input
                   type="range"
                   :value="(controlValues[control.id] as number) ?? 0"
@@ -327,17 +380,20 @@ watch(inspectedNode, () => {
                   :max="(control.props?.max as number) ?? 1"
                   :step="(control.props?.step as number) ?? 0.01"
                   @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value))"
-                />
+                >
                 <span class="slider-value">{{ ((controlValues[control.id] as number) ?? 0).toFixed(2) }}</span>
               </div>
 
               <!-- Toggle -->
-              <label v-else-if="control.type === 'toggle'" class="control-toggle">
+              <label
+                v-else-if="control.type === 'toggle'"
+                class="control-toggle"
+              >
                 <input
                   type="checkbox"
                   :checked="controlValues[control.id] as boolean"
                   @change="updateControl(control.id, ($event.target as HTMLInputElement).checked)"
-                />
+                >
                 <span class="toggle-track">
                   <span class="toggle-thumb" />
                 </span>
@@ -366,20 +422,35 @@ watch(inspectedNode, () => {
                 class="control-input"
                 :value="controlValues[control.id]"
                 @input="updateControl(control.id, ($event.target as HTMLInputElement).value)"
-              />
+              >
 
               <!-- Color picker -->
-              <div v-else-if="control.type === 'color'" class="control-color">
+              <div
+                v-else-if="control.type === 'color'"
+                class="control-color"
+              >
                 <input
                   type="color"
                   :value="(controlValues[control.id] as string) ?? '#808080'"
                   @input="updateControl(control.id, ($event.target as HTMLInputElement).value)"
-                />
+                >
                 <span class="color-value">{{ controlValues[control.id] }}</span>
               </div>
 
+              <!-- Connection selector -->
+              <ConnectionSelect
+                v-else-if="control.type === 'connection'"
+                :model-value="(controlValues[control.id] as string | undefined)"
+                :protocol="(control.props?.protocol as string) ?? 'websocket'"
+                :placeholder="(control.props?.placeholder as string)"
+                @update:model-value="updateControl(control.id, $event)"
+              />
+
               <!-- Code (just show truncated) -->
-              <div v-else-if="control.type === 'code'" class="control-code">
+              <div
+                v-else-if="control.type === 'code'"
+                class="control-code"
+              >
                 <span class="code-preview">{{ (controlValues[control.id] as string)?.slice(0, 50) }}...</span>
               </div>
             </div>
@@ -387,7 +458,10 @@ watch(inspectedNode, () => {
         </div>
 
         <!-- Outputs Section -->
-        <div v-if="nodeDefinition && nodeDefinition.outputs.length > 0" class="outputs-section">
+        <div
+          v-if="nodeDefinition && nodeDefinition.outputs.length > 0"
+          class="outputs-section"
+        >
           <div class="section-header">
             <span>Outputs</span>
           </div>
@@ -406,7 +480,10 @@ watch(inspectedNode, () => {
         </div>
 
         <!-- Inputs Section -->
-        <div v-if="nodeDefinition && nodeDefinition.inputs.length > 0" class="inputs-section">
+        <div
+          v-if="nodeDefinition && nodeDefinition.inputs.length > 0"
+          class="inputs-section"
+        >
           <div class="section-header">
             <span>Inputs</span>
           </div>
@@ -419,7 +496,10 @@ watch(inspectedNode, () => {
             >
               <span class="input-label">{{ input.label }}</span>
               <span class="input-type">{{ input.type }}</span>
-              <span v-if="input.required" class="input-required">required</span>
+              <span
+                v-if="input.required"
+                class="input-required"
+              >required</span>
             </div>
           </div>
         </div>

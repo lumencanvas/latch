@@ -9,6 +9,7 @@ import PropertiesPanel from './components/layout/PropertiesPanel.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import ShaderEditorModal from './components/modals/ShaderEditorModal.vue'
 import AIModelManagerModal from './components/modals/AIModelManagerModal.vue'
+import ConnectionManagerModal from './components/connections/ConnectionManagerModal.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
 import { usePersistence } from './composables/usePersistence'
 import { useExecutionEngine } from './composables/useExecutionEngine'
@@ -57,7 +58,10 @@ onMounted(async () => {
     <LoadingScreen />
 
     <!-- Old loading overlay for data loading -->
-    <div v-if="!isInitialized || isLoading" class="loading-overlay">
+    <div
+      v-if="!isInitialized || isLoading"
+      class="loading-overlay"
+    >
       <div class="loading-spinner" />
       <span>Loading data...</span>
     </div>
@@ -77,6 +81,7 @@ onMounted(async () => {
       <!-- Modals -->
       <ShaderEditorModal v-if="isEditorView" />
       <AIModelManagerModal />
+      <ConnectionManagerModal />
     </template>
   </div>
 </template>

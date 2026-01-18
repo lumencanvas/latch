@@ -7,10 +7,14 @@ const uiStore = useUIStore()
 <template>
   <div class="settings-view">
     <div class="settings-container">
-      <h1 class="settings-title">Settings</h1>
+      <h1 class="settings-title">
+        Settings
+      </h1>
 
       <section class="settings-section">
-        <h2 class="section-title">Appearance</h2>
+        <h2 class="section-title">
+          Appearance
+        </h2>
 
         <div class="setting-row">
           <label class="setting-label">Theme</label>
@@ -19,15 +23,23 @@ const uiStore = useUIStore()
             :value="uiStore.theme"
             @change="uiStore.setTheme(($event.target as HTMLSelectElement).value as any)"
           >
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="system">System</option>
+            <option value="light">
+              Light
+            </option>
+            <option value="dark">
+              Dark
+            </option>
+            <option value="system">
+              System
+            </option>
           </select>
         </div>
       </section>
 
       <section class="settings-section">
-        <h2 class="section-title">Editor</h2>
+        <h2 class="section-title">
+          Editor
+        </h2>
 
         <div class="setting-row">
           <label class="setting-label">Show Grid</label>
@@ -35,7 +47,7 @@ const uiStore = useUIStore()
             type="checkbox"
             :checked="uiStore.showGrid"
             @change="uiStore.toggleGrid()"
-          />
+          >
         </div>
 
         <div class="setting-row">
@@ -44,7 +56,7 @@ const uiStore = useUIStore()
             type="checkbox"
             :checked="uiStore.snapToGrid"
             @change="uiStore.toggleSnapToGrid()"
-          />
+          >
         </div>
 
         <div class="setting-row">
@@ -57,7 +69,7 @@ const uiStore = useUIStore()
             max="100"
             step="5"
             @change="uiStore.setGridSize(Number(($event.target as HTMLInputElement).value))"
-          />
+          >
         </div>
 
         <div class="setting-row">
@@ -66,15 +78,17 @@ const uiStore = useUIStore()
             type="checkbox"
             :checked="uiStore.showMinimap"
             @change="uiStore.toggleMinimap()"
-          />
+          >
         </div>
       </section>
 
       <section class="settings-section">
-        <h2 class="section-title">About</h2>
+        <h2 class="section-title">
+          About
+        </h2>
         <p class="about-text">
-          LATCH v0.1.0<br />
-          Live Art Tool for Creative Humans<br /><br />
+          LATCH v0.1.0<br>
+          Live Art Tool for Creative Humans<br><br>
           Created by LumenCanvas - 2026
         </p>
       </section>

@@ -232,8 +232,15 @@ function getTypeColor(type: string): string {
     <!-- Node Content -->
     <div class="node-content">
       <!-- Header -->
-      <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-        <Activity :size="14" class="node-icon" :style="{ color: categoryColor }" />
+      <div
+        class="node-header"
+        :style="{ borderLeftColor: categoryColor }"
+      >
+        <Activity
+          :size="14"
+          class="node-icon"
+          :style="{ color: categoryColor }"
+        />
         <span class="node-title">Scope</span>
       </div>
 
@@ -259,7 +266,7 @@ function getTypeColor(type: string): string {
             step="0.25"
             @input="updateTimeScale(parseFloat(($event.target as HTMLInputElement).value))"
             @mousedown.stop
-          />
+          >
         </div>
         <div class="control-row">
           <label>AMP</label>
@@ -271,7 +278,7 @@ function getTypeColor(type: string): string {
             step="0.1"
             @input="updateAmplitude(parseFloat(($event.target as HTMLInputElement).value))"
             @mousedown.stop
-          />
+          >
         </div>
       </div>
     </div>

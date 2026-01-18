@@ -3,6 +3,7 @@
  * Each executor is a function that takes an ExecutionContext and returns outputs
  */
 
+import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { audioExecutors } from './audio'
 import { visualExecutors } from './visual'
@@ -468,31 +469,27 @@ export const oscilloscopeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Handle audio input - use Tone.js Waveform analyzer
   if (audio && typeof audio === 'object' && 'connect' in audio) {
-    // Dynamically import Tone for waveform analysis
-    const Tone = (window as unknown as { Tone?: typeof import('tone') }).Tone
-    if (Tone) {
-      // Create or get waveform analyzer
-      if (!state.waveform || state.prevAudio !== audio) {
-        // Disconnect previous
-        if (state.waveform && state.prevAudio) {
-          try {
-            (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.waveform)
-          } catch { /* ignore */ }
-        }
-        // Create new waveform analyzer
-        state.waveform = new Tone.Waveform(256)
-        ;(audio as { connect: (n: unknown) => void }).connect(state.waveform as unknown)
-        state.prevAudio = audio
+    // Create or get waveform analyzer
+    if (!state.waveform || state.prevAudio !== audio) {
+      // Disconnect previous
+      if (state.waveform && state.prevAudio) {
+        try {
+          (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.waveform)
+        } catch { /* ignore */ }
       }
-
-      // Get waveform data
-      const waveformData = (state.waveform as { getValue: () => Float32Array }).getValue()
-      const outputs = new Map<string, unknown>()
-      outputs.set('_input_waveform', Array.from(waveformData))
-      outputs.set('_input_signal', null)
-      outputs.set('_mode', 'audio')
-      return outputs
+      // Create new waveform analyzer
+      state.waveform = new Tone.Waveform(256)
+      ;(audio as { connect: (n: unknown) => void }).connect(state.waveform as unknown)
+      state.prevAudio = audio
     }
+
+    // Get waveform data
+    const waveformData = (state.waveform as { getValue: () => Float32Array }).getValue()
+    const outputs = new Map<string, unknown>()
+    outputs.set('_input_waveform', Array.from(waveformData))
+    outputs.set('_input_signal', null)
+    outputs.set('_mode', 'audio')
+    return outputs
   }
 
   // Handle number signal input
@@ -533,27 +530,32 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Handle audio input
   if (audio && typeof audio === 'object' && 'connect' in audio) {
-    const Tone = (window as unknown as { Tone?: typeof import('tone') }).Tone
-    if (Tone) {
-      // Create or reconnect FFT analyzer
-      if (!state.fft || state.prevAudio !== audio) {
-        // Disconnect previous
-        if (state.fft && state.prevAudio) {
-          try {
-            (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.fft)
-          } catch { /* ignore */ }
-        }
-        // Create new FFT analyzer
-        state.fft = new Tone.FFT(64)
-        ;(audio as { connect: (n: unknown) => void }).connect(state.fft as unknown)
-        state.prevAudio = audio
+    // Create or reconnect FFT analyzer
+    if (!state.fft || state.prevAudio !== audio) {
+      // Disconnect previous
+      if (state.fft && state.prevAudio) {
+        try {
+          (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.fft)
+        } catch { /* ignore */ }
       }
-
-      // Get FFT data
-      const fftData = (state.fft as { getValue: () => Float32Array }).getValue()
-      outputs.set('_fft_data', Array.from(fftData))
-      return outputs
+      // Create new FFT analyzer with more bins for better resolution
+      state.fft = new Tone.FFT(128)
+      ;(audio as { connect: (n: unknown) => void }).connect(state.fft as unknown)
+      state.prevAudio = audio
+      console.log('[Equalizer] Connected FFT analyzer to audio source')
     }
+
+    // Get FFT data
+    const fftData = (state.fft as { getValue: () => Float32Array }).getValue()
+    outputs.set('_fft_data', Array.from(fftData))
+    return outputs
+  }
+
+  // Clear state if no audio
+  if (state.fft) {
+    console.log('[Equalizer] No audio input, clearing FFT state')
+    state.fft = null
+    state.prevAudio = null
   }
 
   outputs.set('_fft_data', null)

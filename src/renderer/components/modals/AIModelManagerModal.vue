@@ -167,16 +167,28 @@ function getCategoryColor(category: string): string {
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="uiStore.aiModelManagerOpen" class="ai-modal-overlay" @click.self="close">
+      <div
+        v-if="uiStore.aiModelManagerOpen"
+        class="ai-modal-overlay"
+        @click.self="close"
+      >
         <div class="ai-modal">
           <!-- Header -->
           <div class="modal-header">
             <div class="header-left">
-              <Brain :size="20" class="header-icon" />
-              <h2 class="modal-title">Local AI Models</h2>
+              <Brain
+                :size="20"
+                class="header-icon"
+              />
+              <h2 class="modal-title">
+                Local AI Models
+              </h2>
               <span class="model-count">{{ loadedModelCount }} loaded</span>
             </div>
-            <button class="close-btn" @click="close">
+            <button
+              class="close-btn"
+              @click="close"
+            >
               <X :size="20" />
             </button>
           </div>
@@ -187,19 +199,25 @@ function getCategoryColor(category: string): string {
               <Cpu :size="16" />
               <span>Models run locally in your browser using Transformers.js</span>
             </div>
-            <div class="webgpu-toggle" v-if="webgpuAvailable">
+            <div
+              v-if="webgpuAvailable"
+              class="webgpu-toggle"
+            >
               <label class="toggle-label">
                 <input
                   type="checkbox"
                   :checked="useWebGPU"
                   @change="toggleWebGPU"
-                />
-                <span class="toggle-switch"></span>
+                >
+                <span class="toggle-switch" />
                 <Zap :size="14" />
                 <span>WebGPU Acceleration</span>
               </label>
             </div>
-            <div v-else class="webgpu-unavailable">
+            <div
+              v-else
+              class="webgpu-unavailable"
+            >
               <span>WebGPU not available</span>
             </div>
           </div>
@@ -218,7 +236,9 @@ function getCategoryColor(category: string): string {
             >
               <div class="model-info">
                 <div class="model-header">
-                  <h3 class="model-name">{{ task.name }}</h3>
+                  <h3 class="model-name">
+                    {{ task.name }}
+                  </h3>
                   <span
                     class="category-badge"
                     :style="{ background: getCategoryColor(task.category) }"
@@ -226,25 +246,43 @@ function getCategoryColor(category: string): string {
                     {{ task.category }}
                   </span>
                   <div class="model-status">
-                    <CheckCircle2 v-if="isModelLoaded(task.id)" :size="16" class="status-icon ready" />
-                    <Loader v-else-if="isModelLoading(task.id)" :size="16" class="status-icon loading" />
-                    <AlertCircle v-else-if="isModelError(task.id)" :size="16" class="status-icon error" />
+                    <CheckCircle2
+                      v-if="isModelLoaded(task.id)"
+                      :size="16"
+                      class="status-icon ready"
+                    />
+                    <Loader
+                      v-else-if="isModelLoading(task.id)"
+                      :size="16"
+                      class="status-icon loading"
+                    />
+                    <AlertCircle
+                      v-else-if="isModelError(task.id)"
+                      :size="16"
+                      class="status-icon error"
+                    />
                   </div>
                 </div>
-                <p class="model-description">{{ task.description }}</p>
+                <p class="model-description">
+                  {{ task.description }}
+                </p>
 
                 <!-- Model selector with size info -->
                 <div class="model-selector">
                   <select
                     :value="selectedModels.get(task.id)"
-                    @change="selectModel(task.id, ($event.target as HTMLSelectElement).value)"
                     :disabled="isModelLoading(task.id)"
                     class="model-select"
+                    @change="selectModel(task.id, ($event.target as HTMLSelectElement).value)"
                   >
                     <option :value="task.defaultModel">
                       {{ task.defaultModel.split('/').pop() }} ({{ task.defaultSize }})
                     </option>
-                    <option v-for="model in task.alternateModels" :key="model.id" :value="model.id">
+                    <option
+                      v-for="model in task.alternateModels"
+                      :key="model.id"
+                      :value="model.id"
+                    >
                       {{ model.name }} ({{ model.size }})
                     </option>
                   </select>
@@ -252,21 +290,33 @@ function getCategoryColor(category: string): string {
                 </div>
 
                 <!-- WebGPU indicator -->
-                <div v-if="supportsWebGPU(task.id) && useWebGPU" class="webgpu-badge">
+                <div
+                  v-if="supportsWebGPU(task.id) && useWebGPU"
+                  class="webgpu-badge"
+                >
                   <Zap :size="12" />
                   <span>WebGPU</span>
                 </div>
 
                 <!-- Loading progress -->
-                <div v-if="isModelLoading(task.id)" class="progress-container">
+                <div
+                  v-if="isModelLoading(task.id)"
+                  class="progress-container"
+                >
                   <div class="progress-bar">
-                    <div class="progress-fill" :style="{ width: `${getModelProgress(task.id)}%` }" />
+                    <div
+                      class="progress-fill"
+                      :style="{ width: `${getModelProgress(task.id)}%` }"
+                    />
                   </div>
                   <span class="progress-text">{{ Math.round(getModelProgress(task.id)) }}%</span>
                 </div>
 
                 <!-- Error message -->
-                <div v-if="isModelError(task.id)" class="error-message">
+                <div
+                  v-if="isModelError(task.id)"
+                  class="error-message"
+                >
                   {{ getModelError(task.id) }}
                 </div>
               </div>
@@ -296,9 +346,18 @@ function getCategoryColor(category: string): string {
           <!-- Footer -->
           <div class="modal-footer">
             <span class="footer-hint">
-              Models from <a href="https://huggingface.co/models?library=transformers.js" target="_blank" rel="noopener">Hugging Face Hub</a>
+              Models from <a
+                href="https://huggingface.co/models?library=transformers.js"
+                target="_blank"
+                rel="noopener"
+              >Hugging Face Hub</a>
             </span>
-            <button class="btn btn-secondary" @click="close">Close</button>
+            <button
+              class="btn btn-secondary"
+              @click="close"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>

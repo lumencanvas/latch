@@ -126,7 +126,10 @@ function getTypeColor(type: string): string {
     />
 
     <!-- Expand button -->
-    <button class="expand-btn" @click.stop="toggleCollapse">
+    <button
+      class="expand-btn"
+      @click.stop="toggleCollapse"
+    >
       <ChevronRight :size="12" />
     </button>
   </div>
@@ -138,10 +141,19 @@ function getTypeColor(type: string): string {
     :class="{ selected: props.selected }"
   >
     <!-- Header -->
-    <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-      <Zap :size="14" class="header-icon" />
+    <div
+      class="node-header"
+      :style="{ borderLeftColor: categoryColor }"
+    >
+      <Zap
+        :size="14"
+        class="header-icon"
+      />
       <span class="node-title">Trigger</span>
-      <button class="node-collapse-btn" @click.stop="toggleCollapse">
+      <button
+        class="node-collapse-btn"
+        @click.stop="toggleCollapse"
+      >
         <ChevronDown :size="14" />
       </button>
     </div>
@@ -156,16 +168,29 @@ function getTypeColor(type: string): string {
           class="type-select"
           @mousedown.stop
         >
-          <option value="boolean">Boolean</option>
-          <option value="number">Number</option>
-          <option value="string">String</option>
-          <option value="json">JSON</option>
-          <option value="timestamp">Timestamp</option>
+          <option value="boolean">
+            Boolean
+          </option>
+          <option value="number">
+            Number
+          </option>
+          <option value="string">
+            String
+          </option>
+          <option value="json">
+            JSON
+          </option>
+          <option value="timestamp">
+            Timestamp
+          </option>
         </select>
       </div>
 
       <!-- Value Toggle for Boolean/Number -->
-      <div v-if="outputType === 'boolean' || outputType === 'number'" class="control-row">
+      <div
+        v-if="outputType === 'boolean' || outputType === 'number'"
+        class="control-row"
+      >
         <label class="control-label">VALUE</label>
         <div class="value-toggle">
           <button
@@ -188,7 +213,10 @@ function getTypeColor(type: string): string {
       </div>
 
       <!-- String Input -->
-      <div v-else-if="outputType === 'string'" class="control-row control-row-full">
+      <div
+        v-else-if="outputType === 'string'"
+        class="control-row control-row-full"
+      >
         <label class="control-label">VALUE</label>
         <input
           v-model="stringValue"
@@ -196,23 +224,29 @@ function getTypeColor(type: string): string {
           class="string-input"
           placeholder="Enter string..."
           @mousedown.stop
-        />
+        >
       </div>
 
       <!-- JSON Input -->
-      <div v-else-if="outputType === 'json'" class="control-row control-row-full">
+      <div
+        v-else-if="outputType === 'json'"
+        class="control-row control-row-full"
+      >
         <label class="control-label">JSON</label>
         <textarea
           v-model="jsonValue"
           class="json-input"
-          placeholder='{"key": "value"}'
+          placeholder="{&quot;key&quot;: &quot;value&quot;}"
           rows="2"
           @mousedown.stop
         />
       </div>
 
       <!-- Timestamp Info -->
-      <div v-else-if="outputType === 'timestamp'" class="control-row">
+      <div
+        v-else-if="outputType === 'timestamp'"
+        class="control-row"
+      >
         <label class="control-label">VALUE</label>
         <span class="timestamp-info">Current timestamp on trigger</span>
       </div>
@@ -230,7 +264,10 @@ function getTypeColor(type: string): string {
       <!-- Output Display -->
       <div class="output-row">
         <span class="output-label">Output:</span>
-        <span class="output-value" :class="{ 'value-true': currentValue && (outputType === 'boolean' || outputType === 'number') }">
+        <span
+          class="output-value"
+          :class="{ 'value-true': currentValue && (outputType === 'boolean' || outputType === 'number') }"
+        >
           {{ displayValue }}
         </span>
         <Handle

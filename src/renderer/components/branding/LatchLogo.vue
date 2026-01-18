@@ -33,17 +33,53 @@ defineProps<{
     />
 
     <!-- Horizontal flow lines -->
-    <line x1="50" y1="75" x2="150" y2="75" :stroke="variant === 'dark' ? '#f5f2eb' : '#2a2a2a'" stroke-width="4"/>
-    <line x1="50" y1="125" x2="150" y2="125" :stroke="variant === 'dark' ? '#f5f2eb' : '#2a2a2a'" stroke-width="4"/>
+    <line
+      x1="50"
+      y1="75"
+      x2="150"
+      y2="75"
+      :stroke="variant === 'dark' ? '#f5f2eb' : '#2a2a2a'"
+      stroke-width="4"
+    />
+    <line
+      x1="50"
+      y1="125"
+      x2="150"
+      y2="125"
+      :stroke="variant === 'dark' ? '#f5f2eb' : '#2a2a2a'"
+      stroke-width="4"
+    />
 
     <!-- Diagonal latch bar -->
-    <line x1="65" y1="115" x2="135" y2="85" :stroke="variant === 'dark' ? '#f5f2eb' : '#2a2a2a'" stroke-width="8" stroke-linecap="round"/>
+    <line
+      x1="65"
+      y1="115"
+      x2="135"
+      y2="85"
+      :stroke="variant === 'dark' ? '#f5f2eb' : '#2a2a2a'"
+      stroke-width="8"
+      stroke-linecap="round"
+    />
 
     <!-- Orange accent at pivot point -->
-    <rect x="58" y="108" width="18" height="14" rx="3" fill="#e85d3b"/>
+    <rect
+      x="58"
+      y="108"
+      width="18"
+      height="14"
+      rx="3"
+      fill="#e85d3b"
+    />
 
     <!-- Catch point on right -->
-    <rect x="130" y="80" width="14" height="10" rx="2" fill="#e85d3b"/>
+    <rect
+      x="130"
+      y="80"
+      width="14"
+      height="10"
+      rx="2"
+      fill="#e85d3b"
+    />
   </svg>
 </template>
 

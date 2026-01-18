@@ -305,7 +305,10 @@ onUnmounted(() => {
     <header class="control-panel-header">
       <div class="header-left">
         <h1>{{ flowsStore.activeFlow?.name ?? 'Control Panel' }}</h1>
-        <span v-if="isRunning" class="running-indicator">LIVE</span>
+        <span
+          v-if="isRunning"
+          class="running-indicator"
+        >LIVE</span>
       </div>
       <div class="header-right">
         <button
@@ -316,14 +319,20 @@ onUnmounted(() => {
           <Settings :size="16" />
           {{ editMode ? 'Done' : 'Edit Layout' }}
         </button>
-        <button class="back-btn" @click="goToEditor">
+        <button
+          class="back-btn"
+          @click="goToEditor"
+        >
           Back to Editor
         </button>
       </div>
     </header>
 
     <!-- Grid Area -->
-    <main class="control-panel-content" :class="{ 'edit-mode': editMode }">
+    <main
+      class="control-panel-content"
+      :class="{ 'edit-mode': editMode }"
+    >
       <div
         class="control-grid"
         :style="{
@@ -333,7 +342,10 @@ onUnmounted(() => {
         }"
       >
         <!-- Grid lines (visible in edit mode) -->
-        <div v-if="editMode" class="grid-lines" />
+        <div
+          v-if="editMode"
+          class="grid-lines"
+        />
 
         <!-- Control Cards -->
         <div
@@ -359,7 +371,11 @@ onUnmounted(() => {
 
           <!-- Card Header -->
           <div class="card-header">
-            <component :is="getNodeIcon(nodeType)" :size="14" class="card-icon" />
+            <component
+              :is="getNodeIcon(nodeType)"
+              :size="14"
+              class="card-icon"
+            />
             <input
               v-if="editMode"
               type="text"
@@ -367,9 +383,15 @@ onUnmounted(() => {
               :value="label"
               @input="updateNodeLabel(node.id, ($event.target as HTMLInputElement).value)"
               @mousedown.stop
-            />
-            <span v-else class="card-label">{{ label }}</span>
-            <span v-if="isRunning && !isMonitor" class="live-value">{{ getLiveValue(node.id) }}</span>
+            >
+            <span
+              v-else
+              class="card-label"
+            >{{ label }}</span>
+            <span
+              v-if="isRunning && !isMonitor"
+              class="live-value"
+            >{{ getLiveValue(node.id) }}</span>
           </div>
 
           <!-- Control Body -->
@@ -384,8 +406,10 @@ onUnmounted(() => {
                 max="1"
                 step="0.01"
                 @input="updateControlValue(node.id, 'value', parseFloat(($event.target as HTMLInputElement).value))"
-              />
-              <div class="value-display">{{ (getControlValue(node.id, 'value', 0.5) as number).toFixed(2) }}</div>
+              >
+              <div class="value-display">
+                {{ (getControlValue(node.id, 'value', 0.5) as number).toFixed(2) }}
+              </div>
             </template>
 
             <!-- Trigger -->
@@ -431,7 +455,7 @@ onUnmounted(() => {
                 :value="getControlValue(node.id, 'value', 0)"
                 step="0.1"
                 @input="updateControlValue(node.id, 'value', parseFloat(($event.target as HTMLInputElement).value) || 0)"
-              />
+              >
             </template>
 
             <!-- LFO -->
@@ -446,7 +470,7 @@ onUnmounted(() => {
                     max="10"
                     step="0.01"
                     @input="updateControlValue(node.id, 'frequency', parseFloat(($event.target as HTMLInputElement).value))"
-                  />
+                  >
                 </div>
                 <div class="lfo-row">
                   <span>A</span>
@@ -457,14 +481,16 @@ onUnmounted(() => {
                     max="2"
                     step="0.01"
                     @input="updateControlValue(node.id, 'amplitude', parseFloat(($event.target as HTMLInputElement).value))"
-                  />
+                  >
                 </div>
               </div>
             </template>
 
             <!-- Monitor -->
             <template v-else-if="nodeType === 'monitor'">
-              <div class="monitor-display">{{ getMonitorValue(node.id) }}</div>
+              <div class="monitor-display">
+                {{ getMonitorValue(node.id) }}
+              </div>
             </template>
 
             <!-- Oscilloscope -->
@@ -488,8 +514,14 @@ onUnmounted(() => {
       </div>
 
       <!-- Empty State -->
-      <div v-if="controlNodes.length === 0" class="empty-state">
-        <Sliders :size="48" class="empty-icon" />
+      <div
+        v-if="controlNodes.length === 0"
+        class="empty-state"
+      >
+        <Sliders
+          :size="48"
+          class="empty-icon"
+        />
         <h2>No Controls in Flow</h2>
         <p>Add control nodes to your flow:</p>
         <ul>
@@ -497,7 +529,12 @@ onUnmounted(() => {
           <li>Constant, LFO</li>
           <li>Monitor, Oscilloscope</li>
         </ul>
-        <button class="back-btn" @click="goToEditor">Go to Editor</button>
+        <button
+          class="back-btn"
+          @click="goToEditor"
+        >
+          Go to Editor
+        </button>
       </div>
     </main>
 

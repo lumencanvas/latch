@@ -789,5 +789,133 @@ export const useFlowsStore = defineStore('flows', {
 
       return newNodeIds
     },
+
+    /**
+     * Export all flows to a JSON file and trigger download
+     */
+    exportAllFlows(): void {
+      const exportData = {
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        activeFlowId: this.activeFlowId,
+        flows: this.flows.map(flow => ({
+          ...flow,
+          // Convert dates to ISO strings for JSON
+          createdAt: flow.createdAt instanceof Date ? flow.createdAt.toISOString() : flow.createdAt,
+          updatedAt: flow.updatedAt instanceof Date ? flow.updatedAt.toISOString() : flow.updatedAt,
+          // Mark as not dirty on export
+          dirty: false,
+        })),
+      }
+
+      const json = JSON.stringify(exportData, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `latch-project-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      console.log(`[Flows] Exported ${this.flows.length} flows`)
+    },
+
+    /**
+     * Import flows from a JSON file
+     */
+    importFlows(jsonString: string, options: { replace?: boolean } = {}): { success: boolean; message: string; count: number } {
+      try {
+        const data = JSON.parse(jsonString)
+
+        // Validate structure
+        if (!data.flows || !Array.isArray(data.flows)) {
+          return { success: false, message: 'Invalid file format: missing flows array', count: 0 }
+        }
+
+        // Parse and validate each flow
+        const importedFlows: FlowState[] = data.flows.map((flow: Record<string, unknown>) => ({
+          id: flow.id as string || nanoid(),
+          name: flow.name as string || 'Imported Flow',
+          description: flow.description as string || '',
+          nodes: (flow.nodes as Node[]) || [],
+          edges: (flow.edges as Edge[]) || [],
+          createdAt: flow.createdAt ? new Date(flow.createdAt as string) : new Date(),
+          updatedAt: new Date(),
+          dirty: false,
+          isSubflow: flow.isSubflow as boolean || false,
+          subflowInputs: (flow.subflowInputs as SubflowPort[]) || [],
+          subflowOutputs: (flow.subflowOutputs as SubflowPort[]) || [],
+          icon: flow.icon as string | undefined,
+          category: flow.category as string | undefined,
+        }))
+
+        if (options.replace) {
+          // Replace all existing flows
+          this.flows = importedFlows
+        } else {
+          // Merge: add imported flows, skip duplicates by ID
+          const existingIds = new Set(this.flows.map(f => f.id))
+          for (const flow of importedFlows) {
+            if (existingIds.has(flow.id)) {
+              // Generate new ID for duplicate
+              flow.id = nanoid()
+              flow.name = `${flow.name} (imported)`
+            }
+            this.flows.push(flow)
+          }
+        }
+
+        // Set active flow if specified and exists
+        if (data.activeFlowId && this.flows.some(f => f.id === data.activeFlowId)) {
+          this.activeFlowId = data.activeFlowId
+        } else if (this.flows.length > 0 && !this.activeFlowId) {
+          this.activeFlowId = this.flows[0].id
+        }
+
+        console.log(`[Flows] Imported ${importedFlows.length} flows`)
+        return { success: true, message: `Imported ${importedFlows.length} flows`, count: importedFlows.length }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error'
+        console.error('[Flows] Import failed:', message)
+        return { success: false, message: `Import failed: ${message}`, count: 0 }
+      }
+    },
+
+    /**
+     * Trigger file picker for import
+     */
+    async promptImport(options: { replace?: boolean } = {}): Promise<{ success: boolean; message: string; count: number }> {
+      return new Promise((resolve) => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = '.json'
+
+        input.onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0]
+          if (!file) {
+            resolve({ success: false, message: 'No file selected', count: 0 })
+            return
+          }
+
+          try {
+            const text = await file.text()
+            const result = this.importFlows(text, options)
+            resolve(result)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error'
+            resolve({ success: false, message: `Failed to read file: ${message}`, count: 0 })
+          }
+        }
+
+        input.oncancel = () => {
+          resolve({ success: false, message: 'Import cancelled', count: 0 })
+        }
+
+        input.click()
+      })
+    },
   },
 })

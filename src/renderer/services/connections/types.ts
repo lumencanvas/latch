@@ -67,11 +67,37 @@ export interface WebSocketConnectionConfig extends BaseConnectionConfig {
 
 export interface MqttConnectionConfig extends BaseConnectionConfig {
   protocol: 'mqtt'
-  brokerUrl: string
+  /** Transport protocol */
+  transport: 'ws' | 'wss' | 'mqtt' | 'mqtts'
+  /** Broker hostname or IP */
+  host: string
+  /** Broker port */
+  port: number
+  /** WebSocket path (for ws/wss) */
+  path?: string
+  /** Client identifier (auto-generated if empty) */
   clientId?: string
+  /** Authentication username */
   username?: string
+  /** Authentication password */
   password?: string
+  /** Keep-alive interval in seconds */
   keepAlive?: number
+  /** Start with clean session */
+  cleanSession?: boolean
+  /** Connection timeout in milliseconds */
+  connectTimeout?: number
+  /** Protocol version (3 = 3.1, 4 = 3.1.1, 5 = 5.0) */
+  protocolVersion?: 3 | 4 | 5
+  /** Last Will and Testament */
+  will?: {
+    topic: string
+    payload: string
+    qos: 0 | 1 | 2
+    retain: boolean
+  }
+  /** Legacy: full broker URL (deprecated, use host/port/transport instead) */
+  brokerUrl?: string
 }
 
 export interface OscConnectionConfig extends BaseConnectionConfig {
@@ -274,6 +300,11 @@ export interface IConnectionManager {
     event: K,
     handler: ConnectionManagerEventHandler<K>
   ): () => void
+
+  // Persistence
+  exportConnections(): BaseConnectionConfig[]
+  importConnections(configs: BaseConnectionConfig[]): void
+  replaceConnections(configs: BaseConnectionConfig[]): void
 
   // Lifecycle
   dispose(): void

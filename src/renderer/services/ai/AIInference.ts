@@ -166,11 +166,12 @@ export const AI_MODELS: ModelDefinition[] = [
     name: 'Image Captioning',
     task: 'image-to-text',
     description: 'Generate captions for images',
-    defaultModel: 'Xenova/vit-gpt2-image-captioning',
+    defaultModel: 'Xenova/blip-image-captioning-base',
     defaultSize: '~990 MB',
     supportsWebGPU: true,
     category: 'multimodal',
     alternateModels: [
+      { id: 'Xenova/blip-image-captioning-large', name: 'BLIP Large', size: '~1.8 GB' },
       { id: 'Xenova/trocr-base-handwritten', name: 'TrOCR Handwritten', size: '~1.2 GB' },
     ],
   },
@@ -259,7 +260,11 @@ class AIInferenceService {
   // Check if model is loaded
   isModelLoaded(task: string, modelId?: string): boolean {
     const key = `${task}:${modelId || this.getDefaultModel(task)}`
-    return this._pipelines.has(key)
+    const loaded = this._pipelines.has(key)
+    if (!loaded && this._pipelines.size > 0) {
+      console.log('[AIInference] Model check failed:', key, 'Loaded models:', Array.from(this._pipelines.keys()))
+    }
+    return loaded
   }
 
   // Subscribe to state changes

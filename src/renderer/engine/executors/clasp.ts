@@ -32,8 +32,8 @@ enum QoS {
   Commit = 2,
 }
 
-/** Signal types */
-type SignalType = 'param' | 'event' | 'stream' | 'gesture' | 'timeline'
+/** Signal types (reserved for future filtering support) */
+// type SignalType = 'param' | 'event' | 'stream' | 'gesture' | 'timeline'
 
 /** Value type */
 type Value =
@@ -526,7 +526,7 @@ function notifySubscribers(
   value: Value,
   meta: Record<string, unknown>
 ): void {
-  for (const [subId, sub] of connection.subscriptions) {
+  for (const [_subId, sub] of connection.subscriptions) {
     if (matchPattern(sub.pattern, address)) {
       // Store in state cache with node-specific key
       const stateKey = `${sub.nodeId}:${address}`
@@ -734,7 +734,8 @@ const nodeSubscriptions = new Map<string, { connectionId: string; subId: number;
 export const claspSubscribeExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? 'default'
   const pattern = (ctx.inputs.get('pattern') as string) ?? (ctx.controls.get('pattern') as string) ?? '/**'
-  const signalTypes = (ctx.controls.get('types') as string) ?? 'all'
+  // TODO: Implement signal type filtering
+  // const signalTypes = (ctx.controls.get('types') as string) ?? 'all'
   const maxRate = (ctx.controls.get('maxRate') as number) ?? 0
   const epsilon = (ctx.controls.get('epsilon') as number) ?? 0
 
@@ -858,8 +859,8 @@ export const claspEmitExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
 // CLASP Get Node Executor
 // ============================================================================
 
-// Cache for pending get requests
-const pendingGets = new Map<string, { resolve: (v: Value) => void; timeout: ReturnType<typeof setTimeout> }>()
+// Cache for pending get requests (reserved for future async get implementation)
+// const pendingGets = new Map<string, { resolve: (v: Value) => void; timeout: ReturnType<typeof setTimeout> }>()
 
 export const claspGetExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? 'default'
@@ -999,7 +1000,7 @@ export function disposeClaspNode(nodeId: string): void {
  * Dispose all CLASP connections
  */
 export function disposeAllClaspConnections(): void {
-  for (const [id, connection] of claspConnections) {
+  for (const [_id, connection] of claspConnections) {
     disconnect(connection)
   }
   claspConnections.clear()

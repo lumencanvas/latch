@@ -167,24 +167,36 @@ const uniformsHelp = [
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="uiStore.shaderEditorOpen" class="shader-editor-overlay" @click.self="close">
+      <div
+        v-if="uiStore.shaderEditorOpen"
+        class="shader-editor-overlay"
+        @click.self="close"
+      >
         <div class="shader-editor-modal">
           <!-- Header -->
           <div class="modal-header">
             <div class="header-left">
-              <h2 class="modal-title">Shader Editor</h2>
-              <span v-if="nodeDefinition" class="node-name">{{ nodeDefinition.name }}</span>
+              <h2 class="modal-title">
+                Shader Editor
+              </h2>
+              <span
+                v-if="nodeDefinition"
+                class="node-name"
+              >{{ nodeDefinition.name }}</span>
             </div>
             <div class="header-actions">
               <button
                 class="action-btn"
                 :class="{ active: showHelp }"
-                @click="showHelp = !showHelp"
                 title="Shadertoy Uniforms Help"
+                @click="showHelp = !showHelp"
               >
                 <Info :size="16" />
               </button>
-              <button class="close-btn" @click="close">
+              <button
+                class="close-btn"
+                @click="close"
+              >
                 <X :size="20" />
               </button>
             </div>
@@ -192,10 +204,17 @@ const uniformsHelp = [
 
           <!-- Help Panel -->
           <Transition name="slide">
-            <div v-if="showHelp" class="help-panel">
+            <div
+              v-if="showHelp"
+              class="help-panel"
+            >
               <h4>Shadertoy Uniforms</h4>
               <div class="uniforms-list">
-                <div v-for="u in uniformsHelp" :key="u.name" class="uniform-item">
+                <div
+                  v-for="u in uniformsHelp"
+                  :key="u.name"
+                  class="uniform-item"
+                >
                   <code class="uniform-name">{{ u.name }}</code>
                   <span class="uniform-type">{{ u.type }}</span>
                   <span class="uniform-desc">{{ u.desc }}</span>
@@ -214,8 +233,8 @@ const uniformsHelp = [
                   <button
                     v-if="hasChanges"
                     class="revert-btn"
-                    @click="revert"
                     title="Revert changes"
+                    @click="revert"
                   >
                     <RotateCcw :size="14" />
                     Revert
@@ -229,7 +248,10 @@ const uniformsHelp = [
                 class="code-editor"
                 @update:model-value="handleCodeChange"
               />
-              <div v-if="error" class="error-panel">
+              <div
+                v-if="error"
+                class="error-panel"
+              >
                 <span class="error-label">Error:</span>
                 <span class="error-message">{{ error }}</span>
               </div>
@@ -240,11 +262,25 @@ const uniformsHelp = [
               <div class="preview-header">
                 <span>Preview</span>
                 <div class="preview-controls">
-                  <button class="control-btn" @click="togglePlay" :title="isPlaying ? 'Pause' : 'Play'">
-                    <Pause v-if="isPlaying" :size="14" />
-                    <Play v-else :size="14" />
+                  <button
+                    class="control-btn"
+                    :title="isPlaying ? 'Pause' : 'Play'"
+                    @click="togglePlay"
+                  >
+                    <Pause
+                      v-if="isPlaying"
+                      :size="14"
+                    />
+                    <Play
+                      v-else
+                      :size="14"
+                    />
                   </button>
-                  <button class="control-btn" @click="resetTime" title="Reset time">
+                  <button
+                    class="control-btn"
+                    title="Reset time"
+                    @click="resetTime"
+                  >
                     <RotateCcw :size="14" />
                   </button>
                 </div>
@@ -262,8 +298,17 @@ const uniformsHelp = [
 
           <!-- Footer -->
           <div class="modal-footer">
-            <button class="cancel-btn" @click="close">Cancel</button>
-            <button class="save-btn" @click="save" :disabled="!!error">
+            <button
+              class="cancel-btn"
+              @click="close"
+            >
+              Cancel
+            </button>
+            <button
+              class="save-btn"
+              :disabled="!!error"
+              @click="save"
+            >
               <Save :size="14" />
               Save & Close
             </button>

@@ -101,11 +101,11 @@ const visibleCategories = computed(() => {
   })
 })
 
-// Handle category filter dropdown change
-function onCategoryFilterChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  nodesStore.setCategoryFilter(value === 'all' ? null : value as NodeCategory)
-}
+// Note: Category filter dropdown is handled inline in template, keeping this for reference
+// function onCategoryFilterChange(event: Event) {
+//   const value = (event.target as HTMLSelectElement).value
+//   nodesStore.setCategoryFilter(value === 'all' ? null : value as NodeCategory)
+// }
 
 // Toggle custom dropdown
 function toggleDropdown() {
@@ -144,12 +144,22 @@ function openAIModelManager() {
 </script>
 
 <template>
-  <aside class="app-sidebar" :style="sidebarStyle">
-    <div class="sidebar-content" v-if="uiStore.sidebarOpen">
+  <aside
+    class="app-sidebar"
+    :style="sidebarStyle"
+  >
+    <div
+      v-if="uiStore.sidebarOpen"
+      class="sidebar-content"
+    >
       <!-- Header -->
       <div class="sidebar-header">
         <span class="sidebar-title">Nodes</span>
-        <button class="collapse-btn" @click="uiStore.toggleSidebar" title="Collapse sidebar">
+        <button
+          class="collapse-btn"
+          title="Collapse sidebar"
+          @click="uiStore.toggleSidebar"
+        >
           <PanelLeftClose :size="16" />
         </button>
       </div>
@@ -163,13 +173,16 @@ function openAIModelManager() {
           placeholder="Search nodes..."
           :value="nodesStore.searchQuery"
           @input="nodesStore.setSearchQuery(($event.target as HTMLInputElement).value)"
-        />
+        >
       </div>
 
       <!-- Category Filter Dropdown -->
       <div class="filter-wrapper">
         <label class="filter-label">Filter by category</label>
-        <div class="custom-select" @click="toggleDropdown">
+        <div
+          class="custom-select"
+          @click="toggleDropdown"
+        >
           <div class="select-display">
             <span
               v-if="nodesStore.categoryFilter"
@@ -180,9 +193,15 @@ function openAIModelManager() {
               {{ nodesStore.categoryFilter ? categoryMeta[nodesStore.categoryFilter]?.label : 'All Categories' }}
               ({{ nodesStore.categoryFilter ? (categoryCounts[nodesStore.categoryFilter] ?? 0) : nodesStore.definitions.size }})
             </span>
-            <ChevronDown :size="14" class="select-arrow" />
+            <ChevronDown
+              :size="14"
+              class="select-arrow"
+            />
           </div>
-          <div v-if="dropdownOpen" class="select-options">
+          <div
+            v-if="dropdownOpen"
+            class="select-options"
+          >
             <div
               class="select-option"
               :class="{ active: !nodesStore.categoryFilter }"
@@ -198,7 +217,10 @@ function openAIModelManager() {
               :class="{ active: nodesStore.categoryFilter === id }"
               @click.stop="selectCategory(id)"
             >
-              <span class="option-color" :style="{ background: meta.color }" />
+              <span
+                class="option-color"
+                :style="{ background: meta.color }"
+              />
               <span>{{ meta.label }} ({{ categoryCounts[id] ?? 0 }})</span>
             </div>
           </div>
@@ -214,20 +236,36 @@ function openAIModelManager() {
             class="category-section"
           >
             <!-- Category Header -->
-            <div class="category-header-row" :class="{ 'is-ai': categoryId === 'ai' }">
+            <div
+              class="category-header-row"
+              :class="{ 'is-ai': categoryId === 'ai' }"
+            >
               <button
                 class="category-header"
-                @click="toggleCategory(categoryId)"
                 :style="{ '--category-color': meta.color }"
+                @click="toggleCategory(categoryId)"
               >
                 <span class="category-expand">
-                  <ChevronRight v-if="isCategoryCollapsed(categoryId)" :size="14" />
-                  <ChevronDown v-else :size="14" />
+                  <ChevronRight
+                    v-if="isCategoryCollapsed(categoryId)"
+                    :size="14"
+                  />
+                  <ChevronDown
+                    v-else
+                    :size="14"
+                  />
                 </span>
-                <span v-if="categoryId === 'ai'" class="category-icon ai-icon">
+                <span
+                  v-if="categoryId === 'ai'"
+                  class="category-icon ai-icon"
+                >
                   <Brain :size="12" />
                 </span>
-                <span v-else class="category-color" :style="{ background: meta.color }" />
+                <span
+                  v-else
+                  class="category-color"
+                  :style="{ background: meta.color }"
+                />
                 <span class="category-name">{{ meta.label }}</span>
                 <span class="category-count">{{ nodesByCategory.get(categoryId)?.length ?? 0 }}</span>
               </button>
@@ -236,8 +274,8 @@ function openAIModelManager() {
               <button
                 v-if="categoryId === 'ai' && !hasLoadedModels"
                 class="ai-load-btn"
-                @click.stop="openAIModelManager"
                 title="Load Local AI Models"
+                @click.stop="openAIModelManager"
               >
                 <Download :size="12" />
                 <span>Load Models</span>
@@ -269,7 +307,10 @@ function openAIModelManager() {
           </div>
         </template>
 
-        <div v-else class="no-results">
+        <div
+          v-else
+          class="no-results"
+        >
           No nodes found
         </div>
       </div>
@@ -279,8 +320,8 @@ function openAIModelManager() {
     <button
       v-if="!uiStore.sidebarOpen"
       class="expand-btn"
-      @click="uiStore.toggleSidebar"
       title="Expand sidebar"
+      @click="uiStore.toggleSidebar"
     >
       <PanelLeft :size="18" />
     </button>

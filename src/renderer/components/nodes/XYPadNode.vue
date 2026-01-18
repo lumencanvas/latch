@@ -159,7 +159,10 @@ onUnmounted(() => {
           :class="{ visible: hoveredPort === 'rawX' || props.selected }"
         >
           <span class="label-text">X</span>
-          <span class="label-type" :style="{ color: getTypeColor('number') }">raw</span>
+          <span
+            class="label-type"
+            :style="{ color: getTypeColor('number') }"
+          >raw</span>
         </div>
       </div>
       <div
@@ -179,7 +182,10 @@ onUnmounted(() => {
           :class="{ visible: hoveredPort === 'rawY' || props.selected }"
         >
           <span class="label-text">Y</span>
-          <span class="label-type" :style="{ color: getTypeColor('number') }">raw</span>
+          <span
+            class="label-type"
+            :style="{ color: getTypeColor('number') }"
+          >raw</span>
         </div>
       </div>
       <div
@@ -199,7 +205,10 @@ onUnmounted(() => {
           :class="{ visible: hoveredPort === 'normX' || props.selected }"
         >
           <span class="label-text">nX</span>
-          <span class="label-type" :style="{ color: getTypeColor('number') }">0→1</span>
+          <span
+            class="label-type"
+            :style="{ color: getTypeColor('number') }"
+          >0→1</span>
         </div>
       </div>
       <div
@@ -219,7 +228,10 @@ onUnmounted(() => {
           :class="{ visible: hoveredPort === 'normY' || props.selected }"
         >
           <span class="label-text">nY</span>
-          <span class="label-type" :style="{ color: getTypeColor('number') }">0→1</span>
+          <span
+            class="label-type"
+            :style="{ color: getTypeColor('number') }"
+          >0→1</span>
         </div>
       </div>
     </div>
@@ -227,17 +239,35 @@ onUnmounted(() => {
     <!-- Node Content -->
     <div class="node-content">
       <!-- Header -->
-      <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-        <Move :size="14" class="header-icon" />
+      <div
+        class="node-header"
+        :style="{ borderLeftColor: categoryColor }"
+      >
+        <Move
+          :size="14"
+          class="header-icon"
+        />
         <span class="node-title">XY-Pad</span>
-        <button class="node-collapse-btn" @click.stop="toggleCollapse">
-          <ChevronDown v-if="!isCollapsed" :size="14" />
-          <ChevronRight v-else :size="14" />
+        <button
+          class="node-collapse-btn"
+          @click.stop="toggleCollapse"
+        >
+          <ChevronDown
+            v-if="!isCollapsed"
+            :size="14"
+          />
+          <ChevronRight
+            v-else
+            :size="14"
+          />
         </button>
       </div>
 
       <!-- Body -->
-      <div v-if="!isCollapsed" class="node-body">
+      <div
+        v-if="!isCollapsed"
+        class="node-body"
+      >
         <!-- XY Pad Area -->
         <div
           ref="padRef"
@@ -252,7 +282,10 @@ onUnmounted(() => {
           </div>
 
           <!-- Point -->
-          <div class="pad-point" :style="pointStyle" />
+          <div
+            class="pad-point"
+            :style="pointStyle"
+          />
         </div>
 
         <!-- Value Display -->
@@ -269,13 +302,26 @@ onUnmounted(() => {
 
         <!-- Range Section -->
         <div class="range-section">
-          <button class="range-toggle" @click.stop="showRange = !showRange" @mousedown.stop>
-            <ChevronRight v-if="!showRange" :size="12" />
-            <ChevronDown v-else :size="12" />
+          <button
+            class="range-toggle"
+            @click.stop="showRange = !showRange"
+            @mousedown.stop
+          >
+            <ChevronRight
+              v-if="!showRange"
+              :size="12"
+            />
+            <ChevronDown
+              v-else
+              :size="12"
+            />
             <span>RANGE</span>
           </button>
 
-          <div v-if="showRange" class="range-controls">
+          <div
+            v-if="showRange"
+            class="range-controls"
+          >
             <div class="range-row">
               <label>X Min</label>
               <input
@@ -283,14 +329,14 @@ onUnmounted(() => {
                 :value="minX"
                 @input="minX = parseFloat(($event.target as HTMLInputElement).value) || 0"
                 @mousedown.stop
-              />
+              >
               <label>Max</label>
               <input
                 type="number"
                 :value="maxX"
                 @input="maxX = parseFloat(($event.target as HTMLInputElement).value) || 1"
                 @mousedown.stop
-              />
+              >
             </div>
             <div class="range-row">
               <label>Y Min</label>
@@ -299,14 +345,14 @@ onUnmounted(() => {
                 :value="minY"
                 @input="minY = parseFloat(($event.target as HTMLInputElement).value) || 0"
                 @mousedown.stop
-              />
+              >
               <label>Max</label>
               <input
                 type="number"
                 :value="maxY"
                 @input="maxY = parseFloat(($event.target as HTMLInputElement).value) || 1"
                 @mousedown.stop
-              />
+              >
             </div>
           </div>
         </div>

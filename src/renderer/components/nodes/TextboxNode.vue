@@ -95,7 +95,10 @@ const previewText = computed(() => {
     :class="{ selected: props.selected }"
   >
     <div class="collapsed-content">
-      <Type :size="14" class="collapsed-icon" />
+      <Type
+        :size="14"
+        class="collapsed-icon"
+      />
       <span class="collapsed-text">{{ previewText }}</span>
     </div>
 
@@ -118,7 +121,10 @@ const previewText = computed(() => {
     />
 
     <!-- Expand button -->
-    <button class="expand-btn" @click.stop="toggleCollapse">
+    <button
+      class="expand-btn"
+      @click.stop="toggleCollapse"
+    >
       <ChevronRight :size="12" />
     </button>
   </div>
@@ -130,10 +136,19 @@ const previewText = computed(() => {
     :class="{ selected: props.selected, resizing: isResizing }"
   >
     <!-- Header -->
-    <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-      <Type :size="14" class="header-icon" />
+    <div
+      class="node-header"
+      :style="{ borderLeftColor: categoryColor }"
+    >
+      <Type
+        :size="14"
+        class="header-icon"
+      />
       <span class="node-title">Textbox</span>
-      <button class="node-collapse-btn" @click.stop="toggleCollapse">
+      <button
+        class="node-collapse-btn"
+        @click.stop="toggleCollapse"
+      >
         <ChevronDown :size="14" />
       </button>
     </div>
@@ -153,7 +168,10 @@ const previewText = computed(() => {
       </div>
 
       <!-- Resizable Textarea -->
-      <div class="textarea-wrapper" :style="{ height: nodeHeight + 'px' }">
+      <div
+        class="textarea-wrapper"
+        :style="{ height: nodeHeight + 'px' }"
+      >
         <textarea
           v-model="textValue"
           class="text-input"

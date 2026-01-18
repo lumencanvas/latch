@@ -49,6 +49,11 @@ function updateDisplay() {
   const metrics = runtimeStore.nodeMetrics.get(props.id)
   const fftData = metrics?.outputValues?.['_fft_data'] as number[] | null
 
+  // Debug: show what we're receiving
+  if (metrics && !fftData) {
+    console.log('[Equalizer] Metrics exist but no FFT data:', Object.keys(metrics.outputValues || {}))
+  }
+
   if (!fftData || fftData.length === 0) {
     // Draw placeholder bars
     c.fillStyle = '#1a1a1a'
@@ -226,8 +231,15 @@ function getTypeColor(type: string): string {
     <!-- Node Content -->
     <div class="node-content">
       <!-- Header -->
-      <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-        <BarChart3 :size="14" class="node-icon" :style="{ color: categoryColor }" />
+      <div
+        class="node-header"
+        :style="{ borderLeftColor: categoryColor }"
+      >
+        <BarChart3
+          :size="14"
+          class="node-icon"
+          :style="{ color: categoryColor }"
+        />
         <span class="node-title">EQ</span>
       </div>
 
@@ -253,7 +265,7 @@ function getTypeColor(type: string): string {
             step="4"
             @input="updateControl('barCount', parseInt(($event.target as HTMLInputElement).value))"
             @mousedown.stop
-          />
+          >
           <span class="value-label">{{ barCount }}</span>
         </div>
         <div class="control-row">
@@ -263,9 +275,15 @@ function getTypeColor(type: string): string {
             @change="updateControl('colorMode', ($event.target as HTMLSelectElement).value)"
             @mousedown.stop
           >
-            <option value="gradient">Gradient</option>
-            <option value="spectrum">Spectrum</option>
-            <option value="solid">Solid</option>
+            <option value="gradient">
+              Gradient
+            </option>
+            <option value="spectrum">
+              Spectrum
+            </option>
+            <option value="solid">
+              Solid
+            </option>
           </select>
         </div>
       </div>

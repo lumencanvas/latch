@@ -510,7 +510,7 @@ export const useUIStore = defineStore('ui', {
       if (!layout) {
         // Auto-place new controls
         const existingLayouts = this.controlPanelLayout
-        let x = 0
+        const x = 0
         let y = 0
 
         // Find first available position

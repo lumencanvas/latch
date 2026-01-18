@@ -85,13 +85,23 @@ function getTypeColor(type: string): string {
     <!-- Node Content -->
     <div class="node-content">
       <!-- Header -->
-      <div class="node-header" :style="{ borderLeftColor: categoryColor }">
-        <Activity :size="14" class="node-icon" :style="{ color: categoryColor }" />
+      <div
+        class="node-header"
+        :style="{ borderLeftColor: categoryColor }"
+      >
+        <Activity
+          :size="14"
+          class="node-icon"
+          :style="{ color: categoryColor }"
+        />
         <span class="node-title">Monitor</span>
       </div>
 
       <!-- Value Display -->
-      <div class="monitor-display" :class="valueType">
+      <div
+        class="monitor-display"
+        :class="valueType"
+      >
         <pre class="monitor-value">{{ displayValue }}</pre>
       </div>
     </div>
