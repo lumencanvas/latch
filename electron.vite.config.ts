@@ -26,6 +26,7 @@ export default defineConfig({
     },
   },
   renderer: {
+    root: resolve(__dirname, 'src/renderer'),
     plugins: [vue()],
     resolve: {
       alias: {
@@ -38,10 +39,10 @@ export default defineConfig({
       },
     },
     build: {
-      outDir: 'dist-electron/renderer',
+      outDir: resolve(__dirname, 'dist-electron/renderer'),
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'index.html'),
+          index: resolve(__dirname, 'src/renderer/index.html'),
         },
       },
     },
