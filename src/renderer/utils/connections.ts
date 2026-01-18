@@ -146,6 +146,12 @@ export function validateConnection(
     return { valid: true }
   }
 
+  // Special case: Trigger node can always connect to trigger inputs
+  // The Trigger node's outputType controls the VALUE it sends, but it's still a trigger
+  if (sourceDef.id === 'trigger' && targetPortType === 'trigger') {
+    return { valid: true }
+  }
+
   // Check type compatibility
   if (!areTypesCompatible(sourcePortType, targetPortType)) {
     const sourceLabel = dataTypeMeta[sourcePortType]?.label ?? sourcePortType
