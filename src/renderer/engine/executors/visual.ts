@@ -12,11 +12,8 @@ import {
   type CompiledShaderMaterial,
   type ThreeShaderUniform,
 } from '@/services/visual/ThreeShaderRenderer'
-// Keep old renderer for backward compatibility with non-shader visual nodes
-import {
-  getShaderRenderer,
-  type ShaderUniform,
-} from '@/services/visual/ShaderRenderer'
+// Keep old renderer for legacy framebuffer cleanup during dispose
+import { getShaderRenderer } from '@/services/visual/ShaderRenderer'
 import { webcamCapture } from '@/services/visual/WebcamCapture'
 import {
   getPresetById,
@@ -31,29 +28,29 @@ export { getShaderRenderer, getThreeShaderRenderer }
 
 // Store for compiled shaders (now uses Three.js ShaderMaterial)
 const compiledShaderMaterials = new Map<string, CompiledShaderMaterial>()
-// Legacy compiled shaders for non-shader nodes
-const compiledShaders = new Map<string, import('@/services/visual/ShaderRenderer').CompiledShader>()
+// Legacy compiled shaders - kept for cleanup during dispose
+const compiledShaders = new Map<string, unknown>()
 // Node textures - now THREE.Texture instead of raw WebGLTexture
 const nodeTextures = new Map<string, THREE.Texture>()
 
-// Image loader state per node
+// Image loader state per node - now uses THREE.Texture
 const imageLoaderState = new Map<
   string,
   {
     image: HTMLImageElement | null
-    texture: WebGLTexture | null
+    texture: THREE.Texture | null
     loading: boolean
     loadedUrl: string | null
     error: string | null
   }
 >()
 
-// Video player state per node
+// Video player state per node - now uses THREE.Texture
 const videoPlayerState = new Map<
   string,
   {
     video: HTMLVideoElement | null
-    texture: WebGLTexture | null
+    texture: THREE.Texture | null
     loadedUrl: string | null
     lastSeek: number | null
   }
@@ -87,7 +84,7 @@ export function disposeVisualNode(nodeId: string): void {
   const imgState = imageLoaderState.get(nodeId)
   if (imgState) {
     if (imgState.texture) {
-      renderer.deleteTexture(imgState.texture)
+      imgState.texture.dispose()
     }
     if (imgState.image) {
       imgState.image.src = ''
@@ -101,7 +98,7 @@ export function disposeVisualNode(nodeId: string): void {
   const vidState = videoPlayerState.get(nodeId)
   if (vidState) {
     if (vidState.texture) {
-      renderer.deleteTexture(vidState.texture)
+      vidState.texture.dispose()
     }
     if (vidState.video) {
       vidState.video.pause()
@@ -177,7 +174,6 @@ export function disposeAllVisualNodes(): void {
  * Call this with the set of currently valid node IDs.
  */
 export function gcVisualState(validNodeIds: Set<string>): void {
-  const renderer = getShaderRenderer()
   const threeRenderer = getThreeShaderRenderer()
 
   // Clean compiledShaderMaterials
@@ -222,7 +218,7 @@ export function gcVisualState(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(nodeId)) {
       const state = imageLoaderState.get(nodeId)
       if (state) {
-        if (state.texture) renderer.deleteTexture(state.texture)
+        if (state.texture) state.texture.dispose()
         if (state.image) {
           state.image.src = ''
           state.image.onload = null
@@ -238,7 +234,7 @@ export function gcVisualState(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(nodeId)) {
       const state = videoPlayerState.get(nodeId)
       if (state) {
-        if (state.texture) renderer.deleteTexture(state.texture)
+        if (state.texture) state.texture.dispose()
         if (state.video) {
           state.video.pause()
           state.video.src = ''
@@ -585,75 +581,41 @@ export const colorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
-// Texture Display Node (renders texture to visible canvas)
+// Texture Display Node (Three.js version)
 // ============================================================================
 
-const DISPLAY_FRAGMENT = `#version 300 es
-precision highp float;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_texture;
-
-void main() {
-  fragColor = texture(u_texture, v_texCoord);
-}
-`
-
 export const textureDisplayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+
+  const outputs = new Map<string, unknown>()
 
   if (!texture) {
-    const outputs = new Map<string, unknown>()
     outputs.set('_display', null)
     return outputs
   }
 
-  const renderer = getShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
-  // Get or compile display shader
-  let shader = compiledShaders.get('_display_shader')
-  if (!shader) {
-    const result = renderer.compileShader(DISPLAY_FRAGMENT)
-    if ('error' in result) {
-      const outputs = new Map<string, unknown>()
-      outputs.set('_display', null)
-      outputs.set('_error', result.error)
-      return outputs
-    }
-    shader = result
-    compiledShaders.set('_display_shader', shader)
-  }
+  // Render texture to internal canvas for display
+  renderer.renderToCanvas(texture, renderer.getCanvas())
 
-  // Render to screen (null framebuffer)
-  renderer.render(shader, [
-    { name: 'u_texture', type: 'sampler2D', value: texture },
-  ])
-
-  const outputs = new Map<string, unknown>()
   outputs.set('_display', renderer.getCanvas())
   return outputs
 }
 
 // ============================================================================
-// Blend Node
+// Blend Node (Three.js version)
 // ============================================================================
 
-const BLEND_FRAGMENT = `#version 300 es
-precision highp float;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
+const BLEND_FRAGMENT_THREE = `
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform float u_mix;
 uniform int u_mode;
 
 void main() {
-  vec4 a = texture(u_texture0, v_texCoord);
-  vec4 b = texture(u_texture1, v_texCoord);
+  vec4 a = texture2D(u_texture0, vUv);
+  vec4 b = texture2D(u_texture1, vUv);
 
   vec4 result;
 
@@ -682,13 +644,13 @@ void main() {
     result = mix(a, b, u_mix);
   }
 
-  fragColor = result;
+  gl_FragColor = result;
 }
 `
 
 export const blendExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture0 = ctx.inputs.get('a') as WebGLTexture | null
-  const texture1 = ctx.inputs.get('b') as WebGLTexture | null
+  const texture0 = ctx.inputs.get('a') as THREE.Texture | null
+  const texture1 = ctx.inputs.get('b') as THREE.Texture | null
   const mixAmount = (ctx.inputs.get('mix') as number) ?? (ctx.controls.get('mix') as number) ?? 0.5
   const modeStr = (ctx.controls.get('mode') as string) ?? 'normal'
 
@@ -701,69 +663,72 @@ export const blendExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
   const mode = modeMap[modeStr] ?? 0
 
+  const outputs = new Map<string, unknown>()
+
   if (!texture0 && !texture1) {
-    const outputs = new Map<string, unknown>()
     outputs.set('texture', null)
     return outputs
   }
 
-  const renderer = getShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
   // Get or compile blend shader
-  let shader = compiledShaders.get('_blend_shader')
+  let shader = renderer.getEffectShader('_blend')
   if (!shader) {
-    const result = renderer.compileShader(BLEND_FRAGMENT)
+    const result = renderer.compileEffectShader(BLEND_FRAGMENT_THREE, '_blend')
     if ('error' in result) {
-      const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('_error', result.error)
       return outputs
     }
     shader = result
-    compiledShaders.set('_blend_shader', shader)
   }
 
-  const uniforms: ShaderUniform[] = [
-    { name: 'u_mix', type: 'float', value: mixAmount },
-    { name: 'u_mode', type: 'int', value: mode },
-  ]
+  // Update uniforms
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
+
+  uniforms.u_mix.value = mixAmount
+  uniforms.u_mode.value = mode
 
   if (texture0) {
-    uniforms.push({ name: 'u_texture0', type: 'sampler2D', value: texture0 })
+    uniforms.u_texture0.value = texture0
   }
   if (texture1) {
-    uniforms.push({ name: 'u_texture1', type: 'sampler2D', value: texture1 })
+    uniforms.u_texture1.value = texture1
   }
 
-  renderer.render(shader, uniforms, ctx.nodeId)
-
-  const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
+  // Render to per-node render target
+  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  outputs.set('texture', resultTexture)
   return outputs
 }
 
 // ============================================================================
-// Main Output Node (viewer)
+// Main Output Node (Three.js version)
 // ============================================================================
 
 // Cache for canvas-to-texture conversions (one per node that outputs canvas)
-// Now uses THREE.Texture instead of raw WebGLTexture
 const canvasTextureCache = new Map<string, THREE.Texture>()
 
 export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const textureInput = ctx.inputs.get('texture') as THREE.Texture | WebGLTexture | HTMLCanvasElement | null
+  const textureInput = ctx.inputs.get('texture') as THREE.Texture | HTMLCanvasElement | null
+
+  const outputs = new Map<string, unknown>()
 
   if (!textureInput) {
-    const outputs = new Map<string, unknown>()
     outputs.set('_input_texture', null)
     return outputs
   }
 
-  const legacyRenderer = getShaderRenderer()
-  const threeRenderer = getThreeShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
   // Handle different input types
-  let outputTexture: THREE.Texture | WebGLTexture
+  let outputTexture: THREE.Texture
 
   if (textureInput instanceof THREE.Texture) {
     // Three.js texture - pass through directly
@@ -774,147 +739,124 @@ export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     let cachedTexture = canvasTextureCache.get(cacheKey)
 
     if (!cachedTexture) {
-      cachedTexture = threeRenderer.createTexture(textureInput)
+      cachedTexture = renderer.createTexture(textureInput)
       canvasTextureCache.set(cacheKey, cachedTexture)
     } else {
       // Update the existing texture with new canvas content
-      threeRenderer.updateTexture(cachedTexture, textureInput)
+      renderer.updateTexture(cachedTexture, textureInput)
     }
     outputTexture = cachedTexture
   } else {
-    // Raw WebGLTexture - keep for backward compatibility
-    outputTexture = textureInput
+    // Unknown type - return null
+    outputs.set('_input_texture', null)
+    return outputs
   }
 
-  // For display purposes, render the texture using legacy renderer if it's WebGLTexture
-  // or use Three.js canvas for THREE.Texture
-  if (outputTexture instanceof THREE.Texture) {
-    // Render to Three.js canvas for preview
-    threeRenderer.renderToCanvas(outputTexture, threeRenderer.getCanvas())
-  } else {
-    // Legacy WebGL texture - use old renderer
-    let shader = compiledShaders.get('_display_shader')
-    if (!shader) {
-      const result = legacyRenderer.compileShader(DISPLAY_FRAGMENT)
-      if ('error' in result) {
-        const outputs = new Map<string, unknown>()
-        outputs.set('_input_texture', null)
-        outputs.set('_error', result.error)
-        return outputs
-      }
-      shader = result
-      compiledShaders.set('_display_shader', shader)
-    }
+  // Render to canvas for preview
+  renderer.renderToCanvas(outputTexture, renderer.getCanvas())
 
-    legacyRenderer.render(shader, [
-      { name: 'u_texture', type: 'sampler2D', value: outputTexture },
-    ])
-  }
-
-  const outputs = new Map<string, unknown>()
   // Store the input texture so the node component can display it
   outputs.set('_input_texture', outputTexture)
   return outputs
 }
 
 // ============================================================================
-// Blur Node (Gaussian Blur)
+// Blur Node (Gaussian Blur - Three.js version)
 // ============================================================================
 
-const BLUR_FRAGMENT = `#version 300 es
-precision highp float;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
+const BLUR_FRAGMENT_THREE = `
 uniform sampler2D u_texture;
 uniform vec2 u_resolution;
 uniform float u_radius;
-uniform int u_direction; // 0 = horizontal, 1 = vertical
-
-// Gaussian weights for 9-tap kernel
-const float weights[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+uniform int u_direction;
 
 void main() {
   vec2 texelSize = 1.0 / u_resolution;
-  vec3 result = texture(u_texture, v_texCoord).rgb * weights[0];
+
+  // Gaussian weights for 9-tap kernel
+  float weights[5];
+  weights[0] = 0.227027;
+  weights[1] = 0.1945946;
+  weights[2] = 0.1216216;
+  weights[3] = 0.054054;
+  weights[4] = 0.016216;
+
+  vec3 result = texture2D(u_texture, vUv).rgb * weights[0];
 
   vec2 direction = u_direction == 0 ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
 
   for (int i = 1; i < 5; i++) {
     vec2 offset = direction * texelSize * float(i) * u_radius;
-    result += texture(u_texture, v_texCoord + offset).rgb * weights[i];
-    result += texture(u_texture, v_texCoord - offset).rgb * weights[i];
+    result += texture2D(u_texture, vUv + offset).rgb * weights[i];
+    result += texture2D(u_texture, vUv - offset).rgb * weights[i];
   }
 
-  fragColor = vec4(result, 1.0);
+  gl_FragColor = vec4(result, 1.0);
 }
 `
 
 export const blurExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
   const radius = (ctx.inputs.get('radius') as number) ?? (ctx.controls.get('radius') as number) ?? 1
 
+  const outputs = new Map<string, unknown>()
+
   if (!texture) {
-    const outputs = new Map<string, unknown>()
     outputs.set('texture', null)
     return outputs
   }
 
-  const renderer = getShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
   // Get or compile blur shader
-  let shader = compiledShaders.get('_blur_shader')
+  let shader = renderer.getEffectShader('_blur')
   if (!shader) {
-    const result = renderer.compileShader(BLUR_FRAGMENT)
+    const result = renderer.compileEffectShader(BLUR_FRAGMENT_THREE, '_blur')
     if ('error' in result) {
-      const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('_error', result.error)
       return outputs
     }
     shader = result
-    compiledShaders.set('_blur_shader', shader)
   }
 
-  // Two-pass Gaussian blur: horizontal then vertical
-  const canvas = renderer.getCanvas()
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
+
+  const width = 512
+  const height = 512
 
   // Horizontal pass
-  renderer.render(shader, [
-    { name: 'u_texture', type: 'sampler2D', value: texture },
-    { name: 'u_resolution', type: 'vec2', value: [canvas.width, canvas.height] },
-    { name: 'u_radius', type: 'float', value: radius },
-    { name: 'u_direction', type: 'int', value: 0 },
-  ], `${ctx.nodeId}_h`)
+  uniforms.u_texture.value = texture
+  uniforms.u_resolution.value.set(width, height)
+  uniforms.u_radius.value = radius
+  uniforms.u_direction.value = 0
 
-  const horizontalTexture = renderer.getFramebufferTexture(`${ctx.nodeId}_h`)
+  const horizontalTexture = renderer.render(shader, [], `${ctx.nodeId}_h`)
 
   // Vertical pass
   if (horizontalTexture) {
-    renderer.render(shader, [
-      { name: 'u_texture', type: 'sampler2D', value: horizontalTexture },
-      { name: 'u_resolution', type: 'vec2', value: [canvas.width, canvas.height] },
-      { name: 'u_radius', type: 'float', value: radius },
-      { name: 'u_direction', type: 'int', value: 1 },
-    ], ctx.nodeId)
+    uniforms.u_texture.value = horizontalTexture
+    uniforms.u_direction.value = 1
+
+    const resultTexture = renderer.render(shader, [], ctx.nodeId)
+    outputs.set('texture', resultTexture)
+  } else {
+    outputs.set('texture', null)
   }
 
-  const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
   return outputs
 }
 
 // ============================================================================
-// Color Correction Node
+// Color Correction Node (Three.js version)
 // ============================================================================
 
-const COLOR_CORRECT_FRAGMENT = `#version 300 es
-precision highp float;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
+const COLOR_CORRECT_FRAGMENT_THREE = `
 uniform sampler2D u_texture;
 uniform float u_brightness;
 uniform float u_contrast;
@@ -938,7 +880,7 @@ vec3 hsv2rgb(vec3 c) {
 }
 
 void main() {
-  vec4 color = texture(u_texture, v_texCoord);
+  vec4 color = texture2D(u_texture, vUv);
 
   // Brightness
   vec3 c = color.rgb + u_brightness;
@@ -948,78 +890,77 @@ void main() {
 
   // Saturation and Hue
   vec3 hsv = rgb2hsv(c);
-  hsv.x = fract(hsv.x + u_hue); // Hue shift
-  hsv.y *= u_saturation; // Saturation
+  hsv.x = fract(hsv.x + u_hue);
+  hsv.y *= u_saturation;
   c = hsv2rgb(hsv);
 
   // Gamma
   c = pow(max(c, 0.0), vec3(1.0 / u_gamma));
 
-  fragColor = vec4(clamp(c, 0.0, 1.0), color.a);
+  gl_FragColor = vec4(clamp(c, 0.0, 1.0), color.a);
 }
 `
 
 export const colorCorrectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
   const brightness = (ctx.inputs.get('brightness') as number) ?? (ctx.controls.get('brightness') as number) ?? 0
   const contrast = (ctx.inputs.get('contrast') as number) ?? (ctx.controls.get('contrast') as number) ?? 1
   const saturation = (ctx.inputs.get('saturation') as number) ?? (ctx.controls.get('saturation') as number) ?? 1
   const hue = (ctx.inputs.get('hue') as number) ?? (ctx.controls.get('hue') as number) ?? 0
   const gamma = (ctx.inputs.get('gamma') as number) ?? (ctx.controls.get('gamma') as number) ?? 1
 
+  const outputs = new Map<string, unknown>()
+
   if (!texture) {
-    const outputs = new Map<string, unknown>()
     outputs.set('texture', null)
     return outputs
   }
 
-  const renderer = getShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
   // Get or compile color correction shader
-  let shader = compiledShaders.get('_color_correct_shader')
+  let shader = renderer.getEffectShader('_color_correct')
   if (!shader) {
-    const result = renderer.compileShader(COLOR_CORRECT_FRAGMENT)
+    const result = renderer.compileEffectShader(COLOR_CORRECT_FRAGMENT_THREE, '_color_correct')
     if ('error' in result) {
-      const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('_error', result.error)
       return outputs
     }
     shader = result
-    compiledShaders.set('_color_correct_shader', shader)
   }
 
-  renderer.render(shader, [
-    { name: 'u_texture', type: 'sampler2D', value: texture },
-    { name: 'u_brightness', type: 'float', value: brightness },
-    { name: 'u_contrast', type: 'float', value: contrast },
-    { name: 'u_saturation', type: 'float', value: saturation },
-    { name: 'u_hue', type: 'float', value: hue },
-    { name: 'u_gamma', type: 'float', value: gamma },
-  ], ctx.nodeId)
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
 
-  const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
+  uniforms.u_texture.value = texture
+  uniforms.u_brightness.value = brightness
+  uniforms.u_contrast.value = contrast
+  uniforms.u_saturation.value = saturation
+  uniforms.u_hue.value = hue
+  uniforms.u_gamma.value = gamma
+
+  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  outputs.set('texture', resultTexture)
   return outputs
 }
 
 // ============================================================================
-// Displacement Node
+// Displacement Node (Three.js version)
 // ============================================================================
 
-const DISPLACEMENT_FRAGMENT = `#version 300 es
-precision highp float;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
+const DISPLACEMENT_FRAGMENT_THREE = `
 uniform sampler2D u_texture;
 uniform sampler2D u_displacement;
 uniform float u_strength;
-uniform int u_channel; // 0=R, 1=G, 2=B, 3=RG
+uniform int u_channel;
 
 void main() {
-  vec4 disp = texture(u_displacement, v_texCoord);
+  vec4 disp = texture2D(u_displacement, vUv);
 
   vec2 offset;
   if (u_channel == 0) {
@@ -1034,71 +975,69 @@ void main() {
 
   offset *= u_strength;
 
-  vec4 color = texture(u_texture, v_texCoord + offset);
-  fragColor = color;
+  vec4 color = texture2D(u_texture, vUv + offset);
+  gl_FragColor = color;
 }
 `
 
 export const displacementExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
-  const displacementMap = ctx.inputs.get('displacement') as WebGLTexture | null
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+  const displacementMap = ctx.inputs.get('displacement') as THREE.Texture | null
   const strength = (ctx.inputs.get('strength') as number) ?? (ctx.controls.get('strength') as number) ?? 0.1
 
   const channelStr = (ctx.controls.get('channel') as string) ?? 'rg'
   const channelMap: Record<string, number> = { r: 0, g: 1, b: 2, rg: 3 }
   const channel = channelMap[channelStr] ?? 3
 
+  const outputs = new Map<string, unknown>()
+
   if (!texture) {
-    const outputs = new Map<string, unknown>()
     outputs.set('texture', null)
     return outputs
   }
 
   // If no displacement map, pass through
   if (!displacementMap) {
-    const outputs = new Map<string, unknown>()
     outputs.set('texture', texture)
     return outputs
   }
 
-  const renderer = getShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
   // Get or compile displacement shader
-  let shader = compiledShaders.get('_displacement_shader')
+  let shader = renderer.getEffectShader('_displacement')
   if (!shader) {
-    const result = renderer.compileShader(DISPLACEMENT_FRAGMENT)
+    const result = renderer.compileEffectShader(DISPLACEMENT_FRAGMENT_THREE, '_displacement')
     if ('error' in result) {
-      const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('_error', result.error)
       return outputs
     }
     shader = result
-    compiledShaders.set('_displacement_shader', shader)
   }
 
-  renderer.render(shader, [
-    { name: 'u_texture', type: 'sampler2D', value: texture },
-    { name: 'u_displacement', type: 'sampler2D', value: displacementMap },
-    { name: 'u_strength', type: 'float', value: strength },
-    { name: 'u_channel', type: 'int', value: channel },
-  ], ctx.nodeId)
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
 
-  const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
+  uniforms.u_texture.value = texture
+  uniforms.u_displacement.value = displacementMap
+  uniforms.u_strength.value = strength
+  uniforms.u_channel.value = channel
+
+  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  outputs.set('texture', resultTexture)
   return outputs
 }
 
 // ============================================================================
-// Transform 2D Node (scale, rotate, translate)
+// Transform 2D Node (Three.js version)
 // ============================================================================
 
-const TRANSFORM_FRAGMENT = `#version 300 es
-precision highp float;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
+const TRANSFORM_FRAGMENT_THREE = `
 uniform sampler2D u_texture;
 uniform vec2 u_translate;
 uniform float u_rotate;
@@ -1107,7 +1046,7 @@ uniform vec2 u_pivot;
 
 void main() {
   // Move to pivot
-  vec2 uv = v_texCoord - u_pivot;
+  vec2 uv = vUv - u_pivot;
 
   // Scale
   uv /= u_scale;
@@ -1122,15 +1061,15 @@ void main() {
 
   // Sample with edge clamping
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-    fragColor = vec4(0.0);
+    gl_FragColor = vec4(0.0);
   } else {
-    fragColor = texture(u_texture, uv);
+    gl_FragColor = texture2D(u_texture, uv);
   }
 }
 `
 
 export const transform2DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
   const translateX = (ctx.inputs.get('translateX') as number) ?? (ctx.controls.get('translateX') as number) ?? 0
   const translateY = (ctx.inputs.get('translateY') as number) ?? (ctx.controls.get('translateY') as number) ?? 0
   const rotate = (ctx.inputs.get('rotate') as number) ?? (ctx.controls.get('rotate') as number) ?? 0
@@ -1139,53 +1078,60 @@ export const transform2DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const pivotX = (ctx.controls.get('pivotX') as number) ?? 0.5
   const pivotY = (ctx.controls.get('pivotY') as number) ?? 0.5
 
+  const outputs = new Map<string, unknown>()
+
   if (!texture) {
-    const outputs = new Map<string, unknown>()
     outputs.set('texture', null)
     return outputs
   }
 
-  const renderer = getShaderRenderer()
+  const renderer = getThreeShaderRenderer()
 
   // Get or compile transform shader
-  let shader = compiledShaders.get('_transform2d_shader')
+  let shader = renderer.getEffectShader('_transform2d')
   if (!shader) {
-    const result = renderer.compileShader(TRANSFORM_FRAGMENT)
+    const result = renderer.compileEffectShader(TRANSFORM_FRAGMENT_THREE, '_transform2d')
     if ('error' in result) {
-      const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('_error', result.error)
       return outputs
     }
     shader = result
-    compiledShaders.set('_transform2d_shader', shader)
   }
 
   // Convert rotation from degrees to radians
   const rotateRad = (rotate * Math.PI) / 180
 
-  renderer.render(shader, [
-    { name: 'u_texture', type: 'sampler2D', value: texture },
-    { name: 'u_translate', type: 'vec2', value: [translateX, translateY] },
-    { name: 'u_rotate', type: 'float', value: rotateRad },
-    { name: 'u_scale', type: 'vec2', value: [scaleX, scaleY] },
-    { name: 'u_pivot', type: 'vec2', value: [pivotX, pivotY] },
-  ], ctx.nodeId)
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
 
-  const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getFramebufferTexture(ctx.nodeId))
+  uniforms.u_texture.value = texture
+  uniforms.u_translate.value.set(translateX, translateY)
+  uniforms.u_rotate.value = rotateRad
+  uniforms.u_scale.value.set(scaleX, scaleY)
+  uniforms.u_pivot.value.set(pivotX, pivotY)
+
+  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  outputs.set('texture', resultTexture)
   return outputs
 }
 
 // ============================================================================
-// Texture to Data Node (convert GPU texture to CPU image data for AI)
+// Texture to Data Node (Three.js version)
 // ============================================================================
 
 // Cache for converted image data per node
 const textureDataCache = new Map<string, { data: ImageData | string | Blob; width: number; height: number }>()
 
+// Temp canvas for reading texture data
+let textureToDataCanvas: HTMLCanvasElement | null = null
+
 export const textureToDataExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as WebGLTexture | null
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
   const trigger = ctx.inputs.get('trigger')
   const format = (ctx.controls.get('format') as string) ?? 'imageData'
   const continuous = (ctx.controls.get('continuous') as boolean) ?? false
@@ -1217,76 +1163,45 @@ export const textureToDataExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
     return outputs
   }
 
-  const renderer = getShaderRenderer()
-  const gl = renderer.getCanvas().getContext('webgl2')
+  const renderer = getThreeShaderRenderer()
 
-  if (!gl) {
+  // Get canvas dimensions from texture or use default
+  const width = texture.image?.width || 512
+  const height = texture.image?.height || 512
+
+  // Create or reuse temp canvas
+  if (!textureToDataCanvas) {
+    textureToDataCanvas = document.createElement('canvas')
+  }
+  textureToDataCanvas.width = width
+  textureToDataCanvas.height = height
+
+  // Render texture to temp canvas
+  renderer.renderToCanvas(texture, textureToDataCanvas)
+
+  // Get canvas 2D context to read pixels
+  const ctx2d = textureToDataCanvas.getContext('2d')
+  if (!ctx2d) {
     outputs.set('data', null)
     outputs.set('width', 0)
     outputs.set('height', 0)
-    outputs.set('_error', 'WebGL2 context not available')
+    outputs.set('_error', 'Failed to get 2D context')
     return outputs
   }
 
-  const canvas = renderer.getCanvas()
-  const width = canvas.width
-  const height = canvas.height
-
-  // Create a framebuffer to read the texture
-  const fbo = gl.createFramebuffer()
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
-
-  // Check framebuffer status
-  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER)
-  if (status !== gl.FRAMEBUFFER_COMPLETE) {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-    gl.deleteFramebuffer(fbo)
-    outputs.set('data', null)
-    outputs.set('width', 0)
-    outputs.set('height', 0)
-    outputs.set('_error', 'Framebuffer incomplete')
-    return outputs
-  }
-
-  // Read pixels from texture
-  const pixels = new Uint8Array(width * height * 4)
-  gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
-
-  // Clean up
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-  gl.deleteFramebuffer(fbo)
-
-  // WebGL texture is upside down, need to flip vertically
-  const flipped = new Uint8Array(width * height * 4)
-  for (let y = 0; y < height; y++) {
-    const srcRow = (height - 1 - y) * width * 4
-    const dstRow = y * width * 4
-    flipped.set(pixels.subarray(srcRow, srcRow + width * 4), dstRow)
-  }
+  // Read pixels from canvas
+  const imageData = ctx2d.getImageData(0, 0, width, height)
 
   // Convert to requested format
   let data: ImageData | string | Blob
 
   if (format === 'imageData') {
-    // Create ImageData directly from pixels
-    const clampedArray = new Uint8ClampedArray(flipped)
-    data = new ImageData(clampedArray, width, height)
+    data = imageData
+  } else if (format === 'base64') {
+    data = textureToDataCanvas.toDataURL('image/png')
   } else {
-    // For base64 and blob, we need a canvas
-    const tempCanvas = document.createElement('canvas')
-    tempCanvas.width = width
-    tempCanvas.height = height
-    const tempCtx = tempCanvas.getContext('2d')!
-    const imageData = new ImageData(new Uint8ClampedArray(flipped), width, height)
-    tempCtx.putImageData(imageData, 0, 0)
-
-    if (format === 'base64') {
-      data = tempCanvas.toDataURL('image/png')
-    } else {
-      // blob - convert synchronously using data URL for now
-      data = tempCanvas.toDataURL('image/png')
-    }
+    // blob - convert synchronously using data URL for now
+    data = textureToDataCanvas.toDataURL('image/png')
   }
 
   // Cache the result
@@ -1359,9 +1274,9 @@ export const imageLoaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
               img.src = assetUrl
             })
 
-            const renderer = getShaderRenderer()
+            const renderer = getThreeShaderRenderer()
             if (state!.texture) {
-              renderer.deleteTexture(state!.texture)
+              state!.texture.dispose()
             }
             state!.texture = renderer.createTexture(img)
             state!.image = img
@@ -1418,7 +1333,11 @@ export const imageLoaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     }
 
     img.onload = () => {
-      const renderer = getShaderRenderer()
+      const renderer = getThreeShaderRenderer()
+      // Dispose old texture if exists
+      if (state!.texture) {
+        state!.texture.dispose()
+      }
       // Create texture from image
       const texture = renderer.createTexture(img)
       state!.image = img
@@ -1543,7 +1462,7 @@ export const videoPlayerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Update texture from video frame
   if (video.readyState >= 2 && video.videoWidth > 0) {
-    const renderer = getShaderRenderer()
+    const renderer = getThreeShaderRenderer()
     if (!state.texture) {
       state.texture = renderer.createTexture(video)
     } else {
@@ -1565,13 +1484,13 @@ export const videoPlayerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // Webcam Snapshot Node
 // ============================================================================
 
-// State for webcam snapshot nodes
+// State for webcam snapshot nodes - now uses THREE.Texture
 const webcamSnapshotState = new Map<
   string,
   {
     video: HTMLVideoElement | null
     canvas: HTMLCanvasElement | null
-    texture: WebGLTexture | null
+    texture: THREE.Texture | null
     stream: MediaStream | null
     lastCaptureTime: number
     capturedImageData: ImageData | null
@@ -1715,8 +1634,8 @@ export const webcamSnapshotExecutor: NodeExecutorFn = async (ctx: ExecutionConte
         state.canvas.height
       )
 
-      // Create or update WebGL texture
-      const renderer = getShaderRenderer()
+      // Create or update THREE.Texture
+      const renderer = getThreeShaderRenderer()
       if (state.texture) {
         renderer.updateTexture(state.texture, state.canvas)
       } else {
@@ -1745,8 +1664,7 @@ export function disposeWebcamSnapshotNode(nodeId: string): void {
       state.stream.getTracks().forEach((track) => track.stop())
     }
     if (state.texture) {
-      const renderer = getShaderRenderer()
-      renderer.deleteTexture(state.texture)
+      state.texture.dispose()
     }
     webcamSnapshotState.delete(nodeId)
   }

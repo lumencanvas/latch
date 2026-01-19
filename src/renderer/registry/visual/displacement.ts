@@ -10,7 +10,7 @@ export const displacementNode: NodeDefinition = {
   platforms: ['web', 'electron'],
   inputs: [
     { id: 'texture', type: 'texture', label: 'Texture' },
-    { id: 'displacementMap', type: 'texture', label: 'Displacement Map' },
+    { id: 'displacement', type: 'texture', label: 'Displacement Map' },
     { id: 'strength', type: 'number', label: 'Strength' },
   ],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],

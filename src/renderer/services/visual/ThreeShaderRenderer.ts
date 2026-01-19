@@ -74,6 +74,20 @@ uniform sampler2D iChannel3;
 #define iFrame u_frame
 `
 
+// Effect shader prefix - minimal wrapper for post-processing effects
+const EFFECT_VERTEX_SHADER = `
+varying vec2 vUv;
+
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`
+
+const EFFECT_FRAGMENT_PREFIX = `
+varying vec2 vUv;
+`
+
 export class ThreeShaderRenderer {
   private renderer: THREE.WebGLRenderer
   private canvas: HTMLCanvasElement
@@ -82,6 +96,7 @@ export class ThreeShaderRenderer {
   private quad: THREE.Mesh
   private renderTargets: Map<string, THREE.WebGLRenderTarget> = new Map()
   private materials: Map<string, THREE.ShaderMaterial> = new Map()
+  private effectShaders: Map<string, CompiledShaderMaterial> = new Map()
   private defaultSize = { width: 512, height: 512 }
 
   // Time and frame tracking
@@ -98,6 +113,9 @@ export class ThreeShaderRenderer {
 
   // Blank texture for unbound samplers
   private blankTexture: THREE.DataTexture
+
+  // Cached display material for renderToCanvas
+  private displayMaterial: THREE.MeshBasicMaterial | null = null
 
   constructor() {
     // Create a dedicated canvas for Three.js 2D shader rendering
@@ -477,6 +495,68 @@ export class ThreeShaderRenderer {
   }
 
   /**
+   * Compile an effect shader (for post-processing like blend, blur, etc.)
+   * These are simpler shaders that just process textures without Shadertoy wrapper
+   */
+  compileEffectShader(
+    fragmentSource: string,
+    effectId: string
+  ): CompiledShaderMaterial | { error: string } {
+    // Check cache first
+    const cached = this.effectShaders.get(effectId)
+    if (cached) return cached
+
+    try {
+      // Effect shaders use simple UV-based fragment shaders
+      const finalFragmentSource = EFFECT_FRAGMENT_PREFIX + fragmentSource
+
+      // Parse uniforms from the shader source
+      const uniformDeclarations = fragmentSource.match(/uniform\s+(\w+)\s+(\w+)\s*;/g) || []
+      const uniforms: THREE.ShaderMaterialParameters['uniforms'] = {}
+
+      for (const decl of uniformDeclarations) {
+        const match = decl.match(/uniform\s+(\w+)\s+(\w+)\s*;/)
+        if (match) {
+          const [, type, name] = match
+          if (type === 'sampler2D') {
+            uniforms[name] = { value: this.blankTexture }
+          } else if (type === 'float') {
+            uniforms[name] = { value: 0.0 }
+          } else if (type === 'int') {
+            uniforms[name] = { value: 0 }
+          } else if (type === 'vec2') {
+            uniforms[name] = { value: new THREE.Vector2() }
+          } else if (type === 'vec3') {
+            uniforms[name] = { value: new THREE.Vector3() }
+          } else if (type === 'vec4') {
+            uniforms[name] = { value: new THREE.Vector4() }
+          }
+        }
+      }
+
+      const material = new THREE.ShaderMaterial({
+        vertexShader: EFFECT_VERTEX_SHADER,
+        fragmentShader: finalFragmentSource,
+        uniforms,
+        glslVersion: THREE.GLSL1,
+      })
+
+      const result = { material, uniforms }
+      this.effectShaders.set(effectId, result)
+      return result
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Effect shader compilation failed' }
+    }
+  }
+
+  /**
+   * Get or create a cached effect shader
+   */
+  getEffectShader(effectId: string): CompiledShaderMaterial | null {
+    return this.effectShaders.get(effectId) || null
+  }
+
+  /**
    * Copy a Three.js Texture to a 2D canvas for display
    */
   renderToCanvas(texture: THREE.Texture, targetCanvas: HTMLCanvasElement): void {
@@ -485,9 +565,13 @@ export class ThreeShaderRenderer {
     const ctx = targetCanvas.getContext('2d')
     if (!ctx) return
 
-    // Create a simple display shader if we don't have one
-    const displayMaterial = new THREE.MeshBasicMaterial({ map: texture })
-    this.quad.material = displayMaterial
+    // Use cached display material
+    if (!this.displayMaterial) {
+      this.displayMaterial = new THREE.MeshBasicMaterial()
+    }
+    this.displayMaterial.map = texture
+    this.displayMaterial.needsUpdate = true
+    this.quad.material = this.displayMaterial
 
     // Render to internal canvas
     const width = targetCanvas.width
@@ -504,9 +588,6 @@ export class ThreeShaderRenderer {
 
     // Copy to target canvas
     ctx.drawImage(this.canvas, 0, 0)
-
-    // Clean up
-    displayMaterial.dispose()
   }
 
   /**
