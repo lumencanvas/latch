@@ -22,6 +22,8 @@ import { codeNodes } from './code'
 import { subflowNodes } from './subflows'
 import { threeDNodes } from './3d'
 import { outputNodes } from './outputs'
+import { stringNodes } from './string'
+import { messagingNodes } from './messaging'
 
 // Combine all nodes into a single array
 export const allNodes = [
@@ -39,6 +41,8 @@ export const allNodes = [
   ...subflowNodes,
   ...threeDNodes,
   ...outputNodes,
+  ...stringNodes,
+  ...messagingNodes,
 ]
 
 /**

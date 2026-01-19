@@ -1,11 +1,12 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join } from 'path'
-import { readdir, readFile, stat } from 'fs/promises'
-import { watch, type FSWatcher } from 'fs'
+import { readdir, readFile, stat, writeFile, unlink, mkdir } from 'fs/promises'
+import { watch, type FSWatcher, existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 let mainWindow: BrowserWindow | null = null
 let customNodesWatcher: FSWatcher | null = null
+let assetsBasePath: string | null = null
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -260,4 +261,88 @@ ipcMain.handle('customNodes:stopWatching', () => {
     customNodesWatcher = null
   }
   return { success: true }
+})
+
+// ============================================================================
+// Assets IPC Handlers
+// ============================================================================
+
+// Get the default assets path
+function getAssetsPath(): string {
+  if (assetsBasePath) {
+    return assetsBasePath
+  }
+  return join(app.getPath('userData'), 'assets')
+}
+
+// Ensure assets directory exists
+async function ensureAssetsDir(): Promise<void> {
+  const path = getAssetsPath()
+  if (!existsSync(path)) {
+    await mkdir(path, { recursive: true })
+  }
+}
+
+// Get assets base path
+ipcMain.handle('assets:getBasePath', () => {
+  return getAssetsPath()
+})
+
+// Set custom assets base path
+ipcMain.handle('assets:setBasePath', async (_, path: string) => {
+  try {
+    // Verify path exists or can be created
+    if (!existsSync(path)) {
+      await mkdir(path, { recursive: true })
+    }
+    assetsBasePath = path
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+// Save file to assets directory
+ipcMain.handle('assets:saveFile', async (_, data: Uint8Array, filename: string) => {
+  try {
+    await ensureAssetsDir()
+    const filePath = join(getAssetsPath(), filename)
+    await writeFile(filePath, Buffer.from(data))
+    return { success: true, path: filePath }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+// Read file from assets directory
+ipcMain.handle('assets:readFile', async (_, filename: string) => {
+  try {
+    const filePath = join(getAssetsPath(), filename)
+    const data = await readFile(filePath)
+    return { success: true, data: new Uint8Array(data) }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+// Delete file from assets directory
+ipcMain.handle('assets:deleteFile', async (_, filename: string) => {
+  try {
+    const filePath = join(getAssetsPath(), filename)
+    await unlink(filePath)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+// List files in assets directory
+ipcMain.handle('assets:listFiles', async () => {
+  try {
+    await ensureAssetsDir()
+    const files = await readdir(getAssetsPath())
+    return { success: true, files }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
 })

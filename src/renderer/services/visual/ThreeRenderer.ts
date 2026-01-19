@@ -632,8 +632,11 @@ export class ThreeRenderer {
     this.cameras.delete(nodeId)
 
     // Dispose render targets with this node ID
+    // Key format is: ${nodeId}_${width}_${height}_${includeDepth}
+    // Use nodeId_ prefix to avoid matching "node1" with "node10"
+    const prefix = `${nodeId}_`
     for (const [key, target] of this.renderTargets) {
-      if (key.startsWith(nodeId)) {
+      if (key.startsWith(prefix)) {
         target.dispose()
         this.renderTargets.delete(key)
       }

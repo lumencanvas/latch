@@ -7,11 +7,38 @@ import { useNodesStore, categoryMeta, type NodeDefinition } from '@/stores/nodes
 import { useRuntimeStore } from '@/stores/runtime'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
 import ConnectionSelect from '@/components/connections/ConnectionSelect.vue'
+import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
+import { useDeviceEnumeration, type DeviceType, type DeviceOption } from '@/composables/useDeviceEnumeration'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const runtimeStore = useRuntimeStore()
+
+// Device enumeration for audio/video selects
+const { audioInputDevices, audioOutputDevices, videoInputDevices } = useDeviceEnumeration()
+
+// Get options for a select control, supporting dynamic device enumeration
+function getSelectOptions(control: { props?: Record<string, unknown> }): DeviceOption[] | string[] {
+  const deviceType = control.props?.deviceType as DeviceType | undefined
+
+  if (deviceType) {
+    switch (deviceType) {
+      case 'audio-input':
+        return audioInputDevices.value
+      case 'audio-output':
+        return audioOutputDevices.value
+      case 'video-input':
+        return videoInputDevices.value
+    }
+  }
+
+  return (control.props?.options as string[] | DeviceOption[]) ?? []
+}
+
+function isDeviceOptions(options: DeviceOption[] | string[]): options is DeviceOption[] {
+  return options.length > 0 && typeof options[0] === 'object' && 'value' in options[0]
+}
 
 // Get the inspected node
 const inspectedNode = computed(() => {
@@ -406,13 +433,24 @@ watch(inspectedNode, () => {
                 :value="controlValues[control.id]"
                 @change="updateControl(control.id, ($event.target as HTMLSelectElement).value)"
               >
-                <option
-                  v-for="option in (control.props?.options as string[]) ?? []"
-                  :key="option"
-                  :value="option"
-                >
-                  {{ option }}
-                </option>
+                <template v-if="isDeviceOptions(getSelectOptions(control))">
+                  <option
+                    v-for="option in getSelectOptions(control) as DeviceOption[]"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </template>
+                <template v-else>
+                  <option
+                    v-for="option in getSelectOptions(control) as string[]"
+                    :key="option"
+                    :value="option"
+                  >
+                    {{ option }}
+                  </option>
+                </template>
               </select>
 
               <!-- Text input -->
@@ -443,6 +481,14 @@ watch(inspectedNode, () => {
                 :model-value="(controlValues[control.id] as string | undefined)"
                 :protocol="(control.props?.protocol as string) ?? 'websocket'"
                 :placeholder="(control.props?.placeholder as string)"
+                @update:model-value="updateControl(control.id, $event)"
+              />
+
+              <!-- Asset picker -->
+              <AssetPickerControl
+                v-else-if="control.type === 'asset-picker'"
+                :model-value="(controlValues[control.id] as string | null)"
+                :asset-type="(control.props?.assetType as 'image' | 'video' | 'audio' | 'all')"
                 @update:model-value="updateControl(control.id, $event)"
               />
 

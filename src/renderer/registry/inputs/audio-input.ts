@@ -4,7 +4,7 @@ export const audioInputNode: NodeDefinition = {
   id: 'audio-input',
   name: 'Audio Input',
   version: '1.0.0',
-  category: 'audio',
+  category: 'inputs',
   description: 'Capture audio from microphone',
   icon: 'mic',
   platforms: ['web', 'electron'],
@@ -15,6 +15,12 @@ export const audioInputNode: NodeDefinition = {
     { id: 'beat', type: 'trigger', label: 'Beat' },
   ],
   controls: [
-    { id: 'source', type: 'select', label: 'Source', default: 'default' },
+    {
+      id: 'source',
+      type: 'select',
+      label: 'Source',
+      default: 'default',
+      props: { deviceType: 'audio-input' },
+    },
   ],
 }

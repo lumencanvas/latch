@@ -34,6 +34,7 @@ export interface AIState {
   webgpuAvailable: boolean
   useWebGPU: boolean
   defaultDType: DType
+  useBrowserCache: boolean
 }
 
 // Model option with size info
@@ -180,7 +181,11 @@ interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
   onProgress?: ProgressCallback
+  timeoutId?: ReturnType<typeof setTimeout>
 }
+
+// Default timeout for worker requests (5 minutes for model loading)
+const DEFAULT_REQUEST_TIMEOUT = 5 * 60 * 1000
 
 class AIInferenceService {
   private _initialized = false
@@ -189,6 +194,7 @@ class AIInferenceService {
   private _listeners = new Set<() => void>()
   private _webgpuAvailable = false
   private _useWebGPU = false
+  private _useBrowserCache = true
   private _defaultDType: DType = 'q4'
   private _pendingRequests = new Map<string, PendingRequest>()
   private _requestIdCounter = 0
@@ -241,9 +247,8 @@ class AIInferenceService {
       }
 
       case 'loaded': {
-        const pending = this._pendingRequests.get(msg.id)
+        const pending = this.clearPendingRequest(msg.id)
         if (pending) {
-          this._pendingRequests.delete(msg.id)
           if (msg.success) {
             pending.resolve(true)
           } else {
@@ -255,9 +260,8 @@ class AIInferenceService {
 
       case 'result': {
         console.log('[AIInference] Got result:', msg.success, msg.data?.substring?.(0, 50) || msg.data)
-        const pending = this._pendingRequests.get(msg.id)
+        const pending = this.clearPendingRequest(msg.id)
         if (pending) {
-          this._pendingRequests.delete(msg.id)
           if (msg.success) {
             pending.resolve(msg.data)
           } else {
@@ -268,9 +272,8 @@ class AIInferenceService {
       }
 
       case 'checkResult': {
-        const pending = this._pendingRequests.get(msg.id)
+        const pending = this.clearPendingRequest(msg.id)
         if (pending) {
-          this._pendingRequests.delete(msg.id)
           pending.resolve(msg.loaded)
         }
         break
@@ -286,7 +289,8 @@ class AIInferenceService {
   // Send message to worker and await response
   private sendToWorker<T>(
     message: Record<string, unknown>,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    timeout: number = DEFAULT_REQUEST_TIMEOUT
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       if (!this._worker) {
@@ -296,14 +300,37 @@ class AIInferenceService {
 
       const id = this.nextRequestId()
       console.log('[AIInference] Sending to worker:', message.type, message.method, 'id:', id)
+
+      // Set up timeout to prevent leaked requests
+      const timeoutId = setTimeout(() => {
+        const pending = this._pendingRequests.get(id)
+        if (pending) {
+          this._pendingRequests.delete(id)
+          reject(new Error(`Worker request timed out after ${timeout}ms`))
+        }
+      }, timeout)
+
       this._pendingRequests.set(id, {
         resolve: resolve as (value: unknown) => void,
         reject,
         onProgress,
+        timeoutId,
       })
 
       this._worker.postMessage({ ...message, id })
     })
+  }
+
+  // Clear timeout and remove pending request
+  private clearPendingRequest(id: string): PendingRequest | undefined {
+    const pending = this._pendingRequests.get(id)
+    if (pending) {
+      if (pending.timeoutId) {
+        clearTimeout(pending.timeoutId)
+      }
+      this._pendingRequests.delete(id)
+    }
+    return pending
   }
 
   // Check WebGPU availability
@@ -341,6 +368,7 @@ class AIInferenceService {
       webgpuAvailable: this._webgpuAvailable,
       useWebGPU: this._useWebGPU,
       defaultDType: this._defaultDType,
+      useBrowserCache: this._useBrowserCache,
     }
   }
 
@@ -413,6 +441,49 @@ class AIInferenceService {
     this.notifyListeners()
   }
 
+  // Get browser cache setting
+  isBrowserCacheEnabled(): boolean {
+    return this._useBrowserCache
+  }
+
+  // Set browser cache preference
+  setUseBrowserCache(use: boolean): void {
+    this._useBrowserCache = use
+    // Notify worker of the change
+    if (this._worker) {
+      this._worker.postMessage({ type: 'setCache', enabled: use })
+    }
+    this.notifyListeners()
+  }
+
+  // Clear cached models from IndexedDB
+  async clearModelCache(): Promise<void> {
+    // Clear from worker (this disposes all pipelines)
+    if (this._worker) {
+      await this.sendToWorker({ type: 'clearCache' }, undefined, 30000)
+    }
+
+    // Clear local state since models are now unloaded
+    this._loadedModels.clear()
+    this._modelInfo.clear()
+
+    // Also try to clear IndexedDB directly for transformers.js
+    try {
+      const databases = await indexedDB.databases()
+      for (const db of databases) {
+        if (db.name && (db.name.includes('transformers') || db.name.includes('onnx'))) {
+          indexedDB.deleteDatabase(db.name)
+          console.log(`[AIInference] Deleted IndexedDB: ${db.name}`)
+        }
+      }
+    } catch (error) {
+      console.warn('[AIInference] Could not enumerate IndexedDB databases:', error)
+    }
+
+    console.log('[AIInference] Model cache cleared')
+    this.notifyListeners()
+  }
+
   // Load a model
   async loadModel(
     task: string,
@@ -449,7 +520,7 @@ class AIInferenceService {
           type: 'load',
           task,
           model,
-          options: { device, dtype },
+          options: { device, dtype, useBrowserCache: this._useBrowserCache },
         },
         (progress) => {
           this.updateModelInfo(key, { progress })
@@ -492,8 +563,21 @@ class AIInferenceService {
 
   // Dispose all models
   async dispose(): Promise<void> {
+    // Clear all pending requests with their timeouts
+    for (const [, pending] of this._pendingRequests) {
+      if (pending.timeoutId) {
+        clearTimeout(pending.timeoutId)
+      }
+      pending.reject(new Error('Service disposed'))
+    }
+    this._pendingRequests.clear()
+
     if (this._worker) {
-      await this.sendToWorker({ type: 'dispose' })
+      try {
+        await this.sendToWorker({ type: 'dispose' }, undefined, 5000) // Short timeout for dispose
+      } catch {
+        // Ignore timeout on dispose
+      }
       this._worker.terminate()
       this._worker = null
     }

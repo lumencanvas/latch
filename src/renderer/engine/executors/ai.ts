@@ -6,8 +6,11 @@
  * All inference runs off the main thread for smooth UI performance.
  */
 
+import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
+import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
+import { getShaderRenderer } from './visual'
 
 // Cache for node state and results
 const nodeCache = new Map<string, unknown>()
@@ -27,6 +30,156 @@ function setCached(key: string, value: unknown): void {
 // Helper to check for truthy trigger values
 function hasTriggerValue(trigger: unknown): boolean {
   return trigger !== undefined && trigger !== null && trigger !== false && trigger !== 0 && trigger !== ''
+}
+
+// ============================================================================
+// Image Input Type Conversion
+// ============================================================================
+
+/**
+ * Type guards for image input types
+ */
+function isImageData(input: unknown): input is ImageData {
+  return input instanceof ImageData
+}
+
+function isHTMLCanvasElement(input: unknown): input is HTMLCanvasElement {
+  return input instanceof HTMLCanvasElement
+}
+
+function isHTMLVideoElement(input: unknown): input is HTMLVideoElement {
+  return input instanceof HTMLVideoElement
+}
+
+function isWebGLTexture(input: unknown): input is WebGLTexture {
+  // WebGLTexture doesn't have a global constructor in all environments
+  // Check if it's an object and the renderer recognizes it
+  if (!input || typeof input !== 'object') return false
+  try {
+    const renderer = getShaderRenderer()
+    const gl = renderer.getCanvas().getContext('webgl2')
+    return gl !== null && gl.isTexture(input as WebGLTexture)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Convert WebGLTexture to ImageData
+ */
+function webglTextureToImageData(texture: WebGLTexture): ImageData | null {
+  try {
+    const renderer = getShaderRenderer()
+    const gl = renderer.getCanvas().getContext('webgl2')
+    if (!gl) return null
+
+    const canvas = renderer.getCanvas()
+    const width = canvas.width
+    const height = canvas.height
+
+    // Create a framebuffer to read the texture
+    const fbo = gl.createFramebuffer()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0)
+
+    // Check framebuffer status
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER)
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.deleteFramebuffer(fbo)
+      return null
+    }
+
+    // Read pixels from texture
+    const pixels = new Uint8Array(width * height * 4)
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+
+    // Clean up
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.deleteFramebuffer(fbo)
+
+    // WebGL texture is upside down, need to flip vertically
+    const flipped = new Uint8Array(width * height * 4)
+    for (let y = 0; y < height; y++) {
+      const srcRow = (height - 1 - y) * width * 4
+      const dstRow = y * width * 4
+      flipped.set(pixels.subarray(srcRow, srcRow + width * 4), dstRow)
+    }
+
+    return new ImageData(new Uint8ClampedArray(flipped), width, height)
+  } catch (err) {
+    console.error('[AI] Failed to convert WebGLTexture to ImageData:', err)
+    return null
+  }
+}
+
+/**
+ * Convert HTMLVideoElement to ImageData
+ */
+function videoElementToImageData(video: HTMLVideoElement): ImageData | null {
+  try {
+    const width = video.videoWidth || video.width || 640
+    const height = video.videoHeight || video.height || 480
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    ctx.drawImage(video, 0, 0, width, height)
+    return ctx.getImageData(0, 0, width, height)
+  } catch (err) {
+    console.error('[AI] Failed to convert HTMLVideoElement to ImageData:', err)
+    return null
+  }
+}
+
+/**
+ * Convert HTMLCanvasElement to ImageData
+ */
+function canvasElementToImageData(canvas: HTMLCanvasElement): ImageData | null {
+  try {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    return ctx.getImageData(0, 0, canvas.width, canvas.height)
+  } catch (err) {
+    console.error('[AI] Failed to convert HTMLCanvasElement to ImageData:', err)
+    return null
+  }
+}
+
+/**
+ * Convert any supported image input to ImageData for AI processing
+ * Supports: ImageData, HTMLCanvasElement, HTMLVideoElement, WebGLTexture
+ */
+function convertToImageData(input: unknown): ImageData | null {
+  if (!input) return null
+
+  // Already ImageData - return as-is
+  if (isImageData(input)) {
+    return input
+  }
+
+  // HTMLCanvasElement - extract ImageData
+  if (isHTMLCanvasElement(input)) {
+    return canvasElementToImageData(input)
+  }
+
+  // HTMLVideoElement - draw to canvas, extract ImageData
+  if (isHTMLVideoElement(input)) {
+    return videoElementToImageData(input)
+  }
+
+  // WebGLTexture - read pixels via framebuffer
+  if (isWebGLTexture(input)) {
+    return webglTextureToImageData(input as WebGLTexture)
+  }
+
+  // Unknown type
+  console.warn('[AI] Unknown image input type:', typeof input, input)
+  return null
 }
 
 // ============================================================================
@@ -87,16 +240,12 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
   const maxTokens = (ctx.controls.get('maxTokens') as number) ?? 50
   const temperature = (ctx.controls.get('temperature') as number) ?? 0.7
 
-  console.log('[AI Executor] Starting text generation for prompt:', prompt.substring(0, 50))
-
   const operation = (async () => {
     try {
-      console.log('[AI Executor] Calling aiInference.generateText...')
       const result = await aiInference.generateText(prompt, {
         maxLength: maxTokens,
         temperature,
       }, modelId)
-      console.log('[AI Executor] Got result:', result?.substring(0, 100))
       setCached(`${ctx.nodeId}:lastOutput`, result)
       setCached(`${ctx.nodeId}:loading`, false)
     } catch (error) {
@@ -120,7 +269,7 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
 
 export const imageClassificationExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
-  const imageData = ctx.inputs.get('image') as ImageData | HTMLCanvasElement | null
+  const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
@@ -136,11 +285,17 @@ export const imageClassificationExecutor: NodeExecutorFn = (ctx: ExecutionContex
     return outputs
   }
 
+  // Convert image input to ImageData (handles WebGLTexture, HTMLVideoElement, etc.)
+  const imageData = convertToImageData(imageInput)
+
   if (!imageData) {
     outputs.set('labels', getCached(`${ctx.nodeId}:labels`, []))
     outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
     outputs.set('topScore', getCached(`${ctx.nodeId}:topScore`, 0))
     outputs.set('loading', false)
+    if (imageInput) {
+      outputs.set('_error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
+    }
     return outputs
   }
 
@@ -300,7 +455,7 @@ export const sentimentAnalysisExecutor: NodeExecutorFn = (ctx: ExecutionContext)
 
 export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
-  const imageData = ctx.inputs.get('image') as ImageData | HTMLCanvasElement | null
+  const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
@@ -314,9 +469,15 @@ export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
     return outputs
   }
 
+  // Convert image input to ImageData (handles WebGLTexture, HTMLVideoElement, etc.)
+  const imageData = convertToImageData(imageInput)
+
   if (!imageData) {
     outputs.set('caption', '')
     outputs.set('loading', false)
+    if (imageInput) {
+      outputs.set('_error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
+    }
     return outputs
   }
 
@@ -439,31 +600,171 @@ export const featureExtractionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
 // Speech Recognition Node
 // ============================================================================
 
+// Track per-node audio buffer service and state
+interface STTNodeState {
+  audioBufferService: AudioBufferServiceImpl
+  connectedAudioNode: Tone.ToneAudioNode | null
+  connecting: boolean
+  lastChunkTime: number
+  vadWasSpeaking: boolean
+  fullText: string // Accumulated text for continuous mode
+}
+
+const sttState = new Map<string, STTNodeState>()
+
+function getSTTState(nodeId: string): STTNodeState {
+  let state = sttState.get(nodeId)
+  if (!state) {
+    state = {
+      audioBufferService: new AudioBufferServiceImpl(),
+      connectedAudioNode: null,
+      connecting: false,
+      lastChunkTime: 0,
+      vadWasSpeaking: false,
+      fullText: '',
+    }
+    sttState.set(nodeId, state)
+  }
+  return state
+}
+
+// Check if audio input is a Tone.js node
+function isToneAudioNode(audio: unknown): audio is Tone.ToneAudioNode {
+  return audio !== null && typeof audio === 'object' && 'connect' in audio && typeof (audio as Tone.ToneAudioNode).connect === 'function'
+}
+
 export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
-  const audio = ctx.inputs.get('audio') as Float32Array | null
+  const audioInput = ctx.inputs.get('audio')
   const trigger = ctx.inputs.get('trigger')
 
-  // Check if model is loaded
+  // Get controls
+  const mode = (ctx.controls.get('mode') as string) ?? 'manual'
+  const bufferDuration = (ctx.controls.get('bufferDuration') as number) ?? 5
+  const vadThreshold = (ctx.controls.get('vadThreshold') as number) ?? 0.01
+  const vadSilenceDuration = (ctx.controls.get('vadSilenceDuration') as number) ?? 500
+  const chunkInterval = (ctx.controls.get('chunkInterval') as number) ?? 3000
   const modelId = ctx.controls.get('model') as string | undefined
+
+  // Check if model is loaded
   const isLoaded = aiInference.isModelLoaded('automatic-speech-recognition', modelId)
 
   if (!isLoaded) {
     outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+    outputs.set('speaking', false)
     outputs.set('loading', false)
     outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
     return outputs
   }
 
-  if (!audio || audio.length === 0) {
+  // Get node-specific STT state
+  const state = getSTTState(ctx.nodeId)
+  const now = Date.now()
+
+  // Update AudioBufferService settings
+  state.audioBufferService.setVadThreshold(vadThreshold)
+  state.audioBufferService.setVadSilenceDuration(vadSilenceDuration)
+
+  // Handle audio input - can be Tone.js node, Float32Array, or null
+  let hasAudioSource = false
+
+  if (isToneAudioNode(audioInput)) {
+    hasAudioSource = true
+    // Connect AudioBufferService to Tone.js node if not already connected or if node changed
+    if (state.connectedAudioNode !== audioInput && !state.connecting) {
+      state.connecting = true
+      state.connectedAudioNode = audioInput
+
+      // Connect async - will be ready on next frame
+      state.audioBufferService
+        .connectSource(audioInput, {
+          bufferDuration,
+          sampleRate: 16000, // Whisper requires 16kHz
+          vadThreshold,
+          vadSilenceDuration,
+        })
+        .then(() => {
+          state.connecting = false
+          console.log('[STT] AudioBufferService connected to audio source')
+        })
+        .catch((err) => {
+          console.error('[STT] Failed to connect AudioBufferService:', err)
+          state.connecting = false
+          state.connectedAudioNode = null
+        })
+    }
+  } else if (audioInput === null || audioInput === undefined) {
+    // No audio input - disconnect if was connected
+    if (state.connectedAudioNode !== null) {
+      state.audioBufferService.disconnect()
+      state.connectedAudioNode = null
+    }
+  }
+
+  // If connecting or not connected, return early
+  if (state.connecting || !state.audioBufferService.connected) {
     outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
-    outputs.set('loading', false)
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+    outputs.set('speaking', false)
+    outputs.set('loading', state.connecting)
+    if (!hasAudioSource) {
+      outputs.set('_error', 'No audio input connected')
+    } else if (state.connecting) {
+      outputs.set('_error', 'Connecting to audio source...')
+    }
     return outputs
   }
 
-  // Only run on explicit trigger
-  if (!hasTriggerValue(trigger)) {
+  // Get VAD state from AudioBufferService
+  const vadState = state.audioBufferService.getVadState()
+  const isSpeaking = vadState.speaking
+  outputs.set('speaking', isSpeaking)
+
+  // Determine if we should transcribe based on mode
+  let shouldTranscribe = false
+  let audioToTranscribe: Float32Array | null = null
+
+  if (mode === 'manual') {
+    // Manual mode: transcribe on trigger
+    if (hasTriggerValue(trigger)) {
+      // Get the full buffer (resampled to 16kHz)
+      const buffer = state.audioBufferService.getBuffer(bufferDuration * 1000)
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+      }
+    }
+  } else if (mode === 'continuous') {
+    // Continuous mode: transcribe at regular intervals
+    if (now - state.lastChunkTime >= chunkInterval) {
+      // Get recent audio buffer (resampled to 16kHz)
+      const buffer = state.audioBufferService.getBuffer(chunkInterval)
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+        state.lastChunkTime = now
+      }
+    }
+  } else if (mode === 'vad') {
+    // VAD mode: transcribe on speech→silence transition
+    if (!isSpeaking && state.vadWasSpeaking) {
+      // Speech just ended - transcribe the captured speech
+      const buffer = state.audioBufferService.getFullBuffer()
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+        // Clear buffer after capturing for VAD mode
+        state.audioBufferService.clearBuffer()
+      }
+    }
+    state.vadWasSpeaking = isSpeaking
+  }
+
+  // If not transcribing, return cached values
+  if (!shouldTranscribe || !audioToTranscribe || audioToTranscribe.length === 0) {
     outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
     outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
     return outputs
   }
@@ -471,19 +772,36 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   // Check if already processing
   if (pendingOperations.has(ctx.nodeId)) {
     outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
     outputs.set('loading', true)
     return outputs
   }
 
   setCached(`${ctx.nodeId}:loading`, true)
 
+  const audioData = audioToTranscribe // Capture for closure
+
   const operation = (async () => {
     try {
-      const text = await aiInference.transcribe(audio, modelId)
-      setCached(`${ctx.nodeId}:text`, text)
+      console.log(`[STT] Transcribing ${audioData.length} samples (${(audioData.length / 16000).toFixed(2)}s at 16kHz)`)
+      const text = await aiInference.transcribe(audioData, modelId)
+
+      if (mode === 'continuous') {
+        // In continuous mode, update partial and accumulate text
+        setCached(`${ctx.nodeId}:partial`, text)
+        if (text.trim()) {
+          state.fullText = state.fullText ? `${state.fullText} ${text}` : text
+          setCached(`${ctx.nodeId}:text`, state.fullText)
+        }
+      } else {
+        // In manual/vad mode, replace text
+        setCached(`${ctx.nodeId}:text`, text)
+        setCached(`${ctx.nodeId}:partial`, text)
+      }
+
       setCached(`${ctx.nodeId}:loading`, false)
     } catch (error) {
-      console.error('[AI] Speech recognition error:', error)
+      console.error('[STT] Speech recognition error:', error)
       setCached(`${ctx.nodeId}:loading`, false)
     } finally {
       pendingOperations.delete(ctx.nodeId)
@@ -493,8 +811,18 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   pendingOperations.set(ctx.nodeId, operation)
 
   outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+  outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
   outputs.set('loading', true)
   return outputs
+}
+
+// Cleanup function for STT state
+export function disposeSTTNode(nodeId: string): void {
+  const state = sttState.get(nodeId)
+  if (state) {
+    state.audioBufferService.disconnect()
+    sttState.delete(nodeId)
+  }
 }
 
 // ============================================================================
@@ -589,7 +917,7 @@ export const textTransformationExecutor: NodeExecutorFn = (ctx: ExecutionContext
 
 export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
-  const imageData = ctx.inputs.get('image') as ImageData | HTMLCanvasElement | null
+  const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
 
   // Check if model is loaded
@@ -604,10 +932,16 @@ export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
     return outputs
   }
 
+  // Convert image input to ImageData (handles WebGLTexture, HTMLVideoElement, etc.)
+  const imageData = convertToImageData(imageInput)
+
   if (!imageData) {
     outputs.set('objects', getCached(`${ctx.nodeId}:objects`, []))
     outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
     outputs.set('loading', false)
+    if (imageInput) {
+      outputs.set('_error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
+    }
     return outputs
   }
 
@@ -667,11 +1001,13 @@ export function disposeAINode(nodeId: string): void {
   const keys = Array.from(nodeCache.keys()).filter(k => k.startsWith(nodeId))
   keys.forEach(k => nodeCache.delete(k))
   pendingOperations.delete(nodeId)
+  sttState.delete(nodeId)
 }
 
 export function disposeAllAINodes(): void {
   nodeCache.clear()
   pendingOperations.clear()
+  sttState.clear()
 }
 
 // ============================================================================

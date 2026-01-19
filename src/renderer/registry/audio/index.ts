@@ -8,6 +8,8 @@ export { beatDetectNode } from './beat-detect'
 export { audioPlayerNode } from './audio-player'
 export { envelopeNode } from './envelope'
 export { reverbNode } from './reverb'
+export { svfFilterNode } from './svf-filter'
+export { pitchDetectNode } from './pitch-detect'
 
 import { oscillatorNode } from './oscillator'
 import { audioOutputNode } from './audio-output'
@@ -19,6 +21,8 @@ import { beatDetectNode } from './beat-detect'
 import { audioPlayerNode } from './audio-player'
 import { envelopeNode } from './envelope'
 import { reverbNode } from './reverb'
+import { svfFilterNode } from './svf-filter'
+import { pitchDetectNode } from './pitch-detect'
 import type { NodeDefinition } from '../types'
 
 export const audioNodes: NodeDefinition[] = [
@@ -32,4 +36,6 @@ export const audioNodes: NodeDefinition[] = [
   audioPlayerNode,
   envelopeNode,
   reverbNode,
+  svfFilterNode,
+  pitchDetectNode,
 ]

@@ -2,11 +2,16 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeCategory, type NodeDefinition } from '@/stores/nodes'
-import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download } from 'lucide-vue-next'
+import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen } from 'lucide-vue-next'
 import { aiInference } from '@/services/ai/AIInference'
+import AssetBrowser from '@/components/assets/AssetBrowser.vue'
 
 const uiStore = useUIStore()
 const nodesStore = useNodesStore()
+
+// Tab state
+type SidebarTab = 'nodes' | 'assets'
+const activeTab = ref<SidebarTab>('nodes')
 
 // All categories collapsed by default
 function getAllCategoriesCollapsed(): Set<string> {
@@ -148,9 +153,26 @@ function openAIModelManager() {
       v-if="uiStore.sidebarOpen"
       class="sidebar-content"
     >
-      <!-- Header -->
+      <!-- Header with tabs -->
       <div class="sidebar-header">
-        <span class="sidebar-title">Nodes</span>
+        <div class="sidebar-tabs">
+          <button
+            class="sidebar-tab"
+            :class="{ active: activeTab === 'nodes' }"
+            @click="activeTab = 'nodes'"
+          >
+            <Blocks :size="14" />
+            <span>Nodes</span>
+          </button>
+          <button
+            class="sidebar-tab"
+            :class="{ active: activeTab === 'assets' }"
+            @click="activeTab = 'assets'"
+          >
+            <FolderOpen :size="14" />
+            <span>Assets</span>
+          </button>
+        </div>
         <button
           class="collapse-btn"
           title="Collapse sidebar"
@@ -160,17 +182,22 @@ function openAIModelManager() {
         </button>
       </div>
 
-      <!-- Search -->
-      <div class="search-wrapper">
-        <Search class="search-icon" />
-        <input
-          type="text"
-          class="search-input"
-          placeholder="Search nodes..."
-          :value="nodesStore.searchQuery"
-          @input="nodesStore.setSearchQuery(($event.target as HTMLInputElement).value)"
-        >
-      </div>
+      <!-- Assets Tab -->
+      <AssetBrowser v-if="activeTab === 'assets'" />
+
+      <!-- Nodes Tab -->
+      <template v-else>
+        <!-- Search -->
+        <div class="search-wrapper">
+          <Search class="search-icon" />
+          <input
+            type="text"
+            class="search-input"
+            placeholder="Search nodes..."
+            :value="nodesStore.searchQuery"
+            @input="nodesStore.setSearchQuery(($event.target as HTMLInputElement).value)"
+          >
+        </div>
 
       <!-- Category Filter Dropdown -->
       <div class="filter-wrapper">
@@ -310,6 +337,7 @@ function openAIModelManager() {
           No nodes found
         </div>
       </div>
+      </template>
     </div>
 
     <!-- Collapsed state - show expand button -->
@@ -346,9 +374,39 @@ function openAIModelManager() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   background: var(--color-neutral-50);
   border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.sidebar-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.sidebar-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.sidebar-tab:hover {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-700);
+}
+
+.sidebar-tab.active {
+  background: var(--color-primary-100);
+  color: var(--color-primary-700);
 }
 
 .sidebar-title {

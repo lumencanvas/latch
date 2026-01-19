@@ -17,13 +17,29 @@ const loadedGLTFs = new Map<string, THREE.Group>()
 const videoTextures = new Map<string, THREE.VideoTexture>()
 const dataTextures = new Map<string, THREE.Texture>()
 
+// Track which texture keys belong to which node for O(1) disposal lookup
+const nodeTextureKeys = new Map<string, Set<string>>()
+
+/**
+ * Helper to track texture key for a node
+ */
+function trackTextureKey(nodeId: string, cacheKey: string): void {
+  let keys = nodeTextureKeys.get(nodeId)
+  if (!keys) {
+    keys = new Set()
+    nodeTextureKeys.set(nodeId, keys)
+  }
+  keys.add(cacheKey)
+}
+
 /**
  * Convert a pipeline texture (WebGLTexture or HTMLVideoElement) to THREE.Texture
  * Returns undefined if the input is not a valid texture source
  */
 function convertToThreeTexture(
   input: unknown,
-  cacheKey: string
+  cacheKey: string,
+  nodeId?: string
 ): THREE.Texture | undefined {
   if (!input) return undefined
 
@@ -42,6 +58,8 @@ function convertToThreeTexture(
       videoTex.format = THREE.RGBAFormat
       videoTex.colorSpace = THREE.SRGBColorSpace
       videoTextures.set(cacheKey, videoTex)
+      // Track for O(1) disposal
+      if (nodeId) trackTextureKey(nodeId, cacheKey)
     } else {
       // Update the video reference if needed
       if (videoTex.image !== input) {
@@ -65,6 +83,8 @@ function convertToThreeTexture(
       existing.dispose()
     }
     dataTextures.set(cacheKey, texture)
+    // Track for O(1) disposal
+    if (nodeId) trackTextureKey(nodeId, cacheKey)
 
     return texture
   }
@@ -109,18 +129,22 @@ export function dispose3DNode(nodeId: string): void {
     loadedGLTFs.delete(nodeId)
   }
 
-  // Dispose cached textures for this node
-  for (const [key, tex] of videoTextures) {
-    if (key.startsWith(nodeId)) {
-      tex.dispose()
-      videoTextures.delete(key)
+  // Dispose cached textures for this node - O(1) lookup using nodeTextureKeys
+  const textureKeys = nodeTextureKeys.get(nodeId)
+  if (textureKeys) {
+    for (const key of textureKeys) {
+      const videoTex = videoTextures.get(key)
+      if (videoTex) {
+        videoTex.dispose()
+        videoTextures.delete(key)
+      }
+      const dataTex = dataTextures.get(key)
+      if (dataTex) {
+        dataTex.dispose()
+        dataTextures.delete(key)
+      }
     }
-  }
-  for (const [key, tex] of dataTextures) {
-    if (key.startsWith(nodeId)) {
-      tex.dispose()
-      dataTextures.delete(key)
-    }
+    nodeTextureKeys.delete(nodeId)
   }
 
   // Also dispose from ThreeRenderer
@@ -150,6 +174,67 @@ export function disposeAll3DNodes(): void {
     tex.dispose()
   }
   dataTextures.clear()
+
+  // Clear texture tracking
+  nodeTextureKeys.clear()
+}
+
+/**
+ * Garbage collect orphaned 3D state entries.
+ * Call this with the set of currently valid node IDs.
+ */
+export function gc3DState(validNodeIds: Set<string>): void {
+  // Clean nodeObjects (dispose3DNode will handle texture cleanup via nodeTextureKeys)
+  for (const nodeId of nodeObjects.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      dispose3DNode(nodeId)
+    }
+  }
+
+  // Clean nodeMaterials (may have been missed)
+  for (const nodeId of nodeMaterials.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const mat = nodeMaterials.get(nodeId)
+      if (mat) mat.dispose()
+      nodeMaterials.delete(nodeId)
+    }
+  }
+
+  // Clean nodeSceneRefs
+  for (const nodeId of nodeSceneRefs.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      nodeSceneRefs.delete(nodeId)
+    }
+  }
+
+  // Clean loadedGLTFs
+  for (const nodeId of loadedGLTFs.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      loadedGLTFs.delete(nodeId)
+    }
+  }
+
+  // Clean orphaned nodeTextureKeys and their textures
+  for (const nodeId of nodeTextureKeys.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const textureKeys = nodeTextureKeys.get(nodeId)
+      if (textureKeys) {
+        for (const key of textureKeys) {
+          const videoTex = videoTextures.get(key)
+          if (videoTex) {
+            videoTex.dispose()
+            videoTextures.delete(key)
+          }
+          const dataTex = dataTextures.get(key)
+          if (dataTex) {
+            dataTex.dispose()
+            dataTextures.delete(key)
+          }
+        }
+      }
+      nodeTextureKeys.delete(nodeId)
+    }
+  }
 }
 
 // ============================================================================

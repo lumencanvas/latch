@@ -22,6 +22,7 @@ class CustomNodeLoaderService {
   private watcherCleanup: (() => void) | null = null
   private initialized = false
   private onReloadCallbacks: Set<(packageName: string) => void> = new Set()
+  private pendingReloads: Map<string, ReturnType<typeof setTimeout>> = new Map()
 
   /**
    * Check if running in Electron environment
@@ -221,17 +222,23 @@ class CustomNodeLoaderService {
 
     // Listen for file changes
     this.watcherCleanup = api.onFileChange(async (data) => {
-      // Debounce rapid changes
-      const debounceKey = `reload:${data.packageName}`
-      if ((this as any)[debounceKey]) return
-      (this as any)[debounceKey] = true
+      // Debounce rapid changes using proper Map
+      const debounceKey = data.packageName
 
-      setTimeout(async () => {
-        (this as any)[debounceKey] = false
+      // Clear existing timeout if any
+      const existingTimeout = this.pendingReloads.get(debounceKey)
+      if (existingTimeout) {
+        clearTimeout(existingTimeout)
+      }
 
+      // Set new debounced reload
+      const timeoutId = setTimeout(async () => {
+        this.pendingReloads.delete(debounceKey)
         // Reload the package
         await this.reloadNode(data.packageName)
       }, 300)
+
+      this.pendingReloads.set(debounceKey, timeoutId)
     })
 
     console.log('CustomNodeLoader: File watcher started')
@@ -241,6 +248,12 @@ class CustomNodeLoaderService {
    * Stop watching for file changes
    */
   async stopWatching(): Promise<void> {
+    // Clear all pending reload timeouts
+    for (const timeoutId of this.pendingReloads.values()) {
+      clearTimeout(timeoutId)
+    }
+    this.pendingReloads.clear()
+
     if (this.watcherCleanup) {
       this.watcherCleanup()
       this.watcherCleanup = null

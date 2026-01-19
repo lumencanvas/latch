@@ -422,6 +422,30 @@ export function disposeAllCodeNodes(): void {
   nodeState.clear()
 }
 
+/**
+ * Garbage collect orphaned code state entries.
+ * Call this with the set of currently valid node IDs.
+ */
+export function gcCodeState(validNodeIds: Set<string>): void {
+  // Clean compiledFunctions
+  for (const key of compiledFunctions.keys()) {
+    // Keys are formatted as "nodeId:fn" or "nodeId:expr"
+    const nodeId = key.split(':')[0]
+    if (!validNodeIds.has(nodeId)) {
+      compiledFunctions.delete(key)
+    }
+  }
+
+  // Clean nodeState
+  for (const key of nodeState.keys()) {
+    // Keys are formatted as "nodeId:..." or "nodeId:state:..."
+    const nodeId = key.split(':')[0]
+    if (!validNodeIds.has(nodeId)) {
+      nodeState.delete(key)
+    }
+  }
+}
+
 // ============================================================================
 // Registry
 // ============================================================================

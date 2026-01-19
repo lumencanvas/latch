@@ -56,6 +56,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }
     },
   },
+
+  // Assets API
+  assets: {
+    getBasePath: () => ipcRenderer.invoke('assets:getBasePath'),
+    setBasePath: (path: string) => ipcRenderer.invoke('assets:setBasePath', path),
+    saveFile: (data: Uint8Array, filename: string) => ipcRenderer.invoke('assets:saveFile', data, filename),
+    readFile: (filename: string) => ipcRenderer.invoke('assets:readFile', filename),
+    deleteFile: (filename: string) => ipcRenderer.invoke('assets:deleteFile', filename),
+    listFiles: () => ipcRenderer.invoke('assets:listFiles'),
+  },
 })
 
 // Type definitions for renderer
@@ -87,6 +97,14 @@ declare global {
         watchDirectory: () => Promise<{ success: boolean; error?: string }>
         stopWatching: () => Promise<{ success: boolean }>
         onFileChange: (callback: (data: { eventType: string; packageName: string; filename: string }) => void) => () => void
+      }
+      assets: {
+        getBasePath: () => Promise<string>
+        setBasePath: (path: string) => Promise<{ success: boolean; error?: string }>
+        saveFile: (data: Uint8Array, filename: string) => Promise<{ success: boolean; path?: string; error?: string }>
+        readFile: (filename: string) => Promise<{ success: boolean; data?: Uint8Array; error?: string }>
+        deleteFile: (filename: string) => Promise<{ success: boolean; error?: string }>
+        listFiles: () => Promise<{ success: boolean; files?: string[]; error?: string }>
       }
     }
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { X, Download, Trash2, Loader, CheckCircle2, AlertCircle, Brain, Cpu, Zap } from 'lucide-vue-next'
+import { X, Download, Trash2, Loader, CheckCircle2, AlertCircle, Brain, Cpu, Zap, HardDrive } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { aiInference, AI_MODELS, type ModelLoadState } from '@/services/ai/AIInference'
 
@@ -11,6 +11,8 @@ const modelStates = ref<Map<string, { state: ModelLoadState; progress: number; e
 const selectedModels = ref<Map<string, string>>(new Map())
 const webgpuAvailable = ref(false)
 const useWebGPU = ref(false)
+const useBrowserCache = ref(true)
+const clearingCache = ref(false)
 
 // Initialize selected models with defaults
 let aiUnsubscribe: (() => void) | null = null
@@ -52,6 +54,7 @@ function updateState() {
 
   webgpuAvailable.value = state.webgpuAvailable
   useWebGPU.value = state.useWebGPU
+  useBrowserCache.value = state.useBrowserCache
 }
 
 function getTaskModelKey(taskId: string): string {
@@ -133,6 +136,25 @@ function toggleWebGPU() {
   aiInference.setUseWebGPU(!useWebGPU.value)
 }
 
+function toggleBrowserCache() {
+  aiInference.setUseBrowserCache(!useBrowserCache.value)
+}
+
+async function clearCache() {
+  if (clearingCache.value) return
+
+  clearingCache.value = true
+  try {
+    await aiInference.clearModelCache()
+    // Update state after clearing
+    updateState()
+  } catch (error) {
+    console.error('Failed to clear cache:', error)
+  } finally {
+    clearingCache.value = false
+  }
+}
+
 function close() {
   uiStore.closeAIModelManager()
 }
@@ -197,28 +219,56 @@ function getCategoryColor(category: string): string {
           <div class="settings-bar">
             <div class="setting-item">
               <Cpu :size="16" />
-              <span>Models run locally in your browser using Transformers.js</span>
+              <span>Models run locally in your browser</span>
             </div>
-            <div
-              v-if="webgpuAvailable"
-              class="webgpu-toggle"
-            >
-              <label class="toggle-label">
-                <input
-                  type="checkbox"
-                  :checked="useWebGPU"
-                  @change="toggleWebGPU"
-                >
-                <span class="toggle-switch" />
-                <Zap :size="14" />
-                <span>WebGPU Acceleration</span>
-              </label>
-            </div>
-            <div
-              v-else
-              class="webgpu-unavailable"
-            >
-              <span>WebGPU not available</span>
+            <div class="settings-toggles">
+              <!-- Cache toggle -->
+              <div class="cache-toggle">
+                <label class="toggle-label">
+                  <input
+                    type="checkbox"
+                    :checked="useBrowserCache"
+                    @change="toggleBrowserCache"
+                  >
+                  <span class="toggle-switch" />
+                  <HardDrive :size="14" />
+                  <span>Cache Models</span>
+                </label>
+              </div>
+              <!-- WebGPU toggle -->
+              <div
+                v-if="webgpuAvailable"
+                class="webgpu-toggle"
+              >
+                <label class="toggle-label">
+                  <input
+                    type="checkbox"
+                    :checked="useWebGPU"
+                    @change="toggleWebGPU"
+                  >
+                  <span class="toggle-switch" />
+                  <Zap :size="14" />
+                  <span>WebGPU</span>
+                </label>
+              </div>
+              <!-- Clear cache button -->
+              <button
+                class="btn btn-clear-cache"
+                :disabled="clearingCache"
+                title="Clear downloaded model cache"
+                @click="clearCache"
+              >
+                <Loader
+                  v-if="clearingCache"
+                  :size="14"
+                  class="spin"
+                />
+                <Trash2
+                  v-else
+                  :size="14"
+                />
+                <span>Clear Cache</span>
+              </button>
             </div>
           </div>
 
@@ -450,6 +500,8 @@ function getCategoryColor(category: string): string {
   padding: var(--space-3) var(--space-4);
   background: var(--color-neutral-50);
   border-bottom: 1px solid var(--color-neutral-200);
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .setting-item {
@@ -460,9 +512,54 @@ function getCategoryColor(category: string): string {
   color: var(--color-neutral-600);
 }
 
-.webgpu-toggle {
+.settings-toggles {
   display: flex;
   align-items: center;
+  gap: var(--space-4);
+}
+
+.cache-toggle,
+.webgpu-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.webgpu-hint {
+  font-size: 10px;
+  color: var(--color-neutral-400);
+  margin-left: 24px;
+}
+
+.btn-clear-cache {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+  background: var(--color-neutral-100);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-clear-cache:hover:not(:disabled) {
+  background: var(--color-neutral-200);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.btn-clear-cache:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-clear-cache .spin {
+  animation: spin 1s linear infinite;
 }
 
 .toggle-label {

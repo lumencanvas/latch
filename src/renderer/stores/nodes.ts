@@ -19,6 +19,8 @@ export type NodeCategory =
   | '3d'
   | 'connectivity'
   | 'subflows'
+  | 'string'
+  | 'messaging'
   | 'custom'
 
 export type DataType =
@@ -196,6 +198,8 @@ export const categoryMeta: Record<NodeCategory, { label: string; icon: string; c
   '3d': { label: '3D', icon: 'box', color: '#0EA5E9' },
   connectivity: { label: 'Connectivity', icon: 'plug', color: '#2AAB8A' },
   subflows: { label: 'Subflows', icon: 'layers', color: '#7C3AED' },
+  string: { label: 'String', icon: 'text', color: '#10B981' },
+  messaging: { label: 'Messaging', icon: 'send', color: '#8B5CF6' },
   custom: { label: 'Custom', icon: 'puzzle', color: '#6B7280' },
 }
 

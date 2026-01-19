@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, provide } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from './stores/ui'
 import AppHeader from './components/layout/AppHeader.vue'
 import FlowTabs from './components/layout/FlowTabs.vue'
@@ -15,6 +15,7 @@ import { usePersistence } from './composables/usePersistence'
 import { useExecutionEngine } from './composables/useExecutionEngine'
 
 const route = useRoute()
+const router = useRouter()
 const uiStore = useUIStore()
 const { initialize, isLoading } = usePersistence()
 
@@ -31,9 +32,14 @@ provide('executionControls', {
 })
 
 const isInitialized = ref(false)
+const isRouterReady = ref(false)
 
 // Check if we're in the editor view
-const isEditorView = computed(() => route.name === 'editor')
+// Default to true when route is not yet resolved (since '/' is the editor route)
+const isEditorView = computed(() => {
+  if (!isRouterReady.value) return true // Default to editor view before router resolves
+  return route.name === 'editor' || route.name === undefined || route.name === null
+})
 
 const appClasses = computed(() => ({
   'app': true,
@@ -42,6 +48,10 @@ const appClasses = computed(() => ({
 }))
 
 onMounted(async () => {
+  // Wait for router to be ready before rendering route-dependent content
+  await router.isReady()
+  isRouterReady.value = true
+
   try {
     await initialize()
   } catch (error) {

@@ -20,9 +20,164 @@
 
 ### Phase: 9 Complete - 3D System + Polish + Full Feature Set
 ### Next Step: Phase 10 - Polish & Export
-### Latest Release: v0.1.2
+### Latest Release: v0.1.3
 
-### Latest Session Accomplishments (AI Web Workers, Node Fixes, Full Audit):
+### Latest Session Accomplishments (STT Pipeline Fix, Type Conversion System, Stability):
+
+**Speech-to-Text Pipeline Fix:**
+- STT node was broken - Audio Input outputs Tone.js nodes but STT executor expected Float32Array
+- Rewrote `speechRecognitionExecutor` to detect Tone.js audio nodes and use AudioBufferService
+- Each STT node now gets its own AudioBufferServiceImpl instance
+- AudioBufferService captures audio, resamples from 44.1kHz/48kHz to 16kHz (Whisper requirement)
+- Added `isToneAudioNode()` type guard for audio input detection
+- Added silent gain node to AudioBufferService to prevent audio playback through speakers
+
+**AI Image Nodes Type Conversion System:**
+- Image Classification, Image Captioning, and Object Detection could receive WebGLTexture from visual nodes
+- These executors expected ImageData or HTMLCanvasElement - caused runtime failures
+- Added comprehensive type conversion system to ai.ts:
+  - `isImageData()`, `isHTMLCanvasElement()`, `isHTMLVideoElement()`, `isWebGLTexture()` type guards
+  - `webglTextureToImageData()` - reads pixels from WebGL texture via framebuffer
+  - `videoElementToImageData()` - captures frame from video element
+  - `canvasElementToImageData()` - gets ImageData from canvas
+  - `convertToImageData()` - unified converter handling all input types
+- Exported `getShaderRenderer` from visual.ts for texture access
+
+**Electron Startup Fix:**
+- Editor wouldn't show until clicking - route race condition
+- `isEditorView` computed depended on `route.name === 'editor'` but router hadn't resolved yet
+- Added `await router.isReady()` in onMounted before checking route
+- Added `isRouterReady` ref that defaults `isEditorView` to true before router resolves
+
+**AudioBufferService Fix:**
+- `createScriptProcessor is not a function` error
+- `InvalidAccessError` when connecting nodes from different contexts
+- For Tone.js nodes, ALWAYS use Tone's rawContext (cast to AudioContext) to avoid cross-context errors
+- For MediaStream, can use Tone's context or create new one
+- Added explicit check for createScriptProcessor availability with clear error message
+
+**flows.ts Defensive Checks:**
+- Fixed 6 locations with unsafe non-null assertions: `nodeIdMap.get(edge.source)!`
+- Changed to defensive checks with `continue` for missing nodes
+- Prevents potential crashes during flow operations
+
+**Device Enumeration for Audio/Video Nodes:**
+- Created `useDeviceEnumeration.ts` composable for dynamic device listing
+- Updated BaseNode.vue and PropertiesPanel.vue to use dynamic device options
+- Node definitions now use `props: { deviceType: 'video-input' | 'audio-input' | 'audio-output' }`
+- Webcam, Webcam Snapshot, and Audio Input nodes now show actual available devices
+- Subscribes to service updates and `devicechange` events for live updates
+
+**Test Fixes:**
+- Fixed Float32Array precision failures in AudioBufferService tests and STT executor tests
+- Changed `toBe(0.1)` to `toBeCloseTo(0.1, 5)` for floating-point comparisons
+- All 549 tests passing
+
+**Files Created:**
+- `src/renderer/composables/useDeviceEnumeration.ts` - Device enumeration composable
+
+**Files Modified:**
+- `src/renderer/engine/executors/ai.ts` - STT rewrite, image type conversion system
+- `src/renderer/engine/executors/visual.ts` - Export getShaderRenderer
+- `src/renderer/services/audio/AudioBufferService.ts` - Silent gain, AudioContext fix
+- `src/renderer/App.vue` - Router ready check for Electron
+- `src/renderer/stores/flows.ts` - Defensive null checks
+- `src/renderer/components/nodes/BaseNode.vue` - Dynamic device select options
+- `src/renderer/components/layout/PropertiesPanel.vue` - Dynamic device select options
+- `src/renderer/registry/visual/webcam.ts` - deviceType prop
+- `src/renderer/registry/visual/webcam-snapshot.ts` - deviceType prop
+- `src/renderer/registry/inputs/audio-input.ts` - deviceType prop
+- `tests/unit/services/audio/AudioBufferService.test.ts` - Float32Array precision fix
+- `tests/unit/executors/ai-stt.test.ts` - Float32Array precision fix
+
+---
+
+### Previous Session Accomplishments (Deep Audit, GPU Fixes, AI Cache):
+
+**Deep Audit - GPU Memory Leak Fixes:**
+- `ShaderRenderer.resize()` now properly calls `gl.deleteFramebuffer()` and `gl.deleteTexture()` before clearing Maps
+- Added `deleteFramebuffer(id)` and `deleteTexture(texture)` methods to ShaderRenderer
+- `gcVisualState()` now properly deletes GPU textures before removing from Maps
+- `disposeVisualNode()` cleans up all GPU resources (textures, framebuffers)
+- Fixed `ThreeRenderer.disposeNode()` key matching to prevent "node1" matching "node10"
+
+**WebGL Context Loss Handling:**
+- Added `webglcontextlost` and `webglcontextrestored` event handlers to ShaderRenderer
+- Clears shader/framebuffer caches on context loss, reinitializes on restore
+- Added `isContextLost()` method for checking state
+
+**AI Model Cache Controls:**
+- Added "Cache Models" toggle in AI Model Manager
+- Added "Clear Cache" button to fix corrupted IndexedDB/LevelDB storage
+- Fixed bug where clearing cache didn't update service state (`_loadedModels`, `_modelInfo`)
+- Cache settings passed to Web Worker via message passing
+
+**ExecutionEngine Control Defaults Fix:**
+- Fixed controls not using definition defaults when node.data doesn't have explicit values
+- Now properly merges definition defaults with actual node.data values
+- UI showed default values but executor received empty - now both are consistent
+
+**Test Environment Setup:**
+- Added `tests/setup.ts` with Worker mock for happy-dom environment
+- Added matchMedia mock for tests
+- No more "Worker is not defined" errors in test output
+
+**Files Created:**
+- `tests/setup.ts` - NEW: Vitest setup with browser API mocks
+
+**Files Modified:**
+- `src/renderer/services/visual/ShaderRenderer.ts` - GPU cleanup, context loss handling
+- `src/renderer/services/visual/ThreeRenderer.ts` - Fixed disposeNode key matching
+- `src/renderer/engine/executors/visual.ts` - gcVisualState GPU texture cleanup
+- `src/renderer/services/ai/AIInference.ts` - Cache control methods, clearModelCache fix
+- `src/renderer/services/ai/ai.worker.ts` - setCache/clearCache message handlers
+- `src/renderer/components/modals/AIModelManagerModal.vue` - Cache toggle and clear button
+- `src/renderer/engine/ExecutionEngine.ts` - Control defaults from definition
+- `vitest.config.ts` - Added setupFiles
+
+---
+
+### Previous Session Accomplishments (AI Complete, New Nodes, Loading Indicator):
+
+**All 8 AI Model Types Now Have Nodes:**
+| Model Task | Node | Status |
+|------------|------|--------|
+| text-generation | Text Generate | ✅ |
+| text2text-generation | Text Transform | ✅ NEW |
+| image-classification | Image Classification | ✅ |
+| object-detection | Object Detection | ✅ |
+| automatic-speech-recognition | Speech to Text | ✅ NEW |
+| sentiment-analysis | Sentiment Analysis | ✅ |
+| feature-extraction | Text Embeddings | ✅ |
+| image-to-text | Image Captioning | ✅ |
+
+**New AI Nodes Created:**
+- **Speech to Text** (`speech-recognition.ts`) - Transcribes audio using Whisper models
+- **Text Transform** (`text-transformation.ts`) - Summarize/translate/paraphrase with T5/Flan models
+
+**AI Worker Chat Model Fix:**
+- TinyLlama and other chat models now use correct messages format
+- Detection for: chat, instruct, llama, -it- (Gemma), phi- models
+- Audio transcription fixed (Float32Array reconstruction from serialized data)
+
+**Loading Indicator on Nodes:**
+- All AI nodes now show spinning loader in header during inference
+- Uses Lucide `Loader2` icon with CSS animation
+- Polls execution engine every 100ms for `loading` output
+
+**Files Created:**
+- `src/renderer/registry/ai/speech-recognition.ts` - NEW: Speech to text node
+- `src/renderer/registry/ai/text-transformation.ts` - NEW: Text transform node
+
+**Files Modified:**
+- `src/renderer/services/ai/ai.worker.ts` - Chat model detection, audio fix
+- `src/renderer/engine/executors/ai.ts` - Added speech/text transform executors
+- `src/renderer/registry/ai/index.ts` - Registered new nodes
+- `src/renderer/components/nodes/BaseNode.vue` - Added loading indicator
+
+---
+
+### Previous Session Accomplishments (AI Web Workers, Node Fixes, Full Audit):
 
 **AI Web Worker Implementation:**
 - Created dedicated Web Worker for all Transformers.js inference (`ai.worker.ts`)
@@ -729,6 +884,7 @@ npm run dev:electron
 | 2026-01-18 | LATCH Rename & Builds | Renamed to LATCH, separate arm64/x64 macOS builds, preload script fix |
 | 2026-01-18 | AI & Trigger Fixes | Trigger connects to trigger inputs, AI uses trigger value as prompt |
 | 2026-01-18 | AI Web Workers & Audit | Web Worker for AI inference, fixed missing triggers on AI nodes, texture-to-data executor, audio-delay collision fix |
+| 2026-01-18 | STT & Type Safety | Fixed STT pipeline (Tone.js→AudioBufferService→16kHz), AI image type conversion, Electron startup fix, flows.ts null checks, device enumeration for audio/video selects |
 
 ---
 

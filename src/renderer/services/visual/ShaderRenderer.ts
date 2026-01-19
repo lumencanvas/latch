@@ -69,6 +69,9 @@ export class ShaderRenderer {
   private _mouseX = 0
   private _mouseY = 0
   private _mouseDown = false
+  private _contextLost = false
+  private _boundContextLost: ((e: Event) => void) | null = null
+  private _boundContextRestored: ((e: Event) => void) | null = null
 
   constructor(canvas?: HTMLCanvasElement) {
     // Create or use provided canvas
@@ -92,6 +95,40 @@ export class ShaderRenderer {
 
     this.gl = gl
     this.initQuadBuffer()
+    this.setupContextLossHandling()
+  }
+
+  /**
+   * Setup WebGL context loss/restore handling
+   */
+  private setupContextLossHandling(): void {
+    this._boundContextLost = (e: Event) => {
+      e.preventDefault()
+      this._contextLost = true
+      console.warn('[ShaderRenderer] WebGL context lost')
+      // Clear all caches - GPU resources are invalid
+      this.shaderCache.clear()
+      this.framebuffers.clear()
+      this.quadBuffer = null
+    }
+
+    this._boundContextRestored = () => {
+      console.log('[ShaderRenderer] WebGL context restored')
+      this._contextLost = false
+      // Reinitialize quad buffer
+      this.initQuadBuffer()
+      // Shaders and framebuffers will be recreated on demand
+    }
+
+    this.canvas.addEventListener('webglcontextlost', this._boundContextLost)
+    this.canvas.addEventListener('webglcontextrestored', this._boundContextRestored)
+  }
+
+  /**
+   * Check if context is lost
+   */
+  isContextLost(): boolean {
+    return this._contextLost
   }
 
   /**
@@ -377,10 +414,34 @@ export class ShaderRenderer {
     this.canvas.width = width
     this.canvas.height = height
 
-    // Resize framebuffers
-    for (const [id] of this.framebuffers) {
+    // Delete and recreate framebuffers at new size
+    // Must properly release GPU resources before clearing the Map
+    const gl = this.gl
+    for (const fb of this.framebuffers.values()) {
+      gl.deleteFramebuffer(fb.fbo)
+      gl.deleteTexture(fb.texture)
+    }
+    this.framebuffers.clear()
+  }
+
+  /**
+   * Delete a specific framebuffer by ID (for node cleanup)
+   */
+  deleteFramebuffer(id: string): void {
+    const fb = this.framebuffers.get(id)
+    if (fb) {
+      const gl = this.gl
+      gl.deleteFramebuffer(fb.fbo)
+      gl.deleteTexture(fb.texture)
       this.framebuffers.delete(id)
     }
+  }
+
+  /**
+   * Delete a texture from GPU memory
+   */
+  deleteTexture(texture: WebGLTexture): void {
+    this.gl.deleteTexture(texture)
   }
 
   /**
@@ -402,6 +463,14 @@ export class ShaderRenderer {
    */
   dispose(): void {
     const gl = this.gl
+
+    // Remove context loss event listeners
+    if (this._boundContextLost) {
+      this.canvas.removeEventListener('webglcontextlost', this._boundContextLost)
+    }
+    if (this._boundContextRestored) {
+      this.canvas.removeEventListener('webglcontextrestored', this._boundContextRestored)
+    }
 
     // Delete shaders
     for (const shader of this.shaderCache.values()) {

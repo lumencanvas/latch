@@ -26,6 +26,8 @@ interface RuntimeState {
   frameCount: number
   startTime: Date | null
   nodeMetrics: Map<string, NodeMetrics>
+  // Version counter to trigger reactivity when Map is mutated
+  nodeMetricsVersion: number
   errors: RuntimeError[]
   maxErrors: number
 }
@@ -38,6 +40,7 @@ export const useRuntimeStore = defineStore('runtime', {
     frameCount: 0,
     startTime: null,
     nodeMetrics: new Map(),
+    nodeMetricsVersion: 0,
     errors: [],
     maxErrors: 100,
   }),
@@ -57,6 +60,8 @@ export const useRuntimeStore = defineStore('runtime', {
     recentErrors: (state) => state.errors.slice(-10),
 
     getNodeMetrics: (state) => (nodeId: string): NodeMetrics | undefined => {
+      // Reference nodeMetricsVersion to ensure reactivity
+      void state.nodeMetricsVersion
       return state.nodeMetrics.get(nodeId)
     },
   },
@@ -118,6 +123,8 @@ export const useRuntimeStore = defineStore('runtime', {
         lastError: existing?.lastError ?? null,
         outputValues: data.outputValues ?? existing?.outputValues,
       })
+      // Trigger reactivity by incrementing version
+      this.nodeMetricsVersion++
     },
 
     updateFps(deltaTime: number) {
@@ -148,6 +155,7 @@ export const useRuntimeStore = defineStore('runtime', {
       if (metrics) {
         metrics.errorCount++
         metrics.lastError = error.message
+        this.nodeMetricsVersion++
       }
     },
 
@@ -172,6 +180,7 @@ export const useRuntimeStore = defineStore('runtime', {
       if (metrics) {
         metrics.errorCount++
         metrics.lastError = message
+        this.nodeMetricsVersion++
       }
     },
 
@@ -181,6 +190,7 @@ export const useRuntimeStore = defineStore('runtime', {
 
     clearNodeMetrics() {
       this.nodeMetrics.clear()
+      this.nodeMetricsVersion++
     },
 
     reset() {

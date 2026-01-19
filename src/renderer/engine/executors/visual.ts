@@ -13,9 +13,35 @@ import {
 import { webcamCapture } from '@/services/visual/WebcamCapture'
 import { getPresetById, parseUniformsFromCode } from '@/services/visual/ShaderPresets'
 
+// Re-export for use by other executors (e.g., AI texture conversion)
+export { getShaderRenderer }
+
 // Store for compiled shaders and textures
 const compiledShaders = new Map<string, CompiledShader>()
 const nodeTextures = new Map<string, WebGLTexture>()
+
+// Image loader state per node
+const imageLoaderState = new Map<
+  string,
+  {
+    image: HTMLImageElement | null
+    texture: WebGLTexture | null
+    loading: boolean
+    loadedUrl: string | null
+    error: string | null
+  }
+>()
+
+// Video player state per node
+const videoPlayerState = new Map<
+  string,
+  {
+    video: HTMLVideoElement | null
+    texture: WebGLTexture | null
+    loadedUrl: string | null
+    lastSeek: number | null
+  }
+>()
 // Track last preset to detect changes
 const lastPreset = new Map<string, string>()
 
@@ -23,8 +49,58 @@ const lastPreset = new Map<string, string>()
  * Dispose visual resources for a node
  */
 export function disposeVisualNode(nodeId: string): void {
+  const renderer = getShaderRenderer()
+
   compiledShaders.delete(nodeId)
-  // Note: textures are managed by ShaderRenderer
+  lastPreset.delete(nodeId)
+
+  // Clean up node texture from GPU
+  const nodeTexture = nodeTextures.get(nodeId)
+  if (nodeTexture) {
+    renderer.deleteTexture(nodeTexture)
+    nodeTextures.delete(nodeId)
+  }
+
+  // Clean up image loader state - delete texture from GPU
+  const imgState = imageLoaderState.get(nodeId)
+  if (imgState) {
+    if (imgState.texture) {
+      renderer.deleteTexture(imgState.texture)
+    }
+    if (imgState.image) {
+      imgState.image.src = ''
+      imgState.image.onload = null
+      imgState.image.onerror = null
+    }
+    imageLoaderState.delete(nodeId)
+  }
+
+  // Clean up video player state - delete texture from GPU
+  const vidState = videoPlayerState.get(nodeId)
+  if (vidState) {
+    if (vidState.texture) {
+      renderer.deleteTexture(vidState.texture)
+    }
+    if (vidState.video) {
+      vidState.video.pause()
+      vidState.video.src = ''
+      vidState.video.load() // Force cleanup
+    }
+    videoPlayerState.delete(nodeId)
+  }
+
+  // Clean up canvas texture cache
+  const canvasKey = `canvas_${nodeId}`
+  const canvasTexture = canvasTextureCache.get(canvasKey)
+  if (canvasTexture) {
+    renderer.deleteTexture(canvasTexture)
+    canvasTextureCache.delete(canvasKey)
+  }
+
+  // Clean up framebuffer for this node
+  renderer.deleteFramebuffer(nodeId)
+  // Also clean up blur's intermediate framebuffer
+  renderer.deleteFramebuffer(`${nodeId}_h`)
 }
 
 /**
@@ -33,6 +109,128 @@ export function disposeVisualNode(nodeId: string): void {
 export function disposeAllVisualNodes(): void {
   compiledShaders.clear()
   nodeTextures.clear()
+  lastPreset.clear()
+
+  // Clean up all image loader states
+  for (const [, state] of imageLoaderState) {
+    if (state.image) {
+      state.image.src = ''
+      state.image.onload = null
+      state.image.onerror = null
+    }
+  }
+  imageLoaderState.clear()
+
+  // Clean up all video player states
+  for (const [, state] of videoPlayerState) {
+    if (state.video) {
+      state.video.pause()
+      state.video.src = ''
+      state.video.load() // Force cleanup
+    }
+  }
+  videoPlayerState.clear()
+
+  // Clean up texture data cache
+  textureDataCache.clear()
+
+  // Clean up canvas texture cache
+  canvasTextureCache.clear()
+}
+
+/**
+ * Garbage collect orphaned visual state entries.
+ * Call this with the set of currently valid node IDs.
+ */
+export function gcVisualState(validNodeIds: Set<string>): void {
+  const renderer = getShaderRenderer()
+
+  // Clean compiledShaders (may have node IDs as keys or as prefixes)
+  for (const key of compiledShaders.keys()) {
+    // Skip built-in shaders
+    if (key.startsWith('_')) continue
+    // Extract nodeId from key (format: "nodeId_hash" or just "nodeId")
+    const baseId = key.includes('_') ? key.split('_')[0] : key
+    if (baseId && !validNodeIds.has(baseId)) {
+      compiledShaders.delete(key)
+    }
+  }
+
+  // Clean nodeTextures - DELETE FROM GPU before removing from Map
+  for (const nodeId of nodeTextures.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const texture = nodeTextures.get(nodeId)
+      if (texture) {
+        renderer.deleteTexture(texture)
+      }
+      nodeTextures.delete(nodeId)
+    }
+  }
+
+  // Clean lastPreset
+  for (const nodeId of lastPreset.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      lastPreset.delete(nodeId)
+    }
+  }
+
+  // Clean imageLoaderState - DELETE TEXTURE FROM GPU
+  for (const nodeId of imageLoaderState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const state = imageLoaderState.get(nodeId)
+      if (state) {
+        if (state.texture) {
+          renderer.deleteTexture(state.texture)
+        }
+        if (state.image) {
+          state.image.src = ''
+          state.image.onload = null
+          state.image.onerror = null
+        }
+      }
+      imageLoaderState.delete(nodeId)
+    }
+  }
+
+  // Clean videoPlayerState - DELETE TEXTURE FROM GPU
+  for (const nodeId of videoPlayerState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const state = videoPlayerState.get(nodeId)
+      if (state) {
+        if (state.texture) {
+          renderer.deleteTexture(state.texture)
+        }
+        if (state.video) {
+          state.video.pause()
+          state.video.src = ''
+          state.video.load()
+        }
+      }
+      videoPlayerState.delete(nodeId)
+    }
+  }
+
+  // Clean textureDataCache
+  for (const nodeId of textureDataCache.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      textureDataCache.delete(nodeId)
+    }
+  }
+
+  // Clean canvasTextureCache - DELETE TEXTURE FROM GPU
+  for (const key of canvasTextureCache.keys()) {
+    const nodeId = key.replace('canvas_', '')
+    if (!validNodeIds.has(nodeId)) {
+      const texture = canvasTextureCache.get(key)
+      if (texture) {
+        renderer.deleteTexture(texture)
+      }
+      canvasTextureCache.delete(key)
+    }
+  }
+
+  // Note: Framebuffer cleanup for specific nodes is handled by disposeVisualNode()
+  // which calls renderer.deleteFramebuffer(). The GC here handles Maps, not framebuffers.
 }
 
 // ============================================================================
@@ -951,12 +1149,467 @@ export const textureToDataExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
 }
 
 // ============================================================================
+// Image Loader Node
+// ============================================================================
+
+import { assetStorageManager } from '@/services/assets/AssetStorage'
+
+// Track pending asset URL resolutions
+const pendingAssetLoads = new Map<string, Promise<void>>()
+
+export const imageLoaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const urlInput = ctx.inputs.get('url') as string | undefined
+  const urlControl = ctx.controls.get('url') as string
+  const assetId = ctx.controls.get('assetId') as string | null
+  const trigger = ctx.inputs.get('trigger')
+  const crossOrigin = (ctx.controls.get('crossOrigin') as string) ?? 'anonymous'
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize state for this node
+  let state = imageLoaderState.get(ctx.nodeId)
+  if (!state) {
+    state = { image: null, texture: null, loading: false, loadedUrl: null, error: null }
+    imageLoaderState.set(ctx.nodeId, state)
+  }
+
+  // Determine the URL to use: asset takes priority over URL input
+  let url = ''
+  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
+
+  // If assetId is set, resolve it to a URL
+  if (assetId) {
+    const assetUrlKey = `asset:${assetId}`
+
+    // Check if we've already loaded this asset
+    if (state.loadedUrl === assetUrlKey && state.texture && !hasTrigger) {
+      outputs.set('texture', state.texture)
+      outputs.set('width', state.image?.naturalWidth ?? 0)
+      outputs.set('height', state.image?.naturalHeight ?? 0)
+      outputs.set('loading', state.loading)
+      return outputs
+    }
+
+    // Start loading asset URL if not already pending
+    if (!pendingAssetLoads.has(ctx.nodeId) && (!state.loadedUrl?.startsWith('asset:') || hasTrigger)) {
+      state.loading = true
+      state.error = null
+
+      const loadPromise = (async () => {
+        try {
+          const assetUrl = await assetStorageManager.getAssetUrl(assetId)
+          if (assetUrl) {
+            // Load the image from the asset URL
+            const img = new Image()
+            img.crossOrigin = 'anonymous'
+
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve()
+              img.onerror = () => reject(new Error('Failed to load asset image'))
+              img.src = assetUrl
+            })
+
+            const renderer = getShaderRenderer()
+            if (state!.texture) {
+              renderer.deleteTexture(state!.texture)
+            }
+            state!.texture = renderer.createTexture(img)
+            state!.image = img
+            state!.loadedUrl = assetUrlKey
+            state!.loading = false
+          } else {
+            state!.error = 'Asset not found'
+            state!.loading = false
+          }
+        } catch (error) {
+          state!.error = error instanceof Error ? error.message : 'Failed to load asset'
+          state!.loading = false
+        } finally {
+          pendingAssetLoads.delete(ctx.nodeId)
+        }
+      })()
+
+      pendingAssetLoads.set(ctx.nodeId, loadPromise)
+    }
+
+    outputs.set('texture', state.texture)
+    outputs.set('width', state.image?.naturalWidth ?? 0)
+    outputs.set('height', state.image?.naturalHeight ?? 0)
+    outputs.set('loading', state.loading)
+    if (state.error) {
+      outputs.set('_error', state.error)
+    }
+    return outputs
+  }
+
+  // Fall back to URL input/control
+  url = urlInput ?? urlControl ?? ''
+
+  if (!url) {
+    outputs.set('texture', null)
+    outputs.set('width', 0)
+    outputs.set('height', 0)
+    outputs.set('loading', false)
+    return outputs
+  }
+
+  // Check if URL changed or trigger was fired
+  const urlChanged = url !== state.loadedUrl
+
+  // Start loading if needed
+  if ((urlChanged || hasTrigger) && !state.loading) {
+    state.loading = true
+    state.loadedUrl = url
+    state.error = null
+
+    const img = new Image()
+    if (crossOrigin !== 'none') {
+      img.crossOrigin = crossOrigin
+    }
+
+    img.onload = () => {
+      const renderer = getShaderRenderer()
+      // Create texture from image
+      const texture = renderer.createTexture(img)
+      state!.image = img
+      state!.texture = texture
+      state!.loading = false
+    }
+
+    img.onerror = () => {
+      state!.loading = false
+      state!.error = 'Failed to load image'
+      state!.image = null
+      state!.texture = null
+    }
+
+    img.src = url
+  }
+
+  outputs.set('texture', state.texture)
+  outputs.set('width', state.image?.naturalWidth ?? 0)
+  outputs.set('height', state.image?.naturalHeight ?? 0)
+  outputs.set('loading', state.loading)
+  if (state.error) {
+    outputs.set('_error', state.error)
+  }
+
+  return outputs
+}
+
+// ============================================================================
+// Video Player Node
+// ============================================================================
+
+export const videoPlayerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const urlInput = ctx.inputs.get('url') as string | undefined
+  const urlControl = ctx.controls.get('url') as string
+  const url = urlInput ?? urlControl ?? ''
+
+  const playTrigger = ctx.inputs.get('play')
+  const pauseTrigger = ctx.inputs.get('pause')
+  const seekInput = ctx.inputs.get('seek') as number | undefined
+
+  const autoplay = (ctx.controls.get('autoplay') as boolean) ?? false
+  const loop = (ctx.controls.get('loop') as boolean) ?? true
+  const playbackRate = (ctx.controls.get('playbackRate') as number) ?? 1
+  const volume = (ctx.controls.get('volume') as number) ?? 0.5
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize state for this node
+  let state = videoPlayerState.get(ctx.nodeId)
+  if (!state) {
+    state = { video: null, texture: null, loadedUrl: null, lastSeek: null }
+    videoPlayerState.set(ctx.nodeId, state)
+  }
+
+  if (!url) {
+    outputs.set('texture', null)
+    outputs.set('video', null)
+    outputs.set('playing', false)
+    outputs.set('time', 0)
+    outputs.set('duration', 0)
+    outputs.set('progress', 0)
+    return outputs
+  }
+
+  // Check if URL changed
+  const urlChanged = url !== state.loadedUrl
+
+  // Create or update video element
+  if (urlChanged || !state.video) {
+    if (state.video) {
+      state.video.pause()
+      state.video.src = ''
+    }
+
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.muted = volume === 0
+    video.loop = loop
+    video.playbackRate = playbackRate
+    video.volume = volume
+    video.playsInline = true
+    video.src = url
+
+    if (autoplay) {
+      video.play().catch(() => {
+        // Autoplay may be blocked by browser
+      })
+    }
+
+    state.video = video
+    state.loadedUrl = url
+    state.texture = null
+  }
+
+  const video = state.video!
+
+  // Update video properties
+  if (video.loop !== loop) video.loop = loop
+  if (Math.abs(video.playbackRate - playbackRate) > 0.01) video.playbackRate = playbackRate
+  if (Math.abs(video.volume - volume) > 0.01) video.volume = volume
+  video.muted = volume === 0
+
+  // Handle play/pause triggers
+  const hasPlayTrigger = playTrigger === true || playTrigger === 1 || (typeof playTrigger === 'number' && playTrigger > 0)
+  const hasPauseTrigger = pauseTrigger === true || pauseTrigger === 1 || (typeof pauseTrigger === 'number' && pauseTrigger > 0)
+
+  if (hasPlayTrigger && video.paused) {
+    video.play().catch(() => {})
+  }
+  if (hasPauseTrigger && !video.paused) {
+    video.pause()
+  }
+
+  // Handle seek
+  if (seekInput !== undefined && seekInput !== state.lastSeek) {
+    if (video.readyState >= 1) {
+      video.currentTime = Math.max(0, Math.min(seekInput, video.duration || 0))
+    }
+    state.lastSeek = seekInput
+  }
+
+  // Update texture from video frame
+  if (video.readyState >= 2 && video.videoWidth > 0) {
+    const renderer = getShaderRenderer()
+    if (!state.texture) {
+      state.texture = renderer.createTexture(video)
+    } else {
+      renderer.updateTexture(state.texture, video)
+    }
+  }
+
+  outputs.set('texture', state.texture)
+  outputs.set('video', video)
+  outputs.set('playing', !video.paused)
+  outputs.set('time', video.currentTime || 0)
+  outputs.set('duration', video.duration || 0)
+  outputs.set('progress', video.duration ? video.currentTime / video.duration : 0)
+
+  return outputs
+}
+
+// ============================================================================
+// Webcam Snapshot Node
+// ============================================================================
+
+// State for webcam snapshot nodes
+const webcamSnapshotState = new Map<
+  string,
+  {
+    video: HTMLVideoElement | null
+    canvas: HTMLCanvasElement | null
+    texture: WebGLTexture | null
+    stream: MediaStream | null
+    lastCaptureTime: number
+    capturedImageData: ImageData | null
+    deviceId: string | null
+    resolution: string
+    initialized: boolean
+  }
+>()
+
+// Resolution presets
+const resolutionPresets: Record<string, { width: number; height: number }> = {
+  '480p': { width: 640, height: 480 },
+  '720p': { width: 1280, height: 720 },
+  '1080p': { width: 1920, height: 1080 },
+}
+
+async function initWebcamSnapshot(
+  nodeId: string,
+  deviceId: string | undefined,
+  resolution: string
+): Promise<void> {
+  let state = webcamSnapshotState.get(nodeId)
+
+  // Check if we need to reinitialize
+  const needsReinit =
+    !state ||
+    !state.initialized ||
+    state.deviceId !== deviceId ||
+    state.resolution !== resolution
+
+  if (!needsReinit && state?.stream?.active) {
+    return
+  }
+
+  // Clean up existing
+  if (state?.stream) {
+    state.stream.getTracks().forEach((track) => track.stop())
+  }
+
+  // Initialize new state
+  if (!state) {
+    state = {
+      video: document.createElement('video'),
+      canvas: document.createElement('canvas'),
+      texture: null,
+      stream: null,
+      lastCaptureTime: 0,
+      capturedImageData: null,
+      deviceId: deviceId ?? null,
+      resolution,
+      initialized: false,
+    }
+    webcamSnapshotState.set(nodeId, state)
+  }
+
+  const res = resolutionPresets[resolution] ?? resolutionPresets['720p']
+
+  try {
+    const constraints: MediaStreamConstraints = {
+      video: {
+        width: { ideal: res.width },
+        height: { ideal: res.height },
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+      },
+    }
+
+    state.stream = await navigator.mediaDevices.getUserMedia(constraints)
+    state.video!.srcObject = state.stream
+    state.video!.muted = true
+    state.video!.playsInline = true
+    await state.video!.play()
+
+    state.canvas!.width = state.video!.videoWidth || res.width
+    state.canvas!.height = state.video!.videoHeight || res.height
+    state.deviceId = deviceId ?? null
+    state.resolution = resolution
+    state.initialized = true
+  } catch (error) {
+    console.error('[Webcam Snapshot] Failed to initialize:', error)
+    state.initialized = false
+  }
+}
+
+export const webcamSnapshotExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const trigger = ctx.inputs.get('trigger')
+  const deviceId = ctx.controls.get('device') as string | undefined
+  const resolution = (ctx.controls.get('resolution') as string) ?? '720p'
+  const mirror = (ctx.controls.get('mirror') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize webcam if not already
+  await initWebcamSnapshot(ctx.nodeId, deviceId, resolution)
+
+  const state = webcamSnapshotState.get(ctx.nodeId)
+  if (!state || !state.initialized || !state.video || !state.canvas) {
+    outputs.set('texture', null)
+    outputs.set('imageData', null)
+    outputs.set('width', 0)
+    outputs.set('height', 0)
+    outputs.set('captured', false)
+    outputs.set('_error', 'Webcam not initialized')
+    return outputs
+  }
+
+  // Check if trigger fired
+  const hasTrigger =
+    trigger === true ||
+    trigger === 1 ||
+    (typeof trigger === 'number' && trigger > 0) ||
+    (typeof trigger === 'string' && trigger.length > 0)
+
+  let capturedThisFrame = false
+
+  if (hasTrigger) {
+    const now = Date.now()
+    // Debounce captures to prevent rapid-fire
+    if (now - state.lastCaptureTime > 100) {
+      // Capture frame to canvas
+      const ctx2d = state.canvas.getContext('2d')!
+
+      // Update canvas size to match video
+      state.canvas.width = state.video.videoWidth
+      state.canvas.height = state.video.videoHeight
+
+      // Apply mirror transform if needed
+      if (mirror) {
+        ctx2d.save()
+        ctx2d.scale(-1, 1)
+        ctx2d.drawImage(state.video, -state.canvas.width, 0)
+        ctx2d.restore()
+      } else {
+        ctx2d.drawImage(state.video, 0, 0)
+      }
+
+      // Get image data
+      state.capturedImageData = ctx2d.getImageData(
+        0,
+        0,
+        state.canvas.width,
+        state.canvas.height
+      )
+
+      // Create or update WebGL texture
+      const renderer = getShaderRenderer()
+      if (state.texture) {
+        renderer.updateTexture(state.texture, state.canvas)
+      } else {
+        state.texture = renderer.createTexture(state.canvas)
+      }
+
+      state.lastCaptureTime = now
+      capturedThisFrame = true
+    }
+  }
+
+  outputs.set('texture', state.texture)
+  outputs.set('imageData', state.capturedImageData)
+  outputs.set('width', state.canvas.width)
+  outputs.set('height', state.canvas.height)
+  outputs.set('captured', capturedThisFrame)
+
+  return outputs
+}
+
+// Cleanup function for webcam snapshot
+export function disposeWebcamSnapshotNode(nodeId: string): void {
+  const state = webcamSnapshotState.get(nodeId)
+  if (state) {
+    if (state.stream) {
+      state.stream.getTracks().forEach((track) => track.stop())
+    }
+    if (state.texture) {
+      const renderer = getShaderRenderer()
+      renderer.deleteTexture(state.texture)
+    }
+    webcamSnapshotState.delete(nodeId)
+  }
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
 export const visualExecutors: Record<string, NodeExecutorFn> = {
   shader: shaderExecutor,
   webcam: webcamExecutor,
+  'webcam-snapshot': webcamSnapshotExecutor,
   color: colorExecutor,
   'texture-display': textureDisplayExecutor,
   blend: blendExecutor,
@@ -966,4 +1619,6 @@ export const visualExecutors: Record<string, NodeExecutorFn> = {
   displacement: displacementExecutor,
   'transform-2d': transform2DExecutor,
   'texture-to-data': textureToDataExecutor,
+  'image-loader': imageLoaderExecutor,
+  'video-player': videoPlayerExecutor,
 }

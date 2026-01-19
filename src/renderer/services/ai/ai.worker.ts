@@ -9,6 +9,7 @@ import { pipeline, env } from '@huggingface/transformers'
 
 // Configure Transformers.js for browser usage
 env.allowLocalModels = false
+// Browser cache setting - can be toggled at runtime
 env.useBrowserCache = true
 
 // Pipeline cache
@@ -24,6 +25,7 @@ interface LoadModelMessage {
   options?: {
     device?: 'cpu' | 'webgpu'
     dtype?: string
+    useBrowserCache?: boolean
   }
 }
 
@@ -55,7 +57,17 @@ interface DisposeMessage {
   id: string
 }
 
-type WorkerMessage = LoadModelMessage | InferenceMessage | UnloadModelMessage | CheckModelMessage | DisposeMessage
+interface SetCacheMessage {
+  type: 'setCache'
+  enabled: boolean
+}
+
+interface ClearCacheMessage {
+  type: 'clearCache'
+  id: string
+}
+
+type WorkerMessage = LoadModelMessage | InferenceMessage | UnloadModelMessage | CheckModelMessage | DisposeMessage | SetCacheMessage | ClearCacheMessage
 
 // Response types
 interface ProgressResponse {
@@ -111,6 +123,12 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
 
   try {
     console.log(`[AI Worker] Loading model: ${msg.model} for task: ${msg.task}`)
+
+    // Apply cache setting if provided
+    if (msg.options?.useBrowserCache !== undefined) {
+      env.useBrowserCache = msg.options.useBrowserCache
+      console.log(`[AI Worker] Browser cache ${msg.options.useBrowserCache ? 'enabled' : 'disabled'}`)
+    }
 
     // Track progress across multiple files
     const fileProgress = new Map<string, number>()
@@ -387,6 +405,40 @@ function handleDispose(msg: DisposeMessage): void {
   respond({ type: 'result', id: msg.id, success: true })
 }
 
+// Handle cache setting change
+function handleSetCache(msg: SetCacheMessage): void {
+  env.useBrowserCache = msg.enabled
+  console.log(`[AI Worker] Browser cache ${msg.enabled ? 'enabled' : 'disabled'}`)
+}
+
+// Handle cache clear
+async function handleClearCache(msg: ClearCacheMessage): Promise<void> {
+  // Dispose all loaded models first
+  for (const [, pipe] of pipelines) {
+    if (pipe && typeof pipe.dispose === 'function') {
+      pipe.dispose()
+    }
+  }
+  pipelines.clear()
+
+  // Try to clear the cache using transformers.js cache API if available
+  try {
+    // Clear caches via Cache API (where transformers.js stores files)
+    const cacheNames = await caches.keys()
+    for (const name of cacheNames) {
+      if (name.includes('transformers') || name.includes('onnx') || name.includes('huggingface')) {
+        await caches.delete(name)
+        console.log(`[AI Worker] Cleared cache: ${name}`)
+      }
+    }
+  } catch (error) {
+    console.warn('[AI Worker] Could not clear Cache API:', error)
+  }
+
+  console.log('[AI Worker] Model cache cleared')
+  respond({ type: 'result', id: msg.id, success: true })
+}
+
 // Message handler
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const msg = event.data
@@ -406,6 +458,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       break
     case 'dispose':
       handleDispose(msg)
+      break
+    case 'setCache':
+      handleSetCache(msg)
+      break
+    case 'clearCache':
+      await handleClearCache(msg)
       break
     default:
       console.warn('[AI Worker] Unknown message type:', msg)

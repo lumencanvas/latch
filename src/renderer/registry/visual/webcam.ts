@@ -17,6 +17,12 @@ export const webcamNode: NodeDefinition = {
   ],
   controls: [
     { id: 'enabled', type: 'toggle', label: 'Enabled', default: true },
-    { id: 'device', type: 'select', label: 'Device', default: 'default' },
+    {
+      id: 'device',
+      type: 'select',
+      label: 'Device',
+      default: 'default',
+      props: { deviceType: 'video-input' },
+    },
   ],
 }

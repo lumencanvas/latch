@@ -550,11 +550,15 @@ export const useFlowsStore = defineStore('flows', {
 
       // Copy internal edges with updated IDs
       for (const edge of internalEdges) {
+        const newSource = nodeIdMap.get(edge.source)
+        const newTarget = nodeIdMap.get(edge.target)
+        if (!newSource || !newTarget) continue // Skip edges with missing nodes
+
         const newEdge: Edge = {
           id: nanoid(),
-          source: nodeIdMap.get(edge.source)!,
+          source: newSource,
           sourceHandle: edge.sourceHandle,
-          target: nodeIdMap.get(edge.target)!,
+          target: newTarget,
           targetHandle: edge.targetHandle,
         }
         subflow.edges.push(newEdge)
@@ -725,12 +729,14 @@ export const useFlowsStore = defineStore('flows', {
           continue
         }
 
-        if (nodeIdMap.has(edge.source) && nodeIdMap.has(edge.target)) {
+        const newSource = nodeIdMap.get(edge.source)
+        const newTarget = nodeIdMap.get(edge.target)
+        if (newSource && newTarget) {
           flow.edges.push({
             id: nanoid(),
-            source: nodeIdMap.get(edge.source)!,
+            source: newSource,
             sourceHandle: edge.sourceHandle,
-            target: nodeIdMap.get(edge.target)!,
+            target: newTarget,
             targetHandle: edge.targetHandle,
           })
         }
@@ -745,12 +751,13 @@ export const useFlowsStore = defineStore('flows', {
           const internalEdge = subflow.edges.find(
             (e) => e.source === inputPort.nodeId
           )
-          if (internalEdge && nodeIdMap.has(internalEdge.target)) {
+          const newTarget = internalEdge ? nodeIdMap.get(internalEdge.target) : undefined
+          if (internalEdge && newTarget) {
             flow.edges.push({
               id: nanoid(),
               source: edge.source,
               sourceHandle: edge.sourceHandle,
-              target: nodeIdMap.get(internalEdge.target)!,
+              target: newTarget,
               targetHandle: internalEdge.targetHandle,
             })
           }
@@ -766,10 +773,11 @@ export const useFlowsStore = defineStore('flows', {
           const internalEdge = subflow.edges.find(
             (e) => e.target === outputPort.nodeId
           )
-          if (internalEdge && nodeIdMap.has(internalEdge.source)) {
+          const newSource = internalEdge ? nodeIdMap.get(internalEdge.source) : undefined
+          if (internalEdge && newSource) {
             flow.edges.push({
               id: nanoid(),
-              source: nodeIdMap.get(internalEdge.source)!,
+              source: newSource,
               sourceHandle: internalEdge.sourceHandle,
               target: edge.target,
               targetHandle: edge.targetHandle,

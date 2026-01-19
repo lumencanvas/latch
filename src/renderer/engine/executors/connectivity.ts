@@ -21,6 +21,9 @@ const midiInputs = new Map<string, MIDIInput>()
 const midiOutputs = new Map<string, MIDIOutput>()
 const midiState = new Map<string, unknown>()
 
+// Pre-compiled regex patterns for performance
+const JSON_PATH_SPLIT_REGEX = /[.[\]]/
+
 /**
  * Helper to get cached value
  */
@@ -361,7 +364,7 @@ export const jsonParseExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
     // Navigate path if provided (e.g., "data.items[0].name")
     if (path.trim()) {
-      const parts = path.split(/[.[\]]/).filter(Boolean)
+      const parts = path.split(JSON_PATH_SPLIT_REGEX).filter(Boolean)
       let current: unknown = parsed
       for (const part of parts) {
         if (current && typeof current === 'object') {
@@ -826,6 +829,9 @@ export const serialExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
         const reader = port.readable.getReader()
         connection.reader = reader
 
+        // Maximum buffer size to prevent unbounded memory growth (64KB)
+        const MAX_BUFFER_SIZE = 64 * 1024
+
         // Read loop
         const readLoop = async () => {
           try {
@@ -834,11 +840,20 @@ export const serialExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
               if (done) break
               if (value) {
                 const text = new TextDecoder().decode(value)
-                const existingData = getCached<string>(`${ctx.nodeId}:data`, '')
-                setCached(serialState, `${ctx.nodeId}:data`, existingData + text)
+                let existingData = getCached<string>(`${ctx.nodeId}:data`, '')
+
+                // Cap buffer size to prevent unbounded memory growth
+                const newData = existingData + text
+                if (newData.length > MAX_BUFFER_SIZE) {
+                  // Keep only the most recent data, truncating from the start
+                  existingData = newData.slice(-MAX_BUFFER_SIZE)
+                } else {
+                  existingData = newData
+                }
+                setCached(serialState, `${ctx.nodeId}:data`, existingData)
 
                 // Parse lines
-                const lines = (existingData + text).split('\n')
+                const lines = existingData.split('\n')
                 if (lines.length > 1) {
                   const lastLine = lines[lines.length - 2] // Last complete line
                   setCached(serialState, `${ctx.nodeId}:line`, lastLine)
@@ -854,10 +869,15 @@ export const serialExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
           } catch (error) {
             if ((error as Error).name !== 'NetworkError') {
               console.error('[Serial] Read error:', error)
+              setCached(serialState, `${ctx.nodeId}:error`, (error as Error).message)
             }
           }
         }
-        readLoop()
+        // Handle promise to prevent unhandled rejection
+        readLoop().catch((error) => {
+          console.error('[Serial] Unhandled read loop error:', error)
+          setCached(serialState, `${ctx.nodeId}:error`, (error as Error).message ?? 'Read loop error')
+        })
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)

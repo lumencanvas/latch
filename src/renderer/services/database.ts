@@ -26,11 +26,37 @@ export interface AppSettings {
 }
 
 /**
+ * Asset types supported
+ */
+export type AssetType = 'image' | 'video' | 'audio'
+
+/**
+ * Asset schema for media library
+ */
+export interface Asset {
+  id: string
+  name: string
+  type: AssetType
+  mimeType: string
+  size: number
+  data?: Blob // Web: stored in IndexedDB
+  path?: string // Electron: filesystem path
+  thumbnail?: Blob
+  width?: number // For images/video
+  height?: number // For images/video
+  duration?: number // For audio/video
+  createdAt: Date
+  updatedAt: Date
+  tags: string[]
+}
+
+/**
  * Dexie database class for Latch
  */
 class LatchDatabase extends Dexie {
   flows!: Table<PersistedFlow, string>
   settings!: Table<AppSettings, string>
+  assets!: Table<Asset, string>
 
   constructor() {
     super('latch')
@@ -39,6 +65,13 @@ class LatchDatabase extends Dexie {
     this.version(1).stores({
       flows: 'id, name, createdAt, updatedAt',
       settings: 'id',
+    })
+
+    // Version 2 schema - add assets table
+    this.version(2).stores({
+      flows: 'id, name, createdAt, updatedAt',
+      settings: 'id',
+      assets: 'id, name, type, mimeType, createdAt, updatedAt, *tags',
     })
   }
 }
@@ -117,6 +150,96 @@ export const settingsStorage = {
       sidebarWidth: 280,
       lastOpenedFlowId: null,
     }
+  },
+}
+
+/**
+ * Asset persistence operations
+ */
+export const assetStorage = {
+  /**
+   * Get all assets
+   */
+  async getAll(): Promise<Asset[]> {
+    return db.assets.toArray()
+  },
+
+  /**
+   * Get assets by type
+   */
+  async getByType(type: AssetType): Promise<Asset[]> {
+    return db.assets.where('type').equals(type).toArray()
+  },
+
+  /**
+   * Get an asset by ID
+   */
+  async getById(id: string): Promise<Asset | undefined> {
+    return db.assets.get(id)
+  },
+
+  /**
+   * Save an asset (create or update)
+   */
+  async save(asset: Asset): Promise<void> {
+    await db.assets.put(asset)
+  },
+
+  /**
+   * Delete an asset
+   */
+  async delete(id: string): Promise<void> {
+    await db.assets.delete(id)
+  },
+
+  /**
+   * Delete all assets
+   */
+  async deleteAll(): Promise<void> {
+    await db.assets.clear()
+  },
+
+  /**
+   * Search assets by name
+   */
+  async searchByName(query: string): Promise<Asset[]> {
+    const lowerQuery = query.toLowerCase()
+    return db.assets
+      .filter((asset) => asset.name.toLowerCase().includes(lowerQuery))
+      .toArray()
+  },
+
+  /**
+   * Get assets by tags
+   */
+  async getByTags(tags: string[]): Promise<Asset[]> {
+    return db.assets
+      .where('tags')
+      .anyOf(tags)
+      .distinct()
+      .toArray()
+  },
+
+  /**
+   * Get total size of all assets
+   */
+  async getTotalSize(): Promise<number> {
+    const assets = await db.assets.toArray()
+    return assets.reduce((sum, asset) => sum + asset.size, 0)
+  },
+
+  /**
+   * Get count of assets by type
+   */
+  async getCountByType(): Promise<Record<AssetType, number>> {
+    const assets = await db.assets.toArray()
+    return assets.reduce(
+      (acc, asset) => {
+        acc[asset.type] = (acc[asset.type] || 0) + 1
+        return acc
+      },
+      { image: 0, video: 0, audio: 0 } as Record<AssetType, number>
+    )
   },
 }
 

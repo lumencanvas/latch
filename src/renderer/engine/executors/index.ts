@@ -13,6 +13,8 @@ import { claspExecutors, disposeClaspNode, disposeAllClaspConnections, getClaspC
 import { codeExecutors } from './code'
 import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
+import { stringExecutors } from './string'
+import { messagingExecutors } from './messaging'
 
 // Re-export CLASP utilities for external use
 export { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus }
@@ -206,7 +208,9 @@ export const absExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
 export const smoothExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const target = (ctx.inputs.get('value') as number) ?? 0
-  const factor = (ctx.controls.get('factor') as number) ?? 0.1
+  const rawFactor = (ctx.controls.get('factor') as number) ?? 0.1
+  // Guard against NaN and invalid values
+  const factor = Number.isFinite(rawFactor) ? rawFactor : 0.1
 
   // Get previous value from outputs (stateful node)
   const prev = (ctx.controls.get('_prev') as number) ?? target
@@ -233,6 +237,193 @@ export const randomExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   return new Map([['result', Math.random() * (max - min) + min]])
+}
+
+export const trigExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = (ctx.inputs.get('value') as number) ?? 0
+  const fn = (ctx.controls.get('function') as string) ?? 'sin'
+  const useDegrees = (ctx.controls.get('degrees') as boolean) ?? false
+
+  // Convert to radians if needed
+  const input = useDegrees ? (value * Math.PI) / 180 : value
+
+  let result: number
+  switch (fn) {
+    case 'sin':
+      result = Math.sin(input)
+      break
+    case 'cos':
+      result = Math.cos(input)
+      break
+    case 'tan':
+      result = Math.tan(input)
+      break
+    case 'asin':
+      result = Math.asin(value) // asin/acos/atan take normalized values
+      if (useDegrees) result = (result * 180) / Math.PI
+      break
+    case 'acos':
+      result = Math.acos(value)
+      if (useDegrees) result = (result * 180) / Math.PI
+      break
+    case 'atan':
+      result = Math.atan(value)
+      if (useDegrees) result = (result * 180) / Math.PI
+      break
+    case 'sinh':
+      result = Math.sinh(input)
+      break
+    case 'cosh':
+      result = Math.cosh(input)
+      break
+    case 'tanh':
+      result = Math.tanh(input)
+      break
+    default:
+      result = Math.sin(input)
+  }
+
+  return new Map([['result', result]])
+}
+
+export const powerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const base = (ctx.inputs.get('base') as number) ?? 0
+  const exponentInput = ctx.inputs.get('exponent') as number | undefined
+  const exponentControl = (ctx.controls.get('exponent') as number) ?? 2
+  const exponent = exponentInput ?? exponentControl
+  const operation = (ctx.controls.get('operation') as string) ?? 'Power'
+
+  let result: number
+  switch (operation) {
+    case 'Power':
+      result = Math.pow(base, exponent)
+      break
+    case 'Sqrt':
+      result = Math.sqrt(base)
+      break
+    case 'Cbrt':
+      result = Math.cbrt(base)
+      break
+    case 'Log':
+      result = Math.log(base) / Math.log(exponent) // Log base exponent
+      break
+    case 'Log10':
+      result = Math.log10(base)
+      break
+    case 'Ln':
+      result = Math.log(base)
+      break
+    case 'Exp':
+      result = Math.exp(base)
+      break
+    default:
+      result = Math.pow(base, exponent)
+  }
+
+  return new Map([['result', isNaN(result) ? 0 : result]])
+}
+
+export const vectorMathExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const ax = (ctx.inputs.get('ax') as number) ?? 0
+  const ay = (ctx.inputs.get('ay') as number) ?? 0
+  const az = (ctx.inputs.get('az') as number) ?? 0
+  const bx = (ctx.inputs.get('bx') as number) ?? 0
+  const by = (ctx.inputs.get('by') as number) ?? 0
+  const bz = (ctx.inputs.get('bz') as number) ?? 0
+  const scalar = (ctx.controls.get('scalar') as number) ?? 1
+  const operation = (ctx.controls.get('operation') as string) ?? 'Add'
+
+  let x: number, y: number, z: number
+
+  switch (operation) {
+    case 'Add':
+      x = ax + bx
+      y = ay + by
+      z = az + bz
+      break
+    case 'Subtract':
+      x = ax - bx
+      y = ay - by
+      z = az - bz
+      break
+    case 'Cross':
+      x = ay * bz - az * by
+      y = az * bx - ax * bz
+      z = ax * by - ay * bx
+      break
+    case 'Normalize': {
+      const mag = Math.sqrt(ax * ax + ay * ay + az * az)
+      if (mag > 0) {
+        x = ax / mag
+        y = ay / mag
+        z = az / mag
+      } else {
+        x = y = z = 0
+      }
+      break
+    }
+    case 'Scale':
+      x = ax * scalar
+      y = ay * scalar
+      z = az * scalar
+      break
+    case 'Lerp':
+      x = ax + (bx - ax) * scalar
+      y = ay + (by - ay) * scalar
+      z = az + (bz - az) * scalar
+      break
+    case 'Dot': {
+      const dot = ax * bx + ay * by + az * bz
+      x = dot
+      y = dot
+      z = dot
+      break
+    }
+    default:
+      x = ax + bx
+      y = ay + by
+      z = az + bz
+  }
+
+  const magnitude = Math.sqrt(x * x + y * y + z * z)
+
+  return new Map([
+    ['x', x],
+    ['y', y],
+    ['z', z],
+    ['magnitude', magnitude],
+  ])
+}
+
+export const moduloExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = (ctx.inputs.get('value') as number) ?? 0
+  const divisorInput = ctx.inputs.get('divisor') as number | undefined
+  const divisorControl = (ctx.controls.get('divisor') as number) ?? 1
+  const divisor = divisorInput ?? divisorControl
+  const mode = (ctx.controls.get('mode') as string) ?? 'Standard'
+
+  if (divisor === 0) {
+    return new Map([['result', 0]])
+  }
+
+  let result: number
+  switch (mode) {
+    case 'Standard':
+      result = value % divisor
+      break
+    case 'Positive':
+      // Always returns positive result
+      result = ((value % divisor) + divisor) % divisor
+      break
+    case 'Floor':
+      // Floor division remainder (Python-style)
+      result = value - divisor * Math.floor(value / divisor)
+      break
+    default:
+      result = value % divisor
+  }
+
+  return new Map([['result', result]])
 }
 
 // ============================================================================
@@ -435,6 +626,187 @@ export const timerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   ])
 }
 
+// Track metronome state per node
+const metronomeState = new Map<
+  string,
+  {
+    running: boolean
+    startTime: number
+    lastBeatNum: number
+    lastBarNum: number
+  }
+>()
+
+export const metronomeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const startTrigger = ctx.inputs.get('start')
+  const stopTrigger = ctx.inputs.get('stop')
+  const bpmInput = ctx.inputs.get('bpm') as number | undefined
+  const bpmControl = (ctx.controls.get('bpm') as number) ?? 120
+  const bpm = bpmInput ?? bpmControl
+
+  const beatsPerBar = (ctx.controls.get('beatsPerBar') as number) ?? 4
+  const subdivisionStr = (ctx.controls.get('subdivision') as string) ?? '1'
+  const swing = (ctx.controls.get('swing') as number) ?? 0
+  const runningControl = (ctx.controls.get('running') as boolean) ?? true
+
+  // Parse subdivision
+  const subdivisionMap: Record<string, number> = {
+    '1': 1,
+    '1/2': 2,
+    '1/4': 4,
+    '1/8': 8,
+    '1/16': 16,
+  }
+  const subdivision = subdivisionMap[subdivisionStr] ?? 1
+
+  // Initialize state
+  let state = metronomeState.get(ctx.nodeId)
+  if (!state) {
+    state = { running: runningControl, startTime: ctx.totalTime, lastBeatNum: -1, lastBarNum: -1 }
+    metronomeState.set(ctx.nodeId, state)
+  }
+
+  // Handle start/stop triggers
+  const hasStart = startTrigger === true || startTrigger === 1 || (typeof startTrigger === 'number' && startTrigger > 0)
+  const hasStop = stopTrigger === true || stopTrigger === 1 || (typeof stopTrigger === 'number' && stopTrigger > 0)
+
+  if (hasStart && !state.running) {
+    state.running = true
+    state.startTime = ctx.totalTime
+    state.lastBeatNum = -1
+    state.lastBarNum = -1
+  }
+  if (hasStop && state.running) {
+    state.running = false
+  }
+
+  const outputs = new Map<string, unknown>()
+
+  if (!state.running) {
+    outputs.set('beat', 0)
+    outputs.set('bar', 0)
+    outputs.set('beatNum', 0)
+    outputs.set('barNum', 0)
+    outputs.set('phase', 0)
+    return outputs
+  }
+
+  // Calculate timing
+  const beatsPerSecond = bpm / 60
+  const subBeatsPerSecond = beatsPerSecond * subdivision
+  const elapsedTime = ctx.totalTime - state.startTime
+
+  // Calculate current beat (with subdivision)
+  const totalSubBeats = elapsedTime * subBeatsPerSecond
+  const subBeatNum = Math.floor(totalSubBeats)
+
+  // Apply swing to every other beat
+  let phase = totalSubBeats % 1
+  // Clamp swing value to 0-100 range to prevent invalid phase values
+  const clampedSwing = Math.max(0, Math.min(100, swing))
+  if (clampedSwing > 0 && subBeatNum % 2 === 1) {
+    // Delay odd beats based on swing amount
+    const swingAmount = clampedSwing / 100 * 0.5
+    phase = (phase - swingAmount + 1) % 1
+  }
+
+  // Calculate beat and bar numbers
+  const beatNum = Math.floor(subBeatNum / subdivision) % beatsPerBar
+  const barNum = Math.floor(subBeatNum / subdivision / beatsPerBar)
+
+  // Detect beat and bar triggers
+  const isBeat = subBeatNum !== state.lastBeatNum
+  const isBar = beatNum === 0 && isBeat && barNum !== state.lastBarNum
+
+  state.lastBeatNum = subBeatNum
+  if (isBar) {
+    state.lastBarNum = barNum
+  }
+
+  outputs.set('beat', isBeat ? 1 : 0)
+  outputs.set('bar', isBar ? 1 : 0)
+  outputs.set('beatNum', beatNum + 1) // 1-indexed for display
+  outputs.set('barNum', barNum + 1) // 1-indexed for display
+  outputs.set('phase', phase)
+
+  return outputs
+}
+
+// Track step sequencer state per node
+const stepSequencerState = new Map<
+  string,
+  {
+    currentStep: number
+    direction: 1 | -1 // For ping-pong mode
+    lastClockState: boolean
+  }
+>()
+
+export const stepSequencerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const clock = ctx.inputs.get('clock')
+  const reset = ctx.inputs.get('reset')
+
+  const steps = (ctx.controls.get('steps') as number) ?? 8
+  const mode = (ctx.controls.get('mode') as string) ?? 'Forward'
+  const stepValues = (ctx.controls.get('stepValues') as number[]) ?? []
+
+  // Initialize state
+  let state = stepSequencerState.get(ctx.nodeId)
+  if (!state) {
+    state = { currentStep: 0, direction: 1, lastClockState: false }
+    stepSequencerState.set(ctx.nodeId, state)
+  }
+
+  const outputs = new Map<string, unknown>()
+
+  // Handle reset
+  const hasReset = reset === true || reset === 1 || (typeof reset === 'number' && reset > 0)
+  if (hasReset) {
+    state.currentStep = 0
+    state.direction = 1
+  }
+
+  // Detect clock edge (rising edge)
+  const hasClock = clock === true || clock === 1 || (typeof clock === 'number' && clock > 0)
+  const clockRising = hasClock && !state.lastClockState
+  state.lastClockState = hasClock
+
+  // Advance step on clock
+  if (clockRising && !hasReset) {
+    switch (mode) {
+      case 'Forward':
+        state.currentStep = (state.currentStep + 1) % steps
+        break
+      case 'Backward':
+        state.currentStep = (state.currentStep - 1 + steps) % steps
+        break
+      case 'Ping-Pong':
+        state.currentStep += state.direction
+        if (state.currentStep >= steps - 1) {
+          state.currentStep = steps - 1
+          state.direction = -1
+        } else if (state.currentStep <= 0) {
+          state.currentStep = 0
+          state.direction = 1
+        }
+        break
+      case 'Random':
+        state.currentStep = Math.floor(Math.random() * steps)
+        break
+    }
+  }
+
+  // Get current step value
+  const stepValue = stepValues[state.currentStep] ?? 0
+  const isGateOn = stepValue > 0.5
+
+  outputs.set('gate', clockRising && isGateOn ? 1 : 0)
+  outputs.set('value', stepValue)
+  outputs.set('step', state.currentStep + 1) // 1-indexed for display
+
+  return outputs
+}
+
 // ============================================================================
 // Debug Nodes
 // ============================================================================
@@ -588,6 +960,102 @@ export const consoleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
+// Cleanup Functions
+// ============================================================================
+
+/**
+ * Clean up state for a specific node
+ */
+export function disposeTimingNode(nodeId: string): void {
+  intervalState.delete(nodeId)
+  delayState.delete(nodeId)
+  timerState.delete(nodeId)
+  metronomeState.delete(nodeId)
+  stepSequencerState.delete(nodeId)
+  startFiredNodes.delete(nodeId)
+}
+
+/**
+ * Clean up state for debug nodes
+ */
+export function disposeDebugNode(nodeId: string): void {
+  consolePrevValues.delete(nodeId)
+  monitorLastValue.delete(nodeId)
+
+  // Clean up oscilloscope waveform analyzer
+  const scopeState = scopeAnalyzers.get(nodeId)
+  if (scopeState?.waveform && scopeState.prevAudio) {
+    try {
+      (scopeState.prevAudio as { disconnect: (n: unknown) => void }).disconnect(scopeState.waveform)
+    } catch { /* ignore */ }
+  }
+  scopeAnalyzers.delete(nodeId)
+
+  // Clean up equalizer FFT analyzer
+  const eqState = eqAnalyzers.get(nodeId)
+  if (eqState?.fft && eqState.prevAudio) {
+    try {
+      (eqState.prevAudio as { disconnect: (n: unknown) => void }).disconnect(eqState.fft)
+    } catch { /* ignore */ }
+  }
+  eqAnalyzers.delete(nodeId)
+}
+
+/**
+ * Clean up state for input nodes
+ */
+export function disposeInputNode(nodeId: string): void {
+  triggerPrevPressed.delete(nodeId)
+}
+
+/**
+ * Clean up all timing-related state (called when execution stops)
+ */
+export function disposeAllTimingState(): void {
+  intervalState.clear()
+  delayState.clear()
+  timerState.clear()
+  metronomeState.clear()
+  stepSequencerState.clear()
+  startFiredNodes.clear()
+}
+
+/**
+ * Clean up all debug-related state (called when execution stops)
+ */
+export function disposeAllDebugState(): void {
+  consolePrevValues.clear()
+  monitorLastValue.clear()
+
+  // Clean up oscilloscope waveform analyzers
+  for (const [, state] of scopeAnalyzers) {
+    if (state.waveform && state.prevAudio) {
+      try {
+        (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.waveform)
+      } catch { /* ignore */ }
+    }
+  }
+  scopeAnalyzers.clear()
+
+  // Clean up equalizer FFT analyzers
+  for (const [, state] of eqAnalyzers) {
+    if (state.fft && state.prevAudio) {
+      try {
+        (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.fft)
+      } catch { /* ignore */ }
+    }
+  }
+  eqAnalyzers.clear()
+}
+
+/**
+ * Clean up all input-related state (called when execution stops)
+ */
+export function disposeAllInputState(): void {
+  triggerPrevPressed.clear()
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
@@ -606,6 +1074,8 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   interval: intervalExecutor,
   delay: delayExecutor,
   timer: timerExecutor,
+  metronome: metronomeExecutor,
+  'step-sequencer': stepSequencerExecutor,
 
   // Math
   add: addExecutor,
@@ -617,6 +1087,10 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   abs: absExecutor,
   smooth: smoothExecutor,
   random: randomExecutor,
+  trig: trigExecutor,
+  power: powerExecutor,
+  'vector-math': vectorMathExecutor,
+  modulo: moduloExecutor,
 
   // Logic
   compare: compareExecutor,
@@ -657,4 +1131,10 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
 
   // 3D
   ...threeExecutors,
+
+  // String
+  ...stringExecutors,
+
+  // Messaging
+  ...messagingExecutors,
 }

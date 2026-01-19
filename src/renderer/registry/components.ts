@@ -17,6 +17,7 @@ import { OscilloscopeNode } from './debug/oscilloscope'
 import { GraphNode } from './debug/graph'
 import { EqualizerNode } from './debug/equalizer'
 import { MainOutputNode } from './outputs/main-output'
+import { StepSequencerNode } from './timing/step-sequencer'
 
 /**
  * Node type to Vue component mapping.
@@ -40,4 +41,7 @@ export const nodeTypes = {
 
   // Custom UI nodes - outputs
   'main-output': markRaw(MainOutputNode),
+
+  // Custom UI nodes - timing
+  'step-sequencer': markRaw(StepSequencerNode),
 }

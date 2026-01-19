@@ -1,6 +1,19 @@
 import type { Node, Edge } from '@vue-flow/core'
 import { useRuntimeStore } from '@/stores/runtime'
 import type { NodeDefinition } from '@/stores/nodes'
+import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
+import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
+import {
+  disposeAllTimingState,
+  disposeAllDebugState,
+  disposeAllInputState,
+} from './executors/index'
+import {
+  disposeAllMessagingState,
+  endMessagingFrame,
+} from './executors/messaging'
+import { gcCodeState } from './executors/code'
+import { gc3DState } from './executors/3d'
 
 /**
  * Result of executing a node
@@ -63,6 +76,23 @@ export class ExecutionEngine {
    * Update the graph (nodes and edges)
    */
   updateGraph(nodes: Node[], edges: Edge[]): void {
+    // Get current valid node IDs for GC
+    const validNodeIds = new Set(nodes.map(n => n.id))
+
+    // If we had previous nodes, GC any that were removed
+    if (this.nodes.length > 0) {
+      const previousNodeIds = new Set(this.nodes.map(n => n.id))
+      const hasRemovedNodes = [...previousNodeIds].some(id => !validNodeIds.has(id))
+
+      if (hasRemovedNodes) {
+        // Run garbage collection for orphaned state
+        gcAudioState(validNodeIds)
+        gcVisualState(validNodeIds)
+        gcCodeState(validNodeIds)
+        gc3DState(validNodeIds)
+      }
+    }
+
     this.nodes = nodes
     this.edges = edges
     this.executionOrder = this.topologicalSort()
@@ -167,12 +197,25 @@ export class ExecutionEngine {
 
     // Build context
     // Controls are stored directly in node.data, not in node.data.controls
+    // Start with defaults from definition, then override with actual values
     const controlEntries: [string, unknown][] = []
+
+    // First, populate defaults from definition
+    if (definition?.controls) {
+      for (const control of definition.controls) {
+        if (control.default !== undefined) {
+          controlEntries.push([control.id, control.default])
+        }
+      }
+    }
+
+    // Then override with actual node.data values
+    const controlMap = new Map(controlEntries)
     if (node.data) {
       for (const [key, value] of Object.entries(node.data)) {
         // Exclude metadata fields
         if (key !== 'label' && key !== 'nodeType' && key !== 'definition') {
-          controlEntries.push([key, value])
+          controlMap.set(key, value)
         }
       }
     }
@@ -180,7 +223,7 @@ export class ExecutionEngine {
     const context: ExecutionContext = {
       nodeId: node.id,
       inputs: this.getNodeInputs(node.id),
-      controls: new Map(controlEntries),
+      controls: controlMap,
       definition: definition!,
       deltaTime,
       totalTime: (performance.now() - this.startTime) / 1000,
@@ -230,13 +273,21 @@ export class ExecutionEngine {
     this.lastFrameTime = now
     this.frameCount++
 
+    // Snapshot execution order and nodes to prevent race conditions
+    // if updateGraph() is called during execution
+    const executionOrderSnapshot = [...this.executionOrder]
+    const nodesSnapshot = [...this.nodes]
+
     // Execute nodes in topological order
-    for (const nodeId of this.executionOrder) {
-      const node = this.nodes.find(n => n.id === nodeId)
+    for (const nodeId of executionOrderSnapshot) {
+      const node = nodesSnapshot.find(n => n.id === nodeId)
       if (node) {
         await this.executeNode(node, deltaTime)
       }
     }
+
+    // End-of-frame cleanup for messaging (reset change flags)
+    endMessagingFrame()
 
     // Update FPS
     this.runtimeStore.updateFps(deltaTime)
@@ -251,6 +302,8 @@ export class ExecutionEngine {
     this.startTime = performance.now()
     this.lastFrameTime = 0
     this.frameCount = 0
+    // Clear stale outputs from previous execution
+    this.nodeOutputs.clear()
     this.runtimeStore.start()
 
     const loop = async () => {
@@ -276,6 +329,14 @@ export class ExecutionEngine {
     this.runtimeStore.stop()
     this.nodeOutputs.clear()
     this.frameCount = 0
+
+    // Clean up all executor state to prevent memory leaks and stop audio
+    disposeAllAudioNodes()
+    disposeAllVisualNodes()
+    disposeAllTimingState()
+    disposeAllDebugState()
+    disposeAllInputState()
+    disposeAllMessagingState()
   }
 
   /**

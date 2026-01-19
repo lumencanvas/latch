@@ -163,7 +163,14 @@ class ConnectionManagerImpl implements IConnectionManager {
     if (adapter && adapter.status === 'connected') {
       // Reconnect with new config
       this.disconnect(connectionId).then(() => {
-        this.connect(connectionId)
+        this.connect(connectionId).catch((error) => {
+          console.error(`[ConnectionManager] Reconnect failed for ${connectionId}:`, error)
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          this.statusCache.set(connectionId, { status: 'error', error: errorMsg })
+          this.emit('status-change', { connectionId, status: { status: 'error', error: errorMsg } })
+        })
+      }).catch((error) => {
+        console.error(`[ConnectionManager] Disconnect failed during reconnect for ${connectionId}:`, error)
       })
     }
   }

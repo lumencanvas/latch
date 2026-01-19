@@ -223,17 +223,17 @@ export const audioAnalyzerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
   for (let i = 0; i < bassRange; i++) {
     bass += fftData[i] + 100 // Normalize from dB
   }
-  bass = Math.max(0, bass / bassRange / 100)
+  bass = Math.max(0, bass / Math.max(1, bassRange) / 100)
 
   for (let i = midStart; i < midEnd; i++) {
     mid += fftData[i] + 100
   }
-  mid = Math.max(0, mid / (midEnd - midStart) / 100)
+  mid = Math.max(0, mid / Math.max(1, midEnd - midStart) / 100)
 
   for (let i = highStart; i < fftData.length; i++) {
     high += fftData[i] + 100
   }
-  high = Math.max(0, high / (fftData.length - highStart) / 100)
+  high = Math.max(0, high / Math.max(1, fftData.length - highStart) / 100)
 
   const level = meter.getValue()
   const normalizedLevel = typeof level === 'number' ? level : level[0]
@@ -441,7 +441,7 @@ export const beatDetectExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     const val = fftData[i] + 100 // Normalize from dB
     energy += val * val
   }
-  energy = Math.sqrt(energy / bassEnd) / 100
+  energy = Math.sqrt(energy / Math.max(1, bassEnd)) / 100
 
   // Update adaptive threshold
   state.threshold = state.threshold * decayRate + energy * (1 - decayRate)
@@ -686,6 +686,355 @@ export function disposeAudioPlayer(nodeId: string): void {
   playerState.delete(nodeId)
 }
 
+export function disposeSvfFilter(nodeId: string): void {
+  const state = svfState.get(nodeId)
+  if (state) {
+    state.lowpass.dispose()
+    state.highpass.dispose()
+    state.bandpass.dispose()
+    state.notch.dispose()
+    state.drive?.dispose()
+    svfState.delete(nodeId)
+  }
+}
+
+export function disposePitchDetect(nodeId: string): void {
+  pitchState.delete(nodeId)
+}
+
+/**
+ * Garbage collect orphaned audio state entries.
+ * Call this with the set of currently valid node IDs.
+ */
+export function gcAudioState(validNodeIds: Set<string>): void {
+  // Clean audioNodes
+  for (const key of audioNodes.keys()) {
+    // Extract base nodeId (may have suffixes like _meter, _input, _fft)
+    const baseId = key.split('_')[0]
+    if (!validNodeIds.has(baseId)) {
+      const node = audioNodes.get(key)
+      if (node) {
+        try { node.dispose() } catch { /* ignore */ }
+      }
+      audioNodes.delete(key)
+    }
+  }
+
+  // Clean beatState
+  for (const nodeId of beatState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      beatState.delete(nodeId)
+    }
+  }
+
+  // Clean playerState
+  for (const nodeId of playerState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const state = playerState.get(nodeId)
+      if (state?.player) {
+        try { state.player.dispose() } catch { /* ignore */ }
+      }
+      playerState.delete(nodeId)
+    }
+  }
+
+  // Clean svfState
+  for (const nodeId of svfState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      const state = svfState.get(nodeId)
+      if (state) {
+        try {
+          state.lowpass.dispose()
+          state.highpass.dispose()
+          state.bandpass.dispose()
+          state.notch.dispose()
+          state.drive?.dispose()
+        } catch { /* ignore */ }
+      }
+      svfState.delete(nodeId)
+    }
+  }
+
+  // Clean pitchState
+  for (const nodeId of pitchState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      pitchState.delete(nodeId)
+    }
+  }
+}
+
+// ============================================================================
+// SVF Filter Node
+// ============================================================================
+
+// State for SVF filter connections
+const svfState = new Map<
+  string,
+  {
+    lowpass: Tone.Filter
+    highpass: Tone.Filter
+    bandpass: Tone.Filter
+    notch: Tone.Filter
+    drive: Tone.Distortion | null
+    prevInput: Tone.ToneAudioNode | null
+  }
+>()
+
+export const svfFilterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const cutoffInput = ctx.inputs.get('cutoff') as number | undefined
+  const resonanceInput = ctx.inputs.get('resonance') as number | undefined
+
+  const cutoff = cutoffInput ?? (ctx.controls.get('cutoff') as number) ?? 1000
+  const resonance = resonanceInput ?? (ctx.controls.get('resonance') as number) ?? 0.5
+  const driveAmount = (ctx.controls.get('drive') as number) ?? 0
+
+  // Map resonance (0-1) to Q factor (0.5-20)
+  const Q = 0.5 + resonance * 19.5
+
+  const outputs = new Map<string, unknown>()
+
+  if (!audio) {
+    outputs.set('lowpass', null)
+    outputs.set('highpass', null)
+    outputs.set('bandpass', null)
+    outputs.set('notch', null)
+    return outputs
+  }
+
+  // Initialize or get state
+  let state = svfState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      lowpass: new Tone.Filter({ type: 'lowpass', frequency: cutoff, Q }),
+      highpass: new Tone.Filter({ type: 'highpass', frequency: cutoff, Q }),
+      bandpass: new Tone.Filter({ type: 'bandpass', frequency: cutoff, Q }),
+      notch: new Tone.Filter({ type: 'notch', frequency: cutoff, Q }),
+      drive: driveAmount > 0 ? new Tone.Distortion(driveAmount) : null,
+      prevInput: null,
+    }
+    svfState.set(ctx.nodeId, state)
+  }
+
+  // Update filter parameters
+  state.lowpass.frequency.value = cutoff
+  state.lowpass.Q.value = Q
+  state.highpass.frequency.value = cutoff
+  state.highpass.Q.value = Q
+  state.bandpass.frequency.value = cutoff
+  state.bandpass.Q.value = Q
+  state.notch.frequency.value = cutoff
+  state.notch.Q.value = Q
+
+  // Handle drive
+  if (driveAmount > 0) {
+    if (!state.drive) {
+      state.drive = new Tone.Distortion(driveAmount)
+    }
+    state.drive.distortion = driveAmount
+  }
+
+  // Connect input to all filters (via drive if enabled)
+  if (state.prevInput !== audio) {
+    // Disconnect previous input
+    if (state.prevInput) {
+      try {
+        if (state.drive) state.prevInput.disconnect(state.drive)
+        else {
+          state.prevInput.disconnect(state.lowpass)
+          state.prevInput.disconnect(state.highpass)
+          state.prevInput.disconnect(state.bandpass)
+          state.prevInput.disconnect(state.notch)
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Connect new input
+    if (state.drive) {
+      audio.connect(state.drive)
+      state.drive.connect(state.lowpass)
+      state.drive.connect(state.highpass)
+      state.drive.connect(state.bandpass)
+      state.drive.connect(state.notch)
+    } else {
+      audio.connect(state.lowpass)
+      audio.connect(state.highpass)
+      audio.connect(state.bandpass)
+      audio.connect(state.notch)
+    }
+
+    state.prevInput = audio
+  }
+
+  outputs.set('lowpass', state.lowpass)
+  outputs.set('highpass', state.highpass)
+  outputs.set('bandpass', state.bandpass)
+  outputs.set('notch', state.notch)
+
+  return outputs
+}
+
+// ============================================================================
+// Pitch Detect Node
+// ============================================================================
+
+// Note names for pitch detection
+const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+// State for pitch detection
+const pitchState = new Map<
+  string,
+  {
+    analyser: AnalyserNode | null
+    audioContext: AudioContext | null
+    buffer: Float32Array<ArrayBuffer> | null
+    prevInput: Tone.ToneAudioNode | null
+    lastFreq: number
+    lastConfidence: number
+  }
+>()
+
+function autoCorrelate(buffer: Float32Array, sampleRate: number, minFreq: number, maxFreq: number): { frequency: number; confidence: number } {
+  const size = buffer.length
+  let maxCorrelation = 0
+  let bestOffset = -1
+
+  // Find the DC offset
+  let sum = 0
+  for (let i = 0; i < size; i++) {
+    sum += buffer[i]
+  }
+  const dc = sum / size
+
+  // Remove DC offset and find RMS
+  let rms = 0
+  for (let i = 0; i < size; i++) {
+    buffer[i] -= dc
+    rms += buffer[i] * buffer[i]
+  }
+  rms = Math.sqrt(rms / size)
+
+  // Not enough signal
+  if (rms < 0.01) {
+    return { frequency: 0, confidence: 0 }
+  }
+
+  const minPeriod = Math.floor(sampleRate / maxFreq)
+  const maxPeriod = Math.floor(sampleRate / minFreq)
+
+  // Autocorrelation
+  for (let offset = minPeriod; offset < Math.min(maxPeriod, size); offset++) {
+    let correlation = 0
+    for (let i = 0; i < size - offset; i++) {
+      correlation += buffer[i] * buffer[i + offset]
+    }
+    correlation /= size - offset
+
+    if (correlation > maxCorrelation) {
+      maxCorrelation = correlation
+      bestOffset = offset
+    }
+  }
+
+  if (bestOffset === -1) {
+    return { frequency: 0, confidence: 0 }
+  }
+
+  const frequency = sampleRate / bestOffset
+  const confidence = maxCorrelation / rms
+
+  return { frequency, confidence: Math.min(1, confidence) }
+}
+
+export const pitchDetectExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const minFreq = (ctx.controls.get('minFreq') as number) ?? 50
+  const maxFreq = (ctx.controls.get('maxFreq') as number) ?? 2000
+
+  const outputs = new Map<string, unknown>()
+
+  if (!audio) {
+    outputs.set('frequency', 0)
+    outputs.set('note', '')
+    outputs.set('octave', 0)
+    outputs.set('midi', 0)
+    outputs.set('confidence', 0)
+    return outputs
+  }
+
+  // Initialize state
+  let state = pitchState.get(ctx.nodeId)
+  if (!state) {
+    const audioContext = Tone.getContext().rawContext as AudioContext
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 2048
+
+    // Create buffer with explicit ArrayBuffer to ensure correct type
+    const arrayBuffer = new ArrayBuffer(analyser.fftSize * 4) // 4 bytes per float
+    const buffer = new Float32Array(arrayBuffer)
+
+    state = {
+      analyser,
+      audioContext,
+      buffer,
+      prevInput: null,
+      lastFreq: 0,
+      lastConfidence: 0,
+    }
+    pitchState.set(ctx.nodeId, state)
+  }
+
+  // Connect input
+  if (state.prevInput !== audio) {
+    if (state.prevInput) {
+      try {
+        (state.prevInput as unknown as { disconnect: (node: AudioNode) => void }).disconnect(state.analyser!)
+      } catch { /* ignore */ }
+    }
+
+    try {
+      (audio as unknown as { connect: (node: AudioNode) => void }).connect(state.analyser!)
+    } catch { /* ignore */ }
+
+    state.prevInput = audio
+  }
+
+  // Get time domain data
+  state.analyser!.getFloatTimeDomainData(state.buffer!)
+
+  // Detect pitch
+  const { frequency, confidence } = autoCorrelate(
+    state.buffer!,
+    state.audioContext!.sampleRate,
+    minFreq,
+    maxFreq
+  )
+
+  // Smooth the frequency
+  const smoothedFreq = frequency > 0 ? frequency : state.lastFreq * 0.95
+  state.lastFreq = smoothedFreq
+  state.lastConfidence = confidence
+
+  // Calculate note and octave from frequency
+  let note = ''
+  let octave = 0
+  let midi = 0
+
+  if (smoothedFreq > 0) {
+    midi = Math.round(12 * Math.log2(smoothedFreq / 440) + 69)
+    note = noteNames[midi % 12]
+    octave = Math.floor(midi / 12) - 1
+  }
+
+  outputs.set('frequency', Math.round(smoothedFreq * 10) / 10)
+  outputs.set('note', note)
+  outputs.set('octave', octave)
+  outputs.set('midi', midi)
+  outputs.set('confidence', Math.round(confidence * 100) / 100)
+
+  return outputs
+}
+
 // ============================================================================
 // Registry
 // ============================================================================
@@ -702,4 +1051,6 @@ export const audioExecutors: Record<string, NodeExecutorFn> = {
   'audio-player': audioPlayerExecutor,
   envelope: envelopeExecutor,
   reverb: reverbExecutor,
+  'svf-filter': svfFilterExecutor,
+  'pitch-detect': pitchDetectExecutor,
 }
