@@ -71,17 +71,19 @@ function getDefaultShaderCode(): string {
 
 function compileShader() {
   const renderer = getThreeShaderRenderer()
-  const result = renderer.compileShader(code.value, undefined, true)
+  // Parse uniforms first so we can pass them to the compiler
+  const parsedUniforms = parseUniformsFromCode(code.value)
+  detectedUniforms.value = parsedUniforms
+
+  // Pass uniform definitions so declarations get injected into GLSL
+  const result = renderer.compileShader(code.value, undefined, true, parsedUniforms)
 
   if ('error' in result) {
     error.value = result.error
     compiledShaderMaterial = null
-    detectedUniforms.value = []
   } else {
     error.value = null
     compiledShaderMaterial = result
-    // Parse uniforms from the code for display and port generation
-    detectedUniforms.value = parseUniformsFromCode(code.value)
   }
 }
 

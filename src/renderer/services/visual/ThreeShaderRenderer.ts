@@ -44,13 +44,12 @@ uniform sampler2D iChannel1;
 uniform sampler2D iChannel2;
 uniform sampler2D iChannel3;
 
-#define fragCoord (vUv * iResolution)
 `
 
 const SHADERTOY_WRAPPER_SUFFIX = `
 void main() {
   vec4 fragColor;
-  mainImage(fragColor, fragCoord);
+  mainImage(fragColor, vUv * iResolution);
   gl_FragColor = fragColor;
 }
 `
@@ -63,6 +62,10 @@ uniform float u_time;
 uniform vec2 u_resolution;
 uniform vec4 u_mouse;
 uniform int u_frame;
+uniform sampler2D iChannel0;
+uniform sampler2D iChannel1;
+uniform sampler2D iChannel2;
+uniform sampler2D iChannel3;
 
 // Shadertoy compatibility aliases
 #define iTime u_time
@@ -166,31 +169,59 @@ export class ThreeShaderRenderer {
   }
 
   /**
+   * Generate GLSL uniform declarations from uniform definitions
+   */
+  private generateUniformDeclarations(
+    uniformDefs: Array<{ name: string; type: string; default?: unknown }>
+  ): string {
+    if (!uniformDefs || uniformDefs.length === 0) return ''
+
+    const declarations: string[] = []
+    for (const def of uniformDefs) {
+      // Map type to GLSL type
+      let glslType = def.type
+      if (def.type === 'int') glslType = 'int'
+      else if (def.type === 'float') glslType = 'float'
+      else if (def.type === 'vec2') glslType = 'vec2'
+      else if (def.type === 'vec3') glslType = 'vec3'
+      else if (def.type === 'vec4') glslType = 'vec4'
+      else if (def.type === 'sampler2D') glslType = 'sampler2D'
+
+      declarations.push(`uniform ${glslType} ${def.name};`)
+    }
+    return declarations.join('\n') + '\n'
+  }
+
+  /**
    * Compile a shader into a Three.js ShaderMaterial
    */
   compileShader(
     fragmentSource: string,
     vertexSource?: string,
-    isShadertoy: boolean = false
+    isShadertoy: boolean = false,
+    uniformDefs?: Array<{ name: string; type: string; default?: unknown }>
   ): CompiledShaderMaterial | { error: string } {
     try {
       let finalFragmentSource: string
       let finalVertexSource = vertexSource || DEFAULT_VERTEX_SHADER
 
+      // Generate uniform declarations from definitions
+      const userUniformDeclarations = this.generateUniformDeclarations(uniformDefs || [])
+
       if (isShadertoy) {
-        // Wrap Shadertoy-style shaders
-        finalFragmentSource = SHADERTOY_WRAPPER_PREFIX + fragmentSource + SHADERTOY_WRAPPER_SUFFIX
+        // Wrap Shadertoy-style shaders with user uniform declarations
+        finalFragmentSource = SHADERTOY_WRAPPER_PREFIX + userUniformDeclarations + fragmentSource + SHADERTOY_WRAPPER_SUFFIX
       } else {
         // Check if user provided their own main(), if not add raw prefix
         if (fragmentSource.includes('void main')) {
-          finalFragmentSource = RAW_FRAGMENT_PREFIX + fragmentSource
+          finalFragmentSource = RAW_FRAGMENT_PREFIX + userUniformDeclarations + fragmentSource
         } else {
           // Assume it's Shadertoy-style even without explicit flag
-          finalFragmentSource = SHADERTOY_WRAPPER_PREFIX + fragmentSource + SHADERTOY_WRAPPER_SUFFIX
+          finalFragmentSource = SHADERTOY_WRAPPER_PREFIX + userUniformDeclarations + fragmentSource + SHADERTOY_WRAPPER_SUFFIX
         }
       }
 
-      // Create uniforms object
+      // Create uniforms object with built-in uniforms
       const uniforms: THREE.ShaderMaterialParameters['uniforms'] = {
         iTime: { value: 0 },
         iResolution: { value: new THREE.Vector2(this.defaultSize.width, this.defaultSize.height) },
@@ -205,6 +236,26 @@ export class ThreeShaderRenderer {
         u_resolution: { value: new THREE.Vector2(this.defaultSize.width, this.defaultSize.height) },
         u_mouse: { value: new THREE.Vector4(0, 0, 0, 0) },
         u_frame: { value: 0 },
+      }
+
+      // Add user-defined uniforms with default values
+      if (uniformDefs) {
+        for (const def of uniformDefs) {
+          if (def.type === 'float' || def.type === 'int') {
+            uniforms[def.name] = { value: def.default ?? 0 }
+          } else if (def.type === 'vec2') {
+            const val = Array.isArray(def.default) ? def.default : [0, 0]
+            uniforms[def.name] = { value: new THREE.Vector2(val[0], val[1]) }
+          } else if (def.type === 'vec3') {
+            const val = Array.isArray(def.default) ? def.default : [0, 0, 0]
+            uniforms[def.name] = { value: new THREE.Vector3(val[0], val[1], val[2]) }
+          } else if (def.type === 'vec4') {
+            const val = Array.isArray(def.default) ? def.default : [0, 0, 0, 1]
+            uniforms[def.name] = { value: new THREE.Vector4(val[0], val[1], val[2], val[3]) }
+          } else if (def.type === 'sampler2D') {
+            uniforms[def.name] = { value: this.blankTexture }
+          }
+        }
       }
 
       // Create ShaderMaterial

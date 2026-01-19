@@ -333,11 +333,13 @@ export const shaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Get or compile shader using Three.js
   const customVertex = vertexCode.trim() ? vertexCode : undefined
-  const cacheKey = `${ctx.nodeId}_${fragmentCode.substring(0, 100)}_${customVertex?.substring(0, 50) ?? ''}_${isShadertoy}`
+  // Include uniform count in cache key since they affect GLSL source
+  const cacheKey = `${ctx.nodeId}_${fragmentCode.substring(0, 100)}_${customVertex?.substring(0, 50) ?? ''}_${isShadertoy}_${detectedUniforms.length}`
 
   let shaderMaterial = compiledShaderMaterials.get(cacheKey)
   if (!shaderMaterial) {
-    const result = renderer.compileShader(fragmentCode, customVertex, isShadertoy)
+    // Pass uniform definitions so declarations get injected into GLSL
+    const result = renderer.compileShader(fragmentCode, customVertex, isShadertoy, detectedUniforms)
 
     if ('error' in result) {
       outputs.set('texture', null)
