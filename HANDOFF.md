@@ -42,7 +42,90 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ---
 
-## Recent Session (2026-01-20)
+## Recent Session (2026-01-20) - MediaPipe Nodes & Function Editor
+
+### New MediaPipe Nodes Implemented
+
+Added three new MediaPipe-based AI nodes with custom Vue components:
+
+| Node | Description | Outputs |
+|------|-------------|---------|
+| **Selfie Segmentation** | Separates person from background | mask, detected, loading |
+| **Gesture Recognition** | Recognizes hand gestures (thumbs up, peace, fist, etc.) | gesture, confidence, landmarks, handedness |
+| **Audio Classification** | Classifies audio (speech, music, animals, etc.) | category, confidence, isSpeech, isMusic |
+
+**Files Created**:
+- `registry/ai/mediapipe-segmentation/` - Definition, Vue component, index
+- `registry/ai/mediapipe-gesture/` - Definition, Vue component, index
+- `registry/ai/mediapipe-audio/` - Definition, Vue component, index
+
+**MediaPipeService Extensions** (`services/ai/MediaPipeService.ts`):
+- Added `loadImageSegmenter()` and `segmentImage()` methods
+- Added `loadGestureRecognizer()` and `recognizeGestures()` methods
+- Added `SegmentationResult` and `GestureResult` interfaces
+
+### Function Node Custom UI
+
+Added custom Vue component with embedded Monaco editor for the Function node:
+
+- **FunctionNode.vue**: Collapsible Monaco editor directly in node
+- **CodeEditorModal.vue**: Full-screen modal editor opened from Properties panel
+- Monaco editor with JavaScript syntax highlighting, dark theme
+- Help panel with available variables (`inputs.a`, `time`, `getState`/`setState`)
+- Save/reset functionality with unsaved changes warning
+
+**Files Created**:
+- `registry/code/_function/FunctionNode.vue`
+- `components/modals/CodeEditorModal.vue`
+
+**Files Modified**:
+- `stores/ui.ts` - Added `codeEditorOpen`, `codeEditorNodeId` state
+- `components/layout/PropertiesPanel.vue` - Added "Open Code Editor" button
+- `App.vue` - Registered CodeEditorModal
+
+### Bug Fixes
+
+#### Parametric EQ Touch/Click Offset
+**Problem**: EQ band control points were offset from cursor position in the node (worked fine in Control Panel).
+
+**Root Cause**: Canvas CSS size (`width: 100%`) differs from internal resolution (`props.width/height`). Mouse coordinates weren't scaled.
+
+**Fix** (`components/controls/EQEditor.vue`):
+```typescript
+const scaleX = props.width / rect.width
+const scaleY = props.height / rect.height
+const x = (e.clientX - rect.left) * scaleX
+const y = (e.clientY - rect.top) * scaleY
+```
+
+#### EQ Node Drag Prevention
+**Problem**: Clicking EQ bands would drag the entire node instead of the individual control points.
+
+**Fix**: Added `.stop` modifiers to canvas pointer events and `@mousedown.stop`/`@touchstart.stop` to prevent Vue Flow from capturing events.
+
+#### MediaPipe Segmentation Mask Detection
+**Problem**: Segmentation overlay wasn't showing - mask always appeared empty.
+
+**Root Cause**: MediaPipe selfie segmenter outputs category 0 (background) or 1 (person), not 0 or 255. Check `maskData[i] > 128` was always false.
+
+**Fix** (`MediaPipeSegmentationNode.vue`): Changed to `maskData[i] > 0`.
+
+#### MediaPipe Overlay Text Cutoff
+**Problem**: Status text on MediaPipe node overlays was being clipped at edges.
+
+**Fix** (`registry/ai/utils/mediapipe-drawing.ts`):
+- Added semi-transparent background to `drawLabel()` for readability
+- Added `maxWidth` option with text truncation
+- Updated all nodes to use proper margins (6px from edges)
+
+### Multi-Hand Tracking Enhancement
+Updated hand tracking to show all detected hands (not just the first):
+- Added `allHands` output to `mediapipeHandExecutor`
+- `MediaPipeHandNode.vue` iterates over all hands and draws each with handedness-based coloring
+
+---
+
+## Previous Session (2026-01-20)
 
 ### Attempted Texture Rendering Pipeline Fixes (PARTIAL SUCCESS)
 

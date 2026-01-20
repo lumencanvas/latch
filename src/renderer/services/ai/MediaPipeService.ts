@@ -21,6 +21,10 @@ type FaceLandmarker = any
 type PoseLandmarker = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ObjectDetector = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ImageSegmenter = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GestureRecognizer = any
 
 // ============================================================================
 // Result Types
@@ -38,9 +42,16 @@ export interface HandResult {
   handedness: Array<{ categoryName: string; score: number }>
 }
 
+// MediaPipe Classifications type (from faceBlendshapes)
+export interface Classifications {
+  categories: Array<{ categoryName: string; score: number }>
+  headIndex?: number
+  headName?: string
+}
+
 export interface FaceResult {
   landmarks: Point3D[][]
-  blendshapes: Array<{ categoryName: string; score: number }>[]
+  blendshapes: Classifications[]
   transformationMatrixes: Float32Array[]
 }
 
@@ -66,6 +77,20 @@ export interface Detection {
 
 export interface ObjectDetectionResult {
   detections: Detection[]
+}
+
+export interface SegmentationResult {
+  categoryMask: ImageData | null
+  confidenceMasks: ImageData[]
+  width: number
+  height: number
+}
+
+export interface GestureResult {
+  gestures: Array<Array<{ categoryName: string; score: number }>>
+  handedness: Array<{ categoryName: string; score: number }>
+  landmarks: Point3D[][]
+  worldLandmarks: Point3D[][]
 }
 
 // ============================================================================
@@ -253,12 +278,19 @@ export function calculateFaceBox(landmarks: Point3D[]): FaceBox {
  * Extract key blendshape values
  */
 export function extractBlendshapeValues(
-  blendshapes: Array<{ categoryName: string; score: number }>
+  blendshapes: Array<{ categoryName: string; score: number }> | unknown
 ): Record<string, number> {
   const result: Record<string, number> = {}
 
+  // Handle case where blendshapes is not an array
+  if (!Array.isArray(blendshapes)) {
+    return result
+  }
+
   for (const shape of blendshapes) {
-    result[shape.categoryName] = shape.score
+    if (shape && typeof shape.categoryName === 'string' && typeof shape.score === 'number') {
+      result[shape.categoryName] = shape.score
+    }
   }
 
   return result
@@ -274,6 +306,8 @@ class MediaPipeServiceImpl {
   private faceLandmarker: FaceLandmarker | null = null
   private poseLandmarker: PoseLandmarker | null = null
   private objectDetector: ObjectDetector | null = null
+  private imageSegmenter: ImageSegmenter | null = null
+  private gestureRecognizer: GestureRecognizer | null = null
 
   private loading = new Set<string>()
 
@@ -419,6 +453,56 @@ class MediaPipeServiceImpl {
     }
   }
 
+  async loadImageSegmenter(): Promise<void> {
+    if (this.imageSegmenter || this.loading.has('segmentation')) return
+    this.loading.add('segmentation')
+
+    try {
+      await this.ensureFileset()
+      const { ImageSegmenter } = await import('@mediapipe/tasks-vision')
+
+      this.imageSegmenter = await ImageSegmenter.createFromOptions(this.filesetResolver!, {
+        baseOptions: {
+          modelAssetPath: `${this.MODEL_BASE}/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite`,
+          delegate: 'GPU',
+        },
+        runningMode: 'VIDEO',
+        outputCategoryMask: true,
+        outputConfidenceMasks: false,
+      })
+
+      console.log('[MediaPipe] Image segmenter loaded')
+    } finally {
+      this.loading.delete('segmentation')
+    }
+  }
+
+  async loadGestureRecognizer(): Promise<void> {
+    if (this.gestureRecognizer || this.loading.has('gesture')) return
+    this.loading.add('gesture')
+
+    try {
+      await this.ensureFileset()
+      const { GestureRecognizer } = await import('@mediapipe/tasks-vision')
+
+      this.gestureRecognizer = await GestureRecognizer.createFromOptions(this.filesetResolver!, {
+        baseOptions: {
+          modelAssetPath: `${this.MODEL_BASE}/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task`,
+          delegate: 'GPU',
+        },
+        runningMode: 'VIDEO',
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      })
+
+      console.log('[MediaPipe] Gesture recognizer loaded')
+    } finally {
+      this.loading.delete('gesture')
+    }
+  }
+
   // =========================================================================
   // Detection Methods
   // =========================================================================
@@ -528,11 +612,70 @@ class MediaPipeServiceImpl {
     }
   }
 
+  async segmentImage(video: HTMLVideoElement, timestamp: number): Promise<SegmentationResult | null> {
+    // Check for timestamp reset (playback restart)
+    const safeTimestamp = this.checkTimestampReset('segmentation', timestamp)
+
+    if (!this.imageSegmenter) {
+      await this.loadImageSegmenter()
+    }
+
+    if (!this.imageSegmenter || video.readyState < 2) {
+      return null
+    }
+
+    try {
+      const result = this.imageSegmenter.segmentForVideo(video, safeTimestamp)
+
+      return {
+        categoryMask: result.categoryMask?.getAsImageData() ?? null,
+        confidenceMasks: result.confidenceMasks?.map((m: { getAsImageData: () => ImageData }) => m.getAsImageData()) ?? [],
+        width: result.categoryMask?.width ?? video.videoWidth,
+        height: result.categoryMask?.height ?? video.videoHeight,
+      }
+    } catch (error) {
+      console.error('[MediaPipe] Image segmentation error:', error)
+      return null
+    }
+  }
+
+  async recognizeGestures(video: HTMLVideoElement, timestamp: number): Promise<GestureResult | null> {
+    // Check for timestamp reset (playback restart)
+    const safeTimestamp = this.checkTimestampReset('gesture', timestamp)
+
+    if (!this.gestureRecognizer) {
+      await this.loadGestureRecognizer()
+    }
+
+    if (!this.gestureRecognizer || video.readyState < 2) {
+      return null
+    }
+
+    try {
+      const result = this.gestureRecognizer.recognizeForVideo(video, safeTimestamp)
+
+      return {
+        gestures: result.gestures.map((g: Array<{ categoryName: string; score: number }>) =>
+          g.map((category) => ({
+            categoryName: category.categoryName,
+            score: category.score,
+          }))
+        ),
+        handedness: result.handedness.flat(),
+        landmarks: result.landmarks,
+        worldLandmarks: result.worldLandmarks,
+      }
+    } catch (error) {
+      console.error('[MediaPipe] Gesture recognition error:', error)
+      return null
+    }
+  }
+
   // =========================================================================
   // Lifecycle
   // =========================================================================
 
-  dispose(taskType?: 'hand' | 'face' | 'pose' | 'object'): void {
+  dispose(taskType?: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture'): void {
     if (!taskType || taskType === 'hand') {
       this.handLandmarker?.close()
       this.handLandmarker = null
@@ -553,6 +696,16 @@ class MediaPipeServiceImpl {
       this.objectDetector = null
       this.lastTimestamp.delete('object')
     }
+    if (!taskType || taskType === 'segmentation') {
+      this.imageSegmenter?.close()
+      this.imageSegmenter = null
+      this.lastTimestamp.delete('segmentation')
+    }
+    if (!taskType || taskType === 'gesture') {
+      this.gestureRecognizer?.close()
+      this.gestureRecognizer = null
+      this.lastTimestamp.delete('gesture')
+    }
 
     if (!taskType) {
       this.filesetResolver = null
@@ -560,17 +713,19 @@ class MediaPipeServiceImpl {
     }
   }
 
-  isLoaded(taskType: 'hand' | 'face' | 'pose' | 'object'): boolean {
+  isLoaded(taskType: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture'): boolean {
     switch (taskType) {
       case 'hand': return this.handLandmarker !== null
       case 'face': return this.faceLandmarker !== null
       case 'pose': return this.poseLandmarker !== null
       case 'object': return this.objectDetector !== null
+      case 'segmentation': return this.imageSegmenter !== null
+      case 'gesture': return this.gestureRecognizer !== null
       default: return false
     }
   }
 
-  isLoading(taskType: 'hand' | 'face' | 'pose' | 'object'): boolean {
+  isLoading(taskType: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture'): boolean {
     return this.loading.has(taskType)
   }
 }

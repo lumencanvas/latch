@@ -79,6 +79,10 @@ interface UIState {
   shaderEditorOpen: boolean
   shaderEditorNodeId: string | null
 
+  // Code editor modal (for Function nodes)
+  codeEditorOpen: boolean
+  codeEditorNodeId: string | null
+
   // AI model manager modal
   aiModelManagerOpen: boolean
 
@@ -122,6 +126,10 @@ export const useUIStore = defineStore('ui', {
     // Shader editor modal
     shaderEditorOpen: false,
     shaderEditorNodeId: null,
+
+    // Code editor modal (for Function nodes)
+    codeEditorOpen: false,
+    codeEditorNodeId: null as string | null,
 
     // AI model manager modal
     aiModelManagerOpen: false,
@@ -202,6 +210,17 @@ export const useUIStore = defineStore('ui', {
     closeShaderEditor() {
       this.shaderEditorOpen = false
       this.shaderEditorNodeId = null
+    },
+
+    // Code editor modal
+    openCodeEditor(nodeId: string) {
+      this.codeEditorNodeId = nodeId
+      this.codeEditorOpen = true
+    },
+
+    closeCodeEditor() {
+      this.codeEditorOpen = false
+      this.codeEditorNodeId = null
     },
 
     // AI model manager modal

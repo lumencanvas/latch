@@ -1071,6 +1071,7 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     outputs.set('gestureType', getCached(`${ctx.nodeId}:gestureType`, 'unknown'))
     outputs.set('fingerTips', getCached(`${ctx.nodeId}:fingerTips`, null))
     outputs.set('handCount', getCached(`${ctx.nodeId}:handCount`, 0))
+    outputs.set('allHands', getCached(`${ctx.nodeId}:allHands`, []))
     outputs.set('detected', false)
     outputs.set('loading', mediaPipeService.isLoading('hand'))
     return outputs
@@ -1085,6 +1086,7 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     outputs.set('gestureType', 'unknown')
     outputs.set('fingerTips', null)
     outputs.set('handCount', 0)
+    outputs.set('allHands', getCached(`${ctx.nodeId}:allHands`, []))
     outputs.set('detected', false)
     outputs.set('loading', true)
     return outputs
@@ -1096,6 +1098,7 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     if (!result || result.landmarks.length === 0) {
       setCached(`${ctx.nodeId}:detected`, false)
       setCached(`${ctx.nodeId}:handCount`, 0)
+      setCached(`${ctx.nodeId}:allHands`, [])
       outputs.set('landmarks', [])
       outputs.set('worldLandmarks', [])
       outputs.set('handedness', '')
@@ -1103,12 +1106,13 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
       outputs.set('gestureType', 'unknown')
       outputs.set('fingerTips', null)
       outputs.set('handCount', 0)
+      outputs.set('allHands', [])
       outputs.set('detected', false)
       outputs.set('loading', false)
       return outputs
     }
 
-    // Get the selected hand
+    // Get the selected hand (for individual outputs)
     const idx = Math.min(handIndex, result.landmarks.length - 1)
     const landmarks = result.landmarks[idx] || []
     const worldLandmarks = result.worldLandmarks[idx] || []
@@ -1119,6 +1123,14 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     const gestureType = recognizeGesture(landmarks)
     const fingerTips = extractFingerTips(landmarks)
 
+    // Build all hands data for visualization
+    const allHands = result.landmarks.map((lm, i) => ({
+      landmarks: lm,
+      worldLandmarks: result.worldLandmarks[i] || [],
+      handedness: result.handedness[i]?.categoryName || '',
+      confidence: result.handedness[i]?.score || 0,
+    }))
+
     setCached(`${ctx.nodeId}:landmarks`, landmarks)
     setCached(`${ctx.nodeId}:worldLandmarks`, worldLandmarks)
     setCached(`${ctx.nodeId}:handedness`, handedness)
@@ -1126,6 +1138,7 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     setCached(`${ctx.nodeId}:gestureType`, gestureType)
     setCached(`${ctx.nodeId}:fingerTips`, fingerTips)
     setCached(`${ctx.nodeId}:handCount`, result.landmarks.length)
+    setCached(`${ctx.nodeId}:allHands`, allHands)
     setCached(`${ctx.nodeId}:detected`, true)
 
     outputs.set('landmarks', landmarks)
@@ -1135,6 +1148,7 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     outputs.set('gestureType', gestureType)
     outputs.set('fingerTips', fingerTips)
     outputs.set('handCount', result.landmarks.length)
+    outputs.set('allHands', allHands)
     outputs.set('detected', true)
     outputs.set('loading', false)
   } catch (error) {
@@ -1146,6 +1160,7 @@ export const mediapipeHandExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     outputs.set('gestureType', 'unknown')
     outputs.set('fingerTips', null)
     outputs.set('handCount', 0)
+    outputs.set('allHands', getCached(`${ctx.nodeId}:allHands`, []))
     outputs.set('detected', false)
     outputs.set('loading', false)
     outputs.set('_error', error instanceof Error ? error.message : 'Detection failed')
@@ -1222,7 +1237,9 @@ export const mediapipeFaceExecutor: NodeExecutorFn = async (ctx: ExecutionContex
     }
 
     const landmarks = result.landmarks[0] || []
-    const blendshapes = result.blendshapes[0] ? extractBlendshapeValues(result.blendshapes[0]) : {}
+    // faceBlendshapes[0] is a Classifications object with a 'categories' array
+    const blendshapeCategories = result.blendshapes[0]?.categories
+    const blendshapes = blendshapeCategories ? extractBlendshapeValues(blendshapeCategories) : {}
     const headRotation = result.transformationMatrixes[0] ? extractHeadRotation(result.transformationMatrixes[0]) : { pitch: 0, yaw: 0, roll: 0 }
     const faceBox = calculateFaceBox(landmarks)
 
@@ -1507,6 +1524,192 @@ export const mediapipeObjectExecutor: NodeExecutorFn = async (ctx: ExecutionCont
 }
 
 // ============================================================================
+// MediaPipe Segmentation Executor
+// ============================================================================
+
+export const mediapipeSegmentationExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  if (!enabled || !videoInput) {
+    outputs.set('mask', getCached(`${ctx.nodeId}:mask`, null))
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('segmentation'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('segmentation')) {
+    outputs.set('mask', getCached(`${ctx.nodeId}:mask`, null))
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.segmentImage(videoInput, ctx.totalTime * 1000)
+
+    if (!result || !result.categoryMask) {
+      setCached(`${ctx.nodeId}:detected`, false)
+      outputs.set('mask', null)
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    setCached(`${ctx.nodeId}:mask`, result.categoryMask)
+    setCached(`${ctx.nodeId}:detected`, true)
+
+    outputs.set('mask', result.categoryMask)
+    outputs.set('detected', true)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Segmentation] Error:', error)
+    outputs.set('mask', getCached(`${ctx.nodeId}:mask`, null))
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Segmentation failed')
+  }
+
+  return outputs
+}
+
+// ============================================================================
+// MediaPipe Gesture Recognition Executor
+// ============================================================================
+
+export const mediapipeGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+  const confidenceThreshold = (ctx.controls.get('confidenceThreshold') as number) ?? 0.5
+
+  if (!enabled || !videoInput) {
+    outputs.set('gesture', 'None')
+    outputs.set('confidence', 0)
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('handedness', '')
+    outputs.set('handCount', 0)
+    outputs.set('allGestures', [])
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('gesture'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('gesture')) {
+    outputs.set('gesture', getCached(`${ctx.nodeId}:gesture`, 'None'))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('handedness', '')
+    outputs.set('handCount', 0)
+    outputs.set('allGestures', [])
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.recognizeGestures(videoInput, ctx.totalTime * 1000)
+
+    if (!result || result.gestures.length === 0) {
+      setCached(`${ctx.nodeId}:detected`, false)
+      outputs.set('gesture', 'None')
+      outputs.set('confidence', 0)
+      outputs.set('landmarks', [])
+      outputs.set('handedness', '')
+      outputs.set('handCount', 0)
+      outputs.set('allGestures', [])
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    // Build all gestures data for visualization
+    const allGestures = result.gestures.map((gestureArray, i) => {
+      const topGesture = gestureArray[0]
+      return {
+        gesture: topGesture?.categoryName || 'None',
+        confidence: topGesture?.score || 0,
+        handedness: result.handedness[i]?.categoryName || '',
+        landmarks: result.landmarks[i] || [],
+      }
+    }).filter(g => g.confidence >= confidenceThreshold)
+
+    // Get top gesture from first hand
+    const topGesture = result.gestures[0]?.[0]
+    const topGestureName = topGesture?.categoryName || 'None'
+    const topConfidence = topGesture?.score || 0
+
+    setCached(`${ctx.nodeId}:gesture`, topGestureName)
+    setCached(`${ctx.nodeId}:confidence`, topConfidence)
+    setCached(`${ctx.nodeId}:landmarks`, result.landmarks[0] || [])
+    setCached(`${ctx.nodeId}:allGestures`, allGestures)
+    setCached(`${ctx.nodeId}:detected`, topGestureName !== 'None')
+
+    outputs.set('gesture', topGestureName)
+    outputs.set('confidence', topConfidence)
+    outputs.set('landmarks', result.landmarks[0] || [])
+    outputs.set('handedness', result.handedness[0]?.categoryName || '')
+    outputs.set('handCount', result.landmarks.length)
+    outputs.set('allGestures', allGestures)
+    outputs.set('detected', topGestureName !== 'None' && topConfidence >= confidenceThreshold)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Gesture] Recognition error:', error)
+    outputs.set('gesture', getCached(`${ctx.nodeId}:gesture`, 'None'))
+    outputs.set('confidence', 0)
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('handedness', '')
+    outputs.set('handCount', 0)
+    outputs.set('allGestures', [])
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Recognition failed')
+  }
+
+  return outputs
+}
+
+// ============================================================================
+// MediaPipe Audio Classification Executor
+// ============================================================================
+
+// Audio classification is a placeholder - requires @mediapipe/tasks-audio package
+// For now, output placeholder values
+export const mediapipeAudioExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const audioInput = ctx.inputs.get('audio')
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  // Audio classification requires additional package installation
+  // This is a placeholder that outputs default values
+  if (!enabled || !audioInput) {
+    outputs.set('category', '')
+    outputs.set('confidence', 0)
+    outputs.set('categories', [])
+    outputs.set('isSpeech', false)
+    outputs.set('isMusic', false)
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    return outputs
+  }
+
+  // TODO: Implement audio classification when @mediapipe/tasks-audio is added
+  // For now, output placeholder values indicating feature is not yet available
+  outputs.set('category', 'Not implemented')
+  outputs.set('confidence', 0)
+  outputs.set('categories', [])
+  outputs.set('isSpeech', false)
+  outputs.set('isMusic', false)
+  outputs.set('detected', false)
+  outputs.set('loading', false)
+
+  return outputs
+}
+
+// ============================================================================
 // Cleanup helpers
 // ============================================================================
 
@@ -1606,4 +1809,7 @@ export const aiExecutors: Record<string, NodeExecutorFn> = {
   'mediapipe-face': mediapipeFaceExecutor,
   'mediapipe-pose': mediapipePoseExecutor,
   'mediapipe-object': mediapipeObjectExecutor,
+  'mediapipe-segmentation': mediapipeSegmentationExecutor,
+  'mediapipe-gesture': mediapipeGestureExecutor,
+  'mediapipe-audio': mediapipeAudioExecutor,
 }

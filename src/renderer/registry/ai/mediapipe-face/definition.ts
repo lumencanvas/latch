@@ -1,4 +1,4 @@
-import type { NodeDefinition } from '../types'
+import type { NodeDefinition } from '../../types'
 
 export const mediapipeFaceNode: NodeDefinition = {
   id: 'mediapipe-face',
@@ -32,6 +32,45 @@ export const mediapipeFaceNode: NodeDefinition = {
       id: 'enabled',
       type: 'toggle',
       label: 'Enabled',
+      default: true,
+    },
+    {
+      id: 'showOverlay',
+      type: 'toggle',
+      label: 'Overlay',
+      default: true,
+    },
+    {
+      id: 'overlayColor',
+      type: 'color',
+      label: 'Color',
+      default: '#00ff00',
+    },
+    {
+      id: 'lineWidth',
+      type: 'slider',
+      label: 'Line Width',
+      default: 1,
+      props: { min: 0.5, max: 3, step: 0.5 },
+    },
+    {
+      id: 'meshMode',
+      type: 'select',
+      label: 'Style',
+      default: 'mesh',
+      props: {
+        options: [
+          { value: 'mesh', label: 'Mesh' },
+          { value: 'contours', label: 'Contours' },
+          { value: 'points', label: 'Points' },
+          { value: 'bbox', label: 'Bounding Box' },
+        ],
+      },
+    },
+    {
+      id: 'showExpressions',
+      type: 'toggle',
+      label: 'Show Expressions',
       default: true,
     },
   ],

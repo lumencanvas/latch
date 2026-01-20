@@ -89,6 +89,11 @@ const isShaderNode = computed(() => {
   return nodeDefinition.value?.id === 'shader'
 })
 
+// Check if this is a function node
+const isFunctionNode = computed(() => {
+  return nodeDefinition.value?.id === 'function'
+})
+
 // Local control values (for editing)
 const controlValues = ref<Record<string, unknown>>({})
 
@@ -135,6 +140,13 @@ function updateControl(controlId: string, value: unknown) {
 function openShaderEditor() {
   if (inspectedNode.value) {
     uiStore.openShaderEditor(inspectedNode.value.id)
+  }
+}
+
+// Open code editor
+function openCodeEditor() {
+  if (inspectedNode.value) {
+    uiStore.openCodeEditor(inspectedNode.value.id)
   }
 }
 
@@ -383,6 +395,21 @@ watch(inspectedNode, () => {
             >
               <Code :size="16" />
               <span>Open Shader Editor</span>
+              <ChevronRight :size="16" />
+            </button>
+          </div>
+
+          <!-- Code Editor Button -->
+          <div
+            v-if="isFunctionNode"
+            class="shader-editor-section"
+          >
+            <button
+              class="shader-editor-btn"
+              @click="openCodeEditor"
+            >
+              <Code :size="16" />
+              <span>Open Code Editor</span>
               <ChevronRight :size="16" />
             </button>
           </div>

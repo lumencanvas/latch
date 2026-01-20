@@ -1,4 +1,4 @@
-import type { NodeDefinition } from '../types'
+import type { NodeDefinition } from '../../types'
 
 export const functionNode: NodeDefinition = {
   id: 'function',

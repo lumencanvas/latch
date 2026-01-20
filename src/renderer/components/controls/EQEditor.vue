@@ -229,27 +229,34 @@ function hitTest(x: number, y: number): number | null {
   return null
 }
 
-function onMouseDown(e: MouseEvent) {
+function onPointerDown(e: PointerEvent) {
   if (!canvas.value) return
   const rect = canvas.value.getBoundingClientRect()
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
+  // Scale from CSS display size to canvas internal resolution
+  const scaleX = props.width / rect.width
+  const scaleY = props.height / rect.height
+  const x = (e.clientX - rect.left) * scaleX
+  const y = (e.clientY - rect.top) * scaleY
 
   const hit = hitTest(x, y)
   if (hit !== null) {
     isDragging.value = hit
-    window.addEventListener('mousemove', onMouseMove)
-    window.addEventListener('mouseup', onMouseUp)
+    // Capture pointer for reliable drag tracking even outside element
+    canvas.value.setPointerCapture(e.pointerId)
     e.preventDefault()
+    e.stopPropagation()
   }
 }
 
-function onMouseMove(e: MouseEvent) {
+function onPointerMove(e: PointerEvent) {
   if (isDragging.value === null || !canvas.value) return
 
   const rect = canvas.value.getBoundingClientRect()
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
+  // Scale from CSS display size to canvas internal resolution
+  const scaleX = props.width / rect.width
+  const scaleY = props.height / rect.height
+  const x = (e.clientX - rect.left) * scaleX
+  const y = (e.clientY - rect.top) * scaleY
 
   const newBands = [...props.modelValue.bands]
   newBands[isDragging.value] = {
@@ -259,20 +266,26 @@ function onMouseMove(e: MouseEvent) {
   }
 
   emit('update:modelValue', { bands: newBands })
+  e.preventDefault()
+  e.stopPropagation()
 }
 
-function onMouseUp() {
+function onPointerUp(e: PointerEvent) {
+  if (isDragging.value !== null && canvas.value) {
+    canvas.value.releasePointerCapture(e.pointerId)
+  }
   isDragging.value = null
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
 }
 
 // Wheel to adjust Q
 function onWheel(e: WheelEvent) {
   if (!canvas.value) return
   const rect = canvas.value.getBoundingClientRect()
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
+  // Scale from CSS display size to canvas internal resolution
+  const scaleX = props.width / rect.width
+  const scaleY = props.height / rect.height
+  const x = (e.clientX - rect.left) * scaleX
+  const y = (e.clientY - rect.top) * scaleY
 
   const hit = hitTest(x, y)
   if (hit !== null) {
@@ -294,8 +307,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
+  // Pointer capture is automatically released when element is unmounted
 })
 </script>
 
@@ -304,8 +316,13 @@ onUnmounted(() => {
     <canvas
       ref="canvas"
       class="eq-canvas"
-      @mousedown="onMouseDown"
-      @wheel="onWheel"
+      @pointerdown.stop="onPointerDown"
+      @pointermove.stop="onPointerMove"
+      @pointerup.stop="onPointerUp"
+      @pointercancel.stop="onPointerUp"
+      @wheel.stop.prevent="onWheel"
+      @mousedown.stop
+      @touchstart.stop
     />
     <div class="eq-values">
       <span
@@ -330,6 +347,8 @@ onUnmounted(() => {
   border: 1px solid #333;
   border-radius: 4px;
   cursor: crosshair;
+  touch-action: none;
+  user-select: none;
 }
 
 .eq-values {

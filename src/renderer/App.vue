@@ -8,6 +8,7 @@ import AppSidebar from './components/layout/AppSidebar.vue'
 import PropertiesPanel from './components/layout/PropertiesPanel.vue'
 import StatusBar from './components/layout/StatusBar.vue'
 import ShaderEditorModal from './components/modals/ShaderEditorModal.vue'
+import CodeEditorModal from './components/modals/CodeEditorModal.vue'
 import AIModelManagerModal from './components/modals/AIModelManagerModal.vue'
 import ConnectionManagerModal from './components/connections/ConnectionManagerModal.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
@@ -107,6 +108,7 @@ onMounted(async () => {
 
       <!-- Modals -->
       <ShaderEditorModal v-if="isEditorView" />
+      <CodeEditorModal v-if="isEditorView" />
       <AIModelManagerModal />
       <ConnectionManagerModal />
     </template>

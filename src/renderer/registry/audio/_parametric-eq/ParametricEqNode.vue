@@ -177,7 +177,8 @@ function updateEQ(value: EQData) {
         <!-- EQ Editor -->
         <div
           class="eq-container"
-          @mousedown.stop
+          @pointerdown.stop
+          @touchstart.stop
         >
           <EQEditor
             :model-value="eqData"

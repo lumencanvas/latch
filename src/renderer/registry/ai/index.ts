@@ -6,10 +6,15 @@ export { featureExtractionNode } from './feature-extraction'
 export { objectDetectionNode } from './object-detection'
 export { speechRecognitionNode } from './speech-recognition'
 export { textTransformationNode } from './text-transformation'
-export { mediapipeHandNode } from './mediapipe-hand'
-export { mediapipeFaceNode } from './mediapipe-face'
-export { mediapipePoseNode } from './mediapipe-pose'
-export { mediapipeObjectNode } from './mediapipe-object'
+
+// MediaPipe nodes with custom UI components
+export { mediapipeHandNode, MediaPipeHandNode } from './mediapipe-hand'
+export { mediapipeFaceNode, MediaPipeFaceNode } from './mediapipe-face'
+export { mediapipePoseNode, MediaPipePoseNode } from './mediapipe-pose'
+export { mediapipeObjectNode, MediaPipeObjectNode } from './mediapipe-object'
+export { mediapipeSegmentationNode, MediaPipeSegmentationNode } from './mediapipe-segmentation'
+export { mediapipeGestureNode, MediaPipeGestureNode } from './mediapipe-gesture'
+export { mediapipeAudioNode, MediaPipeAudioNode } from './mediapipe-audio'
 
 import { textGenerationNode } from './text-generation'
 import { imageClassificationNode } from './image-classification'
@@ -23,6 +28,9 @@ import { mediapipeHandNode } from './mediapipe-hand'
 import { mediapipeFaceNode } from './mediapipe-face'
 import { mediapipePoseNode } from './mediapipe-pose'
 import { mediapipeObjectNode } from './mediapipe-object'
+import { mediapipeSegmentationNode } from './mediapipe-segmentation'
+import { mediapipeGestureNode } from './mediapipe-gesture'
+import { mediapipeAudioNode } from './mediapipe-audio'
 import type { NodeDefinition } from '../types'
 
 export const aiNodes: NodeDefinition[] = [
@@ -38,4 +46,7 @@ export const aiNodes: NodeDefinition[] = [
   mediapipeFaceNode,
   mediapipePoseNode,
   mediapipeObjectNode,
+  mediapipeSegmentationNode,
+  mediapipeGestureNode,
+  mediapipeAudioNode,
 ]

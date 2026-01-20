@@ -170,7 +170,13 @@ export const useFlowsStore = defineStore('flows', {
 
       // Determine Vue Flow node type
       // Special nodes get their own type, others use 'custom' (BaseNode)
-      const specialNodeTypes = ['main-output', 'trigger', 'xy-pad', 'monitor', 'oscilloscope', 'graph', 'equalizer', 'textbox', 'knob', 'envelope-visual', 'parametric-eq', 'wavetable', 'step-sequencer']
+      const specialNodeTypes = [
+        'main-output', 'trigger', 'xy-pad', 'monitor', 'oscilloscope', 'graph', 'equalizer',
+        'textbox', 'knob', 'envelope-visual', 'parametric-eq', 'wavetable', 'step-sequencer',
+        'mediapipe-hand', 'mediapipe-face', 'mediapipe-pose', 'mediapipe-object',
+        'mediapipe-segmentation', 'mediapipe-gesture', 'mediapipe-audio',
+        'function',
+      ]
       const vueFlowType = specialNodeTypes.includes(nodeType) ? nodeType : 'custom'
 
       const node: Node = {

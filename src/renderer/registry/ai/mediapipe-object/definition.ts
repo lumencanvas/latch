@@ -1,4 +1,4 @@
-import type { NodeDefinition } from '../types'
+import type { NodeDefinition } from '../../types'
 
 export const mediapipeObjectNode: NodeDefinition = {
   id: 'mediapipe-object',
@@ -48,6 +48,31 @@ export const mediapipeObjectNode: NodeDefinition = {
       label: 'Label Filter',
       default: '',
       props: { placeholder: 'e.g., person, car' },
+    },
+    {
+      id: 'showOverlay',
+      type: 'toggle',
+      label: 'Overlay',
+      default: true,
+    },
+    {
+      id: 'overlayColor',
+      type: 'color',
+      label: 'Color',
+      default: '#00ff00',
+    },
+    {
+      id: 'lineWidth',
+      type: 'slider',
+      label: 'Line Width',
+      default: 2,
+      props: { min: 1, max: 5, step: 0.5 },
+    },
+    {
+      id: 'showLabels',
+      type: 'toggle',
+      label: 'Show Labels',
+      default: true,
     },
   ],
 }

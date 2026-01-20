@@ -22,6 +22,14 @@ import { StepSequencerNode } from './timing/step-sequencer'
 import { EnvelopeVisualNode } from './audio/_envelope-visual'
 import { ParametricEqNode } from './audio/_parametric-eq'
 import { WavetableNode } from './audio/_wavetable'
+import { MediaPipeHandNode } from './ai/mediapipe-hand'
+import { MediaPipeFaceNode } from './ai/mediapipe-face'
+import { MediaPipePoseNode } from './ai/mediapipe-pose'
+import { MediaPipeObjectNode } from './ai/mediapipe-object'
+import { MediaPipeSegmentationNode } from './ai/mediapipe-segmentation'
+import { MediaPipeGestureNode } from './ai/mediapipe-gesture'
+import { MediaPipeAudioNode } from './ai/mediapipe-audio'
+import { FunctionNode } from './code/_function'
 
 /**
  * Node type to Vue component mapping.
@@ -54,4 +62,16 @@ export const nodeTypes = {
   'envelope-visual': markRaw(EnvelopeVisualNode),
   'parametric-eq': markRaw(ParametricEqNode),
   wavetable: markRaw(WavetableNode),
+
+  // Custom UI nodes - AI (MediaPipe)
+  'mediapipe-hand': markRaw(MediaPipeHandNode),
+  'mediapipe-face': markRaw(MediaPipeFaceNode),
+  'mediapipe-pose': markRaw(MediaPipePoseNode),
+  'mediapipe-object': markRaw(MediaPipeObjectNode),
+  'mediapipe-segmentation': markRaw(MediaPipeSegmentationNode),
+  'mediapipe-gesture': markRaw(MediaPipeGestureNode),
+  'mediapipe-audio': markRaw(MediaPipeAudioNode),
+
+  // Custom UI nodes - Code
+  function: markRaw(FunctionNode),
 }
