@@ -16,9 +16,120 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ## Current Status
 
+**Version**: 0.1.7
 **Build**: Passing
 **Tests**: 657 passed | 11 todo (668 total)
 **Branch**: main
+
+---
+
+## Recent Session (2026-01-20) - Keyboard & Synth Nodes, Audio Restart Fix
+
+### New Nodes Implemented
+
+#### Keyboard Node (`registry/inputs/keyboard/`)
+Virtual piano keyboard for MIDI note input with brutalist styling:
+- **Styling**: Sharp edges, flat colors (cream keys, charcoal black keys, gray frame), no rounded corners
+- **Features**: 25/49/61/88 key sizes, octave shift, velocity sensitivity, computer keyboard input
+- **Outputs**: `note` (MIDI number), `velocity` (0-127), `gate` (boolean), `noteOn` (trigger)
+- **Component**: `PianoKeyboard.vue` - reusable across flow view and control panel
+
+**Files Created**:
+- `components/controls/PianoKeyboard.vue` - Reusable brutalist piano component
+- `registry/inputs/keyboard/definition.ts` - Node definition
+- `registry/inputs/keyboard/KeyboardNode.vue` - Flow view component with header
+- `registry/inputs/keyboard/index.ts` - Module exports
+
+#### Synth Node (`registry/audio/_synth/`)
+MIDI-driven polyphonic synthesizer using Tone.js:
+- **Instruments**: Sine, Moog Bass, Piano, Organ, Pluck, Pad
+- **Controls**: Volume, Attack, Decay, Sustain, Release (with RotaryKnob UI)
+- **Instrument-specific**: Moog has filter cutoff/resonance/envelope, Pad has modulation index
+- **Inputs**: `note`, `velocity`, `gate`, `trigger`
+- **Output**: `audio` (Tone.js node for audio routing)
+
+**Files Created**:
+- `registry/audio/_synth/index.ts` - Node definition with instrument configs
+- `registry/audio/_synth/SynthNode.vue` - Custom component with 3-column knobs grid
+
+### Execution Engine Integration
+
+Added executors for keyboard and synth nodes:
+
+**Keyboard Executor** (`engine/executors/index.ts`):
+- Outputs `note`, `velocity`, `gate`, `noteOn` from node controls
+- Values set by Vue component on key press
+
+**Synth Executor** (`engine/executors/audio.ts`):
+- Receives note/velocity/gate from connected nodes
+- Creates Tone.js synth voices (Synth, MonoSynth, FMSynth, AMSynth)
+- Gate edge detection for note on/off
+- Proper voice cleanup with release scheduling
+
+### Control View Integration
+
+- Added keyboard to `controlNodeTypes` in `ControlPanelView.vue`
+- Keyboard renders with PianoKeyboard component
+- Full note on/off handling in control view
+
+### Priority-Based Auto-Layout (`stores/ui.ts`)
+
+Added smart auto-layout system for control panel:
+- `NODE_TYPE_PRIORITY` - Higher priority nodes placed first (main-output: 100, keyboard: 10)
+- `NODE_TYPE_DEFAULT_SIZE` - Type-specific default dimensions
+- `autoLayoutAll()` - Rearranges all controls by priority
+- Keyboard special case: always placed at bottom, full width
+
+### CRITICAL: Audio Restart Fix
+
+**Problem**: Audio wouldn't restart after stopping and starting a flow.
+
+**Root Cause**: Tone.js nodes become permanently unusable after `.dispose()`, but the caching system returned disposed nodes instead of creating new ones.
+
+**Fixes Applied**:
+
+1. **`getOrCreateNode()`** - Now checks if cached node is disposed:
+   ```typescript
+   if (node && (node as { disposed?: boolean }).disposed) {
+     audioNodes.delete(nodeId)
+     node = undefined
+   }
+   ```
+
+2. **`disposeAllAudioNodes()`** - Now clears ALL state maps:
+   - `synthState` - synth voices
+   - `beatState` - beat detection
+   - `playerState` - audio players (with disposal)
+   - `svfState` - SVF filters (with disposal)
+   - `pitchState` - pitch detection
+   - `parametricEqState` - parametric EQ (with disposal)
+   - `wavetableState` - wavetable oscillators (with disposal)
+
+3. **`audioPlayerExecutor`** - Added disposed player detection to force reload
+
+4. **`AudioManager.resume()`** - Resumes suspended AudioContext on restart
+
+### Bug Fixes
+
+- **Keyboard header width**: Extended to cover handles area with `background: #4b5563` on node
+- **Synth node layout**: Made compact with 3-column knobs grid, reduced padding
+- **Excessive logging**: Removed debug `console.log` from EqualizerNode, equalizer/trigger executors
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `engine/executors/audio.ts` | Synth executor, disposed node detection, state cleanup |
+| `engine/executors/index.ts` | Keyboard executor, removed trigger logging |
+| `registry/inputs/index.ts` | Export keyboard node |
+| `registry/audio/index.ts` | Export synth node |
+| `registry/components.ts` | Register KeyboardNode, SynthNode |
+| `stores/flows.ts` | Added 'keyboard', 'synth' to specialNodeTypes |
+| `composables/usePersistence.ts` | Added 'keyboard', 'synth' to specialNodeTypes |
+| `stores/ui.ts` | Priority constants, auto-layout, default sizes |
+| `views/ControlPanelView.vue` | Keyboard template, handlers |
+| `services/audio/AudioManager.ts` | Added `resume()` method |
+| `registry/debug/equalizer/EqualizerNode.vue` | Removed debug logging |
 
 ### RESOLVED: Texture Display in OUTPUT Nodes (2026-01-20)
 
