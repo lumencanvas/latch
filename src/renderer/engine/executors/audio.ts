@@ -550,6 +550,12 @@ export const audioPlayerExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
         onerror: (err) => {
           state.error = err?.message ?? 'Failed to load audio'
           state.loading = false
+          // Clear player reference on error - it's in an invalid state
+          if (state.player === player) {
+            state.player = null
+            audioNodes.delete(ctx.nodeId)
+            try { player.dispose() } catch { /* ignore */ }
+          }
         },
       })
 
@@ -558,6 +564,9 @@ export const audioPlayerExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
     } catch (err) {
       state.error = err instanceof Error ? err.message : 'Failed to load audio'
       state.loading = false
+      // Ensure player is null on synchronous failure
+      state.player = null
+      audioNodes.delete(ctx.nodeId)
     }
   }
 

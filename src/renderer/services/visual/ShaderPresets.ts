@@ -18,7 +18,7 @@ export interface ShaderPreset {
 
 export interface UniformDefinition {
   name: string
-  type: 'float' | 'vec2' | 'vec3' | 'vec4' | 'int' | 'sampler2D'
+  type: 'float' | 'vec2' | 'vec3' | 'vec4' | 'int' | 'sampler2D' | 'samplerCube'
   label: string
   default: number | number[]
   min?: number
@@ -684,8 +684,10 @@ export function parseUniformsFromCode(code: string): UniformDefinition[] {
         type = 'vec4'
         break
       case 'sampler2d':
-      case 'samplercube':
         type = 'sampler2D'
+        break
+      case 'samplercube':
+        type = 'samplerCube'
         break
       default:
         // Skip unsupported types like mat2/mat3/mat4
@@ -711,16 +713,27 @@ export function parseUniformsFromCode(code: string): UniformDefinition[] {
     let max: number | undefined
     let step: number | undefined
 
-    // Try to infer reasonable defaults from name
+    // Try to infer reasonable defaults from name using word-boundary matching
+    // to avoid false positives like "collideDamage" matching "col" for color
     const nameLower = name.toLowerCase()
-    const isColor = nameLower.includes('color') || nameLower.includes('col') || nameLower.includes('rgb')
-    const isScale = nameLower.includes('scale') || nameLower.includes('zoom')
-    const isSpeed = nameLower.includes('speed') || nameLower.includes('velocity')
-    const isAngle = nameLower.includes('angle') || nameLower.includes('rotation') || nameLower.includes('rot')
-    const isCount = nameLower.includes('count') || nameLower.includes('num') || nameLower.includes('segments')
-    const isSize = nameLower.includes('size') || nameLower.includes('radius') || nameLower.includes('thickness')
-    const isIntensity = nameLower.includes('intensity') || nameLower.includes('amount') || nameLower.includes('strength')
-    const isOffset = nameLower.includes('offset') || nameLower.includes('position') || nameLower.includes('pos')
+
+    // Helper to check if a word appears as a complete word in the name
+    // Handles: snake_case, camelCase, and whole word matches
+    const hasWord = (word: string): boolean => {
+      const pattern = new RegExp(`(?:^|_)${word}(?:_|$|\\d)|(?<=[a-z])${word.charAt(0).toUpperCase()}${word.slice(1)}|^${word}$`, 'i')
+      return pattern.test(name)
+    }
+
+    // More specific matching - prefer full words over partial matches
+    const isColor = hasWord('color') || hasWord('colour') || nameLower.includes('rgb') ||
+                    nameLower.endsWith('col') || nameLower.startsWith('col_') || nameLower === 'col'
+    const isScale = hasWord('scale') || hasWord('zoom')
+    const isSpeed = hasWord('speed') || hasWord('velocity')
+    const isAngle = hasWord('angle') || hasWord('rotation') || hasWord('rotate')
+    const isCount = hasWord('count') || hasWord('number') || hasWord('segments') || hasWord('num')
+    const isSize = hasWord('size') || hasWord('radius') || hasWord('thickness') || hasWord('width') || hasWord('height')
+    const isIntensity = hasWord('intensity') || hasWord('amount') || hasWord('strength')
+    const isOffset = hasWord('offset') || hasWord('position')
 
     switch (type) {
       case 'float':
@@ -810,6 +823,10 @@ export function parseUniformsFromCode(code: string): UniformDefinition[] {
       case 'sampler2D':
         defaultValue = 0 // texture unit
         break
+
+      case 'samplerCube':
+        defaultValue = 0 // cubemap texture unit
+        break
     }
 
     uniforms.push({
@@ -840,6 +857,8 @@ export function uniformTypeToDataType(uniformType: UniformDefinition['type']): s
       return 'data' // vec types use data (arrays)
     case 'sampler2D':
       return 'texture'
+    case 'samplerCube':
+      return 'cubemap'
     default:
       return 'any'
   }
@@ -907,19 +926,31 @@ export function generateControlsFromUniforms(uniforms: UniformDefinition[]): Arr
       case 'vec2':
         control.type = 'vec2'
         break
-      case 'vec3':
-        // Check if it looks like a color
-        if (u.name.toLowerCase().includes('color') || u.name.toLowerCase().includes('col')) {
+      case 'vec3': {
+        // Check if it looks like a color using word-boundary matching
+        // to avoid false positives like "collideDamage" matching "col"
+        const nameLower = u.name.toLowerCase()
+        const isColor = /(?:^|_)colou?r(?:_|$|\d)/i.test(u.name) ||
+                        nameLower.includes('rgb') ||
+                        nameLower.endsWith('col') ||
+                        nameLower.startsWith('col_') ||
+                        nameLower === 'col'
+        if (isColor) {
           control.type = 'color'
         } else {
           control.type = 'vec3'
         }
         break
+      }
       case 'vec4':
         control.type = 'color' // vec4 often used for color with alpha
         break
       case 'sampler2D':
         // Texture inputs are handled as input ports, not controls
+        control.type = 'hidden'
+        break
+      case 'samplerCube':
+        // Cubemap inputs are handled as input ports, not controls
         control.type = 'hidden'
         break
     }

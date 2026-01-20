@@ -165,12 +165,15 @@ The following lower-priority items from the audit have been fixed:
 | Regex recompiled every call | **FIXED** - Moved `UNIFORM_REGEX` and `BUILT_IN_UNIFORMS` to module-level constants |
 | Animation frame cleanup edge case | **FIXED** - Added `isUnmounted` flag to prevent callbacks after unmount |
 | No actual debounce implemented | **FIXED** - Added 300ms debounce to `handleCodeChange()` with proper cleanup |
+| `samplerCube` not distinguished | **FIXED** - Added `samplerCube` as distinct type in `UniformDefinition` and parsing |
+| Fragile name-based inference | **FIXED** - Added word-boundary matching to avoid false positives like "collideDamage" |
 
 ### 3D System Fixes
 
 | Item | Fix |
 |------|-----|
 | Hardcoded 512x512 texture dimensions | **FIXED** - Added optional `width`/`height` parameters to `convertToThreeTexture()` |
+| Group node clones every frame | **FIXED** - Added `groupState` tracking to only reclone when inputs change, proper material disposal |
 
 ### Audio System Fixes
 
@@ -180,22 +183,11 @@ The following lower-priority items from the audit have been fixed:
 | SVF drive toggle cleanup | **FIXED** - Properly disposes drive node when amount changes from >0 to 0 |
 | Parametric EQ chain cleanup | **FIXED** - Added explicit chain disconnection in `disposeParametricEq()` |
 | Oscillator volume no bounds | **FIXED** - Added `-96 dB` to `+6 dB` clamping |
+| Audio player state on failed load | **FIXED** - Properly resets `state.player` to null on load errors |
 
 ---
 
 ## Known Issues / Future Work
-
-### Remaining Audit Items (Lower Priority)
-
-**Shader System (`ShaderPresets.ts`, `ShaderEditorModal.vue`):**
-- `samplerCube` not distinguished from `sampler2D` in type system
-- Default value inference is name-based and fragile (e.g., "collideDamage" treated as color)
-
-**3D System (`3d.ts`):**
-- Group node clones objects instead of sharing geometry (memory inefficient for repeated meshes)
-
-**Audio System (`audio.ts`):**
-- Audio player state not fully reset on failed load (player reference persists)
 
 ### Architecture Improvements
 

@@ -22,6 +22,12 @@ const canvasTextures = new Map<string, THREE.CanvasTexture>()
 // Track which texture keys belong to which node for O(1) disposal lookup
 const nodeTextureKeys = new Map<string, Set<string>>()
 
+// Track group state for efficient updates (avoid cloning every frame)
+const groupState = new Map<string, {
+  inputIds: string[] // UUIDs of input objects
+  clones: THREE.Object3D[] // References to our clones
+}>()
+
 /**
  * Helper to track texture key for a node
  */
@@ -185,6 +191,9 @@ export function dispose3DNode(nodeId: string): void {
     nodeTextureKeys.delete(nodeId)
   }
 
+  // Clean up group state (clones are already removed when group is disposed)
+  groupState.delete(nodeId)
+
   // Also dispose from ThreeRenderer
   const renderer = getThreeRenderer()
   renderer.disposeNode(nodeId)
@@ -221,6 +230,9 @@ export function disposeAll3DNodes(): void {
 
   // Clear texture tracking
   nodeTextureKeys.clear()
+
+  // Clear group state
+  groupState.clear()
 }
 
 /**
@@ -285,6 +297,13 @@ export function gc3DState(validNodeIds: Set<string>): void {
         }
       }
       nodeTextureKeys.delete(nodeId)
+    }
+  }
+
+  // Clean orphaned groupState entries
+  for (const nodeId of groupState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      groupState.delete(nodeId)
     }
   }
 }
@@ -774,22 +793,58 @@ export const group3DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     nodeObjects.set(ctx.nodeId, group)
   }
 
-  // Clear previous children
-  while (group.children.length > 0) {
-    group.remove(group.children[0])
-  }
-
   // Get objects input (array or single)
   const objectsInput = ctx.inputs.get('objects')
+  const inputObjects: THREE.Object3D[] = []
 
   if (objectsInput) {
     const objects = Array.isArray(objectsInput) ? objectsInput : [objectsInput]
-
     for (const obj of objects) {
       if (obj instanceof THREE.Object3D) {
-        group.add(obj.clone())
+        inputObjects.push(obj)
       }
     }
+  }
+
+  // Get current input IDs for comparison
+  const newInputIds = inputObjects.map(obj => obj.uuid)
+
+  // Get or create group state
+  let state = groupState.get(ctx.nodeId)
+  if (!state) {
+    state = { inputIds: [], clones: [] }
+    groupState.set(ctx.nodeId, state)
+  }
+
+  // Check if inputs changed (by comparing UUIDs)
+  const inputsChanged = newInputIds.length !== state.inputIds.length ||
+    newInputIds.some((id, i) => id !== state.inputIds[i])
+
+  if (inputsChanged) {
+    // Dispose old clones properly (dispose materials but geometry is shared)
+    for (const clone of state.clones) {
+      group.remove(clone)
+      if (clone instanceof THREE.Mesh) {
+        // Don't dispose geometry (it's shared with the original)
+        // But do dispose materials if they were cloned
+        if (Array.isArray(clone.material)) {
+          clone.material.forEach(m => m.dispose())
+        } else if (clone.material) {
+          clone.material.dispose()
+        }
+      }
+    }
+
+    // Create new clones with shared geometry
+    state.clones = []
+    for (const obj of inputObjects) {
+      // Clone with shared geometry - Three.js clone() already shares geometry
+      const clone = obj.clone()
+      group.add(clone)
+      state.clones.push(clone)
+    }
+
+    state.inputIds = newInputIds
   }
 
   // Apply group transform
