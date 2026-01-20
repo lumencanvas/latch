@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { X, Play, Pause, Save, RotateCcw, Info, Zap } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
@@ -93,6 +93,13 @@ function renderPreview() {
   if (!previewCanvas.value || !previewCtx.value || !compiledShaderMaterial) return
 
   const renderer = getThreeShaderRenderer()
+
+  // Check for WebGL context issues
+  if (renderer.isContextLost()) {
+    console.warn('[ShaderEditor] WebGL context lost!')
+    return
+  }
+
   const currentTime = (performance.now() - startTime) / 1000
 
   renderer.setTime(currentTime)
@@ -111,6 +118,21 @@ function renderPreview() {
 
   // Copy from renderer canvas to preview canvas
   const sourceCanvas = renderer.getCanvas()
+
+  // Debug: check if source canvas has content
+  const sourceCtx = sourceCanvas.getContext('webgl2') || sourceCanvas.getContext('webgl')
+  if (sourceCtx) {
+    const pixels = new Uint8Array(4)
+    sourceCtx.readPixels(200, 150, 1, 1, sourceCtx.RGBA, sourceCtx.UNSIGNED_BYTE, pixels)
+    // Log pixel at center of canvas (should not be 0,0,0,0 for a working shader)
+    if (pixels[0] === 0 && pixels[1] === 0 && pixels[2] === 0 && pixels[3] === 0) {
+      // Only log occasionally to avoid spam
+      if (Math.random() < 0.01) {
+        console.warn('[ShaderEditor] Source canvas appears empty at center pixel')
+      }
+    }
+  }
+
   previewCtx.value.drawImage(sourceCanvas, 0, 0, 400, 300)
 }
 
@@ -186,10 +208,22 @@ function revert() {
 
 const hasChanges = computed(() => code.value !== originalCode.value)
 
-onMounted(() => {
-  if (previewCanvas.value) {
-    previewCtx.value = previewCanvas.value.getContext('2d')
-    startLoop()
+// Watch for when the shader editor opens to initialize the canvas and start the loop
+// This is necessary because the canvas is inside v-if and doesn't exist when onMounted runs
+watch(() => uiStore.shaderEditorOpen, (isOpen) => {
+  if (isOpen) {
+    // Use nextTick to ensure the DOM has updated and canvas exists
+    nextTick(() => {
+      if (previewCanvas.value) {
+        previewCtx.value = previewCanvas.value.getContext('2d')
+        startLoop()
+      }
+    })
+  } else {
+    // Stop loop and reset state when closing
+    stopLoop()
+    previewCtx.value = null
+    compiledShaderMaterial = null
   }
 })
 

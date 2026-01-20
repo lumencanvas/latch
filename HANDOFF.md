@@ -20,9 +20,79 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 **Tests**: 657 passed | 11 todo (668 total)
 **Branch**: main
 
+### CRITICAL UNRESOLVED ISSUE: Shaders Only Work in Editor Preview
+
+**Status**: Shaders render correctly in the Shader Editor preview modal, but NOT in the main execution flow (OUTPUT nodes show "No Input").
+
+**Debug Findings** (from console logs):
+```
+[Shader BycU0EfD5y37JBDdgLGHx] render output: THREE.Texture (313c1892-...)
+[MainOutput Z7ZNVvz_0iCAhHyEN7lSb] received texture: HTMLCanvasElement
+```
+
+- Shader executor correctly outputs `THREE.Texture`
+- MainOutput executor receives input (HTMLCanvasElement from 3D, or THREE.Texture from shader)
+- But MainOutputNode.vue component shows "No Input" - appears to not be reading from runtime store correctly
+
+**Suspected Issue**: Reactivity problem between `runtimeStore.nodeMetrics` Map and Vue component, OR the `_input_texture` output isn't being stored/retrieved correctly.
+
+**Key Files to Investigate**:
+- `src/renderer/registry/outputs/main-output/MainOutputNode.vue` - reads `metrics?.outputValues?.['_input_texture']`
+- `src/renderer/stores/runtime.ts` - stores metrics via `updateNodeMetrics()`
+- `src/renderer/engine/ExecutionEngine.ts` - calls `Object.fromEntries(outputs)` to store outputValues
+
+**Debug logging added** (can be removed after fix):
+- `visual.ts:567-568` - logs shader render output
+- `visual.ts:799-802` - logs MainOutput executor input
+- `ExecutionEngine.ts:176-179` - logs edge connections
+- `MainOutputNode.vue:47-51` - logs what component reads from store
+
 ---
 
-## Recent Session (2026-01-19)
+## Recent Session (2026-01-20)
+
+### Attempted Texture Rendering Pipeline Fixes (PARTIAL SUCCESS)
+
+**Problem**: Shaders rendered blank/black everywhere - both in shader editor preview AND output nodes showed "No Input".
+
+**Partial Fix**: Shader editor preview now works. Main execution flow still broken.
+
+**Root Cause**: After migrating to Three.js-based rendering (`ThreeShaderRenderer`), several components still used the OLD `ShaderRenderer`:
+1. `MainOutputNode.vue` read from `ShaderRenderer.getCanvas()` while actual rendering went to `ThreeShaderRenderer`
+2. AI executors didn't handle `THREE.Texture` inputs (only legacy `WebGLTexture`)
+3. Shader editor preview animation loop wasn't starting (canvas inside `v-if` wasn't ready on `onMounted`)
+
+**Fixes**:
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `MainOutputNode.vue` | Using wrong renderer | Changed from `getShaderRenderer()` to `getThreeShaderRenderer()`, added proper `THREE.Texture` handling |
+| `ai.ts` | No `THREE.Texture` support | Added `isThreeTexture()` check and `threeTextureToImageData()` conversion function |
+| `ai.ts` | Creating unnecessary WebGL context | Changed `isWebGLTexture()` and `webglTextureToImageData()` to use `ThreeShaderRenderer.getContext()` |
+| `TexturePreview.vue` | Using legacy renderer for WebGLTexture | Changed to use `ThreeShaderRenderer.createTextureFromWebGL()` |
+| `ShaderEditorModal.vue` | Animation loop not starting | Changed from `onMounted` to `watch(shaderEditorOpen)` with `nextTick` to wait for canvas |
+| `ThreeShaderRenderer.ts` | `setSize()` called during render | Removed `setSize()` call in `render()` method - render targets already have correct size |
+| `ShaderRenderer.ts` | No way to check if initialized | Added `hasShaderRenderer()` function to avoid creating renderer for cleanup |
+| `visual.ts` | Creating legacy renderer for cleanup | Made legacy renderer cleanup conditional with `hasShaderRenderer()` |
+| `App.vue` | Console spam from AI progress | Added 10% interval throttling to AI auto-load progress logs |
+
+### Previous Shader System Fixes (same session)
+
+**Problem**: Shaders would render blank/black with no visible error when compilation failed.
+
+**Root Causes**:
+1. Three.js logs shader compilation errors to console but doesn't throw exceptions
+2. Shader cache key only used first 100 characters of code, causing stale shaders when edits occurred after char 100
+3. `samplerCube` type was missing from several places in the shader pipeline
+
+**Fixes** (`ThreeShaderRenderer.ts`, `visual.ts`, `ShaderPresets.ts`):
+- Added console.error interception during shader compilation to capture Three.js error messages
+- Changed shader cache key from `code.substring(0,100)` to djb2 hash of full code
+- Added complete `samplerCube` support throughout shader system
+
+---
+
+## Previous Session (2026-01-19)
 
 ### Bugs Fixed
 
@@ -167,6 +237,11 @@ The following lower-priority items from the audit have been fixed:
 | No actual debounce implemented | **FIXED** - Added 300ms debounce to `handleCodeChange()` with proper cleanup |
 | `samplerCube` not distinguished | **FIXED** - Added `samplerCube` as distinct type in `UniformDefinition` and parsing |
 | Fragile name-based inference | **FIXED** - Added word-boundary matching to avoid false positives like "collideDamage" |
+| **Shader errors render blank** | **FIXED** - Three.js logs errors but doesn't throw; added console.error interception to detect compilation failures |
+| **Stale shader cache** | **FIXED** - Changed cache key from `code.substring(0,100)` to full code hash (djb2) to detect all code changes |
+| `samplerCube` in `injectUniformDeclarations` | **FIXED** - Added missing case for samplerCube uniform injection |
+| `samplerCube` uniform creation | **FIXED** - Added samplerCube handling in `ThreeShaderRenderer.compileShader()` |
+| `ThreeShaderUniform` interface | **FIXED** - Added `samplerCube` to type union |
 
 ### 3D System Fixes
 

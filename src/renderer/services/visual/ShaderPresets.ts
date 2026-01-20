@@ -590,6 +590,9 @@ export function injectUniformDeclarations(code: string, uniforms: UniformDefinit
       case 'sampler2D':
         glslType = 'sampler2D'
         break
+      case 'samplerCube':
+        glslType = 'samplerCube'
+        break
       default:
         continue
     }

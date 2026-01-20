@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as THREE from 'three'
 import { useRuntimeStore } from '@/stores/runtime'
+import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
-import { getShaderRenderer } from '@/services/visual/ShaderRenderer'
 
 const props = withDefaults(defineProps<{
   nodeId: string
@@ -18,79 +18,77 @@ const props = withDefaults(defineProps<{
 
 const runtimeStore = useRuntimeStore()
 const canvas = ref<HTMLCanvasElement | null>(null)
-const ctx = ref<CanvasRenderingContext2D | null>(null)
 const hasTexture = ref(false)
 
-// Get the texture from node outputs
-const textureOutput = computed(() => {
-  const metrics = runtimeStore.nodeMetrics.get(props.nodeId)
-  if (!metrics?.outputValues) return null
-
-  // Check for 'texture' or '_display' outputs
-  return metrics.outputValues['texture'] ?? metrics.outputValues['_display'] ?? null
-})
-
-// Get video element if available (for webcam, etc.)
-const videoOutput = computed(() => {
-  const metrics = runtimeStore.nodeMetrics.get(props.nodeId)
-  if (!metrics?.outputValues) return null
-  return metrics.outputValues['video'] as HTMLVideoElement | null
-})
-
-// Update preview from texture (THREE.Texture, WebGLTexture, canvas, or video)
+/**
+ * Update preview from texture
+ */
 function updatePreview() {
-  if (!canvas.value || !ctx.value) return
+  if (!canvas.value) return
 
-  const video = videoOutput.value
-  const texture = textureOutput.value
+  const ctx = canvas.value.getContext('2d')
+  if (!ctx) return
 
-  // Priority 1: Use video element directly (for webcam, video player, etc.)
-  if (video instanceof HTMLVideoElement && video.readyState >= 2) {
-    hasTexture.value = true
-    ctx.value.drawImage(video, 0, 0, props.width, props.height)
+  // Get outputs directly from execution engine
+  const engine = getExecutionEngine()
+  const outputs = engine.getNodeOutputs(props.nodeId)
+
+  if (!outputs) {
+    hasTexture.value = false
+    drawPlaceholder(ctx)
     return
   }
+
+  // Check for video element first (webcam, video player)
+  const video = outputs.get('video') as HTMLVideoElement | undefined
+  if (video instanceof HTMLVideoElement && video.readyState >= 2) {
+    hasTexture.value = true
+    ctx.drawImage(video, 0, 0, props.width, props.height)
+    return
+  }
+
+  // Check for texture outputs
+  const texture = outputs.get('texture') ?? outputs.get('_display')
 
   if (!texture) {
     hasTexture.value = false
-    // Clear to show placeholder
-    ctx.value.fillStyle = '#1a1a1a'
-    ctx.value.fillRect(0, 0, props.width, props.height)
-
-    if (props.showPlaceholder) {
-      ctx.value.fillStyle = '#666'
-      ctx.value.font = '10px monospace'
-      ctx.value.textAlign = 'center'
-      ctx.value.fillText('No texture', props.width / 2, props.height / 2)
-    }
+    drawPlaceholder(ctx)
     return
   }
 
-  hasTexture.value = true
-
-  // Priority 2: Canvas element - draw directly
+  // Handle canvas element
   if (texture instanceof HTMLCanvasElement) {
-    ctx.value.drawImage(texture, 0, 0, props.width, props.height)
+    hasTexture.value = true
+    ctx.drawImage(texture, 0, 0, props.width, props.height)
     return
   }
 
-  // Priority 3: THREE.Texture - use ThreeShaderRenderer to render to canvas
+  // Handle THREE.Texture
   if (texture instanceof THREE.Texture) {
+    hasTexture.value = true
     const threeRenderer = getThreeShaderRenderer()
-    // Render the texture to our canvas using the Three.js renderer
     threeRenderer.renderToCanvas(texture, canvas.value)
     return
   }
 
-  // Priority 4: Raw WebGLTexture (legacy) - use old renderer canvas
-  if (texture instanceof WebGLTexture) {
-    const legacyRenderer = getShaderRenderer()
-    const sourceCanvas = legacyRenderer.getCanvas()
-    ctx.value.drawImage(sourceCanvas, 0, 0, props.width, props.height)
+  // Unknown type
+  hasTexture.value = false
+  drawPlaceholder(ctx)
+}
+
+function drawPlaceholder(ctx: CanvasRenderingContext2D) {
+  ctx.fillStyle = '#1a1a1a'
+  ctx.fillRect(0, 0, props.width, props.height)
+
+  if (props.showPlaceholder) {
+    ctx.fillStyle = '#666'
+    ctx.font = '10px monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText('No texture', props.width / 2, props.height / 2)
   }
 }
 
-// Animation loop for continuous updates
+// Animation loop
 let animationFrame: number | null = null
 
 function startUpdateLoop() {
@@ -112,7 +110,8 @@ function stopUpdateLoop() {
 
 onMounted(() => {
   if (canvas.value) {
-    ctx.value = canvas.value.getContext('2d')
+    canvas.value.width = props.width
+    canvas.value.height = props.height
     updatePreview()
     startUpdateLoop()
   }
@@ -133,6 +132,15 @@ watch(() => runtimeStore.isRunning, (running) => {
     updatePreview()
   }
 })
+
+// Handle size changes
+watch([() => props.width, () => props.height], ([w, h]) => {
+  if (canvas.value) {
+    canvas.value.width = w
+    canvas.value.height = h
+    updatePreview()
+  }
+})
 </script>
 
 <template>
@@ -142,8 +150,6 @@ watch(() => runtimeStore.isRunning, (running) => {
   >
     <canvas
       ref="canvas"
-      :width="width"
-      :height="height"
       class="preview-canvas"
     />
     <div

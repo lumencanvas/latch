@@ -497,6 +497,14 @@ export class ShaderRenderer {
 // Singleton for shared rendering
 let sharedRenderer: ShaderRenderer | null = null
 
+/**
+ * Check if the shared renderer has been initialized
+ * Use this to avoid creating the renderer just for cleanup
+ */
+export function hasShaderRenderer(): boolean {
+  return sharedRenderer !== null
+}
+
 export function getShaderRenderer(): ShaderRenderer {
   if (!sharedRenderer) {
     sharedRenderer = new ShaderRenderer()

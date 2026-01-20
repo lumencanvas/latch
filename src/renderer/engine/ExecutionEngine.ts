@@ -172,6 +172,11 @@ export class ExecutionEngine {
     for (const edge of this.edges) {
       if (edge.target === nodeId && edge.targetHandle && edge.sourceHandle) {
         const sourceOutputs = this.nodeOutputs.get(edge.source)
+        // Debug: log edge connections for main-output nodes (every 60 frames)
+        if (this.frameCount % 60 === 0 && nodeId.includes('output')) {
+          console.log(`[ExecutionEngine] Edge: ${edge.source}:${edge.sourceHandle} -> ${nodeId}:${edge.targetHandle}`)
+          console.log(`[ExecutionEngine] Source outputs available:`, sourceOutputs ? [...sourceOutputs.keys()] : 'none')
+        }
         if (sourceOutputs) {
           const value = sourceOutputs.get(edge.sourceHandle)
           if (value !== undefined) {
@@ -431,6 +436,33 @@ export class ExecutionEngine {
    */
   getNodeOutputs(nodeId: string): Map<string, unknown> | undefined {
     return this.nodeOutputs.get(nodeId)
+  }
+
+  /**
+   * Get texture output for a node (direct access for display components)
+   * This bypasses Vue reactivity issues with Object.fromEntries()
+   */
+  getNodeTexture(nodeId: string): unknown {
+    const outputs = this.nodeOutputs.get(nodeId)
+    if (!outputs) return null
+
+    // Try common texture output names
+    return outputs.get('texture') ?? outputs.get('_input_texture') ?? outputs.get('_display') ?? null
+  }
+
+  /**
+   * Get all node outputs as Map (preserves texture references)
+   * Use this instead of nodeMetrics.outputValues for texture access
+   */
+  getAllNodeOutputs(): Map<string, Map<string, unknown>> {
+    return this.nodeOutputs
+  }
+
+  /**
+   * Check if execution engine has outputs for a node
+   */
+  hasNodeOutputs(nodeId: string): boolean {
+    return this.nodeOutputs.has(nodeId)
   }
 }
 

@@ -17,7 +17,7 @@ export interface CompiledShaderMaterial {
 
 export interface ThreeShaderUniform {
   name: string
-  type: 'float' | 'int' | 'vec2' | 'vec3' | 'vec4' | 'sampler2D'
+  type: 'float' | 'int' | 'vec2' | 'vec3' | 'vec4' | 'sampler2D' | 'samplerCube'
   value: number | number[] | THREE.Texture | null
 }
 
@@ -117,23 +117,33 @@ export class ThreeShaderRenderer {
   // Cached display material for renderToCanvas
   private displayMaterial: THREE.MeshBasicMaterial | null = null
 
-  constructor() {
-    // Create a dedicated canvas for Three.js 2D shader rendering
-    this.canvas = document.createElement('canvas')
-    this.canvas.width = this.defaultSize.width
-    this.canvas.height = this.defaultSize.height
+  // Track if we're using a shared renderer (from UnifiedRenderer)
+  private _usesSharedRenderer = false
 
-    // Create WebGL renderer
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: this.canvas,
-      alpha: true,
-      antialias: false,
-      preserveDrawingBuffer: true,
-      powerPreference: 'high-performance',
-    })
-    this.renderer.setSize(this.defaultSize.width, this.defaultSize.height)
-    this.renderer.setPixelRatio(1)
-    this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace
+  constructor(sharedRenderer?: THREE.WebGLRenderer) {
+    if (sharedRenderer) {
+      // Use shared renderer from UnifiedRenderer
+      this.renderer = sharedRenderer
+      this.canvas = sharedRenderer.domElement
+      this._usesSharedRenderer = true
+    } else {
+      // Create a dedicated canvas for Three.js 2D shader rendering
+      this.canvas = document.createElement('canvas')
+      this.canvas.width = this.defaultSize.width
+      this.canvas.height = this.defaultSize.height
+
+      // Create WebGL renderer
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas,
+        alpha: true,
+        antialias: false,
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
+      })
+      this.renderer.setSize(this.defaultSize.width, this.defaultSize.height)
+      this.renderer.setPixelRatio(1)
+      this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace
+    }
 
     // Create orthographic camera for 2D rendering
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10)
@@ -153,7 +163,16 @@ export class ThreeShaderRenderer {
     this.blankTexture = new THREE.DataTexture(blankData, 1, 1, THREE.RGBAFormat)
     this.blankTexture.needsUpdate = true
 
-    this.setupContextLossHandling()
+    if (!sharedRenderer) {
+      this.setupContextLossHandling()
+    }
+  }
+
+  /**
+   * Check if using shared renderer from UnifiedRenderer
+   */
+  usesSharedRenderer(): boolean {
+    return this._usesSharedRenderer
   }
 
   /**
@@ -281,7 +300,8 @@ export class ThreeShaderRenderer {
           } else if (def.type === 'vec4') {
             const val = Array.isArray(def.default) ? def.default : [0, 0, 0, 1]
             uniforms[def.name] = { value: new THREE.Vector4(val[0], val[1], val[2], val[3]) }
-          } else if (def.type === 'sampler2D') {
+          } else if (def.type === 'sampler2D' || def.type === 'samplerCube') {
+            // Note: samplerCube uses same blank texture for now (cubemaps not fully supported)
             uniforms[def.name] = { value: this.blankTexture }
           }
         }
@@ -295,10 +315,31 @@ export class ThreeShaderRenderer {
         glslVersion: THREE.GLSL1, // Use GLSL 1.0 for Shadertoy compatibility
       })
 
-      // Force compilation by doing a test render
-      // This will throw if there are shader compilation errors
+      // Force compilation and check for errors
+      // Three.js doesn't throw on shader errors - it logs them and renders blank
+      // We need to explicitly check the WebGL context for compilation errors
       const originalMaterial = this.quad.material
       this.quad.material = material
+
+      // Capture console errors during compilation (Three.js logs shader errors)
+      // Use object to avoid TypeScript closure inference issues
+      const errorCapture = { message: null as string | null }
+      const originalConsoleError = console.error
+      console.error = (...args: unknown[]) => {
+        const message = args.map(a => String(a)).join(' ')
+        // Only catch actual shader compilation errors - be specific to avoid false positives
+        // Three.js shader errors look like: "THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false"
+        // followed by "ERROR: 0:XX: ..." lines
+        const isShaderError =
+          (message.includes('THREE.WebGLProgram') && message.includes('Shader Error')) ||
+          (message.includes('ERROR:') && /ERROR:\s*\d+:\d+:/.test(message))
+        if (isShaderError) {
+          if (!errorCapture.message) {
+            errorCapture.message = message
+          }
+        }
+        originalConsoleError.apply(console, args)
+      }
 
       try {
         // Create a temporary render target for validation
@@ -308,9 +349,22 @@ export class ThreeShaderRenderer {
         this.renderer.setRenderTarget(null)
         tempTarget.dispose()
       } catch (renderError) {
+        console.error = originalConsoleError
         this.quad.material = originalMaterial
         material.dispose()
         return { error: renderError instanceof Error ? renderError.message : 'Shader compilation failed' }
+      }
+
+      // Restore console.error
+      console.error = originalConsoleError
+
+      // Check if shader compilation failed (Three.js logged an error)
+      if (errorCapture.message) {
+        this.quad.material = originalMaterial
+        material.dispose()
+        // Extract just the error lines for cleaner display
+        const errorMatch = errorCapture.message.match(/ERROR: \d+:\d+:.*$/m)
+        return { error: errorMatch ? errorMatch[0] : 'Shader compilation failed' }
       }
 
       this.quad.material = originalMaterial
@@ -415,8 +469,9 @@ export class ThreeShaderRenderer {
     this.quad.material = shader.material
 
     // Render to the target
+    // Note: Don't call setSize here - the render target already has the correct size
+    // setSize changes the renderer's canvas/viewport which can cause issues
     this.renderer.setRenderTarget(target)
-    this.renderer.setSize(width, height)
     this.renderer.render(this.scene, this.camera)
     this.renderer.setRenderTarget(null)
 
@@ -435,6 +490,7 @@ export class ThreeShaderRenderer {
     height: number = this.defaultSize.height
   ): void {
     if (this._contextLost) return
+    if (!shader || !shader.material) return
 
     // Update built-in uniforms
     const uniforms = shader.uniforms
@@ -569,6 +625,7 @@ export class ThreeShaderRenderer {
 
   /**
    * Copy a Three.js Texture to a 2D canvas for display
+   * For render target textures, we need to read pixels directly from the GPU
    */
   renderToCanvas(texture: THREE.Texture, targetCanvas: HTMLCanvasElement): void {
     if (this._contextLost || !texture) return
@@ -576,17 +633,72 @@ export class ThreeShaderRenderer {
     const ctx = targetCanvas.getContext('2d')
     if (!ctx) return
 
-    // Use cached display material
+    const width = targetCanvas.width
+    const height = targetCanvas.height
+
+    // Check if this is a render target texture (has no image source but has dimensions)
+    // Render target textures need to be read back from GPU via their render target
+    const isRenderTargetTexture = texture.source?.data === null || texture.image === null
+
+    // Debug logging
+    if (Math.random() < 0.01) {
+      console.log(`[renderToCanvas] texture uuid=${texture.uuid}, isRenderTarget=${isRenderTargetTexture}, renderTargets count=${this.renderTargets.size}`)
+    }
+
+    if (isRenderTargetTexture) {
+      // Find the render target that owns this texture
+      for (const [key, target] of this.renderTargets) {
+        if (target.texture === texture) {
+          if (Math.random() < 0.01) {
+            console.log(`[renderToCanvas] Found matching render target: ${key}`)
+          }
+          // Read pixels from render target
+          const rtWidth = target.width
+          const rtHeight = target.height
+          const pixels = new Uint8Array(rtWidth * rtHeight * 4)
+
+          this.renderer.readRenderTargetPixels(target, 0, 0, rtWidth, rtHeight, pixels)
+
+          // Create ImageData and draw to canvas
+          // WebGL pixels are bottom-to-top, need to flip
+          const flippedPixels = new Uint8ClampedArray(rtWidth * rtHeight * 4)
+          for (let y = 0; y < rtHeight; y++) {
+            const srcRow = (rtHeight - 1 - y) * rtWidth * 4
+            const dstRow = y * rtWidth * 4
+            flippedPixels.set(pixels.subarray(srcRow, srcRow + rtWidth * 4), dstRow)
+          }
+
+          const imageData = new ImageData(flippedPixels, rtWidth, rtHeight)
+
+          // Scale to target canvas size
+          if (rtWidth !== width || rtHeight !== height) {
+            // Create temp canvas at render target size
+            const tempCanvas = document.createElement('canvas')
+            tempCanvas.width = rtWidth
+            tempCanvas.height = rtHeight
+            const tempCtx = tempCanvas.getContext('2d')!
+            tempCtx.putImageData(imageData, 0, 0)
+            ctx.drawImage(tempCanvas, 0, 0, width, height)
+          } else {
+            ctx.putImageData(imageData, 0, 0)
+          }
+          return
+        }
+      }
+      // Render target texture but no matching target found
+      if (Math.random() < 0.01) {
+        console.warn(`[renderToCanvas] Render target texture but no matching target found! uuid=${texture.uuid}`)
+        console.log(`[renderToCanvas] Available targets:`, [...this.renderTargets.keys()])
+      }
+    }
+
+    // For regular textures (images, video, canvas), use MeshBasicMaterial approach
     if (!this.displayMaterial) {
       this.displayMaterial = new THREE.MeshBasicMaterial()
     }
     this.displayMaterial.map = texture
     this.displayMaterial.needsUpdate = true
     this.quad.material = this.displayMaterial
-
-    // Render to internal canvas
-    const width = targetCanvas.width
-    const height = targetCanvas.height
 
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width
@@ -756,15 +868,42 @@ export class ThreeShaderRenderer {
   }
 
   /**
+   * Get the render target for a specific node (if it exists)
+   * Useful for texture bridge operations
+   */
+  getRenderTarget(nodeId: string, width?: number, height?: number): THREE.WebGLRenderTarget | null {
+    const w = width ?? this.defaultSize.width
+    const h = height ?? this.defaultSize.height
+    const key = `${nodeId}_${w}_${h}`
+    return this.renderTargets.get(key) ?? null
+  }
+
+  /**
+   * Get all render targets (for debugging/introspection)
+   */
+  getAllRenderTargets(): Map<string, THREE.WebGLRenderTarget> {
+    return this.renderTargets
+  }
+
+  /**
+   * Reset renderer state (call before rendering in shared context mode)
+   */
+  resetState(): void {
+    this.renderer.resetState()
+  }
+
+  /**
    * Dispose all resources
    */
   dispose(): void {
-    // Remove event listeners
-    if (this._boundContextLost) {
-      this.canvas.removeEventListener('webglcontextlost', this._boundContextLost)
-    }
-    if (this._boundContextRestored) {
-      this.canvas.removeEventListener('webglcontextrestored', this._boundContextRestored)
+    // Remove event listeners (only if we own the canvas)
+    if (!this._usesSharedRenderer) {
+      if (this._boundContextLost) {
+        this.canvas.removeEventListener('webglcontextlost', this._boundContextLost)
+      }
+      if (this._boundContextRestored) {
+        this.canvas.removeEventListener('webglcontextrestored', this._boundContextRestored)
+      }
     }
 
     // Dispose render targets
@@ -797,8 +936,10 @@ export class ThreeShaderRenderer {
     // Dispose quad geometry
     this.quad.geometry.dispose()
 
-    // Dispose renderer
-    this.renderer.dispose()
+    // Only dispose renderer if we own it (not shared)
+    if (!this._usesSharedRenderer) {
+      this.renderer.dispose()
+    }
   }
 }
 

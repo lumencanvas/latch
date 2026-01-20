@@ -12,8 +12,8 @@ import {
   type CompiledShaderMaterial,
   type ThreeShaderUniform,
 } from '@/services/visual/ThreeShaderRenderer'
-// Keep old renderer for legacy framebuffer cleanup during dispose
-import { getShaderRenderer } from '@/services/visual/ShaderRenderer'
+// Keep old renderer for legacy framebuffer cleanup during dispose (only if it was used)
+import { getShaderRenderer, hasShaderRenderer } from '@/services/visual/ShaderRenderer'
 import { webcamCapture } from '@/services/visual/WebcamCapture'
 import {
   getPresetById,
@@ -23,6 +23,7 @@ import {
   injectUniformDeclarations,
   type UniformDefinition,
 } from '@/services/visual/ShaderPresets'
+import { getTextureBridge } from '@/services/visual/TextureBridge'
 
 // Re-export for use by other executors (e.g., AI texture conversion)
 export { getShaderRenderer, getThreeShaderRenderer }
@@ -65,7 +66,6 @@ const cachedUniforms = new Map<string, UniformDefinition[]>()
  * Dispose visual resources for a node
  */
 export function disposeVisualNode(nodeId: string): void {
-  const renderer = getShaderRenderer()
   const threeRenderer = getThreeShaderRenderer()
 
   // Clean up Three.js shader materials (both nodeId key and cacheKey entries)
@@ -128,9 +128,12 @@ export function disposeVisualNode(nodeId: string): void {
     canvasTextureCache.delete(canvasKey)
   }
 
-  // Clean up framebuffers (legacy renderer)
-  renderer.deleteFramebuffer(nodeId)
-  renderer.deleteFramebuffer(`${nodeId}_h`)
+  // Clean up framebuffers (legacy renderer) - only if it was initialized
+  if (hasShaderRenderer()) {
+    const legacyRenderer = getShaderRenderer()
+    legacyRenderer.deleteFramebuffer(nodeId)
+    legacyRenderer.deleteFramebuffer(`${nodeId}_h`)
+  }
 }
 
 /**
@@ -310,6 +313,13 @@ export function gcVisualState(validNodeIds: Set<string>): void {
       pendingAssetLoads.delete(nodeId)
     }
   }
+
+  // Clean TextureBridge display sprites
+  try {
+    getTextureBridge().gc(validNodeIds)
+  } catch (e) {
+    // TextureBridge may not be initialized yet
+  }
 }
 
 // ============================================================================
@@ -389,8 +399,16 @@ export const shaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Get or compile shader using Three.js
   const customVertex = vertexCode.trim() ? vertexCode : undefined
-  // Include uniform count in cache key since they affect GLSL source
-  const cacheKey = `${ctx.nodeId}_${fragmentCode.substring(0, 100)}_${customVertex?.substring(0, 50) ?? ''}_${isShadertoy}_${detectedUniforms.length}`
+  // Use a hash of the full code to avoid cache collisions when code changes after first 100 chars
+  // Simple hash function (djb2)
+  const hashCode = (str: string): number => {
+    let hash = 5381
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) ^ str.charCodeAt(i)
+    }
+    return hash >>> 0 // Convert to unsigned 32-bit
+  }
+  const cacheKey = `${ctx.nodeId}_${hashCode(fragmentCode)}_${customVertex ? hashCode(customVertex) : ''}_${isShadertoy}_${detectedUniforms.length}`
 
   let shaderMaterial = compiledShaderMaterials.get(cacheKey)
   if (!shaderMaterial) {
@@ -553,10 +571,15 @@ export const shaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Render to per-node render target
   try {
     const texture = renderer.render(shaderMaterial, uniforms, ctx.nodeId)
+    // Debug: log texture output
+    if (ctx.frameCount % 60 === 0) {
+      console.log(`[Shader ${ctx.nodeId}] render output:`, texture ? `THREE.Texture (${texture.uuid})` : 'null')
+    }
     outputs.set('texture', texture)
     outputs.set('_error', null)
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Render failed'
+    console.error(`[Shader ${ctx.nodeId}] render error:`, msg)
     outputs.set('texture', null)
     outputs.set('_error', msg)
   }
@@ -771,14 +794,26 @@ export const blendExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
-// Main Output Node (Three.js version)
+// Main Output Node (Hybrid Three.js + PixiJS version)
 // ============================================================================
 
 // Cache for canvas-to-texture conversions (one per node that outputs canvas)
 const canvasTextureCache = new Map<string, THREE.Texture>()
 
+/**
+ * Main Output Executor - Simplified for PixiJS display
+ *
+ * The executor now just passes the texture through - PixiJS handles
+ * the actual display in the MainOutputNode component via TextureBridge.
+ * This eliminates CPU-GPU roundtrips from renderToCanvas().
+ */
 export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const textureInput = ctx.inputs.get('texture') as THREE.Texture | HTMLCanvasElement | null
+
+  // Debug: log what main-output receives (reduced frequency)
+  if (ctx.frameCount % 120 === 0) {
+    console.log(`[MainOutput ${ctx.nodeId}] received:`, textureInput ? (textureInput instanceof THREE.Texture ? `THREE.Texture` : 'HTMLCanvasElement') : 'null')
+  }
 
   const outputs = new Map<string, unknown>()
 
@@ -787,16 +822,15 @@ export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const renderer = getThreeShaderRenderer()
-
   // Handle different input types
   let outputTexture: THREE.Texture
 
   if (textureInput instanceof THREE.Texture) {
-    // Three.js texture - pass through directly
+    // Three.js texture - pass through directly for PixiJS display
     outputTexture = textureInput
   } else if (textureInput instanceof HTMLCanvasElement) {
     // Canvas element - convert to Three.js texture
+    const renderer = getThreeShaderRenderer()
     const cacheKey = `canvas_${ctx.nodeId}`
     let cachedTexture = canvasTextureCache.get(cacheKey)
 
@@ -814,10 +848,8 @@ export const mainOutputExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Render to canvas for preview
-  renderer.renderToCanvas(outputTexture, renderer.getCanvas())
-
-  // Store the input texture so the node component can display it
+  // Store the texture - PixiJS display component will render it directly
+  // No more CPU-GPU roundtrip via renderToCanvas()
   outputs.set('_input_texture', outputTexture)
   return outputs
 }

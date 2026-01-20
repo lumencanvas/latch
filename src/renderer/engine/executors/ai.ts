@@ -7,10 +7,11 @@
  */
 
 import * as Tone from 'tone'
+import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
 import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
-import { getShaderRenderer } from './visual'
+import { getThreeShaderRenderer } from './visual'
 
 // Cache for node state and results
 const nodeCache = new Map<string, unknown>()
@@ -61,24 +62,31 @@ function isHTMLVideoElement(input: unknown): input is HTMLVideoElement {
 
 function isWebGLTexture(input: unknown): input is WebGLTexture {
   // WebGLTexture doesn't have a global constructor in all environments
-  // Check if it's an object and the renderer recognizes it
+  // Use ThreeShaderRenderer's context to check (avoids creating extra WebGL contexts)
   if (!input || typeof input !== 'object') return false
+  // Quick check: THREE.Texture is not a WebGLTexture
+  if (input instanceof THREE.Texture) return false
   try {
-    const renderer = getShaderRenderer()
-    const gl = renderer.getCanvas().getContext('webgl2')
+    const renderer = getThreeShaderRenderer()
+    const gl = renderer.getContext()
     return gl !== null && gl.isTexture(input as WebGLTexture)
   } catch {
     return false
   }
 }
 
+function isThreeTexture(input: unknown): input is THREE.Texture {
+  return input instanceof THREE.Texture
+}
+
 /**
- * Convert WebGLTexture to ImageData
+ * Convert WebGLTexture to ImageData (legacy fallback)
+ * Uses ThreeShaderRenderer's context to avoid creating extra WebGL contexts
  */
 function webglTextureToImageData(texture: WebGLTexture): ImageData | null {
   try {
-    const renderer = getShaderRenderer()
-    const gl = renderer.getCanvas().getContext('webgl2')
+    const renderer = getThreeShaderRenderer()
+    const gl = renderer.getContext()
     if (!gl) return null
 
     const canvas = renderer.getCanvas()
@@ -122,6 +130,36 @@ function webglTextureToImageData(texture: WebGLTexture): ImageData | null {
 }
 
 /**
+ * Convert THREE.Texture to ImageData
+ */
+function threeTextureToImageData(texture: THREE.Texture): ImageData | null {
+  try {
+    const renderer = getThreeShaderRenderer()
+
+    // Get texture dimensions
+    const width = texture.image?.width || 512
+    const height = texture.image?.height || 512
+
+    // Create a temporary canvas to render the texture
+    const tempCanvas = document.createElement('canvas')
+    tempCanvas.width = width
+    tempCanvas.height = height
+
+    // Use ThreeShaderRenderer to render the texture to canvas
+    renderer.renderToCanvas(texture, tempCanvas)
+
+    // Extract ImageData from the canvas
+    const ctx = tempCanvas.getContext('2d')
+    if (!ctx) return null
+
+    return ctx.getImageData(0, 0, width, height)
+  } catch (err) {
+    console.error('[AI] Failed to convert THREE.Texture to ImageData:', err)
+    return null
+  }
+}
+
+/**
  * Convert HTMLVideoElement to ImageData
  */
 function videoElementToImageData(video: HTMLVideoElement): ImageData | null {
@@ -160,7 +198,7 @@ function canvasElementToImageData(canvas: HTMLCanvasElement): ImageData | null {
 
 /**
  * Convert any supported image input to ImageData for AI processing
- * Supports: ImageData, HTMLCanvasElement, HTMLVideoElement, WebGLTexture
+ * Supports: ImageData, HTMLCanvasElement, HTMLVideoElement, THREE.Texture, WebGLTexture
  */
 function convertToImageData(input: unknown): ImageData | null {
   if (!input) return null
@@ -180,7 +218,12 @@ function convertToImageData(input: unknown): ImageData | null {
     return videoElementToImageData(input)
   }
 
-  // WebGLTexture - read pixels via framebuffer
+  // THREE.Texture - render to canvas, extract ImageData (preferred format)
+  if (isThreeTexture(input)) {
+    return threeTextureToImageData(input)
+  }
+
+  // WebGLTexture (legacy) - read pixels via framebuffer
   if (isWebGLTexture(input)) {
     return webglTextureToImageData(input as WebGLTexture)
   }

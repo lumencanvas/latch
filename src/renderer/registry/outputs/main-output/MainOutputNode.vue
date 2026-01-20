@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import { Maximize2, Minimize2 } from 'lucide-vue-next'
+import * as THREE from 'three'
 import { categoryMeta, dataTypeMeta, type NodeDefinition, useNodesStore } from '@/stores/nodes'
 import { useRuntimeStore } from '@/stores/runtime'
-import { getShaderRenderer } from '@/services/visual/ShaderRenderer'
+import { getExecutionEngine } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 
 const props = defineProps<NodeProps>()
 const runtimeStore = useRuntimeStore()
@@ -13,10 +15,9 @@ const nodesStore = useNodesStore()
 
 // Preview canvas
 const previewCanvas = ref<HTMLCanvasElement | null>(null)
-const ctx = ref<CanvasRenderingContext2D | null>(null)
 const isExpanded = ref(false)
 
-// Get definition from nodesStore (more reliable than props.data.definition)
+// Get definition from nodesStore
 const definition = computed<NodeDefinition | null>(() => {
   const nodeType = (props.data?.nodeType as string) ?? 'main-output'
   return nodesStore.getDefinition(nodeType) ?? props.data?.definition ?? null
@@ -27,7 +28,6 @@ const categoryColor = computed(() => {
   return categoryMeta[definition.value.category]?.color ?? 'var(--color-neutral-400)'
 })
 
-
 // Preview dimensions
 const previewWidth = computed(() => isExpanded.value ? 320 : 200)
 const previewHeight = computed(() => isExpanded.value ? 200 : 125)
@@ -35,28 +35,40 @@ const previewHeight = computed(() => isExpanded.value ? 200 : 125)
 // Animation loop
 let animationFrame: number | null = null
 
+/**
+ * Update preview - get texture directly from ExecutionEngine and render to canvas
+ */
 function updatePreview() {
-  if (!previewCanvas.value || !ctx.value) return
+  if (!previewCanvas.value) return
 
-  // Get input from node metrics (set by executor)
-  const metrics = runtimeStore.nodeMetrics.get(props.id)
-  const texture = metrics?.outputValues?.['_input_texture']
+  const ctx = previewCanvas.value.getContext('2d')
+  if (!ctx) return
 
-  if (!texture) {
+  // Get texture directly from execution engine (bypasses Vue reactivity issues)
+  const engine = getExecutionEngine()
+  const texture = engine.getNodeTexture(props.id) as THREE.Texture | null
+
+  // Debug logging (every 60 frames)
+  if (Math.random() < 0.02) {
+    const outputs = engine.getNodeOutputs(props.id)
+    console.log(`[MainOutputNode ${props.id}] outputs:`, outputs ? [...outputs.entries()] : 'none')
+    console.log(`[MainOutputNode ${props.id}] texture:`, texture ? `THREE.Texture uuid=${texture.uuid}` : 'null')
+  }
+
+  if (!texture || !(texture instanceof THREE.Texture)) {
     // No input - draw placeholder
-    ctx.value.fillStyle = '#1a1a1a'
-    ctx.value.fillRect(0, 0, previewWidth.value, previewHeight.value)
-    ctx.value.fillStyle = '#666'
-    ctx.value.font = '12px monospace'
-    ctx.value.textAlign = 'center'
-    ctx.value.fillText('No Input', previewWidth.value / 2, previewHeight.value / 2)
+    ctx.fillStyle = '#1a1a1a'
+    ctx.fillRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
+    ctx.fillStyle = '#666'
+    ctx.font = '12px monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText('No Input', previewCanvas.value.width / 2, previewCanvas.value.height / 2)
     return
   }
 
-  // Draw from shader renderer canvas
-  const renderer = getShaderRenderer()
-  const sourceCanvas = renderer.getCanvas()
-  ctx.value.drawImage(sourceCanvas, 0, 0, previewWidth.value, previewHeight.value)
+  // Use ThreeShaderRenderer's renderToCanvas
+  const threeRenderer = getThreeShaderRenderer()
+  threeRenderer.renderToCanvas(texture, previewCanvas.value)
 }
 
 function startLoop() {
@@ -80,9 +92,19 @@ function toggleExpanded() {
   isExpanded.value = !isExpanded.value
 }
 
+// Handle resize when expanded state changes
+watch([previewWidth, previewHeight], () => {
+  if (previewCanvas.value) {
+    previewCanvas.value.width = previewWidth.value
+    previewCanvas.value.height = previewHeight.value
+    updatePreview()
+  }
+})
+
 onMounted(() => {
   if (previewCanvas.value) {
-    ctx.value = previewCanvas.value.getContext('2d')
+    previewCanvas.value.width = previewWidth.value
+    previewCanvas.value.height = previewHeight.value
     updatePreview()
     startLoop()
   }
@@ -130,8 +152,6 @@ function getTypeColor(type: string): string {
     <div class="preview-area">
       <canvas
         ref="previewCanvas"
-        :width="previewWidth"
-        :height="previewHeight"
         class="preview-canvas"
       />
 
