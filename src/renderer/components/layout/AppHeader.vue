@@ -175,6 +175,27 @@ function openGitHub() {
     </div>
 
     <div class="header-center">
+      <div class="history-controls">
+        <button
+          class="btn btn-icon btn-ghost"
+          :disabled="!canUndo"
+          :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
+          @click="undo"
+        >
+          <Undo2 />
+        </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          :disabled="!canRedo"
+          :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Shift+Z)'"
+          @click="redo"
+        >
+          <Redo2 />
+        </button>
+      </div>
+
+      <span class="header-divider" />
+
       <div class="playback-controls">
         <button
           class="btn btn-icon"
@@ -193,27 +214,6 @@ function openGitHub() {
           @click="stop"
         >
           <Square />
-        </button>
-      </div>
-
-      <span class="header-divider" />
-
-      <div class="history-controls">
-        <button
-          class="btn btn-icon btn-ghost"
-          :disabled="!canUndo"
-          :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
-          @click="undo"
-        >
-          <Undo2 />
-        </button>
-        <button
-          class="btn btn-icon btn-ghost"
-          :disabled="!canRedo"
-          :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Shift+Z)'"
-          @click="redo"
-        >
-          <Redo2 />
         </button>
       </div>
 
