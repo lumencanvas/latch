@@ -16,7 +16,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ## Current Status
 
-**Version**: 0.1.7
+**Version**: 0.1.8
 **Build**: Passing
 **Tests**: 657 passed | 11 todo (668 total)
 **Branch**: main
