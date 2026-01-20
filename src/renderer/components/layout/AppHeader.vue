@@ -21,10 +21,13 @@ import {
   Brain,
   Plug,
   Github,
+  Undo2,
+  Redo2,
 } from 'lucide-vue-next'
 import LatchLogo from '@/components/branding/LatchLogo.vue'
 import { aiInference } from '@/services/ai/AIInference'
 import { useConnectionsStore } from '@/stores/connections'
+import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,6 +35,9 @@ const flowsStore = useFlowsStore()
 const runtimeStore = useRuntimeStore()
 const uiStore = useUIStore()
 const connectionsStore = useConnectionsStore()
+
+// History for undo/redo
+const { canUndo, canRedo, undo, redo, undoDescription, redoDescription } = useFlowHistory()
 
 // Track if AI models are loaded
 const hasLoadedModels = ref(false)
@@ -187,6 +193,27 @@ function openGitHub() {
           @click="stop"
         >
           <Square />
+        </button>
+      </div>
+
+      <span class="header-divider" />
+
+      <div class="history-controls">
+        <button
+          class="btn btn-icon btn-ghost"
+          :disabled="!canUndo"
+          :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
+          @click="undo"
+        >
+          <Undo2 />
+        </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          :disabled="!canRedo"
+          :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Shift+Z)'"
+          @click="redo"
+        >
+          <Redo2 />
         </button>
       </div>
 
@@ -384,6 +411,26 @@ function openGitHub() {
 .playback-controls {
   display: flex;
   gap: var(--space-2);
+}
+
+.history-controls {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.history-controls .btn-ghost {
+  color: var(--color-neutral-400);
+}
+
+.history-controls .btn-ghost:hover:not(:disabled) {
+  color: var(--color-neutral-0);
+  background: var(--color-neutral-700);
+}
+
+.history-controls .btn-ghost:disabled {
+  color: var(--color-neutral-600);
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .header-right .btn-ghost {
