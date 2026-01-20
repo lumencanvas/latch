@@ -28,12 +28,20 @@ const synthState = new Map<string, SynthState>()
 
 /**
  * Get or create a Tone.js node for a given node ID
+ * Handles disposed nodes by recreating them
  */
 function getOrCreateNode<T extends Tone.ToneAudioNode>(
   nodeId: string,
   factory: () => T
 ): T {
   let node = audioNodes.get(nodeId) as T | undefined
+
+  // Check if node exists but was disposed (Tone.js nodes have a disposed property)
+  if (node && (node as unknown as { disposed?: boolean }).disposed) {
+    audioNodes.delete(nodeId)
+    node = undefined
+  }
+
   if (!node) {
     node = factory()
     audioNodes.set(nodeId, node)
@@ -53,25 +61,68 @@ export function disposeAudioNode(nodeId: string): void {
 }
 
 /**
- * Dispose all audio nodes
+ * Dispose all audio nodes and clear ALL state maps
+ * This ensures clean restart without stale disposed node references
  */
 export function disposeAllAudioNodes(): void {
-  audioNodes.forEach(node => node.dispose())
+  // Dispose all cached Tone.js nodes
+  audioNodes.forEach(node => {
+    try { node.dispose() } catch { /* ignore */ }
+  })
   audioNodes.clear()
 
-  // Also clean up synth state
-  for (const nodeId of synthState.keys()) {
-    const state = synthState.get(nodeId)
-    if (state) {
-      for (const voice of state.voices.values()) {
-        try {
-          voice.synth.triggerRelease()
-          voice.synth.dispose()
-        } catch { /* ignore */ }
-      }
+  // Clean up synth state
+  for (const state of synthState.values()) {
+    for (const voice of state.voices.values()) {
+      try {
+        voice.synth.triggerRelease()
+        voice.synth.dispose()
+      } catch { /* ignore */ }
     }
   }
   synthState.clear()
+
+  // Clean up beat detection state
+  beatState.clear()
+
+  // Clean up audio player state
+  for (const state of playerState.values()) {
+    if (state.player) {
+      try { state.player.dispose() } catch { /* ignore */ }
+    }
+  }
+  playerState.clear()
+
+  // Clean up SVF filter state
+  for (const state of svfState.values()) {
+    try {
+      state.lowpass.dispose()
+      state.highpass.dispose()
+      state.bandpass.dispose()
+      state.notch.dispose()
+      state.drive?.dispose()
+    } catch { /* ignore */ }
+  }
+  svfState.clear()
+
+  // Clean up pitch detection state
+  pitchState.clear()
+
+  // Clean up parametric EQ state
+  for (const state of parametricEqState.values()) {
+    try {
+      state.band1.dispose()
+      state.band2.dispose()
+      state.band3.dispose()
+    } catch { /* ignore */ }
+  }
+  parametricEqState.clear()
+
+  // Clean up wavetable state
+  for (const state of wavetableState.values()) {
+    try { state.oscillator.dispose() } catch { /* ignore */ }
+  }
+  wavetableState.clear()
 }
 
 // ============================================================================
@@ -553,6 +604,13 @@ export const audioPlayerExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
   }
 
   const state = playerState.get(ctx.nodeId)!
+
+  // Check if existing player was disposed (e.g., after stop/restart)
+  if (state.player && (state.player as unknown as { disposed?: boolean }).disposed) {
+    state.player = null
+    state.url = '' // Force reload on next iteration
+    audioNodes.delete(ctx.nodeId)
+  }
 
   // Handle URL change - load new audio
   if (url && url !== state.url) {
