@@ -36,7 +36,24 @@ This node has a custom Vue component (`MainOutputNode.vue`) that provides:
 - Frame rate indicator
 
 ### Implementation
-Renders the input texture to an embedded canvas element. The custom UI component provides a larger preview than standard nodes, making it ideal as the final destination in visual processing pipelines.
+
+The MainOutput node uses a specialized rendering approach to bypass Vue reactivity issues:
+
+1. **Direct Engine Access**: Gets texture from `ExecutionEngine.getNodeTexture()` instead of Vue reactive store
+2. **Canvas 2D Display**: Uses `ThreeShaderRenderer.renderToCanvas()` to copy GPU texture to 2D canvas
+3. **Animation Loop**: Runs `requestAnimationFrame` loop when runtime is active
+
+```typescript
+// Simplified flow:
+const engine = getExecutionEngine()
+const texture = engine.getNodeTexture(nodeId) as THREE.Texture
+const threeRenderer = getThreeShaderRenderer()
+threeRenderer.renderToCanvas(texture, canvas)
+```
+
+This approach is necessary because Vue's reactivity system loses `THREE.Texture` object identity when converting Map to plain object via `Object.fromEntries()`.
+
+The custom UI component provides a larger preview than standard nodes, making it ideal as the final destination in visual processing pipelines.
 
 ### Usage
 Connect any texture-producing node to the Main Output to see the final result:

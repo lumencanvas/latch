@@ -20,32 +20,25 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 **Tests**: 657 passed | 11 todo (668 total)
 **Branch**: main
 
-### CRITICAL UNRESOLVED ISSUE: Shaders Only Work in Editor Preview
+### RESOLVED: Texture Display in OUTPUT Nodes (2026-01-20)
 
-**Status**: Shaders render correctly in the Shader Editor preview modal, but NOT in the main execution flow (OUTPUT nodes show "No Input").
+**Problem**: Shaders and 3D renders would work in editor preview but show "No Input" in OUTPUT nodes.
 
-**Debug Findings** (from console logs):
-```
-[Shader BycU0EfD5y37JBDdgLGHx] render output: THREE.Texture (313c1892-...)
-[MainOutput Z7ZNVvz_0iCAhHyEN7lSb] received texture: HTMLCanvasElement
-```
+**Root Cause**: Vue reactivity issue - `Object.fromEntries()` conversion in ExecutionEngine lost THREE.Texture identity, causing textures to not be retrievable from the reactive store.
 
-- Shader executor correctly outputs `THREE.Texture`
-- MainOutput executor receives input (HTMLCanvasElement from 3D, or THREE.Texture from shader)
-- But MainOutputNode.vue component shows "No Input" - appears to not be reading from runtime store correctly
+**Solution**:
+1. Added direct texture access methods to ExecutionEngine (`getNodeTexture()`, `getNodeOutputs()`, `getAllNodeOutputs()`)
+2. MainOutputNode and TexturePreview now get textures directly from ExecutionEngine's internal Map (bypasses Vue reactivity)
+3. Use `ThreeShaderRenderer.renderToCanvas()` for GPU-to-canvas display
 
-**Suspected Issue**: Reactivity problem between `runtimeStore.nodeMetrics` Map and Vue component, OR the `_input_texture` output isn't being stored/retrieved correctly.
+**Key Files Modified**:
+- `ExecutionEngine.ts` - Added direct Map access methods
+- `MainOutputNode.vue` - Reads texture from engine directly, uses canvas 2D
+- `TexturePreview.vue` - Same pattern as MainOutputNode
 
-**Key Files to Investigate**:
-- `src/renderer/registry/outputs/main-output/MainOutputNode.vue` - reads `metrics?.outputValues?.['_input_texture']`
-- `src/renderer/stores/runtime.ts` - stores metrics via `updateNodeMetrics()`
-- `src/renderer/engine/ExecutionEngine.ts` - calls `Object.fromEntries(outputs)` to store outputValues
-
-**Debug logging added** (can be removed after fix):
-- `visual.ts:567-568` - logs shader render output
-- `visual.ts:799-802` - logs MainOutput executor input
-- `ExecutionEngine.ts:176-179` - logs edge connections
-- `MainOutputNode.vue:47-51` - logs what component reads from store
+**Infrastructure Added** (for future 2D compositing):
+- `UnifiedRenderer.ts` - PixiJS 8 + Three.js shared WebGL context
+- `TextureBridge.ts` - Texture format conversion (Three ↔ PixiJS)
 
 ---
 

@@ -563,6 +563,12 @@ export const shaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
           if (threeTexture) {
             uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: threeTexture })
           }
+        } else if (textureInput instanceof HTMLCanvasElement || textureInput instanceof HTMLVideoElement) {
+          // Convert canvas/video to THREE.Texture for 3D→Shader and Webcam→Shader pipelines
+          const threeTexture = renderer.createTexture(textureInput)
+          if (threeTexture) {
+            uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: threeTexture })
+          }
         }
       }
     }

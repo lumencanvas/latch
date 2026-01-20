@@ -437,3 +437,58 @@ Play video from URL.
 | `loop` | `toggle` | `true` | - | Loop playback |
 | `playbackRate` | `number` | `1` | min: 0.25, max: 4 | Playback speed |
 | `volume` | `slider` | `0.5` | min: 0, max: 1 | Audio volume |
+
+---
+
+## Rendering Architecture
+
+The visual system uses Three.js for all GPU rendering operations:
+
+### Texture Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ThreeShaderRenderer                          │
+├─────────────────────────────────────────────────────────────────┤
+│ • Manages WebGLRenderer and WebGLRenderTargets                  │
+│ • Compiles GLSL shaders to Three.js ShaderMaterial              │
+│ • Renders shaders to render targets (THREE.Texture output)      │
+│ • Provides renderToCanvas() for GPU → 2D canvas display         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    ExecutionEngine                               │
+├─────────────────────────────────────────────────────────────────┤
+│ • Stores node outputs in nodeOutputs Map<nodeId, Map<port, val>>│
+│ • THREE.Texture objects stored directly (not converted)         │
+│ • Provides getNodeTexture() for direct texture access           │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              MainOutputNode / TexturePreview                     │
+├─────────────────────────────────────────────────────────────────┤
+│ • Gets texture directly from ExecutionEngine                    │
+│ • Uses ThreeShaderRenderer.renderToCanvas() for display         │
+│ • Bypasses Vue reactivity (which loses texture identity)        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Services
+
+| Service | Location | Purpose |
+|---------|----------|---------|
+| `ThreeShaderRenderer` | `services/visual/ThreeShaderRenderer.ts` | GLSL shader compilation and rendering |
+| `ThreeRenderer` | `services/visual/ThreeRenderer.ts` | 3D scene rendering |
+| `UnifiedRenderer` | `services/visual/UnifiedRenderer.ts` | PixiJS 8 + Three.js shared context (future) |
+| `TextureBridge` | `services/visual/TextureBridge.ts` | Texture format conversion (future) |
+
+### Interop Scenarios
+
+All visual pipelines ultimately output `THREE.Texture`:
+
+1. **Shader → OUTPUT**: ShaderMaterial renders to WebGLRenderTarget → texture output
+2. **Webcam → Shader → OUTPUT**: VideoTexture → shader iChannel0 input → processed output
+3. **3D → Shader → OUTPUT**: ThreeRenderer scene → render target texture → shader input
+4. **Multi-shader chains**: Shader A output → Shader B iChannel0 → final output

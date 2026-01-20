@@ -22,7 +22,36 @@
 ### Next Step: Phase 10 - Polish & Export
 ### Latest Release: v0.1.3
 
-### Latest Session Accomplishments (Shader Fix, BLE Enhancement, MediaPipe, Tests):
+### Latest Session Accomplishments (Texture Display Fix, PixiJS Infrastructure)
+
+**Fixed Texture Display in OUTPUT Nodes (Critical Bug)**
+- **Problem**: Shaders and 3D renders worked in editor preview but showed "No Input" in OUTPUT nodes
+- **Root Cause**: Vue reactivity issue - `Object.fromEntries()` in ExecutionEngine lost THREE.Texture identity
+- **Solution**:
+  1. Added direct texture access methods to ExecutionEngine (`getNodeTexture()`, `getNodeOutputs()`, `getAllNodeOutputs()`)
+  2. MainOutputNode and TexturePreview now get textures directly from ExecutionEngine's internal Map
+  3. Use `ThreeShaderRenderer.renderToCanvas()` for GPU-to-canvas display
+
+**Added PixiJS 8 Infrastructure (for future 2D compositing)**
+- Created `UnifiedRenderer.ts` - Hybrid PixiJS 8 + Three.js with shared WebGL context
+- Created `TextureBridge.ts` - Texture format conversion between Three.js and PixiJS
+- Added context loss handling with callback system
+- Added PixiJS 8 dependency (`pixi.js@^8.7.0`)
+
+**Files Created:**
+- `src/renderer/services/visual/UnifiedRenderer.ts` - Shared WebGL context manager
+- `src/renderer/services/visual/TextureBridge.ts` - Texture format bridge
+
+**Files Modified:**
+- `src/renderer/engine/ExecutionEngine.ts` - Added direct Map access methods
+- `src/renderer/registry/outputs/main-output/MainOutputNode.vue` - Uses canvas 2D with direct engine access
+- `src/renderer/components/preview/TexturePreview.vue` - Same pattern as MainOutputNode
+- `src/renderer/services/visual/ThreeShaderRenderer.ts` - Added shared renderer support
+- `src/renderer/engine/executors/visual.ts` - Added TextureBridge GC call
+
+---
+
+### Previous Session Accomplishments (Shader Fix, BLE Enhancement, MediaPipe, Tests):
 
 **Critical Shader Preview Bug Fix:**
 - Root cause: Preset shader code used uniforms without `uniform` declarations - definitions were in preset metadata, not the code
