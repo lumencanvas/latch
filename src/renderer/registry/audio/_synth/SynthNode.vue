@@ -219,7 +219,7 @@ function createVoice(note: number, velocity: number): Voice {
 
     case 'piano': {
       // Multiple detuned oscillators with quick decay
-      const types: OscillatorType[] = ['triangle', 'sine']
+      const types = ['triangle', 'sine'] as const
       types.forEach((type, i) => {
         const osc = audioContext!.createOscillator()
         osc.type = type
@@ -523,12 +523,24 @@ onUnmounted(() => {
             v-model="instrument"
             @mousedown.stop
           >
-            <option value="sine">Sine</option>
-            <option value="moog">Moog Bass</option>
-            <option value="piano">Piano</option>
-            <option value="organ">Organ</option>
-            <option value="pluck">Pluck</option>
-            <option value="pad">Pad</option>
+            <option value="sine">
+              Sine
+            </option>
+            <option value="moog">
+              Moog Bass
+            </option>
+            <option value="piano">
+              Piano
+            </option>
+            <option value="organ">
+              Organ
+            </option>
+            <option value="pluck">
+              Pluck
+            </option>
+            <option value="pad">
+              Pad
+            </option>
           </select>
         </div>
 
