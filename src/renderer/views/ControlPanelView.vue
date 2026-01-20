@@ -28,7 +28,7 @@ const containerWidth = ref(1200)
 const GRID_COLS = computed(() => Math.max(6, Math.floor(containerWidth.value / CELL_SIZE)))
 
 // Control node types that should auto-appear
-const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable', 'keyboard']
+const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable', 'keyboard', 'synth']
 const monitorNodeTypes = ['monitor', 'oscilloscope', 'main-output']
 
 // Edit mode
@@ -64,6 +64,7 @@ const accentColors: Record<string, string> = {
   'parametric-eq': '#a855f7',
   wavetable: '#22c55e',
   keyboard: '#22c55e',
+  synth: '#f59e0b',
   'main-output': '#3b82f6',
 }
 
@@ -852,6 +853,107 @@ onUnmounted(() => {
                 @note-off="(note) => handleKeyboardNoteOff(node.id, note)"
               />
             </template>
+
+            <!-- Synth -->
+            <template v-else-if="nodeType === 'synth'">
+              <div class="synth-control">
+                <!-- Instrument selector -->
+                <div class="synth-instrument">
+                  <select
+                    :value="getControlValue(node.id, 'instrument', 'sine')"
+                    @change="setControlValue(node.id, 'instrument', ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="sine">
+                      Sine
+                    </option>
+                    <option value="moog">
+                      Moog Bass
+                    </option>
+                    <option value="piano">
+                      Piano
+                    </option>
+                    <option value="organ">
+                      Organ
+                    </option>
+                    <option value="pluck">
+                      Pluck
+                    </option>
+                    <option value="pad">
+                      Pad
+                    </option>
+                  </select>
+                </div>
+                <!-- Knobs grid -->
+                <div class="synth-knobs">
+                  <RotaryKnob
+                    :value="getControlValue(node.id, 'volume', -6) as number"
+                    :min="-60"
+                    :max="0"
+                    label="VOL"
+                    size="small"
+                    accent-color="#f59e0b"
+                    @update:value="v => setControlValue(node.id, 'volume', v)"
+                  />
+                  <RotaryKnob
+                    :value="getControlValue(node.id, 'attack', 0.01) as number"
+                    :min="0.001"
+                    :max="2"
+                    label="ATK"
+                    size="small"
+                    accent-color="#f59e0b"
+                    @update:value="v => setControlValue(node.id, 'attack', v)"
+                  />
+                  <RotaryKnob
+                    :value="getControlValue(node.id, 'decay', 0.1) as number"
+                    :min="0.001"
+                    :max="2"
+                    label="DEC"
+                    size="small"
+                    accent-color="#f59e0b"
+                    @update:value="v => setControlValue(node.id, 'decay', v)"
+                  />
+                  <RotaryKnob
+                    :value="getControlValue(node.id, 'sustain', 0.7) as number"
+                    :min="0"
+                    :max="1"
+                    label="SUS"
+                    size="small"
+                    accent-color="#f59e0b"
+                    @update:value="v => setControlValue(node.id, 'sustain', v)"
+                  />
+                  <RotaryKnob
+                    :value="getControlValue(node.id, 'release', 0.3) as number"
+                    :min="0.001"
+                    :max="5"
+                    label="REL"
+                    size="small"
+                    accent-color="#f59e0b"
+                    @update:value="v => setControlValue(node.id, 'release', v)"
+                  />
+                  <!-- Moog filter controls -->
+                  <template v-if="getControlValue(node.id, 'instrument', 'sine') === 'moog'">
+                    <RotaryKnob
+                      :value="getControlValue(node.id, 'filterCutoff', 2000) as number"
+                      :min="20"
+                      :max="20000"
+                      label="CUT"
+                      size="small"
+                      accent-color="#ec4899"
+                      @update:value="v => setControlValue(node.id, 'filterCutoff', v)"
+                    />
+                    <RotaryKnob
+                      :value="getControlValue(node.id, 'filterResonance', 1) as number"
+                      :min="0.1"
+                      :max="20"
+                      label="RES"
+                      size="small"
+                      accent-color="#ec4899"
+                      @update:value="v => setControlValue(node.id, 'filterResonance', v)"
+                    />
+                  </template>
+                </div>
+              </div>
+            </template>
           </div>
 
           <!-- Live value indicator -->
@@ -1283,6 +1385,42 @@ onUnmounted(() => {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Synth Control */
+.synth-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.synth-instrument {
+  display: flex;
+  justify-content: center;
+}
+
+.synth-instrument select {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  color: #f59e0b;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.synth-instrument select:focus {
+  outline: none;
+  border-color: #f59e0b;
+}
+
+.synth-knobs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   justify-content: center;
 }
 

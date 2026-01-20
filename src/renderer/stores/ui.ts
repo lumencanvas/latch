@@ -23,6 +23,7 @@ const NODE_TYPE_PRIORITY: Record<string, number> = {
   'wavetable': 45,
   'xy-pad': 40,
   'keyboard': 10,        // Bottom, low priority = placed last
+  'synth': 45,           // Audio controls, mid-high priority
 }
 
 // Default sizes per node type (grid units)
@@ -40,6 +41,7 @@ const NODE_TYPE_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
   'envelope-visual': { w: 5, h: 3 },
   'parametric-eq': { w: 5, h: 4 },
   'wavetable': { w: 4, h: 3 },
+  'synth': { w: 4, h: 4 },
 }
 
 /**
