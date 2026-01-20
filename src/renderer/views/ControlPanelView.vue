@@ -4,11 +4,15 @@ import { useUIStore, type ControlLayout } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
 import { useRuntimeStore } from '@/stores/runtime'
-import { Sliders, Zap, Settings, GripVertical } from 'lucide-vue-next'
+import { Sliders, Zap, Settings, GripVertical, LayoutGrid } from 'lucide-vue-next'
 import RotaryKnob from '@/components/controls/RotaryKnob.vue'
 import EnvelopeEditor from '@/components/controls/EnvelopeEditor.vue'
 import EQEditor from '@/components/controls/EQEditor.vue'
 import WaveformEditor from '@/components/controls/WaveformEditor.vue'
+import PianoKeyboard from '@/components/controls/PianoKeyboard.vue'
+import * as THREE from 'three'
+import { getExecutionEngine } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
@@ -24,7 +28,7 @@ const containerWidth = ref(1200)
 const GRID_COLS = computed(() => Math.max(6, Math.floor(containerWidth.value / CELL_SIZE)))
 
 // Control node types that should auto-appear
-const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable']
+const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable', 'keyboard']
 const monitorNodeTypes = ['monitor', 'oscilloscope', 'main-output']
 
 // Edit mode
@@ -59,6 +63,8 @@ const accentColors: Record<string, string> = {
   'envelope-visual': '#ff6b35',
   'parametric-eq': '#a855f7',
   wavetable: '#22c55e',
+  keyboard: '#22c55e',
+  'main-output': '#3b82f6',
 }
 
 // Get all control-type nodes
@@ -72,7 +78,7 @@ const controlNodes = computed(() => {
     .map(node => {
       const nodeType = node.data?.nodeType as string
       const definition = nodesStore.getDefinition(nodeType)
-      const layout = uiStore.getControlLayout(node.id)
+      const layout = uiStore.getControlLayout(node.id, nodeType)
       return {
         node,
         nodeType,
@@ -377,13 +383,114 @@ function stopScopeLoop() {
   }
 }
 
+// Main-output canvas handling
+const outputCanvases = ref<Map<string, HTMLCanvasElement>>(new Map())
+let outputAnimationFrame: number | null = null
+
+function registerOutputCanvas(nodeId: string, canvas: HTMLCanvasElement | null) {
+  if (canvas) {
+    outputCanvases.value.set(nodeId, canvas)
+  } else {
+    outputCanvases.value.delete(nodeId)
+  }
+}
+
+function updateOutputPreviews() {
+  if (outputCanvases.value.size === 0) {
+    outputAnimationFrame = null
+    return
+  }
+
+  for (const [nodeId, canvas] of outputCanvases.value) {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) continue
+
+    try {
+      // Get texture directly from execution engine
+      const engine = getExecutionEngine()
+      const texture = engine.getNodeTexture(nodeId) as THREE.Texture | null
+
+      if (!texture || !(texture instanceof THREE.Texture)) {
+        // No input - draw placeholder
+        ctx.fillStyle = '#1a1a1a'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+        ctx.fillStyle = '#666'
+        ctx.font = '12px monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText('No Input', canvas.width / 2, canvas.height / 2)
+        continue
+      }
+
+      // Use ThreeShaderRenderer's renderToCanvas
+      const threeRenderer = getThreeShaderRenderer()
+      threeRenderer.renderToCanvas(texture, canvas)
+    } catch {
+      // Draw error placeholder
+      ctx.fillStyle = '#1a1a1a'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+    }
+  }
+
+  if (runtimeStore.isRunning) {
+    outputAnimationFrame = requestAnimationFrame(updateOutputPreviews)
+  } else {
+    outputAnimationFrame = null
+  }
+}
+
+function startOutputLoop() {
+  if (outputAnimationFrame === null && runtimeStore.isRunning && outputCanvases.value.size > 0) {
+    outputAnimationFrame = requestAnimationFrame(updateOutputPreviews)
+  }
+}
+
+function stopOutputLoop() {
+  if (outputAnimationFrame !== null) {
+    cancelAnimationFrame(outputAnimationFrame)
+    outputAnimationFrame = null
+  }
+}
+
 watch(() => runtimeStore.isRunning, (running) => {
   if (running) {
     startScopeLoop()
+    startOutputLoop()
   } else {
     stopScopeLoop()
+    stopOutputLoop()
   }
-}, { immediate: true })
+})
+
+// Keyboard note handlers
+function handleKeyboardNoteOn(nodeId: string, note: number, velocity: number) {
+  flowsStore.updateNodeData(nodeId, {
+    note,
+    velocity,
+    gate: true,
+    noteOn: true,
+  })
+  // Reset noteOn trigger after brief delay
+  setTimeout(() => {
+    flowsStore.updateNodeData(nodeId, { noteOn: false })
+  }, 50)
+}
+
+function handleKeyboardNoteOff(nodeId: string, note: number) {
+  // Get current note to check if it matches
+  const currentNode = flowsStore.activeFlow?.nodes.find(n => n.id === nodeId)
+  if (currentNode?.data?.note === note) {
+    flowsStore.updateNodeData(nodeId, { gate: false })
+  }
+}
+
+// Auto-layout function
+function autoLayoutAll() {
+  const nodes = controlNodes.value.map(c => ({
+    id: c.node.id,
+    nodeType: c.nodeType,
+  }))
+  uiStore.autoLayoutAll(nodes, GRID_COLS.value)
+}
 
 // ResizeObserver to track container width
 let resizeObserver: ResizeObserver | null = null
@@ -392,7 +499,10 @@ onMounted(() => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
   if (runtimeStore.isRunning) {
-    nextTick(() => startScopeLoop())
+    nextTick(() => {
+      startScopeLoop()
+      startOutputLoop()
+    })
   }
 
   // Set up resize observer
@@ -411,6 +521,7 @@ onUnmounted(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
   stopScopeLoop()
+  stopOutputLoop()
   resizeObserver?.disconnect()
 })
 </script>
@@ -427,6 +538,15 @@ onUnmounted(() => {
         >LIVE</span>
       </div>
       <div class="header-right">
+        <button
+          v-if="editMode"
+          class="auto-layout-btn"
+          title="Auto-arrange all controls"
+          @click="autoLayoutAll"
+        >
+          <LayoutGrid :size="16" />
+          Auto Layout
+        </button>
         <button
           class="edit-mode-btn"
           :class="{ active: editMode }"
@@ -706,6 +826,32 @@ onUnmounted(() => {
                 :height="Math.max(60, layout.h * CELL_SIZE - 48)"
               />
             </template>
+
+            <!-- Main Output -->
+            <template v-else-if="nodeType === 'main-output'">
+              <canvas
+                :ref="(el) => registerOutputCanvas(node.id, el as HTMLCanvasElement)"
+                class="output-canvas"
+                :width="Math.max(160, layout.w * CELL_SIZE - 32)"
+                :height="Math.max(100, layout.h * CELL_SIZE - 48)"
+              />
+            </template>
+
+            <!-- Keyboard -->
+            <template v-else-if="nodeType === 'keyboard'">
+              <PianoKeyboard
+                :num-keys="parseInt(getControlValue(node.id, 'numKeys', '25') as string)"
+                :start-octave="getControlValue(node.id, 'startOctave', 3) as number"
+                :octave-shift="getControlValue(node.id, 'octaveShift', 0) as number"
+                :include-black-keys="getControlValue(node.id, 'includeBlackKeys', true) as boolean"
+                :velocity-sensitive="getControlValue(node.id, 'velocitySensitive', true) as boolean"
+                :width="Math.max(200, layout.w * CELL_SIZE - 32)"
+                :height="Math.max(80, layout.h * CELL_SIZE - 48)"
+                dark-mode
+                @note-on="(note, vel) => handleKeyboardNoteOn(node.id, note, vel)"
+                @note-off="(note) => handleKeyboardNoteOff(node.id, note)"
+              />
+            </template>
           </div>
 
           <!-- Live value indicator -->
@@ -834,7 +980,8 @@ onUnmounted(() => {
 }
 
 .edit-mode-btn,
-.back-btn {
+.back-btn,
+.auto-layout-btn {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -851,10 +998,22 @@ onUnmounted(() => {
 }
 
 .edit-mode-btn:hover,
-.back-btn:hover {
+.back-btn:hover,
+.auto-layout-btn:hover {
   background: #222;
   color: #aaa;
   border-color: #444;
+}
+
+.auto-layout-btn {
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.auto-layout-btn:hover {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: #22c55e;
+  color: #22c55e;
 }
 
 .edit-mode-btn.active {
@@ -1147,6 +1306,15 @@ onUnmounted(() => {
   border-radius: 4px;
   background: #0a0a0a;
   max-width: 100%;
+}
+
+/* Main Output Canvas */
+.output-canvas {
+  border: 2px solid var(--accent-color, #3b82f6);
+  border-radius: 4px;
+  background: #000;
+  max-width: 100%;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
 }
 
 /* Live value indicator */

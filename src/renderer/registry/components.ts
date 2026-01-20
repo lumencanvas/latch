@@ -13,6 +13,7 @@ import { TriggerNode } from './inputs/trigger'
 import { XYPadNode } from './inputs/xy-pad'
 import { TextboxNode } from './inputs/textbox'
 import { KnobNode } from './inputs/_knob'
+import { KeyboardNode } from './inputs/keyboard'
 import { MonitorNode } from './debug/monitor'
 import { OscilloscopeNode } from './debug/oscilloscope'
 import { GraphNode } from './debug/graph'
@@ -22,6 +23,7 @@ import { StepSequencerNode } from './timing/step-sequencer'
 import { EnvelopeVisualNode } from './audio/_envelope-visual'
 import { ParametricEqNode } from './audio/_parametric-eq'
 import { WavetableNode } from './audio/_wavetable'
+import { SynthNode } from './audio/_synth'
 import { MediaPipeHandNode } from './ai/mediapipe-hand'
 import { MediaPipeFaceNode } from './ai/mediapipe-face'
 import { MediaPipePoseNode } from './ai/mediapipe-pose'
@@ -45,6 +47,7 @@ export const nodeTypes = {
   'xy-pad': markRaw(XYPadNode),
   textbox: markRaw(TextboxNode),
   knob: markRaw(KnobNode),
+  keyboard: markRaw(KeyboardNode),
 
   // Custom UI nodes - debug
   monitor: markRaw(MonitorNode),
@@ -62,6 +65,7 @@ export const nodeTypes = {
   'envelope-visual': markRaw(EnvelopeVisualNode),
   'parametric-eq': markRaw(ParametricEqNode),
   wavetable: markRaw(WavetableNode),
+  synth: markRaw(SynthNode),
 
   // Custom UI nodes - AI (MediaPipe)
   'mediapipe-hand': markRaw(MediaPipeHandNode),

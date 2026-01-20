@@ -42,11 +42,6 @@ export const triggerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const shouldFire = boolValue && !prevPressed
   triggerPrevPressed.set(ctx.nodeId, boolValue)
 
-  // Debug: log when trigger fires
-  if (shouldFire) {
-    console.log('[Trigger] FIRING! OutputType:', outputType, 'Value:', boolValue)
-  }
-
   // Don't output anything if not firing
   if (!shouldFire) {
     return new Map()
@@ -78,7 +73,6 @@ export const triggerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
       output = true
   }
 
-  console.log('[Trigger] Output:', output)
   return new Map([['trigger', output]])
 }
 
@@ -122,6 +116,21 @@ export const xyPadExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     ['normX', normX],
     ['normY', normY],
   ])
+}
+
+export const keyboardExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  // Keyboard outputs its values from controls (set by Vue component on key press)
+  const note = (ctx.controls.get('note') as number) ?? 60
+  const velocity = (ctx.controls.get('velocity') as number) ?? 100
+  const gate = (ctx.controls.get('gate') as boolean) ?? false
+  const noteOn = (ctx.controls.get('noteOn') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('note', note)
+  outputs.set('velocity', velocity)
+  outputs.set('gate', gate)
+  outputs.set('noteOn', noteOn)
+  return outputs
 }
 
 export const timeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
@@ -929,7 +938,6 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
       state.fft = new Tone.FFT(128)
       ;(audio as { connect: (n: unknown) => void }).connect(state.fft as unknown)
       state.prevAudio = audio
-      console.log('[Equalizer] Connected FFT analyzer to audio source')
     }
 
     // Get FFT data
@@ -940,7 +948,6 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Clear state if no audio
   if (state.fft) {
-    console.log('[Equalizer] No audio input, clearing FFT state')
     state.fft = null
     state.prevAudio = null
   }
@@ -1076,6 +1083,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   slider: sliderExecutor,
   knob: knobExecutor,
   'xy-pad': xyPadExecutor,
+  keyboard: keyboardExecutor,
   time: timeExecutor,
   lfo: lfoExecutor,
 

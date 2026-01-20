@@ -11,6 +11,21 @@ import { audioManager } from '@/services/audio/AudioManager'
 // Store for persistent audio nodes (oscillators, effects, etc.)
 const audioNodes = new Map<string, Tone.ToneAudioNode>()
 
+// Forward declaration for synth state (used by disposeAllAudioNodes)
+interface SynthVoice {
+  synth: Tone.Synth | Tone.MonoSynth | Tone.FMSynth | Tone.AMSynth
+  note: number
+}
+
+interface SynthState {
+  voices: Map<number, SynthVoice>
+  instrument: string
+  prevGate: boolean
+  prevNote: number
+}
+
+const synthState = new Map<string, SynthState>()
+
 /**
  * Get or create a Tone.js node for a given node ID
  */
@@ -43,6 +58,20 @@ export function disposeAudioNode(nodeId: string): void {
 export function disposeAllAudioNodes(): void {
   audioNodes.forEach(node => node.dispose())
   audioNodes.clear()
+
+  // Also clean up synth state
+  for (const nodeId of synthState.keys()) {
+    const state = synthState.get(nodeId)
+    if (state) {
+      for (const voice of state.voices.values()) {
+        try {
+          voice.synth.triggerRelease()
+          voice.synth.dispose()
+        } catch { /* ignore */ }
+      }
+    }
+  }
+  synthState.clear()
 }
 
 // ============================================================================
@@ -804,6 +833,13 @@ export function gcAudioState(validNodeIds: Set<string>): void {
       wavetableState.delete(nodeId)
     }
   }
+
+  // Clean synthState
+  for (const nodeId of synthState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      disposeSynth(nodeId)
+    }
+  }
 }
 
 // ============================================================================
@@ -1308,6 +1344,174 @@ export function disposeWavetable(nodeId: string): void {
 }
 
 // ============================================================================
+// Synth Node (MIDI-driven polyphonic synthesizer)
+// ============================================================================
+
+function createSynthForInstrument(instrument: string): Tone.Synth | Tone.MonoSynth | Tone.FMSynth | Tone.AMSynth {
+  switch (instrument) {
+    case 'moog':
+      return new Tone.MonoSynth({
+        oscillator: { type: 'sawtooth' },
+        filter: { type: 'lowpass', rolloff: -24 },
+        envelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3 },
+        filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.3, baseFrequency: 200, octaves: 4 },
+      })
+    case 'piano':
+      return new Tone.Synth({
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.005, decay: 0.5, sustain: 0.1, release: 1.5 },
+      })
+    case 'organ':
+      return new Tone.AMSynth({
+        harmonicity: 2,
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 1, release: 0.5 },
+        modulation: { type: 'sine' },
+        modulationEnvelope: { attack: 0.5, decay: 0, sustain: 1, release: 0.5 },
+      })
+    case 'pluck':
+      return new Tone.Synth({
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
+      })
+    case 'pad':
+      return new Tone.FMSynth({
+        harmonicity: 3,
+        modulationIndex: 10,
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 2 },
+        modulation: { type: 'triangle' },
+        modulationEnvelope: { attack: 0.5, decay: 0.1, sustain: 0.5, release: 0.5 },
+      })
+    case 'sine':
+    default:
+      return new Tone.Synth({
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.3 },
+      })
+  }
+}
+
+export const synthExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  // Get inputs from connected nodes
+  const note = (ctx.inputs.get('note') as number) ?? (ctx.controls.get('note') as number) ?? 60
+  const velocity = (ctx.inputs.get('velocity') as number) ?? (ctx.controls.get('velocity') as number) ?? 100
+  const gate = (ctx.inputs.get('gate') as boolean) ?? (ctx.controls.get('gate') as boolean) ?? false
+  const trigger = ctx.inputs.get('trigger')
+
+  // Get control settings
+  const instrument = (ctx.controls.get('instrument') as string) ?? 'sine'
+  const volume = (ctx.controls.get('volume') as number) ?? -6
+  const attack = (ctx.controls.get('attack') as number) ?? 0.01
+  const decay = (ctx.controls.get('decay') as number) ?? 0.1
+  const sustain = (ctx.controls.get('sustain') as number) ?? 0.7
+  const release = (ctx.controls.get('release') as number) ?? 0.3
+
+  // Initialize state
+  let state = synthState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      voices: new Map(),
+      instrument,
+      prevGate: false,
+      prevNote: 0,
+    }
+    synthState.set(ctx.nodeId, state)
+  }
+
+  // Check if instrument changed - dispose old voices
+  if (state.instrument !== instrument) {
+    for (const voice of state.voices.values()) {
+      voice.synth.dispose()
+    }
+    state.voices.clear()
+    state.instrument = instrument
+  }
+
+  // Convert MIDI note to frequency
+  const freq = Tone.Frequency(note, 'midi').toFrequency()
+
+  // Get or create main output gain
+  const outputGain = getOrCreateNode(`${ctx.nodeId}_output`, () => {
+    const gain = new Tone.Gain(Tone.dbToGain(volume))
+    return gain
+  }) as Tone.Gain
+
+  // Update volume
+  outputGain.gain.value = Tone.dbToGain(volume)
+
+  // Handle gate changes (note on/off)
+  const gateRising = gate && !state.prevGate
+  const gateFalling = !gate && state.prevGate
+  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
+
+  // Note on
+  if (gateRising || hasTrigger) {
+    // Stop any existing voice for this note
+    const existingVoice = state.voices.get(note)
+    if (existingVoice) {
+      existingVoice.synth.triggerRelease()
+      existingVoice.synth.dispose()
+      state.voices.delete(note)
+    }
+
+    // Create new voice
+    const synth = createSynthForInstrument(instrument)
+
+    // Update envelope if accessible
+    if ('envelope' in synth) {
+      synth.envelope.attack = attack
+      synth.envelope.decay = decay
+      synth.envelope.sustain = sustain
+      synth.envelope.release = release
+    }
+
+    synth.volume.value = -6 // Individual voice volume
+    synth.connect(outputGain)
+
+    // Calculate velocity (0-127 to 0-1)
+    const vel = Math.min(1, Math.max(0, velocity / 127))
+    synth.triggerAttack(freq, Tone.now(), vel)
+
+    state.voices.set(note, { synth, note })
+  }
+
+  // Note off
+  if (gateFalling) {
+    const voice = state.voices.get(state.prevNote)
+    if (voice) {
+      voice.synth.triggerRelease()
+      // Schedule cleanup after release
+      setTimeout(() => {
+        voice.synth.dispose()
+        state!.voices.delete(state!.prevNote)
+      }, (release + 0.1) * 1000)
+    }
+  }
+
+  state.prevGate = gate
+  state.prevNote = note
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', outputGain)
+  return outputs
+}
+
+export function disposeSynth(nodeId: string): void {
+  const state = synthState.get(nodeId)
+  if (state) {
+    for (const voice of state.voices.values()) {
+      try {
+        voice.synth.triggerRelease()
+        voice.synth.dispose()
+      } catch { /* ignore */ }
+    }
+    state.voices.clear()
+    synthState.delete(nodeId)
+  }
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
@@ -1328,4 +1532,5 @@ export const audioExecutors: Record<string, NodeExecutorFn> = {
   'envelope-visual': envelopeVisualExecutor,
   'parametric-eq': parametricEqExecutor,
   wavetable: wavetableExecutor,
+  synth: synthExecutor,
 }

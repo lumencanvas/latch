@@ -15,6 +15,7 @@ export { pitchDetectNode } from './pitch-detect'
 export { envelopeVisualNode, EnvelopeVisualNode } from './envelope-visual'
 export { parametricEqNode, ParametricEqNode } from './parametric-eq'
 export { wavetableNode, WavetableNode } from './wavetable'
+export { synthNode, SynthNode } from './_synth'
 
 import { oscillatorNode } from './oscillator'
 import { audioOutputNode } from './audio-output'
@@ -31,6 +32,7 @@ import { pitchDetectNode } from './pitch-detect'
 import { envelopeVisualNode } from './envelope-visual'
 import { parametricEqNode } from './parametric-eq'
 import { wavetableNode } from './wavetable'
+import { synthNode } from './_synth'
 import type { NodeDefinition } from '../types'
 
 export const audioNodes: NodeDefinition[] = [
@@ -49,4 +51,5 @@ export const audioNodes: NodeDefinition[] = [
   envelopeVisualNode,
   parametricEqNode,
   wavetableNode,
+  synthNode,
 ]

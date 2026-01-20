@@ -49,11 +49,6 @@ function updateDisplay() {
   const metrics = runtimeStore.nodeMetrics.get(props.id)
   const fftData = metrics?.outputValues?.['_fft_data'] as number[] | null
 
-  // Debug: show what we're receiving
-  if (metrics && !fftData) {
-    console.log('[Equalizer] Metrics exist but no FFT data:', Object.keys(metrics.outputValues || {}))
-  }
-
   if (!fftData || fftData.length === 0) {
     // Draw placeholder bars
     c.fillStyle = '#1a1a1a'

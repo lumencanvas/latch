@@ -8,6 +8,40 @@ const STORAGE_KEY_EXPOSED_CONTROLS = 'clasp-exposed-controls'
 const STORAGE_KEY_CONTROL_GROUPS = 'clasp-control-groups'
 const STORAGE_KEY_CONTROL_LAYOUT = 'latch-control-layout'
 
+// Node type priorities (higher = placed first, better position)
+const NODE_TYPE_PRIORITY: Record<string, number> = {
+  'main-output': 100,    // Top, prominent
+  'oscilloscope': 90,
+  'monitor': 85,
+  'knob': 50,
+  'slider': 50,
+  'trigger': 50,
+  'constant': 50,
+  'lfo': 50,
+  'envelope-visual': 45,
+  'parametric-eq': 45,
+  'wavetable': 45,
+  'xy-pad': 40,
+  'keyboard': 10,        // Bottom, low priority = placed last
+}
+
+// Default sizes per node type (grid units)
+const NODE_TYPE_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
+  'main-output': { w: 6, h: 5 },
+  'oscilloscope': { w: 5, h: 3 },
+  'monitor': { w: 3, h: 2 },
+  'keyboard': { w: 10, h: 2 },  // Wide, short
+  'xy-pad': { w: 4, h: 4 },
+  'knob': { w: 3, h: 3 },
+  'slider': { w: 2, h: 4 },
+  'trigger': { w: 2, h: 2 },
+  'constant': { w: 3, h: 2 },
+  'lfo': { w: 4, h: 3 },
+  'envelope-visual': { w: 5, h: 3 },
+  'parametric-eq': { w: 5, h: 4 },
+  'wavetable': { w: 4, h: 3 },
+}
+
 /**
  * Position and size for a control in the control panel grid
  */
@@ -561,22 +595,89 @@ export const useUIStore = defineStore('ui', {
     },
 
     /**
+     * Get default size for a node type
+     */
+    getDefaultSize(nodeType: string): { w: number; h: number } {
+      return NODE_TYPE_DEFAULT_SIZE[nodeType] ?? { w: 4, h: 3 }
+    },
+
+    /**
+     * Get priority for a node type (higher = placed first)
+     */
+    getNodeTypePriority(nodeType: string): number {
+      return NODE_TYPE_PRIORITY[nodeType] ?? 50
+    },
+
+    /**
      * Get layout for a node, or create default if not exists
      * Uses smart bin-packing to find first available position
      */
-    getControlLayout(nodeId: string): ControlLayout {
+    getControlLayout(nodeId: string, nodeType?: string): ControlLayout {
       let layout = this.controlPanelLayout.find(l => l.nodeId === nodeId)
       if (!layout) {
-        // Auto-place new controls using bin packing
-        const defaultW = 4
-        const defaultH = 3
-        const { x, y } = this.findFirstValidPosition(defaultW, defaultH)
+        // Auto-place new controls using bin packing with type-specific size
+        const size = this.getDefaultSize(nodeType ?? 'unknown')
 
-        layout = { nodeId, x, y, w: defaultW, h: defaultH, manuallyPlaced: false }
+        // Keyboard: prefer bottom placement
+        if (nodeType === 'keyboard') {
+          const maxY = this.controlPanelLayout.length > 0
+            ? Math.max(...this.controlPanelLayout.map(l => l.y + l.h))
+            : 0
+          layout = { nodeId, x: 0, y: maxY, w: size.w, h: size.h, manuallyPlaced: false }
+        } else {
+          const { x, y } = this.findFirstValidPosition(size.w, size.h)
+          layout = { nodeId, x, y, w: size.w, h: size.h, manuallyPlaced: false }
+        }
+
         this.controlPanelLayout.push(layout)
         saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
       }
       return layout
+    },
+
+    /**
+     * Auto-layout all controls based on priority
+     */
+    autoLayoutAll(nodes: Array<{ id: string; nodeType: string }>, gridCols: number = 12) {
+      // Clear all layouts
+      this.controlPanelLayout = []
+
+      // Sort by priority (high first)
+      const sorted = [...nodes].sort((a, b) =>
+        this.getNodeTypePriority(b.nodeType) - this.getNodeTypePriority(a.nodeType)
+      )
+
+      // Place each node
+      for (const node of sorted) {
+        const size = this.getDefaultSize(node.nodeType)
+
+        // Keyboard special case: place at bottom, full width
+        if (node.nodeType === 'keyboard') {
+          const maxY = this.controlPanelLayout.length > 0
+            ? Math.max(...this.controlPanelLayout.map(l => l.y + l.h))
+            : 0
+          this.controlPanelLayout.push({
+            nodeId: node.id,
+            x: 0,
+            y: maxY,
+            w: Math.min(gridCols, size.w),
+            h: size.h,
+            manuallyPlaced: false,
+          })
+        } else {
+          const { x, y } = this.findFirstValidPosition(size.w, size.h, gridCols)
+          this.controlPanelLayout.push({
+            nodeId: node.id,
+            x,
+            y,
+            w: size.w,
+            h: size.h,
+            manuallyPlaced: false,
+          })
+        }
+      }
+
+      saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
     },
 
     /**
