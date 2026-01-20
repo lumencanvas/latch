@@ -27,7 +27,7 @@ export const useHistoryStore = defineStore('history', {
   state: (): HistoryState => ({
     undoStacks: new Map(),
     redoStacks: new Map(),
-    maxHistorySize: 50,
+    maxHistorySize: 20,
     isUndoingOrRedoing: false,
   }),
 
