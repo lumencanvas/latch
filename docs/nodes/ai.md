@@ -283,3 +283,308 @@ Uses T5/Flan models for text-to-text transformations:
 - **Summarize**: Condense long text
 - **Translate**: Convert to French
 - **Paraphrase**: Rewrite in different words
+
+---
+
+# MediaPipe Vision Nodes
+
+The following nodes use [MediaPipe Tasks Vision](https://developers.google.com/mediapipe/solutions/vision) for real-time computer vision. All MediaPipe nodes include custom overlay visualization.
+
+---
+
+## Hand Tracking
+
+Detect and track hand landmarks using MediaPipe.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-hand` |
+| **Icon** | `hand` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipeHandNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `video` | `video` | Video source (e.g., from Webcam) |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `landmarks` | `data` | 21 hand landmark points (normalized) |
+| `worldLandmarks` | `data` | 3D world coordinates |
+| `handedness` | `string` | "Left" or "Right" |
+| `confidence` | `number` | Detection confidence (0-1) |
+| `gestureType` | `string` | Basic gesture classification |
+| `fingerTips` | `data` | Finger tip positions array |
+| `handCount` | `number` | Number of hands detected |
+| `detected` | `boolean` | Any hand detected |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable detection |
+| `handIndex` | `slider` | `0` | Which hand to output (0 or 1) |
+| `showOverlay` | `toggle` | `true` | Show visualization overlay |
+| `vizMode` | `select` | `skeleton` | Visualization style (skeleton, mesh, both, bbox) |
+| `overlayColor` | `color` | `#00ff00` | Overlay color |
+| `lineWidth` | `slider` | `2` | Line thickness |
+| `pointSize` | `slider` | `4` | Landmark point size |
+| `colorByHand` | `toggle` | `true` | Different colors per hand |
+
+---
+
+## Face Mesh
+
+Detect face landmarks and blendshapes using MediaPipe.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-face` |
+| **Icon** | `smile` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipeFaceNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `video` | `video` | Video source |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `landmarks` | `data` | 468 face landmark points |
+| `blendshapes` | `data` | ARKit-compatible blendshape weights |
+| `headRotation` | `data` | Head rotation matrix |
+| `pitch` | `number` | Head pitch angle |
+| `yaw` | `number` | Head yaw angle |
+| `roll` | `number` | Head roll angle |
+| `faceBox` | `data` | Face bounding box |
+| `mouthOpen` | `number` | Mouth openness (0-1) |
+| `eyeBlinkLeft` | `number` | Left eye blink (0-1) |
+| `eyeBlinkRight` | `number` | Right eye blink (0-1) |
+| `browRaise` | `number` | Eyebrow raise (0-1) |
+| `smile` | `number` | Smile intensity (0-1) |
+| `detected` | `boolean` | Face detected |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable detection |
+| `showOverlay` | `toggle` | `true` | Show visualization |
+| `overlayColor` | `color` | `#00ff00` | Overlay color |
+| `lineWidth` | `slider` | `1` | Line thickness |
+| `meshMode` | `select` | `mesh` | Style (mesh, contours, points, bbox) |
+| `showExpressions` | `toggle` | `true` | Show expression values |
+
+---
+
+## Pose Estimation
+
+Detect body pose landmarks using MediaPipe.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-pose` |
+| **Icon** | `accessibility` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipePoseNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `video` | `video` | Video source |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `landmarks` | `data` | 33 body landmark points |
+| `worldLandmarks` | `data` | 3D world coordinates |
+| `visibility` | `data` | Per-landmark visibility scores |
+| `nose` | `data` | Nose position {x, y, z} |
+| `leftShoulder` | `data` | Left shoulder position |
+| `rightShoulder` | `data` | Right shoulder position |
+| `leftElbow` | `data` | Left elbow position |
+| `rightElbow` | `data` | Right elbow position |
+| `leftWrist` | `data` | Left wrist position |
+| `rightWrist` | `data` | Right wrist position |
+| `leftHip` | `data` | Left hip position |
+| `rightHip` | `data` | Right hip position |
+| `detected` | `boolean` | Pose detected |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable detection |
+| `showOverlay` | `toggle` | `true` | Show visualization |
+| `vizMode` | `select` | `skeleton` | Style (skeleton, points, bbox) |
+| `overlayColor` | `color` | `#00ff00` | Overlay color |
+| `lineWidth` | `slider` | `2` | Line thickness |
+| `pointSize` | `slider` | `4` | Landmark point size |
+| `showVisibility` | `toggle` | `true` | Fade by visibility score |
+
+---
+
+## Object Detection (MediaPipe)
+
+Detect objects in video using MediaPipe EfficientDet.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-object` |
+| **Icon** | `scan` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipeObjectNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `video` | `video` | Video source |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `detections` | `data` | Array of all detections |
+| `count` | `number` | Number of objects detected |
+| `filtered` | `data` | Detections matching label filter |
+| `topLabel` | `string` | Highest confidence label |
+| `topConfidence` | `number` | Highest confidence score |
+| `topBox` | `data` | Top detection bounding box |
+| `detected` | `boolean` | Any object detected |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable detection |
+| `minConfidence` | `slider` | `0.5` | Minimum confidence threshold |
+| `maxResults` | `slider` | `10` | Maximum results to return |
+| `labelFilter` | `text` | `''` | Filter by label (comma-separated) |
+| `showOverlay` | `toggle` | `true` | Show bounding boxes |
+| `overlayColor` | `color` | `#00ff00` | Box color |
+| `lineWidth` | `slider` | `2` | Box line thickness |
+| `showLabels` | `toggle` | `true` | Show labels on boxes |
+
+---
+
+## Selfie Segmentation
+
+Segment person from background using MediaPipe.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-segmentation` |
+| **Icon** | `layers` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipeSegmentationNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `video` | `video` | Video source |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `mask` | `data` | Segmentation mask (ImageData) |
+| `detected` | `boolean` | Person detected |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable segmentation |
+| `showOverlay` | `toggle` | `true` | Show visualization |
+| `overlayMode` | `select` | `mask` | Mode (mask, cutout, blur) |
+| `overlayColor` | `color` | `#00ff00` | Mask color |
+| `maskOpacity` | `slider` | `0.5` | Mask transparency |
+
+### Implementation
+Uses MediaPipe Selfie Segmentation for real-time person/background separation. Useful for virtual backgrounds, compositing, and effects.
+
+---
+
+## Gesture Recognition
+
+Recognize hand gestures using MediaPipe.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-gesture` |
+| **Icon** | `hand` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipeGestureNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `video` | `video` | Video source |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `gesture` | `string` | Recognized gesture name |
+| `confidence` | `number` | Gesture confidence (0-1) |
+| `landmarks` | `data` | Hand landmarks |
+| `handedness` | `string` | "Left" or "Right" |
+| `handCount` | `number` | Number of hands detected |
+| `allGestures` | `data` | All recognized gestures array |
+| `detected` | `boolean` | Gesture detected |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable recognition |
+| `showOverlay` | `toggle` | `true` | Show visualization |
+| `overlayColor` | `color` | `#00ff00` | Overlay color |
+| `lineWidth` | `slider` | `2` | Line thickness |
+| `confidenceThreshold` | `slider` | `0.5` | Minimum confidence |
+
+### Implementation
+Recognizes predefined gestures like: Thumb Up, Thumb Down, Victory, Pointing Up, ILoveYou, Closed Fist, Open Palm.
+
+---
+
+## Audio Classifier
+
+Classify audio using MediaPipe YamNet model.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `mediapipe-audio` |
+| **Icon** | `audio-waveform` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`MediaPipeAudioNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `audio` | `audio` | Audio source |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `category` | `string` | Top classification label |
+| `confidence` | `number` | Top classification confidence |
+| `categories` | `data` | All classifications array |
+| `isSpeech` | `boolean` | Speech detected |
+| `isMusic` | `boolean` | Music detected |
+| `detected` | `boolean` | Classification available |
+| `loading` | `boolean` | Model loading state |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enabled` | `toggle` | `true` | Enable classification |
+| `classifyInterval` | `number` | `500` | Classification interval in milliseconds |
+| `maxResults` | `slider` | `5` | Maximum results |
+| `scoreThreshold` | `slider` | `0.3` | Minimum score threshold |
+
+### Implementation
+Uses YamNet model via MediaPipe Tasks Audio to classify 521 audio categories including speech, music, environmental sounds, and more. The `isSpeech` and `isMusic` outputs are derived by checking if any of the top classifications match known speech or music category patterns.
+
+**Note:** The `maxResults` and `scoreThreshold` controls are applied when the model is first loaded. Changing them after the model has loaded requires restarting the flow.

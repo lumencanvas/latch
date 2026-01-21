@@ -431,16 +431,22 @@ export const render3DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const renderer = getThreeRenderer()
   const width = (ctx.controls.get('width') as number) ?? 512
   const height = (ctx.controls.get('height') as number) ?? 512
-  // TODO: Use includeDepth when depth buffer rendering is implemented
-  // const includeDepth = (ctx.controls.get('includeDepth') as boolean) ?? false
+  const includeDepth = (ctx.controls.get('includeDepth') as boolean) ?? false
 
-  // Render to default framebuffer (canvas) so we can share it
-  renderer.renderToCanvas(scene, camera, width, height)
-
-  // Return the canvas element - this can be used by visual nodes
   const outputs = new Map<string, unknown>()
-  outputs.set('texture', renderer.getCanvas())
-  outputs.set('depth', null) // Depth not supported in canvas mode
+
+  if (includeDepth) {
+    // Render to render target with depth texture support
+    const result = renderer.render(scene, camera, ctx.nodeId, width, height, true)
+    outputs.set('texture', result.texture) // WebGLTexture
+    outputs.set('depth', result.depthTexture ?? null) // WebGLTexture (depth values: 0=near, 1=far)
+  } else {
+    // Render to default framebuffer (canvas) for better compatibility
+    renderer.renderToCanvas(scene, camera, width, height)
+    outputs.set('texture', renderer.getCanvas()) // HTMLCanvasElement
+    outputs.set('depth', null)
+  }
+
   return outputs
 }
 

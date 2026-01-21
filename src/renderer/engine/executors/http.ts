@@ -87,6 +87,7 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const headers = (ctx.inputs.get('headers') as Record<string, string>) ?? {}
   const body = ctx.inputs.get('body')
   const trigger = ctx.inputs.get('trigger') as boolean | undefined
+  const timeout = (ctx.controls.get('timeout') as number) ?? 30000
 
   const outputs = new Map<string, unknown>()
 
@@ -108,7 +109,7 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   // Mode 3: Direct URL mode (no connection, backwards compatible)
   if (!hasConnection && hasDirectUrl) {
-    return await executeDirectRequest(ctx.nodeId, url, method, headers, body)
+    return await executeDirectRequest(ctx.nodeId, url, method, headers, body, timeout)
   }
 
   // Need a connection for modes 1 and 2
@@ -197,11 +198,16 @@ async function executeDirectRequest(
   url: string,
   method: string,
   headers: Record<string, string>,
-  body: unknown
+  body: unknown,
+  timeout: number = 30000
 ): Promise<Map<string, unknown>> {
   const outputs = new Map<string, unknown>()
 
   setCached(`${nodeId}:loading`, true)
+
+  // Create AbortController for timeout support
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
 
   try {
     const fetchOptions: RequestInit = {
@@ -210,6 +216,7 @@ async function executeDirectRequest(
         'Content-Type': 'application/json',
         ...headers,
       },
+      signal: controller.signal,
     }
 
     if (body && method !== 'GET' && method !== 'HEAD') {
@@ -217,6 +224,8 @@ async function executeDirectRequest(
     }
 
     const response = await fetch(url, fetchOptions)
+    clearTimeout(timeoutId)
+
     const contentType = response.headers.get('content-type') || ''
 
     let data: unknown
@@ -236,7 +245,18 @@ async function executeDirectRequest(
     outputs.set('error', response.ok ? null : `HTTP ${response.status}`)
     outputs.set('loading', false)
   } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e)
+    clearTimeout(timeoutId)
+
+    let errorMsg: string
+    if (e instanceof Error) {
+      if (e.name === 'AbortError') {
+        errorMsg = `Request timeout after ${timeout}ms`
+      } else {
+        errorMsg = e.message
+      }
+    } else {
+      errorMsg = String(e)
+    }
 
     setCached(`${nodeId}:response`, null)
     setCached(`${nodeId}:status`, 0)

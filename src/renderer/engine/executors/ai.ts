@@ -1676,37 +1676,250 @@ export const mediapipeGestureExecutor: NodeExecutorFn = async (ctx: ExecutionCon
 // MediaPipe Audio Classification Executor
 // ============================================================================
 
-// Audio classification is a placeholder - requires @mediapipe/tasks-audio package
-// For now, output placeholder values
+// Track per-node audio buffer service for audio classification
+interface AudioClassifierNodeState {
+  audioBufferService: AudioBufferServiceImpl
+  connectedAudioNode: Tone.ToneAudioNode | null
+  connecting: boolean
+  lastClassifyTime: number
+}
+
+const audioClassifierState = new Map<string, AudioClassifierNodeState>()
+
+function getAudioClassifierState(nodeId: string): AudioClassifierNodeState {
+  let state = audioClassifierState.get(nodeId)
+  if (!state) {
+    state = {
+      audioBufferService: new AudioBufferServiceImpl(),
+      connectedAudioNode: null,
+      connecting: false,
+      lastClassifyTime: 0,
+    }
+    audioClassifierState.set(nodeId, state)
+  }
+  return state
+}
+
+// Speech-related categories from YAMNet
+const SPEECH_CATEGORIES = [
+  'speech', 'narration', 'conversation', 'monologue', 'babbling',
+  'speech synthesizer', 'shout', 'bellow', 'whoop', 'yell', 'screaming',
+  'children shouting', 'male speech', 'female speech', 'child speech',
+  'whispering', 'laughter', 'baby laughter', 'giggle', 'snicker', 'belly laugh',
+  'chuckle, chortle', 'crying, sobbing', 'baby cry', 'whimper', 'sigh',
+  'singing', 'choir', 'yodeling', 'chant', 'mantra',
+]
+
+// Music-related categories from YAMNet
+const MUSIC_CATEGORIES = [
+  'music', 'musical instrument', 'plucked string instrument', 'guitar',
+  'electric guitar', 'bass guitar', 'acoustic guitar', 'steel guitar',
+  'tapping (guitar technique)', 'strum', 'banjo', 'sitar', 'mandolin',
+  'zither', 'ukulele', 'keyboard (musical)', 'piano', 'electric piano',
+  'organ', 'electronic organ', 'hammond organ', 'synthesizer', 'sampler',
+  'harpsichord', 'percussion', 'drum kit', 'drum machine', 'drum',
+  'snare drum', 'rimshot', 'drum roll', 'bass drum', 'timpani',
+  'tabla', 'cymbal', 'hi-hat', 'wood block', 'tambourine', 'rattle',
+  'maraca', 'gong', 'tubular bells', 'mallet percussion', 'marimba',
+  'xylophone', 'glockenspiel', 'vibraphone', 'steelpan', 'orchestra',
+  'brass instrument', 'french horn', 'trumpet', 'trombone', 'bowed string instrument',
+  'string section', 'violin, fiddle', 'pizzicato', 'cello', 'double bass',
+  'wind instrument', 'flute', 'saxophone', 'clarinet', 'harp', 'bell',
+  'church bell', 'jingle bell', 'bicycle bell', 'tuning fork', 'chime',
+  'wind chime', 'change ringing (campanology)', 'harmonica', 'accordion',
+  'bagpipes', 'didgeridoo', 'shofar', 'theremin', 'singing bowl', 'scratching',
+  'pop music', 'hip hop music', 'beatboxing', 'rock music', 'heavy metal',
+  'punk rock', 'grunge', 'progressive rock', 'rock and roll', 'psychedelic rock',
+  'rhythm and blues', 'soul music', 'reggae', 'country', 'swing music',
+  'bluegrass', 'funk', 'folk music', 'middle eastern music', 'jazz',
+  'disco', 'classical music', 'opera', 'electronic music', 'house music',
+  'techno', 'dubstep', 'drum and bass', 'electronica', 'electronic dance music',
+  'ambient music', 'trance music', 'music of latin america', 'salsa music',
+  'flamenco', 'blues', 'music for children', 'new-age music', 'vocal music',
+  'a]capella', 'music of africa', 'afrobeat', 'christian music', 'gospel music',
+  'music of asia', 'carnatic music', 'music of bollywood', 'ska', 'traditional music',
+  'independent music', 'song', 'background music', 'theme music', 'jingle',
+  'soundtrack music', 'lullaby', 'video game music', 'christmas music', 'dance music',
+  'wedding music', 'happy music', 'sad music', 'tender music', 'exciting music',
+  'angry music', 'scary music',
+]
+
 export const mediapipeAudioExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const audioInput = ctx.inputs.get('audio')
   const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+  const classifyInterval = (ctx.controls.get('classifyInterval') as number) ?? 500 // ms
 
-  // Audio classification requires additional package installation
-  // This is a placeholder that outputs default values
+  // Get node-specific state
+  const state = getAudioClassifierState(ctx.nodeId)
+  const now = Date.now()
+
   if (!enabled || !audioInput) {
-    outputs.set('category', '')
-    outputs.set('confidence', 0)
-    outputs.set('categories', [])
-    outputs.set('isSpeech', false)
-    outputs.set('isMusic', false)
+    outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+    outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+    outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('audio'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('audio')) {
+    outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+    outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+    outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  // Handle audio input - can be Tone.js node
+  if (isToneAudioNode(audioInput)) {
+    // Connect AudioBufferService to Tone.js node if not already connected
+    if (state.connectedAudioNode !== audioInput && !state.connecting) {
+      state.connecting = true
+      state.connectedAudioNode = audioInput
+
+      state.audioBufferService
+        .connectSource(audioInput, {
+          bufferDuration: 2, // 2 seconds buffer
+          sampleRate: 16000, // YAMNet expects 16kHz
+        })
+        .then(() => {
+          state.connecting = false
+          console.log('[MediaPipe Audio] AudioBufferService connected')
+        })
+        .catch((err) => {
+          console.error('[MediaPipe Audio] Failed to connect AudioBufferService:', err)
+          state.connecting = false
+          state.connectedAudioNode = null
+        })
+    }
+  } else if (audioInput === null || audioInput === undefined) {
+    // No audio input - disconnect if was connected
+    if (state.connectedAudioNode !== null) {
+      state.audioBufferService.disconnect()
+      state.connectedAudioNode = null
+    }
+  }
+
+  // If connecting or not connected, return cached values
+  if (state.connecting || !state.audioBufferService.connected) {
+    outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+    outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+    outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
+    outputs.set('detected', false)
+    outputs.set('loading', state.connecting)
+    if (state.connecting) {
+      outputs.set('_error', 'Connecting to audio source...')
+    }
+    return outputs
+  }
+
+  // Rate limit classification
+  if (now - state.lastClassifyTime < classifyInterval) {
+    outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+    outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+    outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
+    outputs.set('detected', getCached(`${ctx.nodeId}:detected`, false))
+    outputs.set('loading', false)
+    return outputs
+  }
+
+  // Check if already processing
+  if (pendingOperations.has(ctx.nodeId)) {
+    outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+    outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+    outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
+    outputs.set('detected', getCached(`${ctx.nodeId}:detected`, false))
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  // Get audio buffer for classification (1 second of audio)
+  const audioBuffer = state.audioBufferService.getBuffer(1000)
+
+  if (audioBuffer.length === 0) {
+    outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+    outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+    outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
     outputs.set('detected', false)
     outputs.set('loading', false)
     return outputs
   }
 
-  // TODO: Implement audio classification when @mediapipe/tasks-audio is added
-  // For now, output placeholder values indicating feature is not yet available
-  outputs.set('category', 'Not implemented')
-  outputs.set('confidence', 0)
-  outputs.set('categories', [])
-  outputs.set('isSpeech', false)
-  outputs.set('isMusic', false)
-  outputs.set('detected', false)
-  outputs.set('loading', false)
+  state.lastClassifyTime = now
+  setCached(`${ctx.nodeId}:loading`, true)
+
+  const operation = (async () => {
+    try {
+      const result = await mediaPipeService.classifyAudio(audioBuffer, 16000)
+
+      if (!result || result.categories.length === 0) {
+        setCached(`${ctx.nodeId}:detected`, false)
+        setCached(`${ctx.nodeId}:loading`, false)
+        return
+      }
+
+      const categories = result.categories
+      const topCategory = categories[0]
+
+      // Check if any category indicates speech or music
+      const categoryNames = categories.map(c => c.categoryName.toLowerCase())
+      const isSpeech = categoryNames.some(name =>
+        SPEECH_CATEGORIES.some(speech => name.includes(speech.toLowerCase()))
+      )
+      const isMusic = categoryNames.some(name =>
+        MUSIC_CATEGORIES.some(music => name.includes(music.toLowerCase()))
+      )
+
+      setCached(`${ctx.nodeId}:category`, topCategory.categoryName)
+      setCached(`${ctx.nodeId}:confidence`, topCategory.score)
+      setCached(`${ctx.nodeId}:categories`, categories)
+      setCached(`${ctx.nodeId}:isSpeech`, isSpeech)
+      setCached(`${ctx.nodeId}:isMusic`, isMusic)
+      setCached(`${ctx.nodeId}:detected`, true)
+      setCached(`${ctx.nodeId}:loading`, false)
+    } catch (error) {
+      console.error('[MediaPipe Audio] Classification error:', error)
+      setCached(`${ctx.nodeId}:loading`, false)
+    } finally {
+      pendingOperations.delete(ctx.nodeId)
+    }
+  })()
+
+  pendingOperations.set(ctx.nodeId, operation)
+
+  outputs.set('category', getCached(`${ctx.nodeId}:category`, ''))
+  outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+  outputs.set('categories', getCached(`${ctx.nodeId}:categories`, []))
+  outputs.set('isSpeech', getCached(`${ctx.nodeId}:isSpeech`, false))
+  outputs.set('isMusic', getCached(`${ctx.nodeId}:isMusic`, false))
+  outputs.set('detected', getCached(`${ctx.nodeId}:detected`, false))
+  outputs.set('loading', true)
 
   return outputs
+}
+
+// Cleanup function for audio classifier state
+export function disposeAudioClassifierNode(nodeId: string): void {
+  const state = audioClassifierState.get(nodeId)
+  if (state) {
+    state.audioBufferService.disconnect()
+    audioClassifierState.delete(nodeId)
+  }
 }
 
 // ============================================================================
@@ -1727,6 +1940,13 @@ export function disposeAINode(nodeId: string): void {
     stt.audioBufferService.disconnect()
   }
   sttState.delete(nodeId)
+
+  // Disconnect audio classifier service before deleting
+  const audioClassifier = audioClassifierState.get(nodeId)
+  if (audioClassifier?.audioBufferService) {
+    audioClassifier.audioBufferService.disconnect()
+  }
+  audioClassifierState.delete(nodeId)
 }
 
 export function disposeAllAINodes(): void {
@@ -1741,6 +1961,9 @@ export function disposeAllAINodes(): void {
   for (const nodeId of sttState.keys()) {
     disposedNodes.add(nodeId)
   }
+  for (const nodeId of audioClassifierState.keys()) {
+    disposedNodes.add(nodeId)
+  }
 
   // Disconnect all STT audio services before clearing
   for (const state of sttState.values()) {
@@ -1748,9 +1971,18 @@ export function disposeAllAINodes(): void {
       state.audioBufferService.disconnect()
     }
   }
+
+  // Disconnect all audio classifier services before clearing
+  for (const state of audioClassifierState.values()) {
+    if (state?.audioBufferService) {
+      state.audioBufferService.disconnect()
+    }
+  }
+
   nodeCache.clear()
   pendingOperations.clear()
   sttState.clear()
+  audioClassifierState.clear()
 }
 
 export function gcAIState(validNodeIds: Set<string>): void {
@@ -1780,6 +2012,18 @@ export function gcAIState(validNodeIds: Set<string>): void {
         state.audioBufferService.disconnect()
       }
       sttState.delete(nodeId)
+    }
+  }
+
+  // Clean audioClassifierState (disconnect audio first)
+  for (const nodeId of audioClassifierState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      disposedNodes.add(nodeId)
+      const state = audioClassifierState.get(nodeId)
+      if (state?.audioBufferService) {
+        state.audioBufferService.disconnect()
+      }
+      audioClassifierState.delete(nodeId)
     }
   }
 

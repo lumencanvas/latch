@@ -10,24 +10,24 @@ LATCH uses a node-based system where each node represents a discrete operation o
 
 | Category | Count | Description | Link |
 |----------|-------|-------------|------|
-| [Inputs](#inputs) | 7 | Input controls and data sources | [inputs.md](./inputs.md) |
+| [Inputs](#inputs) | 8 | Input controls and data sources | [inputs.md](./inputs.md) |
 | [Debug](#debug) | 5 | Visualization and debugging tools | [debug.md](./debug.md) |
 | [Math](#math) | 13 | Mathematical operations | [math.md](./math.md) |
 | [Logic](#logic) | 7 | Boolean and conditional logic | [logic.md](./logic.md) |
 | [Timing](#timing) | 8 | Time-based nodes and clocks | [timing.md](./timing.md) |
-| [Audio](#audio) | 15 | Audio synthesis and processing | [audio.md](./audio.md) |
+| [Audio](#audio) | 16 | Audio synthesis and processing | [audio.md](./audio.md) |
 | [Visual](#visual) | 12 | Image/texture processing and shaders | [visual.md](./visual.md) |
 | [3D](#3d) | 16 | 3D geometry, materials, and rendering | [3d.md](./3d.md) |
-| [Connectivity](#connectivity) | 15 | Network and device communication | [connectivity.md](./connectivity.md) |
+| [Connectivity](#connectivity) | 18 | Network and device communication | [connectivity.md](./connectivity.md) |
 | [Code](#code) | 7 | Custom code execution | [code.md](./code.md) |
-| [AI](#ai) | 8 | Local machine learning models | [ai.md](./ai.md) |
+| [AI](#ai) | 15 | Local machine learning models | [ai.md](./ai.md) |
 | [Data](#data) | 3 | Data manipulation and conversion | [data.md](./data.md) |
 | [String](#string) | 5 | String manipulation | [string.md](./string.md) |
 | [Messaging](#messaging) | 2 | Internal message passing | [messaging.md](./messaging.md) |
 | [Subflows](#subflows) | 2 | Flow composition | [subflows.md](./subflows.md) |
 | [Outputs](#outputs) | 1 | Final output destinations | [outputs.md](./outputs.md) |
 
-**Total: 126+ nodes**
+**Total: 138 nodes**
 
 ---
 
@@ -44,6 +44,7 @@ User-interactive input controls for creating values.
 | Trigger | Manual trigger button with output types |
 | XY Pad | 2D position controller |
 | Textbox | Resizable text input |
+| Keyboard | Virtual piano keyboard for MIDI note input |
 | Audio Input | Capture audio from microphone |
 
 ### Debug
@@ -123,6 +124,7 @@ Audio synthesis, processing, and analysis using Web Audio API.
 | Parametric EQ | 3-band parametric equalizer |
 | Wavetable | Wavetable oscillator with drawable waveform |
 | Audio Player | Play audio files from URL |
+| Synth | Polyphonic synthesizer with multiple instruments |
 
 ### Visual
 Image/texture processing and shader effects using WebGL/Three.js.
@@ -176,7 +178,10 @@ Network and device communication.
 | MQTT | MQTT pub/sub messaging |
 | OSC | Open Sound Control protocol |
 | Serial Port | Serial port communication |
-| Bluetooth LE | Bluetooth Low Energy |
+| Bluetooth LE | Bluetooth Low Energy (simple) |
+| BLE Scanner | Scan and select BLE devices |
+| BLE Device | Connect to BLE device, enumerate services |
+| BLE Characteristic | Read/write/subscribe to BLE characteristics |
 | CLASP Connection | Manage CLASP connections |
 | CLASP Subscribe | Subscribe to CLASP patterns |
 | CLASP Set | Set CLASP parameter values |
@@ -199,7 +204,7 @@ Custom code execution and utilities.
 | Value Delay | Delay value by N frames |
 
 ### AI
-Local machine learning using Transformers.js (runs in browser).
+Local machine learning using Transformers.js and MediaPipe (runs in browser).
 
 | Node | Description |
 |------|-------------|
@@ -211,6 +216,13 @@ Local machine learning using Transformers.js (runs in browser).
 | Detect Objects | Detect objects in images |
 | Speech to Text | Transcribe audio (Whisper) |
 | Text Transform | Summarize/translate/rewrite |
+| Hand Tracking | MediaPipe hand landmark detection |
+| Face Mesh | MediaPipe face landmarks and blendshapes |
+| Pose Estimation | MediaPipe body pose detection |
+| Object Detection (MP) | MediaPipe real-time object detection |
+| Selfie Segmentation | MediaPipe person/background separation |
+| Gesture Recognition | MediaPipe hand gesture recognition |
+| Audio Classifier | MediaPipe audio classification (YamNet) |
 
 ### Data
 Data manipulation and conversion.

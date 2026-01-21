@@ -500,3 +500,55 @@ Play audio files from URL.
 
 ### Implementation
 Uses `fetch()` to load audio, `AudioContext.decodeAudioData()` to decode, and `AudioBufferSourceNode` for playback.
+
+---
+
+## Synth
+
+Polyphonic synthesizer with multiple instrument presets.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `synth` |
+| **Icon** | `music` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`SynthNode.vue`) |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `note` | `number` | MIDI note number (0-127) |
+| `velocity` | `number` | Note velocity (0-127) |
+| `gate` | `boolean` | Note gate (true=on, false=off) |
+| `trigger` | `trigger` | Alternative note trigger |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `audio` | `audio` | Audio output |
+
+### Controls
+| Control | Type | Default | Props | Description |
+|---------|------|---------|-------|-------------|
+| `instrument` | `select` | `sine` | options: sine, moog, piano, organ, pluck, pad | Instrument preset |
+| `volume` | `number` | `-6` | min: -60, max: 0 | Volume (dB) |
+| `attack` | `number` | `0.01` | min: 0.001, max: 2 | Attack time (s) |
+| `decay` | `number` | `0.1` | min: 0.001, max: 2 | Decay time (s) |
+| `sustain` | `number` | `0.7` | min: 0, max: 1 | Sustain level |
+| `release` | `number` | `0.3` | min: 0.001, max: 5 | Release time (s) |
+| `cutoff` | `number` | `2000` | min: 20, max: 20000 | Filter cutoff (Hz, Moog) |
+| `resonance` | `number` | `1` | min: 0.1, max: 30 | Filter resonance (Moog) |
+| `filterEnv` | `number` | `0.5` | min: 0, max: 1 | Filter envelope amount (Moog) |
+| `brightness` | `number` | `0.5` | min: 0, max: 1 | Pluck brightness |
+| `damping` | `number` | `0.5` | min: 0, max: 1 | Pluck damping |
+| `detune` | `number` | `10` | min: 0, max: 50 | Voice detune (Pad) |
+| `voices` | `number` | `3` | min: 1, max: 8 | Voice count (Pad) |
+
+### Implementation
+Polyphonic synth using Tone.js. Connects directly to Keyboard node for MIDI-style input. Each instrument preset uses different synthesis techniques:
+- **sine**: Pure sine wave with ADSR envelope
+- **moog**: Subtractive synth with resonant filter
+- **piano**: FM synthesis piano sound
+- **organ**: Additive Hammond-style organ
+- **pluck**: Karplus-Strong physical modeling
+- **pad**: Detuned multi-voice pad

@@ -25,6 +25,8 @@ type ObjectDetector = any
 type ImageSegmenter = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GestureRecognizer = any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AudioClassifier = any
 
 // ============================================================================
 // Result Types
@@ -91,6 +93,11 @@ export interface GestureResult {
   handedness: Array<{ categoryName: string; score: number }>
   landmarks: Point3D[][]
   worldLandmarks: Point3D[][]
+}
+
+export interface AudioClassificationResult {
+  categories: Array<{ categoryName: string; score: number }>
+  timestampMs: number
 }
 
 // ============================================================================
@@ -302,12 +309,15 @@ export function extractBlendshapeValues(
 
 class MediaPipeServiceImpl {
   private filesetResolver: Awaited<ReturnType<FilesetResolver['forVisionTasks']>> | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private audioFilesetResolver: any = null // Audio-specific fileset
   private handLandmarker: HandLandmarker | null = null
   private faceLandmarker: FaceLandmarker | null = null
   private poseLandmarker: PoseLandmarker | null = null
   private objectDetector: ObjectDetector | null = null
   private imageSegmenter: ImageSegmenter | null = null
   private gestureRecognizer: GestureRecognizer | null = null
+  private audioClassifier: AudioClassifier | null = null
 
   private loading = new Set<string>()
 
@@ -317,6 +327,7 @@ class MediaPipeServiceImpl {
 
   // CDN URLs for MediaPipe WASM files
   private readonly WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+  private readonly AUDIO_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@latest/wasm'
   private readonly MODEL_BASE = 'https://storage.googleapis.com/mediapipe-models'
 
   // =========================================================================
@@ -355,6 +366,13 @@ class MediaPipeServiceImpl {
 
     const { FilesetResolver } = await import('@mediapipe/tasks-vision')
     this.filesetResolver = await FilesetResolver.forVisionTasks(this.WASM_URL)
+  }
+
+  private async ensureAudioFileset(): Promise<void> {
+    if (this.audioFilesetResolver) return
+
+    const { FilesetResolver } = await import('@mediapipe/tasks-audio')
+    this.audioFilesetResolver = await FilesetResolver.forAudioTasks(this.AUDIO_WASM_URL)
   }
 
   async loadHandLandmarker(): Promise<void> {
@@ -500,6 +518,28 @@ class MediaPipeServiceImpl {
       console.log('[MediaPipe] Gesture recognizer loaded')
     } finally {
       this.loading.delete('gesture')
+    }
+  }
+
+  async loadAudioClassifier(): Promise<void> {
+    if (this.audioClassifier || this.loading.has('audio')) return
+    this.loading.add('audio')
+
+    try {
+      await this.ensureAudioFileset()
+      const { AudioClassifier } = await import('@mediapipe/tasks-audio')
+
+      this.audioClassifier = await AudioClassifier.createFromOptions(this.audioFilesetResolver, {
+        baseOptions: {
+          modelAssetPath: `${this.MODEL_BASE}/audio_classifier/yamnet/float32/latest/yamnet.tflite`,
+        },
+        maxResults: 5,
+        scoreThreshold: 0.3,
+      })
+
+      console.log('[MediaPipe] Audio classifier loaded')
+    } finally {
+      this.loading.delete('audio')
     }
   }
 
@@ -709,11 +749,61 @@ class MediaPipeServiceImpl {
     }
   }
 
+  async classifyAudio(audioBuffer: Float32Array, sampleRate: number): Promise<AudioClassificationResult | null> {
+    if (!this.audioClassifier) {
+      await this.loadAudioClassifier()
+    }
+
+    if (!this.audioClassifier || audioBuffer.length === 0) {
+      return null
+    }
+
+    try {
+      // MediaPipe Audio Classifier expects audio at specific sample rates
+      // Resample if necessary (YAMNet typically expects 16kHz)
+      let processedBuffer = audioBuffer
+      const expectedSampleRate = 16000
+
+      if (sampleRate !== expectedSampleRate) {
+        // Simple linear interpolation resampling
+        const ratio = sampleRate / expectedSampleRate
+        const outputLength = Math.floor(audioBuffer.length / ratio)
+        processedBuffer = new Float32Array(outputLength)
+
+        for (let i = 0; i < outputLength; i++) {
+          const srcIndex = i * ratio
+          const srcIndexFloor = Math.floor(srcIndex)
+          const srcIndexCeil = Math.min(srcIndexFloor + 1, audioBuffer.length - 1)
+          const fraction = srcIndex - srcIndexFloor
+          processedBuffer[i] = audioBuffer[srcIndexFloor] * (1 - fraction) + audioBuffer[srcIndexCeil] * fraction
+        }
+      }
+
+      const result = this.audioClassifier.classify(processedBuffer)
+
+      if (!result || !result.classifications || result.classifications.length === 0) {
+        return null
+      }
+
+      const classification = result.classifications[0]
+      return {
+        categories: classification.categories.map((c: { categoryName: string; score: number }) => ({
+          categoryName: c.categoryName,
+          score: c.score,
+        })),
+        timestampMs: classification.timestampMs ?? Date.now(),
+      }
+    } catch (error) {
+      console.error('[MediaPipe] Audio classification error:', error)
+      return null
+    }
+  }
+
   // =========================================================================
   // Lifecycle
   // =========================================================================
 
-  dispose(taskType?: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture'): void {
+  dispose(taskType?: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture' | 'audio'): void {
     if (!taskType || taskType === 'hand') {
       this.handLandmarker?.close()
       this.handLandmarker = null
@@ -744,14 +834,19 @@ class MediaPipeServiceImpl {
       this.gestureRecognizer = null
       this.lastTimestamp.delete('gesture')
     }
+    if (!taskType || taskType === 'audio') {
+      this.audioClassifier?.close()
+      this.audioClassifier = null
+    }
 
     if (!taskType) {
       this.filesetResolver = null
+      this.audioFilesetResolver = null
       this.lastTimestamp.clear()
     }
   }
 
-  isLoaded(taskType: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture'): boolean {
+  isLoaded(taskType: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture' | 'audio'): boolean {
     switch (taskType) {
       case 'hand': return this.handLandmarker !== null
       case 'face': return this.faceLandmarker !== null
@@ -759,11 +854,12 @@ class MediaPipeServiceImpl {
       case 'object': return this.objectDetector !== null
       case 'segmentation': return this.imageSegmenter !== null
       case 'gesture': return this.gestureRecognizer !== null
+      case 'audio': return this.audioClassifier !== null
       default: return false
     }
   }
 
-  isLoading(taskType: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture'): boolean {
+  isLoading(taskType: 'hand' | 'face' | 'pose' | 'object' | 'segmentation' | 'gesture' | 'audio'): boolean {
     return this.loading.has(taskType)
   }
 }

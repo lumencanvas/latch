@@ -12,14 +12,165 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 - **3D/Shaders**: Three.js
 - **AI/ML**: ONNX Runtime, MediaPipe Tasks Vision, Transformers.js
 - **State**: Pinia stores
-- **Testing**: Vitest (668 tests, 657 passing, 11 todo)
+- **Testing**: Vitest (823 tests, 812 passing, 11 todo)
 
 ## Current Status
 
 **Version**: 0.1.8
 **Build**: Passing
-**Tests**: 657 passed | 11 todo (668 total)
+**Tests**: 812 passed | 11 todo (823 total)
 **Branch**: main
+
+---
+
+## Recent Session (2026-01-20) - Node Implementation & Improvements
+
+### Overview
+
+Implemented missing node functionality and improvements based on the LATCH Node Implementation Plan. Four priority areas addressed:
+
+1. **MediaPipe Audio Classification** - Full implementation (was placeholder)
+2. **3D Depth Buffer Rendering** - Now functional with includeDepth control
+3. **HTTP Request Timeout** - AbortController-based timeout support
+4. **Connection Retry Logic** - Exponential backoff in BaseAdapter
+
+### Priority 1: MediaPipe Audio Classification (High Impact)
+
+**Problem**: Node existed but executor returned "Not implemented" placeholder values.
+
+**Solution**: Full implementation using `@mediapipe/tasks-audio` package with YAMNet model.
+
+**Files Modified**:
+
+| File | Changes |
+|------|---------|
+| `package.json` | Added `@mediapipe/tasks-audio` dependency |
+| `services/ai/MediaPipeService.ts` | Added `AudioClassifier` type, `AudioClassificationResult` interface, `audioFilesetResolver`, `AUDIO_WASM_URL`, `ensureAudioFileset()`, `loadAudioClassifier()`, `classifyAudio()` with 16kHz resampling, updated `dispose()`, `isLoaded()`, `isLoading()` |
+| `engine/executors/ai.ts` | Full `mediapipeAudioExecutor` with AudioBufferService integration, `SPEECH_CATEGORIES` and `MUSIC_CATEGORIES` constants for detection, `disposeAudioClassifierNode()` cleanup, updated `disposeAINode()` |
+
+**Key Implementation Details**:
+- Audio resampling from source sample rate to 16kHz (YAMNet requirement)
+- 521 audio categories classification (speech, music, environmental sounds)
+- `isSpeech`/`isMusic` outputs derived from category pattern matching
+- Rate-limited classification (configurable interval)
+- Per-node AudioBufferService state management
+
+### Priority 2: 3D Depth Buffer Rendering (Medium Impact)
+
+**Problem**: `includeDepth` control existed but depth output was always `null`.
+
+**Solution**: Use `renderer.render()` instead of `renderToCanvas()` when depth requested.
+
+**File Modified**: `engine/executors/3d.ts`
+
+```typescript
+// Before: Always used canvas mode
+renderer.renderToCanvas(scene, camera, width, height)
+outputs.set('depth', null)
+
+// After: Uses render targets when depth needed
+if (includeDepth) {
+  const result = renderer.render(scene, camera, ctx.nodeId, width, height, true)
+  outputs.set('texture', result.texture)      // WebGLTexture
+  outputs.set('depth', result.depthTexture)   // WebGLTexture (0=near, 1=far)
+} else {
+  renderer.renderToCanvas(scene, camera, width, height)
+  outputs.set('texture', renderer.getCanvas()) // HTMLCanvasElement
+  outputs.set('depth', null)
+}
+```
+
+### Priority 3: HTTP Request Timeout (Quick Win)
+
+**Problem**: No timeout support - requests could hang indefinitely.
+
+**Solution**: AbortController-based timeout with configurable duration.
+
+**Files Modified**:
+
+| File | Changes |
+|------|---------|
+| `registry/connectivity/http-request.ts` | Added `timeout` control (default: 30000ms, range: 1000-120000ms) |
+| `engine/executors/http.ts` | Added AbortController with timeout, improved error messages for timeout vs other errors |
+
+**Key Code**:
+```typescript
+const controller = new AbortController()
+const timeoutId = setTimeout(() => controller.abort(), timeout)
+const response = await fetch(url, { ...options, signal: controller.signal })
+clearTimeout(timeoutId)
+```
+
+### Priority 4: Connection Retry Logic (Reliability)
+
+**Problem**: No built-in retry mechanism for initial connections.
+
+**Solution**: Added `connectWithRetry()` to BaseAdapter with exponential backoff.
+
+**File Modified**: `services/connections/adapters/BaseAdapter.ts`
+
+```typescript
+async connectWithRetry(
+  maxRetries: number = 3,
+  baseDelay: number = 1000,
+  maxDelay: number = 10000
+): Promise<void>
+```
+
+**Features**:
+- Exponential backoff: `baseDelay * 2^attempt`
+- Maximum delay cap
+- 10% jitter to prevent thundering herd
+- Inherited by all adapters (WebSocket, MQTT, OSC)
+
+### Documentation Updates
+
+**Files Modified**:
+
+| File | Changes |
+|------|---------|
+| `docs/nodes/connectivity.md` | Added platform requirements table (OSC UDP, Serial, BLE, MIDI browser support), updated HTTP Request to document timeout control |
+| `docs/nodes/ai.md` | Updated Audio Classifier implementation description |
+
+**Platform Requirements Table Added**:
+| Feature | Browser Support | Workaround |
+|---------|-----------------|------------|
+| OSC (UDP) | WebSocket only | Use OSC/WebSocket bridge |
+| Serial Port | Chrome, Edge, Opera | Use Electron build |
+| Bluetooth LE | Chrome, Edge, Opera | Use Electron build |
+| MIDI | Chrome, Edge, Opera, Safari | Firefox unsupported |
+
+### Deep Audit Fixes (Same Session)
+
+Post-implementation deep audit identified and fixed the following issues.
+
+**Final Audit Status (3rd pass)**: All components verified working correctly.
+- ✅ MediaPipeService audio implementation - YAMNet model loading, 16kHz resampling
+- ✅ AI executor memory management - audioClassifierState cleanup in disposeAllAINodes/gcAIState
+- ✅ 3D depth buffer - render() method with depth textures when includeDepth=true
+- ✅ HTTP timeout - AbortController with configurable timeout control
+- ✅ BaseAdapter retry - exponential backoff with jitter
+- ✅ Node definitions - classifyInterval control present, timeout control present
+- ✅ Documentation - all versions/controls documented correctly
+- ✅ Typecheck: Passing
+- ✅ Tests: 812 passed | 11 todo (823 total)
+
+#### Critical Memory Leak Fixed
+**Problem**: `audioClassifierState` Map was not being cleaned up in `disposeAllAINodes()` and `gcAIState()`, causing memory leaks when audio classifier nodes were deleted.
+
+**Fix**: Added `audioClassifierState` cleanup to both functions:
+- `disposeAllAINodes()` - Now disconnects all audio classifier AudioBufferServices and clears the Map
+- `gcAIState()` - Now properly disposes orphaned audio classifier state for deleted nodes
+
+#### Missing Node Definition Control
+**Problem**: Executor referenced `classifyInterval` control but node definition didn't have it.
+
+**Fix**: Added `classifyInterval` control to `registry/ai/mediapipe-audio/definition.ts` (default: 500ms, range: 100-5000ms).
+
+#### Documentation Version Mismatch
+**Problem**: HTTP Request node version in docs (1.0.0) didn't match definition (2.0.0).
+
+**Fix**: Updated `docs/nodes/connectivity.md` to show correct version 2.0.0.
 
 ---
 

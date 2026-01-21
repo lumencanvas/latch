@@ -7,6 +7,22 @@
 
 ---
 
+## Platform Requirements & Limitations
+
+Some connectivity nodes have browser-specific requirements:
+
+| Feature | Browser Support | Workaround |
+|---------|-----------------|------------|
+| **OSC (UDP)** | WebSocket only (browsers cannot use UDP) | Use an OSC/WebSocket bridge like CLASP Bridge |
+| **Serial Port** | Chrome, Edge, Opera (Web Serial API) | Use Electron build for full support |
+| **Bluetooth LE** | Chrome, Edge, Opera (Web Bluetooth API) | Use Electron build for full support |
+| **MIDI** | Chrome, Edge, Opera, Safari (partial) | Firefox not supported; use Chrome or Electron |
+| **HTTP Requests** | All browsers | CORS may block cross-origin requests |
+
+**Electron Build:** Running LATCH as a desktop app via Electron removes most browser restrictions and enables full Serial, BLE, and native UDP support.
+
+---
+
 ## HTTP Request
 
 Make HTTP/REST API requests.
@@ -15,7 +31,7 @@ Make HTTP/REST API requests.
 |----------|-------|
 | **ID** | `http-request` |
 | **Icon** | `globe` |
-| **Version** | 1.0.0 |
+| **Version** | 2.0.0 |
 
 ### Inputs
 | Port | Type | Description |
@@ -38,9 +54,10 @@ Make HTTP/REST API requests.
 |---------|------|---------|-------|-------------|
 | `url` | `text` | `https://api.example.com/data` | - | Request URL |
 | `method` | `select` | `GET` | options: GET, POST, PUT, DELETE, PATCH | HTTP method |
+| `timeout` | `number` | `30000` | min: 1000, max: 120000 | Request timeout in milliseconds |
 
 ### Implementation
-Uses `fetch()` API. Automatically parses JSON responses. Headers and body can be provided as objects.
+Uses `fetch()` API with AbortController for timeout support. Automatically parses JSON responses. Headers and body can be provided as objects.
 
 ---
 
@@ -291,6 +308,126 @@ Bluetooth Low Energy communication via Web Bluetooth API.
 
 ### Implementation
 Uses Web Bluetooth API. User must interact to pair device. Supports notifications for continuous data.
+
+---
+
+## BLE Scanner
+
+Scan for Bluetooth LE devices and select one to connect.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `ble-scanner` |
+| **Icon** | `bluetooth-searching` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `trigger` | `trigger` | Initiate device scan |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `device` | `data` | Selected BluetoothDevice object |
+| `deviceName` | `string` | Device name |
+| `deviceId` | `string` | Device ID |
+| `scanning` | `boolean` | Scan in progress |
+| `status` | `string` | Status message |
+| `error` | `string` | Error message |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `serviceFilter` | `select` | `any` | Filter by service (any, Heart Rate, Battery, etc.) |
+| `customServiceUUID` | `text` | `''` | Custom service UUID |
+| `nameFilter` | `text` | `''` | Filter by device name prefix |
+
+### Implementation
+Initiates Web Bluetooth device picker. Connect the `device` output to BLE Device node's input.
+
+---
+
+## BLE Device
+
+Connect to a Bluetooth LE device and enumerate its services.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `ble-device` |
+| **Icon** | `bluetooth-connected` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `device` | `data` | BluetoothDevice from BLE Scanner |
+| `connect` | `trigger` | Connect to device |
+| `disconnect` | `trigger` | Disconnect from device |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `services` | `data` | Array of available services |
+| `characteristics` | `data` | Array of characteristics |
+| `deviceName` | `string` | Connected device name |
+| `deviceId` | `string` | Device ID |
+| `connected` | `boolean` | Connection state |
+| `status` | `string` | Status message |
+| `error` | `string` | Error message |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `autoConnect` | `toggle` | `false` | Auto-connect when device received |
+| `autoReconnect` | `toggle` | `true` | Auto-reconnect on disconnect |
+| `serviceUUID` | `text` | `''` | Filter to specific service UUID |
+
+### Implementation
+Manages BLE device connection lifecycle. Enumerates services and characteristics for use with BLE Characteristic node.
+
+---
+
+## BLE Characteristic
+
+Read, write, and subscribe to BLE characteristic values.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `ble-characteristic` |
+| **Icon** | `radio-receiver` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `device` | `data` | BluetoothDevice from BLE Scanner |
+| `read` | `trigger` | Read characteristic value |
+| `write` | `data` | Data to write |
+| `writeTrigger` | `trigger` | Execute write |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `value` | `any` | Parsed characteristic value |
+| `rawValue` | `data` | Raw DataView |
+| `text` | `string` | Value as UTF-8 text |
+| `formatted` | `string` | Human-readable formatted value |
+| `notified` | `trigger` | Fires on notification |
+| `properties` | `data` | Characteristic properties |
+| `error` | `string` | Error message |
+
+### Controls
+| Control | Type | Default | Description |
+|---------|------|---------|-------------|
+| `serviceUUID` | `text` | `''` | Service UUID (e.g., 180d) |
+| `characteristicUUID` | `text` | `''` | Characteristic UUID (e.g., 2a37) |
+| `dataFormat` | `select` | `auto` | Parse format (auto, uint8, int16, float32, utf8, etc.) |
+| `enableNotifications` | `toggle` | `true` | Subscribe to value changes |
+| `continuous` | `toggle` | `false` | Continuous polling read |
+
+### Implementation
+Provides full access to BLE characteristic operations. Supports standard GATT profiles with automatic formatting for common characteristics like Heart Rate, Battery Level, etc.
 
 ---
 

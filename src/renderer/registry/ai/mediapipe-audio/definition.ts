@@ -28,6 +28,13 @@ export const mediapipeAudioNode: NodeDefinition = {
       default: true,
     },
     {
+      id: 'classifyInterval',
+      type: 'number',
+      label: 'Interval (ms)',
+      default: 500,
+      props: { min: 100, max: 5000, step: 100 },
+    },
+    {
       id: 'maxResults',
       type: 'slider',
       label: 'Max Results',

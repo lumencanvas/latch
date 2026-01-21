@@ -52,5 +52,12 @@ export const httpRequestNode: NodeDefinition = {
       default: 'GET',
       props: { options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], showWhen: { templateId: '' } },
     },
+    {
+      id: 'timeout',
+      type: 'number',
+      label: 'Timeout (ms)',
+      default: 30000,
+      props: { min: 1000, max: 120000, step: 1000 },
+    },
   ],
 }

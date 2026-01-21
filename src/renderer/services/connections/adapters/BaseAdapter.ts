@@ -406,6 +406,57 @@ export abstract class BaseAdapter implements ConnectionAdapter {
   }
 
   /**
+   * Connect with explicit retry logic and exponential backoff.
+   * Use this for initial connections where you want immediate retries.
+   * @param maxRetries Maximum number of retry attempts (default: 3)
+   * @param baseDelay Base delay between retries in ms (default: 1000)
+   * @param maxDelay Maximum delay cap in ms (default: 10000)
+   */
+  async connectWithRetry(
+    maxRetries: number = 3,
+    baseDelay: number = 1000,
+    maxDelay: number = 10000
+  ): Promise<void> {
+    if (this._disposed) {
+      throw new Error('Adapter has been disposed')
+    }
+
+    let lastError: Error | undefined
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        await this.connect()
+        return // Success
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error))
+
+        if (attempt < maxRetries) {
+          // Calculate exponential backoff delay with jitter
+          const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay)
+          const jitter = Math.random() * delay * 0.1 // 10% jitter
+          const totalDelay = delay + jitter
+
+          console.log(
+            `[${this.protocol}] Connection attempt ${attempt + 1} failed, retrying in ${Math.round(totalDelay)}ms...`
+          )
+
+          await this.sleep(totalDelay)
+        }
+      }
+    }
+
+    // All retries exhausted
+    throw lastError ?? new Error('Connection failed after all retries')
+  }
+
+  /**
+   * Helper to sleep for a given duration
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  /**
    * Handle unexpected disconnection (connection dropped)
    * Call this from subclass when connection is lost unexpectedly
    */

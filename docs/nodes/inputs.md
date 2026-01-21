@@ -235,6 +235,42 @@ The device selector is dynamically populated with available audio input devices 
 
 ---
 
+## Keyboard
+
+Virtual piano keyboard for MIDI note input.
+
+| Property | Value |
+|----------|-------|
+| **ID** | `keyboard` |
+| **Icon** | `piano` |
+| **Version** | 1.0.0 |
+| **Custom UI** | Yes (`KeyboardNode.vue`) |
+
+### Inputs
+*None*
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `note` | `number` | MIDI note number (0-127) |
+| `velocity` | `number` | Note velocity (0-127) |
+| `noteOn` | `trigger` | Fires when note is pressed |
+| `gate` | `boolean` | True while note held, false on release |
+
+### Controls
+| Control | Type | Default | Props | Description |
+|---------|------|---------|-------|-------------|
+| `numKeys` | `select` | `25` | options: 25, 49, 61, 88 | Number of keys to display |
+| `startOctave` | `number` | `3` | min: 0, max: 8 | Starting octave |
+| `octaveShift` | `number` | `0` | min: -4, max: 4 | Keyboard shift offset |
+| `includeBlackKeys` | `toggle` | `true` | - | Show black keys |
+| `velocitySensitive` | `toggle` | `true` | - | Enable velocity sensitivity |
+
+### Implementation
+Custom UI with interactive piano keyboard. Click or use computer keyboard to play notes. Outputs MIDI-compatible values suitable for connecting to Synth or MIDI Output nodes.
+
+---
+
 ## Usage Examples
 
 ### Basic Parameter Control
