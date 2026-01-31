@@ -16,6 +16,9 @@ export { claspEmitNode } from './clasp-emit'
 export { claspGetNode } from './clasp-get'
 export { claspStreamNode } from './clasp-stream'
 export { claspBundleNode } from './clasp-bundle'
+export { claspVideoReceiveNode } from './clasp-video-receive'
+export { claspVideoSendNode } from './clasp-video-send'
+export { claspGestureNode } from './clasp-gesture'
 
 import { httpRequestNode } from './http-request'
 import { websocketNode } from './websocket'
@@ -35,6 +38,9 @@ import { claspEmitNode } from './clasp-emit'
 import { claspGetNode } from './clasp-get'
 import { claspStreamNode } from './clasp-stream'
 import { claspBundleNode } from './clasp-bundle'
+import { claspVideoReceiveNode } from './clasp-video-receive'
+import { claspVideoSendNode } from './clasp-video-send'
+import { claspGestureNode } from './clasp-gesture'
 import type { NodeDefinition } from '../types'
 
 export const connectivityNodes: NodeDefinition[] = [
@@ -56,4 +62,7 @@ export const connectivityNodes: NodeDefinition[] = [
   claspGetNode,
   claspStreamNode,
   claspBundleNode,
+  claspVideoReceiveNode,
+  claspVideoSendNode,
+  claspGestureNode,
 ]

@@ -4,10 +4,11 @@
  *
  * Component for discovering CLASP servers on the local network.
  * Scans common ports and displays discovered servers.
+ * Also offers quick-connect presets for the public relay.
  */
 
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Loader2, Radar, AlertCircle, Radio, Server, ChevronRight } from 'lucide-vue-next'
+import { Loader2, Radar, AlertCircle, Radio, Server, ChevronRight, Globe } from 'lucide-vue-next'
 
 const emit = defineEmits<{
   (e: 'select', url: string): void
@@ -20,19 +21,35 @@ interface DiscoveredServer {
   latency: number
 }
 
+interface ServerPreset {
+  url: string
+  label: string
+  description: string
+}
+
+const PUBLIC_PRESETS: ServerPreset[] = [
+  {
+    url: 'wss://relay.clasp.to',
+    label: 'Public Relay',
+    description: 'Free public relay for cross-network streaming and collaboration',
+  },
+]
+
 const isScanning = ref(false)
 const discoveredServers = ref<DiscoveredServer[]>([])
 const scanError = ref<string | null>(null)
+const publicRelayStatus = ref<'idle' | 'checking' | 'online' | 'offline'>('idle')
 
 const CLASP_PORTS = [7330, 7331, 7332, 8080, 8081]
 const SCAN_TIMEOUT = 3000
 
 async function checkServer(host: string, port: number): Promise<DiscoveredServer | null> {
-  const url = `ws://${host}:${port}`
+  const isSecure = port === 443
+  const url = isSecure ? `wss://${host}` : `ws://${host}:${port}`
   const startTime = performance.now()
 
   return new Promise((resolve) => {
-    const ws = new WebSocket(url, 'clasp.v2')
+    const ws = new WebSocket(url, 'clasp')
     const timeout = setTimeout(() => {
       ws.close()
       resolve(null)
@@ -98,9 +115,24 @@ function selectServer(server: DiscoveredServer) {
   emit('select', server.url)
 }
 
+function selectPreset(preset: ServerPreset) {
+  emit('select', preset.url)
+}
+
+async function checkPublicRelay() {
+  publicRelayStatus.value = 'checking'
+  try {
+    const result = await checkServer('relay.clasp.to', 443)
+    publicRelayStatus.value = result ? 'online' : 'offline'
+  } catch {
+    publicRelayStatus.value = 'offline'
+  }
+}
+
 onMounted(() => {
   // Auto-scan on mount
   scanNetwork()
+  checkPublicRelay()
 })
 
 let scanInterval: ReturnType<typeof setInterval> | null = null
@@ -123,8 +155,53 @@ onUnmounted(() => {
 
 <template>
   <div class="clasp-discovery">
+    <!-- Public relay presets -->
+    <div class="preset-section">
+      <span class="discovery-title">Quick Connect</span>
+      <div class="server-list">
+        <button
+          v-for="preset in PUBLIC_PRESETS"
+          :key="preset.url"
+          class="server-item preset-item"
+          @click="selectPreset(preset)"
+        >
+          <Globe
+            class="server-icon preset-icon"
+            :size="18"
+          />
+          <div class="server-info">
+            <div class="preset-label-row">
+              <span class="server-url">{{ preset.label }}</span>
+              <span
+                v-if="publicRelayStatus === 'online'"
+                class="status-dot online"
+                title="Online"
+              />
+              <span
+                v-else-if="publicRelayStatus === 'offline'"
+                class="status-dot offline"
+                title="Offline"
+              />
+              <Loader2
+                v-else-if="publicRelayStatus === 'checking'"
+                :size="10"
+                class="spinning status-spinner"
+              />
+            </div>
+            <span class="preset-url">{{ preset.url }}</span>
+            <span class="server-latency">{{ preset.description }}</span>
+          </div>
+          <ChevronRight
+            class="server-arrow"
+            :size="14"
+          />
+        </button>
+      </div>
+    </div>
+
+    <!-- Local discovery -->
     <div class="discovery-header">
-      <span class="discovery-title">Discovered Servers</span>
+      <span class="discovery-title">Local Servers</span>
       <button
         class="scan-btn"
         :disabled="isScanning"
@@ -329,6 +406,61 @@ onUnmounted(() => {
 .server-arrow {
   width: 14px;
   height: 14px;
+  color: var(--color-neutral-400);
+}
+
+.preset-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.preset-item {
+  border-color: var(--color-primary-200);
+  background: var(--color-primary-50);
+}
+
+.preset-item:hover {
+  border-color: var(--color-primary-400);
+  background: var(--color-primary-100);
+}
+
+.preset-icon {
+  color: var(--color-primary-600);
+}
+
+.preset-label-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.preset-url {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--color-neutral-500);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.online {
+  background: var(--color-success, #22c55e);
+  box-shadow: 0 0 4px var(--color-success, #22c55e);
+}
+
+.status-dot.offline {
+  background: var(--color-neutral-400);
+}
+
+.status-spinner {
   color: var(--color-neutral-400);
 }
 </style>

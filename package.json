@@ -25,7 +25,7 @@
     "make": "electron-vite build && electron-forge make"
   },
   "dependencies": {
-    "@clasp-to/core": "^0.1.2",
+    "@clasp-to/core": "^3.3.2",
     "@huggingface/transformers": "^3.8.1",
     "@mediapipe/tasks-audio": "^0.10.18",
     "@mediapipe/tasks-vision": "^0.10.18",

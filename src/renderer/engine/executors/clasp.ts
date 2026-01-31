@@ -13,12 +13,24 @@
  * - clasp-get: Gets current parameter value
  * - clasp-stream: Sends high-rate stream data
  * - clasp-bundle: Sends atomic bundles
+ * - clasp-video-receive: Receives video from CLASP relay room
+ * - clasp-video-send: Sends video to CLASP relay room
+ * - clasp-gesture: Receives gesture signals
  */
 
 import { Clasp, ClaspBuilder, type Value } from '@clasp-to/core'
+import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { useConnectionsStore } from '@/stores/connections'
 import type { ClaspConnectionConfig } from '@/services/connections/types'
+import {
+  chunkFrame,
+  decodeChunkFromTransport,
+  ChunkAssembler,
+  createSequenceGenerator,
+  type AssembledFrame,
+} from '@/services/clasp/videoChunker'
+import { getThreeShaderRenderer } from './visual'
 
 // ============================================================================
 // Connection Management
@@ -586,6 +598,730 @@ export const claspBundleExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
 }
 
 // ============================================================================
+// CLASP Video Receive Node Executor
+// ============================================================================
+
+interface VideoReceiveNodeState {
+  canvas: OffscreenCanvas | HTMLCanvasElement
+  ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D
+  texture: THREE.Texture
+  decoder: VideoDecoder | null
+  decoderConfigured: boolean
+  waitingForKeyframe: boolean
+  codecDescription: Uint8Array | null
+  assembler: ChunkAssembler
+  presenceUnsub: (() => void) | null
+  streamUnsub: (() => void) | null
+  peers: Map<string, unknown>
+  currentRoom: string
+  currentPeerId: string
+  currentConnectionId: string
+  fpsCounter: { frames: number; lastReset: number; fps: number }
+  receiving: boolean
+}
+
+const videoReceiveState = new Map<string, VideoReceiveNodeState>()
+
+function createReceiveCanvas(): { canvas: OffscreenCanvas | HTMLCanvasElement; ctx: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D } {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const canvas = new OffscreenCanvas(1280, 720)
+    const ctx = canvas.getContext('2d')!
+    return { canvas, ctx }
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = 1280
+  canvas.height = 720
+  const ctx = canvas.getContext('2d')!
+  return { canvas, ctx }
+}
+
+export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
+  const room = (ctx.inputs.get('room') as string) ?? (ctx.controls.get('room') as string) ?? 'default'
+  const peerIdInput = (ctx.inputs.get('peerId') as string) ?? (ctx.controls.get('peerId') as string) ?? ''
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  const outputs = new Map<string, unknown>()
+
+  if (!connectionId || !enabled) {
+    outputs.set('texture', null)
+    outputs.set('width', 0)
+    outputs.set('height', 0)
+    outputs.set('fps', 0)
+    outputs.set('receiving', false)
+    outputs.set('peers', [])
+    return outputs
+  }
+
+  // Check WebCodecs support
+  if (typeof VideoDecoder === 'undefined') {
+    outputs.set('texture', null)
+    outputs.set('width', 0)
+    outputs.set('height', 0)
+    outputs.set('fps', 0)
+    outputs.set('receiving', false)
+    outputs.set('peers', [])
+    outputs.set('_error', 'WebCodecs (VideoDecoder) not available in this browser')
+    return outputs
+  }
+
+  const connection = await getOrConnectConnection(connectionId)
+
+  if (!connection || connection.status !== 'connected' || !connection.client) {
+    outputs.set('texture', null)
+    outputs.set('width', 0)
+    outputs.set('height', 0)
+    outputs.set('fps', 0)
+    outputs.set('receiving', false)
+    outputs.set('peers', [])
+    return outputs
+  }
+
+  // Initialize state
+  let state = videoReceiveState.get(ctx.nodeId)
+  if (!state) {
+    const { canvas, ctx: canvasCtx } = createReceiveCanvas()
+    const renderer = getThreeShaderRenderer()
+    const texture = renderer.createTexture(canvas as HTMLCanvasElement)
+
+    state = {
+      canvas,
+      ctx: canvasCtx,
+      texture,
+      decoder: null,
+      decoderConfigured: false,
+      waitingForKeyframe: true,
+      codecDescription: null,
+      assembler: new ChunkAssembler(),
+      presenceUnsub: null,
+      streamUnsub: null,
+      peers: new Map(),
+      currentRoom: '',
+      currentPeerId: '',
+      currentConnectionId: '',
+      fpsCounter: { frames: 0, lastReset: Date.now(), fps: 0 },
+      receiving: false,
+    }
+    videoReceiveState.set(ctx.nodeId, state)
+  }
+
+  const needsResubscribe =
+    state.currentRoom !== room ||
+    state.currentConnectionId !== connectionId
+
+  if (needsResubscribe) {
+    // Cleanup old subscriptions
+    if (state.presenceUnsub) { state.presenceUnsub(); state.presenceUnsub = null }
+    if (state.streamUnsub) { state.streamUnsub(); state.streamUnsub = null }
+    if (state.decoder && state.decoder.state !== 'closed') {
+      try { state.decoder.close() } catch { /* ignore */ }
+    }
+    state.decoder = null
+    state.decoderConfigured = false
+    state.waitingForKeyframe = true
+    state.codecDescription = null
+    state.assembler.clear()
+    state.peers.clear()
+    state.receiving = false
+    state.currentRoom = room
+    state.currentConnectionId = connectionId
+    state.currentPeerId = ''
+
+    // Subscribe to presence
+    const presencePattern = `/video/relay/${room}/presence/*`
+    state.presenceUnsub = connection.client.on(presencePattern, (value: Value, address: string) => {
+      const peerId = address.split('/').pop()!
+      const s = videoReceiveState.get(ctx.nodeId)
+      if (!s) return
+      if (value === null) {
+        s.peers.delete(peerId)
+      } else {
+        s.peers.set(peerId, value)
+      }
+    })
+  }
+
+  // Determine which peer to subscribe to
+  let targetPeerId = peerIdInput
+  if (!targetPeerId) {
+    // Auto-select first broadcaster
+    for (const [peerId, data] of state.peers) {
+      if (data && typeof data === 'object' && (data as Record<string, unknown>).isBroadcaster) {
+        targetPeerId = peerId
+        break
+      }
+    }
+  }
+
+  // Subscribe to stream if peer changed
+  if (targetPeerId && targetPeerId !== state.currentPeerId) {
+    if (state.streamUnsub) { state.streamUnsub(); state.streamUnsub = null }
+    if (state.decoder && state.decoder.state !== 'closed') {
+      try { state.decoder.close() } catch { /* ignore */ }
+    }
+    state.decoder = null
+    state.decoderConfigured = false
+    state.waitingForKeyframe = true
+    state.codecDescription = null
+    state.assembler.clear()
+    state.currentPeerId = targetPeerId
+
+    // Create decoder
+    const nodeId = ctx.nodeId
+    state.decoder = new VideoDecoder({
+      output: (frame: VideoFrame) => {
+        const s = videoReceiveState.get(nodeId)
+        if (!s) { frame.close(); return }
+
+        if (s.canvas.width !== frame.displayWidth || s.canvas.height !== frame.displayHeight) {
+          s.canvas.width = frame.displayWidth
+          s.canvas.height = frame.displayHeight
+        }
+        s.ctx.drawImage(frame as unknown as CanvasImageSource, 0, 0)
+        frame.close()
+        s.fpsCounter.frames++
+        s.receiving = true
+      },
+      error: (e: DOMException) => {
+        console.error('[CLASP Video Receive] Decoder error:', e)
+        const s = videoReceiveState.get(nodeId)
+        if (!s) return
+        s.decoderConfigured = false
+        s.waitingForKeyframe = true
+        try { s.decoder?.reset() } catch { /* ignore */ }
+        // Request keyframe
+        const conn = getConnection(s.currentConnectionId)
+        if (conn?.client) {
+          conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
+        }
+      },
+    })
+
+    // Setup assembler callbacks
+    state.assembler = new ChunkAssembler({
+      onFrame: (frame: AssembledFrame) => {
+        const s = videoReceiveState.get(nodeId)
+        if (!s || !s.decoder) return
+
+        if (frame.description) {
+          s.codecDescription = frame.description
+        }
+
+        // Configure decoder on keyframe
+        if (!s.decoderConfigured && frame.frameType === 'key') {
+          const config: VideoDecoderConfig = {
+            codec: 'avc1.42001e',
+            optimizeForLatency: true,
+            hardwareAcceleration: 'prefer-software',
+          }
+          if (s.codecDescription) {
+            config.description = s.codecDescription
+          }
+          try {
+            s.decoder.configure(config)
+            s.decoderConfigured = true
+            s.waitingForKeyframe = false
+          } catch (e) {
+            console.error('[CLASP Video Receive] Decoder configure error:', e)
+            return
+          }
+        }
+
+        if (s.waitingForKeyframe && frame.frameType !== 'key') {
+          return
+        }
+
+        if (s.decoderConfigured) {
+          try {
+            s.decoder.decode(new EncodedVideoChunk({
+              type: frame.frameType as EncodedVideoChunkType,
+              timestamp: frame.timestamp,
+              data: frame.data,
+            }))
+          } catch (e) {
+            console.error('[CLASP Video Receive] Decode error:', e)
+            s.decoderConfigured = false
+            s.waitingForKeyframe = true
+            try { s.decoder.reset() } catch { /* ignore */ }
+            const conn = getConnection(s.currentConnectionId)
+            if (conn?.client) {
+              conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
+            }
+          }
+        }
+      },
+      onError: (e: Error) => {
+        console.error('[CLASP Video Receive] Assembly error:', e)
+        const conn = getConnection(connectionId)
+        if (conn?.client && targetPeerId) {
+          conn.client.emit(`/video/relay/${room}/request-keyframe/${targetPeerId}`)
+        }
+      },
+    })
+
+    // Subscribe to stream
+    const streamAddress = `/video/relay/${room}/stream/${targetPeerId}`
+    state.streamUnsub = connection.client.on(streamAddress, (data: Value) => {
+      const s = videoReceiveState.get(nodeId)
+      if (!s) return
+      try {
+        if (data && typeof data === 'object' && (data as Record<string, unknown>).data) {
+          const chunk = decodeChunkFromTransport(data)
+          s.assembler.addChunk(chunk)
+        }
+      } catch (e) {
+        console.error('[CLASP Video Receive] Chunk processing error:', e)
+      }
+    })
+  }
+
+  // Update FPS counter
+  const now = Date.now()
+  if (now - state.fpsCounter.lastReset >= 1000) {
+    state.fpsCounter.fps = state.fpsCounter.frames
+    state.fpsCounter.frames = 0
+    state.fpsCounter.lastReset = now
+    if (state.fpsCounter.fps === 0) {
+      state.receiving = false
+    }
+  }
+
+  // Update texture
+  const renderer = getThreeShaderRenderer()
+  renderer.updateTexture(state.texture, state.canvas as HTMLCanvasElement)
+
+  outputs.set('texture', state.texture)
+  outputs.set('width', state.canvas.width)
+  outputs.set('height', state.canvas.height)
+  outputs.set('fps', state.fpsCounter.fps)
+  outputs.set('receiving', state.receiving)
+  outputs.set('peers', Array.from(state.peers.entries()).map(([id, data]) => ({ id, ...(data as object) })))
+
+  return outputs
+}
+
+// ============================================================================
+// CLASP Video Send Node Executor
+// ============================================================================
+
+const QUALITY_PRESETS: Record<string, { width: number; height: number; bitrate: number; framerate: number }> = {
+  low: { width: 640, height: 480, bitrate: 400_000, framerate: 24 },
+  medium: { width: 1280, height: 720, bitrate: 1_200_000, framerate: 30 },
+  high: { width: 1920, height: 1080, bitrate: 3_000_000, framerate: 30 },
+}
+
+interface VideoSendNodeState {
+  encoder: VideoEncoder | null
+  encoderConfigured: boolean
+  seqGenerator: (() => number) | null
+  captureCanvas: HTMLCanvasElement | null
+  captureCtx: CanvasRenderingContext2D | null
+  broadcasting: boolean
+  connectionId: string
+  room: string
+  quality: string
+  presenceInterval: ReturnType<typeof setInterval> | null
+  keyframeUnsub: (() => void) | null
+  lastKeyFrameTime: number
+  lastEncodeTime: number
+  codecDescription: Uint8Array | null
+  stats: { framesSent: number; bytesSent: number; lastStatReset: number; fps: number; bitrate: number }
+}
+
+const videoSendState = new Map<string, VideoSendNodeState>()
+
+export const claspVideoSendExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
+  const roomInput = (ctx.inputs.get('room') as string) ?? (ctx.controls.get('room') as string) ?? 'default'
+  const qualityPreset = (ctx.controls.get('quality') as string) ?? 'medium'
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+  const autoStart = (ctx.controls.get('autoStart') as boolean) ?? false
+  const startTrigger = ctx.inputs.get('start') as boolean
+  const stopTrigger = ctx.inputs.get('stop') as boolean
+  const textureInput = ctx.inputs.get('texture') as THREE.Texture | null | undefined
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null | undefined
+
+  const outputs = new Map<string, unknown>()
+
+  if (!connectionId || !enabled) {
+    outputs.set('broadcasting', false)
+    outputs.set('fps', 0)
+    outputs.set('bitrate', 0)
+    outputs.set('error', !connectionId ? 'No connection selected' : null)
+    return outputs
+  }
+
+  if (typeof VideoEncoder === 'undefined') {
+    outputs.set('broadcasting', false)
+    outputs.set('fps', 0)
+    outputs.set('bitrate', 0)
+    outputs.set('error', 'WebCodecs (VideoEncoder) not available in this browser')
+    return outputs
+  }
+
+  const connection = await getOrConnectConnection(connectionId)
+
+  if (!connection || connection.status !== 'connected' || !connection.client) {
+    outputs.set('broadcasting', false)
+    outputs.set('fps', 0)
+    outputs.set('bitrate', 0)
+    outputs.set('error', 'Not connected')
+    return outputs
+  }
+
+  // Initialize state
+  let state = videoSendState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      encoder: null,
+      encoderConfigured: false,
+      seqGenerator: null,
+      captureCanvas: null,
+      captureCtx: null,
+      broadcasting: false,
+      connectionId: '',
+      room: '',
+      quality: '',
+      presenceInterval: null,
+      keyframeUnsub: null,
+      lastKeyFrameTime: 0,
+      lastEncodeTime: 0,
+      codecDescription: null,
+      stats: { framesSent: 0, bytesSent: 0, lastStatReset: Date.now(), fps: 0, bitrate: 0 },
+    }
+    videoSendState.set(ctx.nodeId, state)
+  }
+
+  const nodeId = ctx.nodeId
+  const preset = QUALITY_PRESETS[qualityPreset] || QUALITY_PRESETS.medium
+
+  // Handle stop trigger
+  if (stopTrigger && state.broadcasting) {
+    stopVideoSend(nodeId, connection)
+    state.broadcasting = false
+  }
+
+  // Handle start trigger or autoStart
+  const shouldStart = (startTrigger || (autoStart && !state.broadcasting)) && (textureInput || videoInput)
+
+  if (shouldStart && !state.broadcasting) {
+    state.seqGenerator = createSequenceGenerator()
+    state.connectionId = connectionId
+    state.room = roomInput
+    state.quality = qualityPreset
+    state.codecDescription = null
+
+    // Create encoder
+    state.encoder = new VideoEncoder({
+      output: (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) => {
+        const s = videoSendState.get(nodeId)
+        if (!s || !s.broadcasting) return
+        const conn = getConnection(s.connectionId)
+        if (!conn?.client) return
+
+        // Capture codec description
+        if (metadata?.decoderConfig?.description) {
+          const desc = metadata.decoderConfig.description
+          s.codecDescription = (desc instanceof ArrayBuffer)
+            ? new Uint8Array(desc)
+            : new Uint8Array((desc as unknown as ArrayBuffer))
+        }
+
+        const data = new Uint8Array(chunk.byteLength)
+        chunk.copyTo(data)
+
+        s.stats.bytesSent += data.byteLength
+        s.stats.framesSent++
+
+        const chunks = chunkFrame(data, chunk.type, chunk.timestamp, 16000, s.seqGenerator!)
+        const address = `/video/relay/${s.room}/stream/${conn.client!.session}`
+
+        if (chunk.type === 'key' && s.codecDescription && chunks.length > 0) {
+          chunks[0].description = s.codecDescription
+        }
+
+        chunks.forEach((c) => {
+          conn.client!.stream(address, c as unknown as Value)
+        })
+      },
+      error: (e: DOMException) => {
+        console.error('[CLASP Video Send] Encoder error:', e)
+      },
+    })
+
+    // Configure encoder
+    const encoderConfig: VideoEncoderConfig = {
+      codec: 'avc1.42001e',
+      width: preset.width,
+      height: preset.height,
+      bitrate: preset.bitrate,
+      framerate: preset.framerate,
+      latencyMode: 'realtime',
+      hardwareAcceleration: 'prefer-hardware',
+      avc: { format: 'annexb' },
+    }
+
+    try {
+      const support = await VideoEncoder.isConfigSupported(encoderConfig)
+      if (!support.supported) {
+        encoderConfig.hardwareAcceleration = 'prefer-software'
+      }
+      state.encoder.configure(encoderConfig)
+      state.encoderConfigured = true
+    } catch (e) {
+      outputs.set('broadcasting', false)
+      outputs.set('fps', 0)
+      outputs.set('bitrate', 0)
+      outputs.set('error', `Encoder config failed: ${(e as Error).message}`)
+      return outputs
+    }
+
+    state.broadcasting = true
+    state.lastKeyFrameTime = 0
+
+    // Presence announcements
+    const session = connection.client.session
+    const announcePresence = () => {
+      const conn = getConnection(connectionId)
+      if (conn?.client) {
+        conn.client.set(`/video/relay/${roomInput}/presence/${session}`, {
+          isBroadcaster: true,
+          quality: qualityPreset,
+        } as unknown as Value)
+      }
+    }
+    announcePresence()
+    state.presenceInterval = setInterval(announcePresence, 5000)
+
+    // Listen for keyframe requests
+    const keyframePattern = `/video/relay/${roomInput}/request-keyframe/${session}`
+    state.keyframeUnsub = connection.client.on(keyframePattern, () => {
+      const s = videoSendState.get(nodeId)
+      if (s) s.lastKeyFrameTime = 0
+    })
+  }
+
+  // Encode frame if broadcasting
+  if (state.broadcasting && state.encoder && state.encoderConfigured) {
+    const now = Date.now()
+    const frameInterval = 1000 / preset.framerate
+
+    if (now - state.lastEncodeTime >= frameInterval && state.encoder.encodeQueueSize < 5) {
+      const forceKeyFrame = now - state.lastKeyFrameTime > 3000
+      if (forceKeyFrame) {
+        state.lastKeyFrameTime = now
+      }
+
+      try {
+        let frame: VideoFrame | null = null
+
+        if (videoInput && videoInput.readyState >= 2 && videoInput.videoWidth > 0) {
+          frame = new VideoFrame(videoInput, { timestamp: performance.now() * 1000 })
+        } else if (textureInput) {
+          // Render texture to canvas
+          if (!state.captureCanvas) {
+            state.captureCanvas = document.createElement('canvas')
+            state.captureCanvas.width = preset.width
+            state.captureCanvas.height = preset.height
+            state.captureCtx = state.captureCanvas.getContext('2d')
+          }
+
+          // If texture has an image source (canvas/video), draw it
+          if (textureInput.image) {
+            if (state.captureCanvas.width !== preset.width) state.captureCanvas.width = preset.width
+            if (state.captureCanvas.height !== preset.height) state.captureCanvas.height = preset.height
+            state.captureCtx!.drawImage(
+              textureInput.image as CanvasImageSource,
+              0, 0, preset.width, preset.height
+            )
+          }
+
+          frame = new VideoFrame(state.captureCanvas, { timestamp: performance.now() * 1000 })
+        }
+
+        if (frame) {
+          state.encoder.encode(frame, { keyFrame: forceKeyFrame })
+          frame.close()
+          state.lastEncodeTime = now
+        }
+      } catch (e) {
+        console.error('[CLASP Video Send] Frame encode error:', e)
+      }
+    }
+  }
+
+  // Update stats
+  const now = Date.now()
+  if (now - state.stats.lastStatReset >= 1000) {
+    state.stats.fps = state.stats.framesSent
+    state.stats.bitrate = state.stats.bytesSent * 8
+    state.stats.framesSent = 0
+    state.stats.bytesSent = 0
+    state.stats.lastStatReset = now
+  }
+
+  outputs.set('broadcasting', state.broadcasting)
+  outputs.set('fps', state.stats.fps)
+  outputs.set('bitrate', state.stats.bitrate)
+  outputs.set('error', null)
+
+  return outputs
+}
+
+function stopVideoSend(nodeId: string, _connection?: ClaspConnection): void {
+  const state = videoSendState.get(nodeId)
+  if (!state) return
+
+  state.broadcasting = false
+
+  if (state.encoder && state.encoder.state !== 'closed') {
+    try { state.encoder.close() } catch { /* ignore */ }
+  }
+  state.encoder = null
+  state.encoderConfigured = false
+
+  if (state.presenceInterval) {
+    clearInterval(state.presenceInterval)
+    state.presenceInterval = null
+  }
+
+  if (state.keyframeUnsub) {
+    state.keyframeUnsub()
+    state.keyframeUnsub = null
+  }
+
+  state.seqGenerator = null
+  state.codecDescription = null
+  state.captureCanvas = null
+  state.captureCtx = null
+}
+
+// ============================================================================
+// CLASP Gesture Node Executor
+// ============================================================================
+
+interface GestureNodeState {
+  unsub: (() => void) | null
+  currentConnectionId: string
+  currentPattern: string
+  x: number
+  y: number
+  pressure: number
+  phase: string
+  pointerType: string
+  gestureId: number
+  updated: boolean
+}
+
+const gestureState = new Map<string, GestureNodeState>()
+
+export const claspGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
+  const pattern = (ctx.controls.get('pattern') as string) ?? '/gesture/**'
+
+  const outputs = new Map<string, unknown>()
+
+  if (!connectionId) {
+    outputs.set('x', 0)
+    outputs.set('y', 0)
+    outputs.set('pressure', 0)
+    outputs.set('phase', '')
+    outputs.set('pointerType', '')
+    outputs.set('updated', false)
+    return outputs
+  }
+
+  const connection = await getOrConnectConnection(connectionId)
+
+  if (!connection || connection.status !== 'connected' || !connection.client) {
+    outputs.set('x', 0)
+    outputs.set('y', 0)
+    outputs.set('pressure', 0)
+    outputs.set('phase', '')
+    outputs.set('pointerType', '')
+    outputs.set('updated', false)
+    return outputs
+  }
+
+  let state = gestureState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      unsub: null,
+      currentConnectionId: '',
+      currentPattern: '',
+      x: 0, y: 0, pressure: 0,
+      phase: '', pointerType: '', gestureId: 0,
+      updated: false,
+    }
+    gestureState.set(ctx.nodeId, state)
+  }
+
+  // Resubscribe if connection or pattern changed
+  if (state.currentConnectionId !== connectionId || state.currentPattern !== pattern) {
+    if (state.unsub) { state.unsub(); state.unsub = null }
+
+    const nodeId = ctx.nodeId
+    state.unsub = connection.client.on(pattern, (value: Value) => {
+      const s = gestureState.get(nodeId)
+      if (!s || !value || typeof value !== 'object') return
+      const v = value as Record<string, unknown>
+      if (typeof v.x === 'number') s.x = v.x
+      if (typeof v.y === 'number') s.y = v.y
+      if (typeof v.pressure === 'number') s.pressure = v.pressure
+      if (typeof v.phase === 'string') s.phase = v.phase
+      if (typeof v.pointerType === 'string') s.pointerType = v.pointerType
+      if (typeof v.gestureId === 'number') s.gestureId = v.gestureId
+      s.updated = true
+    })
+
+    state.currentConnectionId = connectionId
+    state.currentPattern = pattern
+  }
+
+  outputs.set('x', state.x)
+  outputs.set('y', state.y)
+  outputs.set('pressure', state.pressure)
+  outputs.set('phase', state.phase)
+  outputs.set('pointerType', state.pointerType)
+  outputs.set('updated', state.updated)
+
+  // Clear update flag after reading
+  state.updated = false
+
+  return outputs
+}
+
+// ============================================================================
+// Video Node Disposal
+// ============================================================================
+
+function disposeClaspVideoReceiveNode(nodeId: string): void {
+  const state = videoReceiveState.get(nodeId)
+  if (!state) return
+
+  if (state.presenceUnsub) state.presenceUnsub()
+  if (state.streamUnsub) state.streamUnsub()
+  if (state.decoder && state.decoder.state !== 'closed') {
+    try { state.decoder.close() } catch { /* ignore */ }
+  }
+  state.assembler.clear()
+  state.texture.dispose()
+  videoReceiveState.delete(nodeId)
+}
+
+function disposeClaspVideoSendNode(nodeId: string): void {
+  stopVideoSend(nodeId)
+  videoSendState.delete(nodeId)
+}
+
+function disposeClaspGestureNode(nodeId: string): void {
+  const state = gestureState.get(nodeId)
+  if (!state) return
+  if (state.unsub) state.unsub()
+  gestureState.delete(nodeId)
+}
+
+// ============================================================================
 // Cleanup and Disposal
 // ============================================================================
 
@@ -621,12 +1357,31 @@ export function disposeClaspNode(nodeId: string): void {
   for (const key of keysToDelete) {
     claspState.delete(key)
   }
+
+  // Clean up video/gesture state
+  disposeClaspVideoReceiveNode(nodeId)
+  disposeClaspVideoSendNode(nodeId)
+  disposeClaspGestureNode(nodeId)
 }
 
 /**
  * Dispose all CLASP connections
  */
 export function disposeAllClaspConnections(): void {
+  // Dispose all video/gesture state
+  for (const nodeId of videoReceiveState.keys()) {
+    disposeClaspVideoReceiveNode(nodeId)
+  }
+  for (const nodeId of videoSendState.keys()) {
+    disposeClaspVideoSendNode(nodeId)
+  }
+  for (const nodeId of gestureState.keys()) {
+    disposeClaspGestureNode(nodeId)
+  }
+  videoReceiveState.clear()
+  videoSendState.clear()
+  gestureState.clear()
+
   for (const [, connection] of claspConnections) {
     disconnect(connection)
   }
@@ -662,4 +1417,7 @@ export const claspExecutors: Record<string, NodeExecutorFn> = {
   'clasp-get': claspGetExecutor,
   'clasp-stream': claspStreamExecutor,
   'clasp-bundle': claspBundleExecutor,
+  'clasp-video-receive': claspVideoReceiveExecutor,
+  'clasp-video-send': claspVideoSendExecutor,
+  'clasp-gesture': claspGestureExecutor,
 }

@@ -91,6 +91,13 @@ export class ClaspAdapterImpl extends BaseAdapter implements IClaspAdapter {
       } else if (msg.type === 'PUBLISH' && msg.address) {
         if (msg.signal === 'stream') {
           this.client.stream(msg.address as string, msg.value as Value)
+        } else if (msg.signal === 'gesture') {
+          this.client.gesture(
+            msg.address as string,
+            (msg.gestureId ?? msg.id ?? 0) as number,
+            (msg.phase ?? 'move') as 'start' | 'move' | 'end' | 'cancel',
+            msg.payload as Value | undefined
+          )
         } else {
           this.client.emit(msg.address as string, msg.payload as Value | undefined)
         }
@@ -125,7 +132,7 @@ export class ClaspAdapterImpl extends BaseAdapter implements IClaspAdapter {
   async subscribe(
     pattern: string,
     callback?: (address: string, value: ClaspValue, meta: Record<string, unknown>) => void,
-    _options?: { maxRate?: number; epsilon?: number }
+    options?: { maxRate?: number; epsilon?: number }
   ): Promise<number> {
     if (!this.client?.connected) {
       throw new Error('Not connected')
@@ -133,7 +140,7 @@ export class ClaspAdapterImpl extends BaseAdapter implements IClaspAdapter {
 
     const id = this.nextSubId++
 
-    // Use the library's on() method
+    // Use the library's on() method with optional rate/epsilon filtering
     const unsubscribe = this.client.on(pattern, (value: Value, address: string) => {
       if (callback) {
         callback(address, value, { pattern })
@@ -143,7 +150,7 @@ export class ClaspAdapterImpl extends BaseAdapter implements IClaspAdapter {
         topic: address,
         data: { type: 'SET', value, address }
       })
-    })
+    }, options)
 
     this.subscriptionCallbacks.set(id, unsubscribe)
     return id
@@ -226,7 +233,7 @@ export const claspConnectionType: ConnectionTypeDefinition<ClaspConnectionConfig
       id: 'url',
       type: 'text',
       label: 'Server URL',
-      description: 'WebSocket URL of the CLASP router',
+      description: 'WebSocket URL of the CLASP router (e.g. ws://localhost:7330 or wss://relay.clasp.to)',
       default: 'ws://localhost:7330',
     },
     {
