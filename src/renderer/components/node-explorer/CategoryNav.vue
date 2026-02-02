@@ -21,7 +21,10 @@ const categories = Object.entries(categoryMeta) as [NodeCategory, { label: strin
       :class="{ active: selectedCategory === null }"
       @click="emit('select', null)"
     >
-      <span class="cat-dot" style="background: var(--color-neutral-400)" />
+      <span
+        class="cat-dot"
+        style="background: var(--color-neutral-400)"
+      />
       <span class="cat-label">All</span>
       <span class="cat-count">{{ nodesStore.definitions.size }}</span>
     </button>

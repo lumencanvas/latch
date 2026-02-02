@@ -171,7 +171,6 @@ export class ConnectionStateMachine {
       return false
     }
 
-    const previousState = this._state
     this._state = nextState
 
     // Update context based on event
@@ -193,9 +192,6 @@ export class ConnectionStateMachine {
     // Notify listeners
     this.notifyListeners(event)
 
-    console.log(
-      `[ConnectionStateMachine] ${previousState} -> ${nextState} (${event.type})`
-    )
 
     return true
   }

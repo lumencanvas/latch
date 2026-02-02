@@ -29,7 +29,7 @@ const operators = ['==', '!=', '>', '>=', '<', '<=', 'contains', 'matches regex'
 
 // Build dynamic outputs from conditions
 const dynamicOutputs = computed(() => {
-  return conditions.value.map((cond, i) => ({
+  return conditions.value.map((_, i) => ({
     id: `out-${i}`,
     type: 'any' as const,
     label: `→ ${i + 1}`,

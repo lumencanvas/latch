@@ -737,7 +737,6 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
         })
         .then(() => {
           state.connecting = false
-          console.log('[STT] AudioBufferService connected to audio source')
         })
         .catch((err) => {
           console.error('[STT] Failed to connect AudioBufferService:', err)
@@ -834,7 +833,6 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
 
   const operation = (async () => {
     try {
-      console.log(`[STT] Transcribing ${audioData.length} samples (${(audioData.length / 16000).toFixed(2)}s at 16kHz)`)
       const text = await aiInference.transcribe(audioData, modelId)
 
       if (mode === 'continuous') {
@@ -1791,7 +1789,6 @@ export const mediapipeAudioExecutor: NodeExecutorFn = async (ctx: ExecutionConte
         })
         .then(() => {
           state.connecting = false
-          console.log('[MediaPipe Audio] AudioBufferService connected')
         })
         .catch((err) => {
           console.error('[MediaPipe Audio] Failed to connect AudioBufferService:', err)

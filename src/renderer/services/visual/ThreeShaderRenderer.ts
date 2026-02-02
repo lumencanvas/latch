@@ -640,18 +640,11 @@ export class ThreeShaderRenderer {
     // Render target textures need to be read back from GPU via their render target
     const isRenderTargetTexture = texture.source?.data === null || texture.image === null
 
-    // Debug logging
-    if (Math.random() < 0.01) {
-      console.log(`[renderToCanvas] texture uuid=${texture.uuid}, isRenderTarget=${isRenderTargetTexture}, renderTargets count=${this.renderTargets.size}`)
-    }
 
     if (isRenderTargetTexture) {
       // Find the render target that owns this texture
-      for (const [key, target] of this.renderTargets) {
+      for (const [, target] of this.renderTargets) {
         if (target.texture === texture) {
-          if (Math.random() < 0.01) {
-            console.log(`[renderToCanvas] Found matching render target: ${key}`)
-          }
           // Read pixels from render target
           const rtWidth = target.width
           const rtHeight = target.height
@@ -684,11 +677,6 @@ export class ThreeShaderRenderer {
           }
           return
         }
-      }
-      // Render target texture but no matching target found
-      if (Math.random() < 0.01) {
-        console.warn(`[renderToCanvas] Render target texture but no matching target found! uuid=${texture.uuid}`)
-        console.log(`[renderToCanvas] Available targets:`, [...this.renderTargets.keys()])
       }
     }
 

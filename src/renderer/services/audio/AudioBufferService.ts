@@ -84,11 +84,9 @@ class AudioBufferServiceImpl {
       // Tone.UserMedia stores the original MediaStream as _stream
       const userMediaNode = toneNode as UserMediaWithStream
       if (userMediaNode._stream && userMediaNode._stream instanceof MediaStream) {
-        console.log('[AudioBufferService] Using UserMedia._stream directly')
         captureStream = userMediaNode._stream
       } else {
         // Fallback: Use MediaStreamDestination bridge for other Tone.js nodes
-        console.log('[AudioBufferService] Using MediaStreamDestination bridge')
         const toneContext = Tone.getContext()
         const nativeContext = toneContext.rawContext as AudioContext
 
@@ -158,7 +156,6 @@ class AudioBufferServiceImpl {
     this.scriptProcessor.connect(this.silentGain)
 
     this.isConnected = true
-    console.log('[AudioBufferService] Connected, sample rate:', this.sourceSampleRate)
   }
 
   /**

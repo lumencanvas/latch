@@ -89,7 +89,6 @@ export class MqttAdapterImpl extends BaseAdapter {
           }
         }
 
-        console.log(`[MQTT] Connecting to ${brokerUrl}...`)
         const client = mqtt.connect(brokerUrl, options)
         this.client = client
 
@@ -100,7 +99,6 @@ export class MqttAdapterImpl extends BaseAdapter {
 
         client.on('connect', () => {
           clearTimeout(timeout)
-          console.log(`[MQTT] Connected to ${brokerUrl}`)
 
           // Resubscribe to any existing subscriptions
           for (const [topic, opts] of this.subscriptions) {

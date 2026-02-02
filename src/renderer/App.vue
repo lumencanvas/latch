@@ -66,14 +66,8 @@ onMounted(async () => {
   // Load AI settings and auto-load any configured models
   // This runs in the background and doesn't block app initialization
   aiInference.loadSettingsFromStorage().then(() => {
-    let lastLoggedProgress = -1
-    aiInference.autoLoadModels((task, progress) => {
-      // Only log when progress changes by at least 10%
-      const rounded = Math.round(progress / 10) * 10
-      if (rounded !== lastLoggedProgress) {
-        lastLoggedProgress = rounded
-        console.log(`[AI Auto-load] ${task}: ${rounded}%`)
-      }
+    aiInference.autoLoadModels(() => {
+      // progress callback (silent)
     }).catch(error => {
       console.error('[AI Auto-load] Failed:', error)
     })

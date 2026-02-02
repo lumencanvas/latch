@@ -345,7 +345,6 @@ class MediaPipeServiceImpl {
     // If timestamp went backwards significantly, reset the landmarker
     // We use a threshold to avoid resetting on minor jitter
     if (timestamp < lastTs - 100) {
-      console.log(`[MediaPipe] Timestamp reset detected for ${taskType}: ${lastTs} -> ${timestamp}, resetting landmarker`)
       this.dispose(taskType as 'hand' | 'face' | 'pose' | 'object')
       this.lastTimestamp.set(taskType, timestamp)
       return timestamp
@@ -392,7 +391,6 @@ class MediaPipeServiceImpl {
         numHands: 2,
       })
 
-      console.log('[MediaPipe] Hand landmarker loaded')
     } finally {
       this.loading.delete('hand')
     }
@@ -417,7 +415,6 @@ class MediaPipeServiceImpl {
         outputFacialTransformationMatrixes: true,
       })
 
-      console.log('[MediaPipe] Face landmarker loaded')
     } finally {
       this.loading.delete('face')
     }
@@ -441,7 +438,6 @@ class MediaPipeServiceImpl {
         outputSegmentationMasks: false, // Disable for performance
       })
 
-      console.log('[MediaPipe] Pose landmarker loaded')
     } finally {
       this.loading.delete('pose')
     }
@@ -465,7 +461,6 @@ class MediaPipeServiceImpl {
         scoreThreshold: 0.5,
       })
 
-      console.log('[MediaPipe] Object detector loaded')
     } finally {
       this.loading.delete('object')
     }
@@ -489,7 +484,6 @@ class MediaPipeServiceImpl {
         outputConfidenceMasks: false,
       })
 
-      console.log('[MediaPipe] Image segmenter loaded')
     } finally {
       this.loading.delete('segmentation')
     }
@@ -515,7 +509,6 @@ class MediaPipeServiceImpl {
         minTrackingConfidence: 0.5,
       })
 
-      console.log('[MediaPipe] Gesture recognizer loaded')
     } finally {
       this.loading.delete('gesture')
     }
@@ -537,7 +530,6 @@ class MediaPipeServiceImpl {
         scoreThreshold: 0.3,
       })
 
-      console.log('[MediaPipe] Audio classifier loaded')
     } finally {
       this.loading.delete('audio')
     }

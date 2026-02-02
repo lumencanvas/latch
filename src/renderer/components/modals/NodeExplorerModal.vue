@@ -73,7 +73,9 @@ function handleKeydown(e: KeyboardEvent) {
           <div class="modal-header">
             <div class="modal-title-group">
               <GraduationCap :size="18" />
-              <h2 class="modal-title">NODE EXPLORER</h2>
+              <h2 class="modal-title">
+                NODE EXPLORER
+              </h2>
             </div>
             <button
               class="close-btn"

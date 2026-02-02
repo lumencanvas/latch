@@ -58,7 +58,6 @@ export class ClaspAdapterImpl extends BaseAdapter implements IClaspAdapter {
 
     try {
       this.client = await builder.connect()
-      console.log(`[CLASP] Connected to ${this.claspConfig.url}, session: ${this.client.session}`)
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e))
       throw error

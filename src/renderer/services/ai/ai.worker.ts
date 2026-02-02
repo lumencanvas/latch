@@ -122,12 +122,10 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
   }
 
   try {
-    console.log(`[AI Worker] Loading model: ${msg.model} for task: ${msg.task}`)
 
     // Apply cache setting if provided
     if (msg.options?.useBrowserCache !== undefined) {
       env.useBrowserCache = msg.options.useBrowserCache
-      console.log(`[AI Worker] Browser cache ${msg.options.useBrowserCache ? 'enabled' : 'disabled'}`)
     }
 
     // Track progress across multiple files
@@ -176,7 +174,6 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
     // Add device if WebGPU requested
     if (msg.options?.device === 'webgpu') {
       pipelineOptions.device = 'webgpu'
-      console.log('[AI Worker] Using WebGPU acceleration')
     }
 
     // Add quantization
@@ -189,7 +186,6 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
     const pipe = await (pipeline as any)(msg.task, msg.model, pipelineOptions)
     pipelines.set(key, pipe)
 
-    console.log(`[AI Worker] Model loaded: ${msg.model}`)
     respond({ type: 'loaded', id: msg.id, success: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -200,7 +196,6 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
 
 // Handle inference
 async function handleInfer(msg: InferenceMessage): Promise<void> {
-  console.log('[AI Worker] Inference request:', msg.method, msg.task)
   const key = getCacheKey(msg.task, msg.model)
   const pipe = pipelines.get(key)
 
@@ -222,7 +217,6 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
     switch (msg.method) {
       case 'generateText': {
         const [prompt, options] = msg.args as [string, { maxLength?: number; temperature?: number }?]
-        console.log('[AI Worker] Generating text for prompt:', prompt.substring(0, 50), 'options:', options)
 
         // For chat/instruct models, use messages format
         // For non-chat models, use plain prompt
@@ -241,13 +235,11 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
           const messages = [
             { role: 'user', content: prompt }
           ]
-          console.log('[AI Worker] Using chat format for model:', msg.model)
           output = await pipe(messages, {
             max_new_tokens: options?.maxLength ?? 100,
             temperature: options?.temperature ?? 0.7,
             do_sample: true,
           })
-          console.log('[AI Worker] Raw chat output:', output)
           // Extract the assistant's response from chat output
           const res = Array.isArray(output) ? output[0] : output
           const generatedMessages = res?.generated_text
@@ -265,12 +257,10 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
             temperature: options?.temperature ?? 0.7,
             do_sample: true,
           })
-          console.log('[AI Worker] Raw output:', output)
           const res = Array.isArray(output) ? output[0] : output
           result = res?.generated_text ?? ''
         }
 
-        console.log('[AI Worker] Generated text result:', (result as string).substring(0, 100))
         break
       }
 
@@ -380,7 +370,6 @@ function handleUnload(msg: UnloadModelMessage): void {
       pipe.dispose()
     }
     pipelines.delete(key)
-    console.log(`[AI Worker] Unloaded model: ${msg.model}`)
   }
 
   respond({ type: 'result', id: msg.id, success: true })
@@ -401,14 +390,12 @@ function handleDispose(msg: DisposeMessage): void {
     }
   }
   pipelines.clear()
-  console.log('[AI Worker] Disposed all models')
   respond({ type: 'result', id: msg.id, success: true })
 }
 
 // Handle cache setting change
 function handleSetCache(msg: SetCacheMessage): void {
   env.useBrowserCache = msg.enabled
-  console.log(`[AI Worker] Browser cache ${msg.enabled ? 'enabled' : 'disabled'}`)
 }
 
 // Handle cache clear
@@ -428,14 +415,12 @@ async function handleClearCache(msg: ClearCacheMessage): Promise<void> {
     for (const name of cacheNames) {
       if (name.includes('transformers') || name.includes('onnx') || name.includes('huggingface')) {
         await caches.delete(name)
-        console.log(`[AI Worker] Cleared cache: ${name}`)
       }
     }
   } catch (error) {
     console.warn('[AI Worker] Could not clear Cache API:', error)
   }
 
-  console.log('[AI Worker] Model cache cleared')
   respond({ type: 'result', id: msg.id, success: true })
 }
 

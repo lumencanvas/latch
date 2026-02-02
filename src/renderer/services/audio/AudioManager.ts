@@ -56,7 +56,6 @@ class AudioManagerService {
     try {
       // Start Tone.js audio context
       await Tone.start()
-      console.log('[AudioManager] Tone.js started, sample rate:', Tone.getContext().sampleRate)
 
       // Create master gain
       this._masterGain = new Tone.Gain(this._masterVolume).toDestination()
@@ -75,7 +74,6 @@ class AudioManagerService {
       this._initialized = true
       this.notifyListeners()
 
-      console.log('[AudioManager] Initialized successfully')
     } catch (error) {
       console.error('[AudioManager] Failed to initialize:', error)
       throw error
@@ -139,7 +137,6 @@ class AudioManagerService {
         this._currentInputDevice = 'default'
       }
 
-      console.log('[AudioManager] Microphone access granted')
       this.notifyListeners()
 
       return this._micSource
@@ -237,9 +234,7 @@ class AudioManagerService {
   async resume(): Promise<void> {
     const context = Tone.getContext()
     if (context.state === 'suspended') {
-      console.log('[AudioManager] Resuming suspended AudioContext')
       await Tone.start()
-      console.log('[AudioManager] AudioContext resumed, state:', context.state)
     }
   }
 

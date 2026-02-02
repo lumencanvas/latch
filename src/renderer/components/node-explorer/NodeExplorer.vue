@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Search } from 'lucide-vue-next'
-import { useNodesStore, type NodeDefinition, type NodeCategory } from '@/stores/nodes'
+import { useNodesStore, type NodeCategory } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
 import { flowSnippets } from '@/data/flow-snippets'
 import { fuzzySearch } from '@/utils/fuzzySearch'
@@ -106,7 +106,10 @@ function handleSelectCategory(category: NodeCategory | null) {
       <template v-else>
         <!-- Search bar -->
         <div class="search-bar">
-          <Search :size="14" class="search-icon" />
+          <Search
+            :size="14"
+            class="search-icon"
+          />
           <input
             type="text"
             class="search-input"
@@ -138,7 +141,9 @@ function handleSelectCategory(category: NodeCategory | null) {
           v-if="categorySnippets.length > 0 && !explorerStore.searchQuery"
           class="snippets-section"
         >
-          <h3 class="snippets-title">FLOW SNIPPETS</h3>
+          <h3 class="snippets-title">
+            FLOW SNIPPETS
+          </h3>
           <div class="snippets-grid">
             <FlowSnippetCard
               v-for="snippet in categorySnippets"

@@ -161,7 +161,6 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
       ws.onopen = () => {
         setCached(wsState, `${ctx.nodeId}:connected`, true)
         setCached(wsState, `${ctx.nodeId}:error`, null)
-        console.log(`[WebSocket] Connected to ${url}`)
       }
 
       ws.onmessage = (event) => {
@@ -183,7 +182,6 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
       ws.onclose = () => {
         setCached(wsState, `${ctx.nodeId}:connected`, false)
         wsConnections.delete(wsKey)
-        console.log(`[WebSocket] Disconnected from ${url}`)
       }
 
       wsConnections.set(wsKey, ws)
@@ -269,7 +267,6 @@ export const midiInputExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
         }
 
         setCached(midiState, `${ctx.nodeId}:connected`, true)
-        console.log(`[MIDI] Connected to ${input.name}`)
       }
     } catch (error) {
       console.error('[MIDI] Access denied:', error)
@@ -311,7 +308,6 @@ export const midiOutputExecutor: NodeExecutorFn = async (ctx: ExecutionContext) 
         const output = outputList[0]
         midiOutputs.set(midiKey, output)
         setCached(midiState, `${ctx.nodeId}:connected`, true)
-        console.log(`[MIDI] Output connected to ${output.name}`)
       }
     } catch (error) {
       console.error('[MIDI] Access denied:', error)
@@ -472,7 +468,6 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       ws.onopen = () => {
         setCached(mqttState, `${ctx.nodeId}:connected`, true)
         setCached(mqttState, `${ctx.nodeId}:error`, null)
-        console.log(`[MQTT] Connected to ${brokerUrl}`)
 
         // Send MQTT CONNECT packet (simplified)
         const connectPacket = new Uint8Array([
@@ -494,7 +489,6 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
           : new Uint8Array(event.data)
 
         if (data[0] === 0x20) { // CONNACK
-          console.log('[MQTT] Connection acknowledged')
         } else if ((data[0] & 0xf0) === 0x30) { // PUBLISH
           // Parse PUBLISH packet
           let offset = 1
@@ -722,7 +716,6 @@ export const oscExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       ws.onopen = () => {
         setCached(oscState, `${ctx.nodeId}:connected`, true)
         setCached(oscState, `${ctx.nodeId}:error`, null)
-        console.log(`[OSC] Connected to ${host}:${port}`)
       }
 
       ws.onmessage = (event) => {
@@ -837,7 +830,6 @@ export const serialExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       serialPorts.set(serialKey, connection)
       setCached(serialState, `${ctx.nodeId}:connected`, true)
       setCached(serialState, `${ctx.nodeId}:error`, null)
-      console.log(`[Serial] Connected at ${baudRate} baud`)
 
       // Start reading
       if (port.readable) {
@@ -1011,7 +1003,6 @@ export const bleExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
         setCached(bleState, `${ctx.nodeId}:connected`, true)
         setCached(bleState, `${ctx.nodeId}:deviceName`, device.name ?? 'Unknown')
         setCached(bleState, `${ctx.nodeId}:error`, null)
-        console.log(`[BLE] Connected to ${device.name}`)
 
         // Setup notifications if characteristic UUID provided
         if (characteristicUUID) {

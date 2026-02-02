@@ -38,7 +38,6 @@ export class WebSocketAdapterImpl extends BaseAdapter {
 
         ws.onopen = () => {
           clearTimeout(timeout)
-          console.log(`[WebSocket] Connected to ${this.wsConfig.url}`)
           resolve()
         }
 

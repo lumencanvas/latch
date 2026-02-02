@@ -280,9 +280,7 @@ export abstract class BaseAdapter implements ConnectionAdapter {
         enqueueOptions
       )
       if (messageId) {
-        console.log(
-          `[${this.protocol}] Message buffered for ${this.connectionId}: ${messageId}`
-        )
+        // message buffered successfully
       }
     } else {
       // Not connected and buffering disabled
@@ -301,9 +299,6 @@ export abstract class BaseAdapter implements ConnectionAdapter {
     const messages = this.bufferManager.flush(this.connectionId)
     if (messages.length === 0) return
 
-    console.log(
-      `[${this.protocol}] Flushing ${messages.length} buffered messages for ${this.connectionId}`
-    )
 
     for (const message of messages) {
       try {
@@ -354,9 +349,6 @@ export abstract class BaseAdapter implements ConnectionAdapter {
       this.config.maxReconnectAttempts > 0 &&
       context.reconnectAttempts >= this.config.maxReconnectAttempts
     ) {
-      console.log(
-        `[${this.protocol}] Max reconnect attempts reached for ${this.connectionId}`
-      )
       this.stateMachine.send({
         type: 'ERROR',
         error: 'Max reconnection attempts reached',
@@ -373,9 +365,6 @@ export abstract class BaseAdapter implements ConnectionAdapter {
     const delay =
       this.config.reconnectDelay *
       Math.min(this.stateMachine.context.reconnectAttempts, 5)
-    console.log(
-      `[${this.protocol}] Scheduling reconnect for ${this.connectionId} in ${delay}ms (attempt ${this.stateMachine.context.reconnectAttempts})`
-    )
 
     this._reconnectTimer = setTimeout(async () => {
       if (this._disposed) return
@@ -436,9 +425,6 @@ export abstract class BaseAdapter implements ConnectionAdapter {
           const jitter = Math.random() * delay * 0.1 // 10% jitter
           const totalDelay = delay + jitter
 
-          console.log(
-            `[${this.protocol}] Connection attempt ${attempt + 1} failed, retrying in ${Math.round(totalDelay)}ms...`
-          )
 
           await this.sleep(totalDelay)
         }

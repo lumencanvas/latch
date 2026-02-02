@@ -234,7 +234,6 @@ class AIInferenceService {
   // Handle messages from worker
   private handleWorkerMessage(event: MessageEvent): void {
     const msg = event.data
-    console.log('[AIInference] Received from worker:', msg.type, 'id:', msg.id)
 
     switch (msg.type) {
       case 'progress': {
@@ -264,7 +263,6 @@ class AIInferenceService {
       }
 
       case 'result': {
-        console.log('[AIInference] Got result:', msg.success, msg.data?.substring?.(0, 50) || msg.data)
         const pending = this.clearPendingRequest(msg.id)
         if (pending) {
           if (msg.success) {
@@ -304,7 +302,6 @@ class AIInferenceService {
       }
 
       const id = this.nextRequestId()
-      console.log('[AIInference] Sending to worker:', message.type, message.method, 'id:', id)
 
       // Set up timeout to prevent leaked requests
       const timeoutId = setTimeout(() => {
@@ -539,7 +536,6 @@ class AIInferenceService {
 
       this._settingsLoaded = true
       this.notifyListeners()
-      console.log('[AIInference] Settings loaded from storage')
     } catch (error) {
       console.error('[AIInference] Failed to load settings:', error)
     }
@@ -562,7 +558,6 @@ class AIInferenceService {
         aiUseBrowserCache: this._useBrowserCache,
       })
 
-      console.log('[AIInference] Settings saved to storage')
     } catch (error) {
       console.error('[AIInference] Failed to save settings:', error)
     }
@@ -571,11 +566,9 @@ class AIInferenceService {
   // Auto-load models from the auto-load list
   async autoLoadModels(onProgress?: (task: string, progress: number) => void): Promise<void> {
     if (this._autoLoadModels.length === 0) {
-      console.log('[AIInference] No models configured for auto-load')
       return
     }
 
-    console.log(`[AIInference] Auto-loading ${this._autoLoadModels.length} model(s)...`)
 
     for (const key of this._autoLoadModels) {
       const [task, modelId] = key.split(':')
@@ -583,12 +576,10 @@ class AIInferenceService {
 
       // Skip if already loaded
       if (this._loadedModels.has(key)) {
-        console.log(`[AIInference] Model already loaded: ${key}`)
         continue
       }
 
       try {
-        console.log(`[AIInference] Auto-loading: ${key}`)
         await this.loadModel(task, modelId, (progress) => {
           onProgress?.(task, progress)
         })
@@ -598,7 +589,6 @@ class AIInferenceService {
       }
     }
 
-    console.log('[AIInference] Auto-load complete')
   }
 
   // Clear cached models from IndexedDB
@@ -618,14 +608,12 @@ class AIInferenceService {
       for (const db of databases) {
         if (db.name && (db.name.includes('transformers') || db.name.includes('onnx'))) {
           indexedDB.deleteDatabase(db.name)
-          console.log(`[AIInference] Deleted IndexedDB: ${db.name}`)
         }
       }
     } catch (error) {
       console.warn('[AIInference] Could not enumerate IndexedDB databases:', error)
     }
 
-    console.log('[AIInference] Model cache cleared')
     this.notifyListeners()
   }
 
@@ -655,7 +643,6 @@ class AIInferenceService {
     this.updateModelInfo(key, { state: 'loading', progress: 0 })
 
     try {
-      console.log(`[AIInference] Loading model: ${model} for task: ${task}`)
 
       const device = options?.device || (this._useWebGPU ? 'webgpu' : undefined)
       const dtype = options?.dtype || this._defaultDType
@@ -682,7 +669,6 @@ class AIInferenceService {
         dtype,
       })
 
-      console.log(`[AIInference] Model loaded: ${model}`)
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -702,7 +688,6 @@ class AIInferenceService {
       this._loadedModels.delete(key)
       this._modelInfo.delete(key)
       this.notifyListeners()
-      console.log(`[AIInference] Unloaded model: ${model}`)
     }
   }
 

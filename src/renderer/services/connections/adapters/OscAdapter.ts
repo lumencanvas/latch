@@ -34,8 +34,6 @@ export class OscAdapterImpl extends BaseAdapter {
 
     return new Promise((resolve, reject) => {
       try {
-        const wsUrl = `ws://${this.oscConfig.host}:${this.oscConfig.port}`
-
         // osc-js uses WebSocket plugin for browser
         const osc = new OSC({
           plugin: new OSC.WebsocketClientPlugin({
@@ -52,7 +50,6 @@ export class OscAdapterImpl extends BaseAdapter {
 
         osc.on('open', () => {
           clearTimeout(timeout)
-          console.log(`[OSC] Connected to ${wsUrl}`)
           resolve()
         })
 

@@ -64,7 +64,6 @@ class ConnectionManagerImpl implements IConnectionManager {
 
     this.types.set(definition.id, definition as unknown as ConnectionTypeDefinition)
     this.emit('type-registered', definition as unknown as ConnectionTypeDefinition)
-    console.log(`[ConnectionManager] Registered type: ${definition.id}`)
   }
 
   unregisterType(typeId: string): void {
@@ -80,8 +79,6 @@ class ConnectionManagerImpl implements IConnectionManager {
     }
 
     this.types.delete(typeId)
-    this.emit('type-unregistered', typeId)
-    console.log(`[ConnectionManager] Unregistered type: ${typeId}`)
   }
 
   getType(typeId: string): ConnectionTypeDefinition | undefined {
@@ -115,8 +112,6 @@ class ConnectionManagerImpl implements IConnectionManager {
 
     this.connections.set(config.id, config)
     this.statusCache.set(config.id, { status: 'disconnected' })
-    this.emit('connection-added', config)
-    console.log(`[ConnectionManager] Added connection: ${config.id} (${config.protocol})`)
 
     // Auto-connect if configured
     if (config.autoConnect) {
@@ -136,9 +131,7 @@ class ConnectionManagerImpl implements IConnectionManager {
     this.disposeAdapter(connectionId)
 
     this.connections.delete(connectionId)
-    this.statusCache.delete(connectionId)
     this.emit('connection-removed', connectionId)
-    console.log(`[ConnectionManager] Removed connection: ${connectionId}`)
   }
 
   updateConnection(connectionId: string, updates: Partial<BaseConnectionConfig>): void {
@@ -356,7 +349,6 @@ class ConnectionManagerImpl implements IConnectionManager {
       handlers.clear()
     }
 
-    console.log('[ConnectionManager] Disposed')
   }
 
   // =========================================================================

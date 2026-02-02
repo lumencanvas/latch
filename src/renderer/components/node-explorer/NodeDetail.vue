@@ -56,23 +56,31 @@ const pairsWithNodes = computed(() => {
       >{{ categoryLabel }}</span>
     </div>
 
-    <h2 class="detail-name">{{ definition.name }}</h2>
+    <h2 class="detail-name">
+      {{ definition.name }}
+    </h2>
 
     <p
       v-if="definition.info?.overview"
       class="detail-overview"
-    >{{ definition.info.overview }}</p>
+    >
+      {{ definition.info.overview }}
+    </p>
     <p
       v-else
       class="detail-overview"
-    >{{ definition.description }}</p>
+    >
+      {{ definition.description }}
+    </p>
 
     <!-- Inputs -->
     <div
       v-if="definition.inputs.length > 0"
       class="detail-section"
     >
-      <h3 class="section-title">INPUTS</h3>
+      <h3 class="section-title">
+        INPUTS
+      </h3>
       <div class="port-list">
         <div
           v-for="input in definition.inputs"
@@ -97,7 +105,9 @@ const pairsWithNodes = computed(() => {
       v-if="definition.outputs.length > 0"
       class="detail-section"
     >
-      <h3 class="section-title">OUTPUTS</h3>
+      <h3 class="section-title">
+        OUTPUTS
+      </h3>
       <div class="port-list">
         <div
           v-for="output in definition.outputs"
@@ -122,14 +132,19 @@ const pairsWithNodes = computed(() => {
       v-if="definition.controls.length > 0"
       class="detail-section"
     >
-      <h3 class="section-title">CONTROLS</h3>
+      <h3 class="section-title">
+        CONTROLS
+      </h3>
       <div class="port-list">
         <div
           v-for="control in definition.controls"
           :key="control.id"
           class="port-item"
         >
-          <span class="port-dot" style="background: var(--color-neutral-400)" />
+          <span
+            class="port-dot"
+            style="background: var(--color-neutral-400)"
+          />
           <span class="port-name">{{ control.label }}</span>
           <span class="port-type">{{ control.type }}</span>
         </div>
@@ -141,12 +156,16 @@ const pairsWithNodes = computed(() => {
       v-if="definition.info?.tips && definition.info.tips.length > 0"
       class="detail-section"
     >
-      <h3 class="section-title">TIPS</h3>
+      <h3 class="section-title">
+        TIPS
+      </h3>
       <ul class="tips-list">
         <li
           v-for="(tip, i) in definition.info.tips"
           :key="i"
-        >{{ tip }}</li>
+        >
+          {{ tip }}
+        </li>
       </ul>
     </div>
 
@@ -155,7 +174,9 @@ const pairsWithNodes = computed(() => {
       v-if="pairsWithNodes.length > 0"
       class="detail-section"
     >
-      <h3 class="section-title">WORKS WELL WITH</h3>
+      <h3 class="section-title">
+        WORKS WELL WITH
+      </h3>
       <div class="pairs-list">
         <button
           v-for="node in pairsWithNodes"
@@ -178,7 +199,9 @@ const pairsWithNodes = computed(() => {
       v-if="relatedSnippets.length > 0"
       class="detail-section"
     >
-      <h3 class="section-title">SNIPPETS</h3>
+      <h3 class="section-title">
+        SNIPPETS
+      </h3>
       <div class="snippets-list">
         <div
           v-for="snippet in relatedSnippets"

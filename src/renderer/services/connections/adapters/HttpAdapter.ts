@@ -48,7 +48,6 @@ export class HttpAdapterImpl extends BaseAdapter {
         throw new Error(`Server responded with ${response.status}`)
       }
 
-      console.log(`[HTTP] Connected to ${this.httpConfig.baseUrl}`)
     } catch (e) {
       const error = e instanceof Error ? e : new Error(String(e))
       // For HTTP, we consider it "connected" even if HEAD fails

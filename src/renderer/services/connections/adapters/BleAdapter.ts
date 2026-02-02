@@ -239,7 +239,6 @@ export class BleAdapter extends BaseAdapter {
       await this.discoverServices()
     }
 
-    console.log(`[BLE] Connected to ${this.device.name || 'Unknown Device'}`)
   }
 
   protected async doDisconnect(): Promise<void> {

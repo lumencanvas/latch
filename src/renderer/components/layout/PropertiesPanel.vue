@@ -160,25 +160,14 @@ function openCodeEditor() {
 
 // Toggle control exposure to Control Panel
 function toggleControlExposure(controlId: string, controlLabel: string) {
-  console.log('[PropertiesPanel] toggleControlExposure called:', { controlId, controlLabel })
-
-  if (!inspectedNode.value) {
-    console.log('[PropertiesPanel] No inspected node')
-    return
-  }
-
+  if (!inspectedNode.value) return
   const nodeId = inspectedNode.value.id
-  console.log('[PropertiesPanel] Node ID:', nodeId)
-
-  if (uiStore.isControlExposed(nodeId, controlId)) {
-    console.log('[PropertiesPanel] Unexposing control')
+  const existing = uiStore.exposedControls.find(c => c.nodeId === nodeId && c.controlId === controlId)
+  if (existing) {
     uiStore.unexposeControl(nodeId, controlId)
   } else {
-    console.log('[PropertiesPanel] Exposing control')
     uiStore.exposeControl(nodeId, controlId, controlLabel)
   }
-
-  console.log('[PropertiesPanel] Current exposed controls:', uiStore.exposedControls)
 }
 
 // Delete the inspected node
@@ -430,7 +419,9 @@ function shouldShowControl(control: { props?: Record<string, unknown> }): boolea
               <span>Overview</span>
             </div>
             <div class="info-body">
-              <p class="info-overview">{{ nodeDefinition.info.overview }}</p>
+              <p class="info-overview">
+                {{ nodeDefinition.info.overview }}
+              </p>
             </div>
           </div>
 

@@ -12,7 +12,6 @@ import {
   Save,
   Download,
   Upload,
-  Settings,
   GraduationCap,
   PanelLeftClose,
   PanelLeft,
@@ -150,7 +149,10 @@ const isMacElectron = computed(() => {
 </script>
 
 <template>
-  <header class="app-header" :class="{ 'mac-electron': isMacElectron }">
+  <header
+    class="app-header"
+    :class="{ 'mac-electron': isMacElectron }"
+  >
     <div class="header-left">
       <button
         class="btn btn-icon btn-ghost header-sidebar-toggle"

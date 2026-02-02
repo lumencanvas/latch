@@ -173,11 +173,8 @@ async function connect(connection: ClaspConnection, connectionId: string): Promi
     connection.status = 'connected'
     connection.reconnectAttempts = 0
 
-    console.log(`[CLASP] Connected to ${connection.config.url}, session: ${connection.client.session}`)
-
     // Listen for disconnection
-    connection.client.onDisconnect((reason) => {
-      console.log(`[CLASP] Disconnected from ${connection.config.url}: ${reason}`)
+    connection.client.onDisconnect(() => {
       connection.status = 'disconnected'
       connection.client = null
       scheduleReconnect(connection, connectionId)
@@ -1102,7 +1099,6 @@ export const claspVideoSendExecutor: NodeExecutorFn = async (ctx: ExecutionConte
 
   // Detect if the send client disconnected — reset and restart
   if (state.broadcasting && state.sendClient && !state.sendClient.connected) {
-    console.log('[CLASP Video Send] Send client disconnected, restarting broadcast')
     stopVideoSend(nodeId, connection)
     state.streamAddress = ''
     if (!streamAddressControl) {
@@ -1122,7 +1118,6 @@ export const claspVideoSendExecutor: NodeExecutorFn = async (ctx: ExecutionConte
         const builder = new ClaspBuilder(connConfig.url).name(`${connConfig.name || 'latch'}-send`).reconnect(false)
         if (connConfig.token) builder.token(connConfig.token)
         state.sendClient = await builder.connect()
-        console.log(`[CLASP Video Send] Dedicated send client connected, session: ${state.sendClient.session}`)
       } catch (e) {
         console.error('[CLASP Video Send] Failed to create send client:', e)
         outputs.set('broadcasting', false)
@@ -1173,10 +1168,6 @@ export const claspVideoSendExecutor: NodeExecutorFn = async (ctx: ExecutionConte
 
           const chunks = chunkFrame(data, chunk.type, chunk.timestamp, 16000, s.seqGenerator!)
           const address = s.streamAddress
-
-          if (s.stats.framesSent <= 3 || s.stats.framesSent % 100 === 0) {
-            console.log(`[CLASP Video Send] Frame ${s.stats.framesSent}: ${chunk.type} ${data.byteLength}B → ${chunks.length} chunks → ${address}`)
-          }
 
           if (chunk.type === 'key' && s.codecDescription && chunks.length > 0) {
             chunks[0].description = s.codecDescription

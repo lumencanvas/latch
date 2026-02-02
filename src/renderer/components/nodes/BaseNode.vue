@@ -157,6 +157,7 @@ const controls = computed(() => {
     label: string
     default: unknown
     props?: Record<string, unknown>
+    visibleWhen?: { controlId: string; value: unknown }
   }>) ?? []
 
   // Merge: static first, then dynamic (avoiding duplicates)

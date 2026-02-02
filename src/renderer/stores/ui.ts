@@ -387,14 +387,11 @@ export const useUIStore = defineStore('ui', {
       label: string,
       options: { group?: string; size?: 'small' | 'medium' | 'large' } = {}
     ) {
-      console.log('[UI Store] exposeControl called:', { nodeId, controlId, label })
-
       // Check if already exposed
       const existing = this.exposedControls.find(
         (c) => c.nodeId === nodeId && c.controlId === controlId
       )
       if (existing) {
-        console.log('[UI Store] Control already exposed:', existing)
         return existing
       }
 
@@ -422,9 +419,6 @@ export const useUIStore = defineStore('ui', {
       }
 
       this.exposedControls.push(control)
-      saveToStorage(STORAGE_KEY_EXPOSED_CONTROLS, this.exposedControls)
-      console.log('[UI Store] Control exposed successfully:', control)
-      console.log('[UI Store] Total exposed controls:', this.exposedControls.length)
       return control
     },
 

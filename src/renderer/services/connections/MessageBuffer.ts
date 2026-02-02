@@ -432,7 +432,7 @@ export class MessageBufferManager {
       totalPruned += buffer.prune()
     }
     if (totalPruned > 0) {
-      console.log(`[MessageBuffer] Pruned ${totalPruned} expired messages`)
+      // pruned stale messages
     }
     return totalPruned
   }

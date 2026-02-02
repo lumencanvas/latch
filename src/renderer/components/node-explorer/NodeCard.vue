@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { categoryMeta, dataTypeMeta, type NodeDefinition } from '@/stores/nodes'
+import { categoryMeta, type NodeDefinition } from '@/stores/nodes'
 
 const props = defineProps<{
   definition: NodeDefinition
@@ -28,7 +28,9 @@ const controlCount = computed(() => props.definition.controls.length)
       />
       <span class="card-name">{{ definition.name }}</span>
     </div>
-    <p class="card-desc">{{ definition.description }}</p>
+    <p class="card-desc">
+      {{ definition.description }}
+    </p>
     <div class="card-meta">
       <span
         v-if="inputCount > 0"

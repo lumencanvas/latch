@@ -1076,7 +1076,6 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
 export const consoleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
-  const label = (ctx.controls.get('label') as string) ?? 'Log'
   const logOnChange = (ctx.controls.get('logOnChange') as boolean) ?? true
 
   // Only log if we have a value and (not logOnChange OR value changed)
@@ -1085,7 +1084,6 @@ export const consoleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     const valueChanged = prevValue !== value
 
     if (!logOnChange || valueChanged) {
-      console.log(`[${label}]`, value)
       consolePrevValues.set(ctx.nodeId, value)
     }
   }

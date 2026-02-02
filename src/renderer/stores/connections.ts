@@ -55,10 +55,6 @@ export const useConnectionsStore = defineStore('connections', () => {
   function syncFromManager() {
     connections.value = manager.getConnections()
     types.value = manager.getTypes()
-    console.log('[Connections] Synced from manager:', {
-      connections: connections.value.length,
-      types: types.value.map(t => t.id),
-    })
 
     // Sync statuses
     const newStatuses = new Map<string, ConnectionStatusInfo>()
