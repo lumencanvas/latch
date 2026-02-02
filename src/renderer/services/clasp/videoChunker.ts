@@ -86,8 +86,38 @@ export function chunkFrame(
 }
 
 /**
+ * Normalize a transport value to Uint8Array.
+ * Handles Uint8Array (passthrough), ArrayBuffer, typed array views, and base64 strings.
+ * Returns undefined if the value is null/undefined.
+ */
+function normalizeToUint8Array(value: unknown): Uint8Array | undefined {
+  if (value == null) return undefined
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+
+  // Handle typed array views
+  const view = value as { buffer?: ArrayBuffer; byteOffset?: number; byteLength?: number }
+  if (view.buffer instanceof ArrayBuffer) {
+    return new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+  }
+
+  // Legacy base64 string support
+  if (typeof value === 'string') {
+    const binary = atob(value)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return bytes
+  }
+
+  return undefined
+}
+
+/**
  * Decode chunk from transport.
- * Handles Uint8Array, ArrayBuffer, typed array views, and base64 string input.
+ * Handles Uint8Array, ArrayBuffer, typed array views, and base64 string input
+ * for both `data` and `description` fields.
  */
 export function decodeChunkFromTransport(chunk: unknown): VideoChunk {
   if (!chunk || typeof chunk !== 'object') {
@@ -96,48 +126,31 @@ export function decodeChunkFromTransport(chunk: unknown): VideoChunk {
 
   const c = chunk as Record<string, unknown>
 
-  if (c.data instanceof Uint8Array) {
-    return c as unknown as VideoChunk
+  const data = normalizeToUint8Array(c.data)
+  if (!data) {
+    throw new TypeError(
+      `chunk.data must be Uint8Array, ArrayBuffer, or base64 string. Got: ${
+        (c.data as { constructor?: { name?: string } })?.constructor?.name || typeof c.data
+      }`
+    )
   }
 
-  if (c.data instanceof ArrayBuffer) {
-    return {
-      ...(c as unknown as VideoChunk),
-      data: new Uint8Array(c.data as ArrayBuffer),
-    }
+  const result: VideoChunk = {
+    seq: c.seq as number,
+    chunkIndex: c.chunkIndex as number,
+    totalChunks: c.totalChunks as number,
+    frameType: c.frameType as string,
+    timestamp: c.timestamp as number,
+    data,
   }
 
-  // Handle typed array views
-  const data = c.data as { buffer?: ArrayBuffer; byteOffset?: number; byteLength?: number } | null
-  if (data && data.buffer instanceof ArrayBuffer) {
-    return {
-      ...(c as unknown as VideoChunk),
-      data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-    }
+  // Normalize description field if present
+  const description = normalizeToUint8Array(c.description)
+  if (description) {
+    result.description = description
   }
 
-  // Legacy base64 string support
-  if (typeof c.data === 'string') {
-    try {
-      const binary = atob(c.data)
-      const bytes = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i)
-      }
-      return {
-        ...(c as unknown as VideoChunk),
-        data: bytes,
-      }
-    } catch (e) {
-      throw new Error(`Failed to decode chunk: ${(e as Error).message}`)
-    }
-  }
-
-  throw new TypeError(
-    `chunk.data must be Uint8Array, ArrayBuffer, or base64 string. Got: ${
-      (c.data as { constructor?: { name?: string } })?.constructor?.name || typeof c.data
-    }`
-  )
+  return result
 }
 
 /**

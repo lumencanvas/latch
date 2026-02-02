@@ -15,6 +15,7 @@ export const gateNode: NodeDefinition = {
   outputs: [{ id: 'result', type: 'any', label: 'Result' }],
   controls: [
     { id: 'open', type: 'toggle', label: 'Open', default: true },
+    { id: 'value', type: 'text', label: 'Value', default: '' },
   ],
   info: {
     overview: 'Passes a value through when the gate is open and blocks it when the gate is closed. The gate state is controlled by the boolean Gate input or the Open toggle. This is the simplest way to conditionally allow or stop data flow.',

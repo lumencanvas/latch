@@ -16,6 +16,7 @@ const nodesStore = useNodesStore()
 // Preview canvas
 const previewCanvas = ref<HTMLCanvasElement | null>(null)
 const isExpanded = ref(false)
+const inputResolution = ref({ w: 0, h: 0 })
 
 // Get definition from nodesStore
 const definition = computed<NodeDefinition | null>(() => {
@@ -66,7 +67,26 @@ function updatePreview() {
     return
   }
 
-  // Use ThreeShaderRenderer's renderToCanvas
+  // If the texture wraps a canvas or video, draw it directly (avoids Three.js WebGL round-trip)
+  const img = texture.image
+  if (img instanceof HTMLCanvasElement || img instanceof HTMLVideoElement) {
+    const srcW = img instanceof HTMLCanvasElement ? img.width : img.videoWidth
+    const srcH = img instanceof HTMLCanvasElement ? img.height : img.videoHeight
+    if (srcW > 0 && srcH > 0) {
+      inputResolution.value = { w: srcW, h: srcH }
+    }
+    ctx.drawImage(img, 0, 0, previewCanvas.value.width, previewCanvas.value.height)
+    return
+  }
+
+  // Fall back to ThreeShaderRenderer's renderToCanvas for render target textures
+  if (texture.image) {
+    const srcW = texture.image.width ?? texture.image.videoWidth ?? 0
+    const srcH = texture.image.height ?? texture.image.videoHeight ?? 0
+    if (srcW > 0 && srcH > 0) {
+      inputResolution.value = { w: srcW, h: srcH }
+    }
+  }
   const threeRenderer = getThreeShaderRenderer()
   threeRenderer.renderToCanvas(texture, previewCanvas.value)
 }
@@ -174,7 +194,7 @@ function getTypeColor(type: string): string {
         {{ runtimeStore.isRunning ? 'Live' : 'Stopped' }}
       </span>
       <span class="resolution-text">
-        512 x 512
+        {{ inputResolution.w > 0 ? `${inputResolution.w} x ${inputResolution.h}` : '—' }}
       </span>
     </div>
   </div>

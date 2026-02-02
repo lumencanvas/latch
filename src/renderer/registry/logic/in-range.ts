@@ -11,6 +11,7 @@ export const inRangeNode: NodeDefinition = {
   inputs: [{ id: 'value', type: 'number', label: 'Value' }],
   outputs: [{ id: 'result', type: 'boolean', label: 'Result' }],
   controls: [
+    { id: 'value', type: 'number', label: 'Value', default: 0 },
     { id: 'min', type: 'number', label: 'Min', default: 0 },
     { id: 'max', type: 'number', label: 'Max', default: 1 },
     { id: 'inclusive', type: 'toggle', label: 'Inclusive', default: true },

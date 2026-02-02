@@ -4,7 +4,7 @@ export const claspGetNode: NodeDefinition = {
   id: 'clasp-get',
   name: 'CLASP Get',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Get current value of a CLASP parameter',
   icon: 'download',
   color: '#6366f1',

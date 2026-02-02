@@ -4,7 +4,7 @@ export const claspStreamNode: NodeDefinition = {
   id: 'clasp-stream',
   name: 'CLASP Stream',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Stream high-rate data (continuous updates)',
   icon: 'activity',
   color: '#6366f1',

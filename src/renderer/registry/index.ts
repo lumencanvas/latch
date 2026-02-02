@@ -17,6 +17,7 @@ import { audioNodes } from './audio'
 import { visualNodes } from './visual'
 import { aiNodes } from './ai'
 import { connectivityNodes } from './connectivity'
+import { claspNodes } from './clasp'
 import { dataNodes } from './data'
 import { codeNodes } from './code'
 import { subflowNodes } from './subflows'
@@ -36,6 +37,7 @@ export const allNodes = [
   ...visualNodes,
   ...aiNodes,
   ...connectivityNodes,
+  ...claspNodes,
   ...dataNodes,
   ...codeNodes,
   ...subflowNodes,

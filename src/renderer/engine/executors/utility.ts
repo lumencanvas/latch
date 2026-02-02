@@ -143,8 +143,10 @@ export const coalesceExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // ============================================================================
 
 export const equalsExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = ctx.inputs.get('a')
-  const b = ctx.inputs.get('b')
+  const aControl = ctx.controls.get('a') as string | undefined
+  const bControl = ctx.controls.get('b') as string | undefined
+  const a = ctx.inputs.get('a') ?? (aControl !== '' ? aControl : undefined)
+  const b = ctx.inputs.get('b') ?? (bControl !== '' ? bControl : undefined)
   const strict = (ctx.controls.get('strict') as boolean) ?? true
 
   let result: boolean
@@ -183,7 +185,7 @@ export const typeOfExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 export const inRangeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = (ctx.inputs.get('value') as number) ?? (ctx.controls.get('value') as number) ?? 0
   const min = (ctx.controls.get('min') as number) ?? 0
   const max = (ctx.controls.get('max') as number) ?? 1
   const inclusive = (ctx.controls.get('inclusive') as boolean) ?? true
@@ -196,6 +198,60 @@ export const inRangeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   return new Map([['result', result ? 1 : 0]])
+}
+
+// ============================================================================
+// Match Value Node
+// ============================================================================
+
+export const matchValueExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = ctx.inputs.get('value')
+  const target = (ctx.controls.get('target') as string) ?? ''
+  const compareType = (ctx.controls.get('type') as string) ?? 'auto'
+
+  if (target === '') {
+    return new Map([['result', 0], ['value', value]])
+  }
+
+  let coercedValue: unknown = value
+  let coercedTarget: unknown = target
+
+  switch (compareType) {
+    case 'number': {
+      coercedValue = Number(value)
+      coercedTarget = Number(target)
+      break
+    }
+    case 'string': {
+      coercedValue = String(value ?? '')
+      coercedTarget = target
+      break
+    }
+    case 'boolean': {
+      coercedValue = Boolean(value)
+      coercedTarget = target === 'true' || target === '1'
+      break
+    }
+    case 'auto':
+    default: {
+      // Try number first
+      const numTarget = Number(target)
+      if (!isNaN(numTarget) && target.trim() !== '') {
+        coercedValue = Number(value)
+        coercedTarget = numTarget
+      } else if (target === 'true' || target === 'false') {
+        coercedValue = Boolean(value)
+        coercedTarget = target === 'true'
+      } else {
+        coercedValue = String(value ?? '')
+        coercedTarget = target
+      }
+      break
+    }
+  }
+
+  const result = coercedValue === coercedTarget
+  return new Map([['result', result ? 1 : 0], ['value', value]])
 }
 
 // ============================================================================
@@ -386,6 +442,99 @@ export const throttleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
+// Dispatch Node
+// ============================================================================
+
+function getNestedValue(obj: unknown, path: string): unknown {
+  if (!path) return obj
+  const parts = path.split('.')
+  let current: unknown = obj
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined
+    if (typeof current === 'object') {
+      current = (current as Record<string, unknown>)[part]
+    } else {
+      return undefined
+    }
+  }
+  return current
+}
+
+interface DispatchCondition {
+  operator: string
+  value: string
+  type: string
+}
+
+function evaluateCondition(testValue: unknown, condition: DispatchCondition): boolean {
+  const { operator, value: condValue, type: condType } = condition
+
+  // No-argument operators
+  if (operator === 'otherwise') return true
+  if (operator === 'is true') return Boolean(testValue)
+  if (operator === 'is empty') {
+    return testValue === null ||
+      testValue === undefined ||
+      (typeof testValue === 'string' && testValue === '') ||
+      (Array.isArray(testValue) && testValue.length === 0)
+  }
+  if (operator === 'is type') return typeof testValue === condValue
+
+  // Coerce comparison value
+  let target: unknown = condValue
+  let test: unknown = testValue
+
+  if (condType === 'number' || (!isNaN(Number(condValue)) && condValue.trim() !== '')) {
+    target = Number(condValue)
+    test = Number(testValue)
+  }
+
+  switch (operator) {
+    case '==': return test === target
+    case '!=': return test !== target
+    case '>': return (test as number) > (target as number)
+    case '>=': return (test as number) >= (target as number)
+    case '<': return (test as number) < (target as number)
+    case '<=': return (test as number) <= (target as number)
+    case 'contains': return String(testValue).includes(String(condValue))
+    case 'matches regex': {
+      try {
+        return new RegExp(condValue).test(String(testValue))
+      } catch {
+        return false
+      }
+    }
+    default: return false
+  }
+}
+
+export const dispatchExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = ctx.inputs.get('value')
+  const conditionsJson = (ctx.controls.get('conditions') as string) ?? '[]'
+  const property = (ctx.controls.get('property') as string) ?? ''
+  const checkAll = (ctx.controls.get('checkAll') as boolean) ?? false
+
+  let conditions: DispatchCondition[]
+  try {
+    conditions = JSON.parse(conditionsJson)
+  } catch {
+    conditions = []
+  }
+
+  // Resolve property path if specified
+  const testValue = property ? getNestedValue(value, property) : value
+
+  const outputs = new Map<string, unknown>()
+  for (let i = 0; i < conditions.length; i++) {
+    if (evaluateCondition(testValue, conditions[i])) {
+      outputs.set(`out-${i}`, value) // pass original value through
+      if (!checkAll) break
+    }
+  }
+  return outputs
+}
+
+// ============================================================================
 // Cleanup Functions
 // ============================================================================
 
@@ -422,6 +571,8 @@ export const utilityExecutors: Record<string, NodeExecutorFn> = {
   'equals': equalsExecutor,
   'type-of': typeOfExecutor,
   'in-range': inRangeExecutor,
+  'match-value': matchValueExecutor,
+  'dispatch': dispatchExecutor,
   // State/memory
   'changed': changedExecutor,
   'sample-hold': sampleHoldExecutor,

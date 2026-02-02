@@ -11,6 +11,7 @@ import ShaderEditorModal from './components/modals/ShaderEditorModal.vue'
 import CodeEditorModal from './components/modals/CodeEditorModal.vue'
 import AIModelManagerModal from './components/modals/AIModelManagerModal.vue'
 import ConnectionManagerModal from './components/connections/ConnectionManagerModal.vue'
+import NodeExplorerModal from './components/modals/NodeExplorerModal.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
 import { usePersistence } from './composables/usePersistence'
 import { useExecutionEngine } from './composables/useExecutionEngine'
@@ -111,6 +112,7 @@ onMounted(async () => {
       <CodeEditorModal v-if="isEditorView" />
       <AIModelManagerModal />
       <ConnectionManagerModal />
+      <NodeExplorerModal />
     </template>
   </div>
 </template>

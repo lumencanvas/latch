@@ -23,6 +23,83 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ---
 
+## Recent Session (2026-02-01) - CLASP Video Receive Fixes & Features
+
+### Overview
+
+Fixed three bugs in the CLASP video receive node's decoder pipeline, added direct address subscription mode, added peer failover, and added conditional control visibility to the base node system.
+
+### Bug Fixes
+
+#### 1. `description` field not decoded from transport (`videoChunker.ts`)
+**Problem**: `decodeChunkFromTransport()` normalized the `data` field from ArrayBuffer/typed-array/base64 to Uint8Array but never converted the `description` field. When `description` arrived as an ArrayBuffer, it was invalid as a `BufferSource` for `VideoDecoder.configure()`, causing silent decoder config failures.
+
+**Fix**: Extracted a `normalizeToUint8Array()` helper (handles Uint8Array passthrough, ArrayBuffer, typed array views, base64 strings). `decodeChunkFromTransport` now normalizes both `data` and `description` fields, and constructs the result object explicitly instead of using spread-cast.
+
+#### 2. Decoder only configured once, never reconfigured (`clasp.ts`)
+**Problem**: The receive executor checked `!s.decoderConfigured` — once configured, it never reconfigured even when a new codec description arrived (e.g. resolution change, encoder restart).
+
+**Fix**: Removed `decoderConfigured` and `waitingForKeyframe` state flags. Now checks `decoder.state === 'configured'` directly. On keyframe with new `description`, the decoder is closed and recreated before reconfiguring (matches the working slab implementation pattern).
+
+#### 3. `decoder.reset()` leaves decoder in limbo (`clasp.ts`)
+**Problem**: On error, the executor called `decoder.reset()` which puts it back to "unconfigured" state but doesn't recreate it. The next frame tries to decode on an unconfigured decoder.
+
+**Fix**: Replaced `reset()` with `close()` + `createReceiveDecoder()` — a new helper function that closes any existing decoder and creates a fresh `VideoDecoder` instance. Used in both the error callback and the assembler's decode error path.
+
+#### 4. No peer failover when broadcaster disconnects (`clasp.ts`)
+**Problem**: In room mode with auto-select, once a peer was chosen the node locked onto it permanently. If that broadcaster disconnected (presence → null), the node stayed subscribed to the dead stream address and never switched to another available broadcaster.
+
+**Fix**: The presence callback now detects when the currently subscribed peer disconnects. It tears down the stream subscription, closes the decoder, and clears `currentPeerId`. On the next executor tick, auto-selection runs again and picks the next available broadcaster.
+
+### New Features
+
+#### Direct CLASP Address Mode (`clasp.ts`, `clasp-video-receive.ts`)
+**Problem**: The receive node only supported room-based peer discovery. Users needed to subscribe directly to any CLASP stream address without room/presence overhead.
+
+**Solution**: Added `videoMode` control (select: Room / Direct Address) and `address` control/input. In direct mode, the node subscribes directly to the provided CLASP address for stream chunks, skipping presence subscription entirely. Room mode retains existing behavior.
+
+**Files Modified**:
+- `registry/connectivity/clasp-video-receive.ts` — Added `videoMode` select, `address` text control + input, updated description/tips
+- `engine/executors/clasp.ts` — Reads `videoMode`/`directAddress`, routes to `setupStreamSubscription()` directly or through room peer discovery
+
+#### Conditional Control Visibility (`stores/nodes.ts`, `BaseNode.vue`)
+**Problem**: All controls were always visible regardless of context. For the video receive node, room-specific controls (Room, Peer ID) showed in direct mode and vice versa.
+
+**Solution**: Added `visibleWhen` field to `ControlDefinition`:
+```typescript
+visibleWhen?: { controlId: string; value: unknown }
+```
+
+`BaseNode.vue`'s `inlineControls` computed now filters out controls whose `visibleWhen` condition doesn't match. This is a generic mechanism available to all nodes.
+
+**Applied to CLASP Video Receive**:
+- Room, Peer ID → `visibleWhen: { controlId: 'videoMode', value: 'room' }`
+- Address → `visibleWhen: { controlId: 'videoMode', value: 'direct' }`
+- Connection, Mode, Enabled → always visible
+
+### Executor Refactoring
+
+The stream subscription setup was extracted into a `setupStreamSubscription(streamAddress)` closure used by both room and direct modes. The `VideoReceiveNodeState` interface was updated:
+- **Added**: `videoMode`, `currentAddress`
+- **Removed**: `decoderConfigured`, `waitingForKeyframe`
+
+A new `createReceiveDecoder(nodeId)` module-level function encapsulates decoder creation with proper output/error callbacks, replacing inline `new VideoDecoder(...)` calls.
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `services/clasp/videoChunker.ts` | Added `normalizeToUint8Array()` helper, fixed `decodeChunkFromTransport` to normalize `description` |
+| `registry/connectivity/clasp-video-receive.ts` | Added `videoMode` select, `address` control/input, `visibleWhen` conditions, updated info |
+| `engine/executors/clasp.ts` | Fixed decoder reconfiguration, error recovery, added peer failover, added direct address mode, refactored stream setup |
+| `stores/nodes.ts` | Added `visibleWhen` to `ControlDefinition` interface |
+| `components/nodes/BaseNode.vue` | `inlineControls` computed now filters by `visibleWhen` |
+
+### Typecheck Status
+- All modified files pass typecheck (only pre-existing `.vue` module resolution warnings remain)
+
+---
+
 ## Recent Session (2026-01-20) - Node Implementation & Improvements
 
 ### Overview

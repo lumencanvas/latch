@@ -32,6 +32,7 @@ import { MediaPipeSegmentationNode } from './ai/mediapipe-segmentation'
 import { MediaPipeGestureNode } from './ai/mediapipe-gesture'
 import { MediaPipeAudioNode } from './ai/mediapipe-audio'
 import { FunctionNode } from './code/_function'
+import { DispatchNode } from './logic/dispatch'
 
 /**
  * Node type to Vue component mapping.
@@ -78,4 +79,7 @@ export const nodeTypes = {
 
   // Custom UI nodes - Code
   function: markRaw(FunctionNode),
+
+  // Custom UI nodes - Logic
+  dispatch: markRaw(DispatchNode),
 }

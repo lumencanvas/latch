@@ -47,8 +47,16 @@ function updatePreview() {
     return
   }
 
+  // Check for direct canvas display (preferred — avoids Three.js round-trip)
+  const display = outputs.get('_display')
+  if (display instanceof HTMLCanvasElement) {
+    hasTexture.value = true
+    ctx.drawImage(display, 0, 0, props.width, props.height)
+    return
+  }
+
   // Check for texture outputs
-  const texture = outputs.get('texture') ?? outputs.get('_display')
+  const texture = outputs.get('texture')
 
   if (!texture) {
     hasTexture.value = false

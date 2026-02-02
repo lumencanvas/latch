@@ -616,24 +616,66 @@ interface VideoReceiveNodeState {
   currentRoom: string
   currentPeerId: string
   currentConnectionId: string
+  videoMode: string
+  currentAddress: string
   fpsCounter: { frames: number; lastReset: number; fps: number }
   receiving: boolean
+  frameDirty: boolean
 }
 
 const videoReceiveState = new Map<string, VideoReceiveNodeState>()
 
 function createReceiveCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas')
-  canvas.width = 1280
-  canvas.height = 720
+  canvas.width = 2
+  canvas.height = 2
   const ctx = canvas.getContext('2d')!
   return { canvas, ctx }
+}
+
+/**
+ * Create a VideoDecoder for a receive node.
+ * Matches the CLASP playground pattern: create once, reset() on error, configure on first keyframe.
+ */
+function createReceiveDecoder(nodeId: string): VideoDecoder {
+  return new VideoDecoder({
+    output: (frame: VideoFrame) => {
+      const s = videoReceiveState.get(nodeId)
+      if (!s) { frame.close(); return }
+
+      if (s.canvas.width !== frame.displayWidth || s.canvas.height !== frame.displayHeight) {
+        s.canvas.width = frame.displayWidth
+        s.canvas.height = frame.displayHeight
+      }
+      s.ctx.drawImage(frame as unknown as CanvasImageSource, 0, 0)
+      frame.close()
+      s.fpsCounter.frames++
+      s.receiving = true
+      s.frameDirty = true
+    },
+    error: (e: DOMException) => {
+      console.error('[CLASP Video Receive] Decoder error:', e)
+      const s = videoReceiveState.get(nodeId)
+      if (!s || !s.decoder) return
+      // Reset decoder and wait for next keyframe (playground pattern)
+      s.decoderConfigured = false
+      s.waitingForKeyframe = true
+      try { s.decoder.reset() } catch { /* ignore */ }
+      // Request keyframe to recover
+      const conn = getConnection(s.currentConnectionId)
+      if (conn?.client && s.currentRoom) {
+        conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
+      }
+    },
+  })
 }
 
 export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
   const room = (ctx.inputs.get('room') as string) ?? (ctx.controls.get('room') as string) ?? 'default'
   const peerIdInput = (ctx.inputs.get('peerId') as string) ?? (ctx.controls.get('peerId') as string) ?? ''
+  const videoMode = (ctx.controls.get('videoMode') as string) ?? 'room'
+  const directAddress = (ctx.inputs.get('address') as string) ?? (ctx.controls.get('address') as string) ?? ''
   const enabled = (ctx.controls.get('enabled') as boolean) ?? true
 
   const outputs = new Map<string, unknown>()
@@ -685,7 +727,7 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
       texture,
       decoder: null,
       decoderConfigured: false,
-      waitingForKeyframe: true,
+      waitingForKeyframe: false,
       codecDescription: null,
       assembler: new ChunkAssembler(),
       presenceUnsub: null,
@@ -694,15 +736,20 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
       currentRoom: '',
       currentPeerId: '',
       currentConnectionId: '',
+      videoMode: '',
+      currentAddress: '',
       fpsCounter: { frames: 0, lastReset: Date.now(), fps: 0 },
       receiving: false,
+      frameDirty: false,
     }
     videoReceiveState.set(ctx.nodeId, state)
   }
 
   const needsResubscribe =
     state.currentRoom !== room ||
-    state.currentConnectionId !== connectionId
+    state.currentConnectionId !== connectionId ||
+    state.videoMode !== videoMode ||
+    (videoMode === 'direct' && state.currentAddress !== directAddress)
 
   if (needsResubscribe) {
     // Cleanup old subscriptions
@@ -713,7 +760,7 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     }
     state.decoder = null
     state.decoderConfigured = false
-    state.waitingForKeyframe = true
+    state.waitingForKeyframe = false
     state.codecDescription = null
     state.assembler.clear()
     state.peers.clear()
@@ -721,142 +768,125 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     state.currentRoom = room
     state.currentConnectionId = connectionId
     state.currentPeerId = ''
+    state.videoMode = videoMode
+    state.currentAddress = ''
 
-    // Subscribe to presence
-    const presencePattern = `/video/relay/${room}/presence/*`
-    state.presenceUnsub = connection.client.on(presencePattern, (value: Value, address: string) => {
-      const peerId = address.split('/').pop()!
-      const s = videoReceiveState.get(ctx.nodeId)
-      if (!s) return
-      if (value === null) {
-        s.peers.delete(peerId)
-      } else {
-        s.peers.set(peerId, value)
-      }
-    })
-  }
-
-  // Determine which peer to subscribe to
-  let targetPeerId = peerIdInput
-  if (!targetPeerId) {
-    // Auto-select first broadcaster
-    for (const [peerId, data] of state.peers) {
-      if (data && typeof data === 'object' && (data as Record<string, unknown>).isBroadcaster) {
-        targetPeerId = peerId
-        break
-      }
-    }
-  }
-
-  // Subscribe to stream if peer changed
-  if (targetPeerId && targetPeerId !== state.currentPeerId) {
-    if (state.streamUnsub) { state.streamUnsub(); state.streamUnsub = null }
-    if (state.decoder && state.decoder.state !== 'closed') {
-      try { state.decoder.close() } catch { /* ignore */ }
-    }
-    state.decoder = null
-    state.decoderConfigured = false
-    state.waitingForKeyframe = true
-    state.codecDescription = null
-    state.assembler.clear()
-    state.currentPeerId = targetPeerId
-
-    // Create decoder
-    const nodeId = ctx.nodeId
-    state.decoder = new VideoDecoder({
-      output: (frame: VideoFrame) => {
-        const s = videoReceiveState.get(nodeId)
-        if (!s) { frame.close(); return }
-
-        if (s.canvas.width !== frame.displayWidth || s.canvas.height !== frame.displayHeight) {
-          s.canvas.width = frame.displayWidth
-          s.canvas.height = frame.displayHeight
-        }
-        s.ctx.drawImage(frame as unknown as CanvasImageSource, 0, 0)
-        frame.close()
-        s.fpsCounter.frames++
-        s.receiving = true
-      },
-      error: (e: DOMException) => {
-        console.error('[CLASP Video Receive] Decoder error:', e)
-        const s = videoReceiveState.get(nodeId)
+    // In room mode, subscribe to presence for peer discovery
+    if (videoMode === 'room') {
+      const presencePattern = `/video/relay/${room}/presence/*`
+      state.presenceUnsub = connection.client.on(presencePattern, (value: Value, address: string) => {
+        const peerId = address.split('/').pop()!
+        const s = videoReceiveState.get(ctx.nodeId)
         if (!s) return
-        s.decoderConfigured = false
-        s.waitingForKeyframe = true
-        try { s.decoder?.reset() } catch { /* ignore */ }
-        // Request keyframe
-        const conn = getConnection(s.currentConnectionId)
-        if (conn?.client) {
-          conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
+        if (value === null) {
+          s.peers.delete(peerId)
+          // If the disconnected peer is the one we're subscribed to, tear down
+          // the stream so auto-selection picks a new broadcaster on the next tick
+          if (peerId === s.currentPeerId) {
+            if (s.streamUnsub) { s.streamUnsub(); s.streamUnsub = null }
+            if (s.decoder && s.decoder.state !== 'closed') {
+              try { s.decoder.close() } catch { /* ignore */ }
+            }
+            s.decoder = null
+            s.decoderConfigured = false
+            s.waitingForKeyframe = false
+            s.codecDescription = null
+            s.assembler.clear()
+            s.currentPeerId = ''
+            s.currentAddress = ''
+            s.receiving = false
+          }
+        } else {
+          s.peers.set(peerId, value)
         }
-      },
-    })
+      })
+    }
+  }
 
-    // Setup assembler callbacks
-    state.assembler = new ChunkAssembler({
+  const nodeId = ctx.nodeId
+
+  /**
+   * Setup assembler + decoder + stream subscription for a given address.
+   * Used by both room mode (peer-selected address) and direct address mode.
+   */
+  const setupStreamSubscription = (streamAddress: string) => {
+    if (state!.streamUnsub) { state!.streamUnsub(); state!.streamUnsub = null }
+    if (state!.decoder && state!.decoder.state !== 'closed') {
+      try { state!.decoder.close() } catch { /* ignore */ }
+    }
+    state!.decoder = null
+    state!.decoderConfigured = false
+    state!.waitingForKeyframe = true
+    state!.codecDescription = null
+    state!.assembler.clear()
+
+    // Create decoder once per subscription (playground pattern)
+    state!.decoder = createReceiveDecoder(nodeId)
+
+    // Setup assembler — configure decoder once on first keyframe
+    state!.assembler = new ChunkAssembler({
       onFrame: (frame: AssembledFrame) => {
         const s = videoReceiveState.get(nodeId)
         if (!s || !s.decoder) return
 
-        if (frame.description) {
-          s.codecDescription = frame.description
-        }
+        try {
+          // Store codec description if present
+          if (frame.description) {
+            s.codecDescription = frame.description
+          }
 
-        // Configure decoder on keyframe
-        if (!s.decoderConfigured && frame.frameType === 'key') {
-          const config: VideoDecoderConfig = {
-            codec: 'avc1.42001e',
-            optimizeForLatency: true,
-            hardwareAcceleration: 'prefer-software',
-          }
-          if (s.codecDescription) {
-            config.description = s.codecDescription
-          }
-          try {
+          // Configure decoder on first keyframe (playground pattern)
+          if (!s.decoderConfigured && frame.frameType === 'key') {
+            const config: VideoDecoderConfig = {
+              codec: 'avc1.42001e',
+              optimizeForLatency: true,
+              hardwareAcceleration: 'prefer-software',
+            }
+            if (s.codecDescription) {
+              config.description = s.codecDescription
+            }
             s.decoder.configure(config)
             s.decoderConfigured = true
             s.waitingForKeyframe = false
-          } catch (e) {
-            console.error('[CLASP Video Receive] Decoder configure error:', e)
+          }
+
+          // Skip delta frames when waiting for keyframe
+          if (s.waitingForKeyframe && frame.frameType !== 'key') {
             return
           }
-        }
 
-        if (s.waitingForKeyframe && frame.frameType !== 'key') {
-          return
-        }
-
-        if (s.decoderConfigured) {
-          try {
+          if (s.decoderConfigured) {
             s.decoder.decode(new EncodedVideoChunk({
               type: frame.frameType as EncodedVideoChunkType,
               timestamp: frame.timestamp,
               data: frame.data,
             }))
-          } catch (e) {
-            console.error('[CLASP Video Receive] Decode error:', e)
-            s.decoderConfigured = false
-            s.waitingForKeyframe = true
-            try { s.decoder.reset() } catch { /* ignore */ }
-            const conn = getConnection(s.currentConnectionId)
-            if (conn?.client) {
-              conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
-            }
+          }
+        } catch (e) {
+          console.error('[CLASP Video Receive] Decode error:', e)
+          // Reset decoder and wait for keyframe (playground pattern)
+          s.decoderConfigured = false
+          s.waitingForKeyframe = true
+          try { s.decoder.reset() } catch { /* ignore */ }
+          const conn = getConnection(s.currentConnectionId)
+          if (conn?.client && s.currentRoom) {
+            conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
           }
         }
       },
       onError: (e: Error) => {
         console.error('[CLASP Video Receive] Assembly error:', e)
-        const conn = getConnection(connectionId)
-        if (conn?.client && targetPeerId) {
-          conn.client.emit(`/video/relay/${room}/request-keyframe/${targetPeerId}`)
+        const s = videoReceiveState.get(nodeId)
+        if (!s) return
+        const conn = getConnection(s.currentConnectionId)
+        if (conn?.client && s.currentRoom && s.currentPeerId) {
+          conn.client.emit(`/video/relay/${s.currentRoom}/request-keyframe/${s.currentPeerId}`)
         }
       },
     })
 
-    // Subscribe to stream
-    const streamAddress = `/video/relay/${room}/stream/${targetPeerId}`
-    state.streamUnsub = connection.client.on(streamAddress, (data: Value) => {
+    // Subscribe to stream chunks at the address
+    state!.streamUnsub = connection!.client!.on(streamAddress, (data: Value) => {
       const s = videoReceiveState.get(nodeId)
       if (!s) return
       try {
@@ -868,6 +898,53 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
         console.error('[CLASP Video Receive] Chunk processing error:', e)
       }
     })
+
+    state!.currentAddress = streamAddress
+
+    // Request a keyframe immediately to start decoding
+    // In room mode, currentPeerId and currentRoom are set before calling this function.
+    // In direct mode, try to extract room/peerId from the address pattern:
+    //   /video/relay/{room}/stream/{peerId}
+    let reqRoom = state!.currentRoom
+    let reqPeerId = state!.currentPeerId
+    if (!reqPeerId && streamAddress) {
+      const parts = streamAddress.split('/')
+      const streamIdx = parts.indexOf('stream')
+      if (streamIdx > 1 && streamIdx < parts.length - 1) {
+        reqRoom = parts[streamIdx - 1]
+        reqPeerId = parts[streamIdx + 1]
+      }
+    }
+    if (reqPeerId && reqRoom) {
+      connection!.client!.emit(
+        `/video/relay/${reqRoom}/request-keyframe/${reqPeerId}`,
+      )
+    }
+  }
+
+  if (videoMode === 'direct') {
+    // Direct address mode: subscribe directly to the provided address
+    if (directAddress && state.currentAddress !== directAddress) {
+      setupStreamSubscription(directAddress)
+    }
+  } else {
+    // Room mode: discover peer then subscribe to their stream address
+    let targetPeerId = peerIdInput
+    if (!targetPeerId) {
+      // Auto-select first broadcaster
+      for (const [peerId, data] of state.peers) {
+        if (data && typeof data === 'object' && (data as Record<string, unknown>).isBroadcaster) {
+          targetPeerId = peerId
+          break
+        }
+      }
+    }
+
+    if (targetPeerId && targetPeerId !== state.currentPeerId) {
+      state.currentPeerId = targetPeerId
+      const streamAddress = `/video/relay/${room}/stream/${targetPeerId}`
+      setupStreamSubscription(streamAddress)
+    }
   }
 
   // Update FPS counter
@@ -881,11 +958,15 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     }
   }
 
-  // Update texture
-  const renderer = getThreeShaderRenderer()
-  renderer.updateTexture(state.texture, state.canvas)
+  // Update texture only when a new frame was decoded
+  if (state.frameDirty) {
+    const renderer = getThreeShaderRenderer()
+    renderer.updateTexture(state.texture, state.canvas)
+    state.frameDirty = false
+  }
 
   outputs.set('texture', state.texture)
+  outputs.set('_display', state.canvas)
   outputs.set('width', state.canvas.width)
   outputs.set('height', state.canvas.height)
   outputs.set('fps', state.fpsCounter.fps)

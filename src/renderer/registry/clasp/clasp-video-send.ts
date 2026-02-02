@@ -4,7 +4,7 @@ export const claspVideoSendNode: NodeDefinition = {
   id: 'clasp-video-send',
   name: 'CLASP Video Send',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Send video stream to a CLASP relay room',
   icon: 'cast',
   color: '#6366f1',

@@ -10,6 +10,10 @@ export { textboxNode, TextboxNode } from './textbox'
 export { knobNode, KnobNode } from './knob'
 export { keyboardNode, KeyboardNode } from './keyboard'
 
+// Re-categorized input nodes
+export { midiInputNode } from '../connectivity/midi-input'
+export { webcamNode } from '../visual/webcam'
+
 import { constantNode } from './constant'
 import { sliderNode } from './slider'
 import { audioInputNode } from './audio-input'
@@ -18,6 +22,8 @@ import { xyPadNode } from './xy-pad'
 import { textboxNode } from './textbox'
 import { knobNode } from './knob'
 import { keyboardNode } from './keyboard'
+import { midiInputNode } from '../connectivity/midi-input'
+import { webcamNode } from '../visual/webcam'
 import type { NodeDefinition } from '../types'
 
 export const inputNodes: NodeDefinition[] = [
@@ -29,4 +35,6 @@ export const inputNodes: NodeDefinition[] = [
   xyPadNode,
   textboxNode,
   keyboardNode,
+  midiInputNode,
+  webcamNode,
 ]

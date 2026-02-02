@@ -4,7 +4,7 @@ export const claspGestureNode: NodeDefinition = {
   id: 'clasp-gesture',
   name: 'CLASP Gesture',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Receive gesture signals (touch/pen/motion) from CLASP',
   icon: 'hand',
   color: '#6366f1',

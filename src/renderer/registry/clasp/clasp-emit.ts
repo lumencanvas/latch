@@ -4,7 +4,7 @@ export const claspEmitNode: NodeDefinition = {
   id: 'clasp-emit',
   name: 'CLASP Emit',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Emit a CLASP event (one-time trigger)',
   icon: 'zap',
   color: '#6366f1',

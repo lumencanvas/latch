@@ -25,6 +25,7 @@ import {
   Loader2,
   Type,
   Send,
+  Radio,
 } from 'lucide-vue-next'
 import { categoryMeta, dataTypeMeta, type NodeDefinition, type NodeCategory, useNodesStore } from '@/stores/nodes'
 import { useFlowsStore } from '@/stores/flows'
@@ -103,6 +104,7 @@ const categoryIcons: Record<NodeCategory, typeof Bug> = {
   code: Code,
   '3d': Box,
   connectivity: Wifi,
+  clasp: Radio,
   subflows: Layers,
   string: Type,
   messaging: Send,
@@ -132,7 +134,18 @@ const inputs = computed(() => {
   return [...staticInputs, ...mergedDynamic]
 })
 
-const outputs = computed(() => definition.value?.outputs ?? [])
+// Merge static definition outputs with dynamic outputs from node data
+// Dynamic outputs are stored in node.data._dynamicOutputs (used by dispatch node)
+const outputs = computed(() => {
+  const staticOutputs = definition.value?.outputs ?? []
+  const dynamicOutputs = (props.data?._dynamicOutputs as Array<{ id: string; type: string; label: string }>) ?? []
+
+  // Merge: static first, then dynamic (avoiding duplicates)
+  const staticIds = new Set(staticOutputs.map(o => o.id))
+  const mergedDynamic = dynamicOutputs.filter(d => !staticIds.has(d.id))
+
+  return [...staticOutputs, ...mergedDynamic]
+})
 
 // Merge static definition controls with dynamic controls from node data
 // Dynamic controls are stored in node.data._dynamicControls (used by shader nodes)
@@ -211,9 +224,16 @@ const hasInlineControls = computed(() => {
   )
 })
 
-// Filter controls to show inline (not code type)
+// Filter controls to show inline (not code type, respects visibleWhen)
 const inlineControls = computed(() => {
-  return controls.value.filter(c => c.type !== 'code')
+  return controls.value.filter(c => {
+    if (c.type === 'code') return false
+    if (c.visibleWhen) {
+      const otherValue = controlValues.value[c.visibleWhen.controlId]
+      if (otherValue !== c.visibleWhen.value) return false
+    }
+    return true
+  })
 })
 
 // Check if this is a simple node (no content to show in body)

@@ -9,6 +9,7 @@ import {
   disposeAllDebugState,
   disposeAllInputState,
 } from './executors/index'
+import { disposeAllUtilityState } from './executors/utility'
 import {
   disposeAllMessagingState,
   endMessagingFrame,
@@ -16,6 +17,7 @@ import {
 import { gcCodeState, disposeAllCodeNodes } from './executors/code'
 import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
+import { disposeAllClaspConnections } from './executors/clasp'
 import { disposeAllAINodes, gcAIState } from './executors/ai'
 
 /**
@@ -301,6 +303,12 @@ export class ExecutionEngine {
       hasUpdates = true
     }
 
+    // Check for dynamic outputs update (dispatch node)
+    if (outputs.has('_dynamicOutputs')) {
+      updates._dynamicOutputs = outputs.get('_dynamicOutputs')
+      hasUpdates = true
+    }
+
     // Check for preset code update (shader nodes)
     if (outputs.has('_preset_code')) {
       updates.code = outputs.get('_preset_code')
@@ -389,7 +397,9 @@ export class ExecutionEngine {
     disposeAllCodeNodes()
     disposeAll3DNodes()
     disposeAllConnectivityNodes()
+    disposeAllClaspConnections()
     disposeAllAINodes()
+    disposeAllUtilityState()
   }
 
   /**

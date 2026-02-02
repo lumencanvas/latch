@@ -4,7 +4,7 @@ export const webcamNode: NodeDefinition = {
   id: 'webcam',
   name: 'Webcam',
   version: '1.0.0',
-  category: 'visual',
+  category: 'inputs',
   description: 'Capture video from camera',
   icon: 'camera',
   platforms: ['web', 'electron'],

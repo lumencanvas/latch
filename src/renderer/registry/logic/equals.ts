@@ -15,6 +15,8 @@ export const equalsNode: NodeDefinition = {
   outputs: [{ id: 'result', type: 'boolean', label: 'Result' }],
   controls: [
     { id: 'strict', type: 'toggle', label: 'Strict (===)', default: true },
+    { id: 'a', type: 'text', label: 'A', default: '' },
+    { id: 'b', type: 'text', label: 'B', default: '' },
   ],
   tags: ['compare', 'equal', 'match', 'same'],
   info: {

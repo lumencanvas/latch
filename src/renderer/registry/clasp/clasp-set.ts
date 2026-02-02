@@ -4,7 +4,7 @@ export const claspSetNode: NodeDefinition = {
   id: 'clasp-set',
   name: 'CLASP Set',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Set a CLASP parameter value (persistent state)',
   icon: 'edit-3',
   color: '#6366f1',

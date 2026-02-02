@@ -122,6 +122,9 @@ interface UIState {
   // AI model manager modal
   aiModelManagerOpen: boolean
 
+  // Node explorer modal
+  nodeExplorerOpen: boolean
+
   // Canvas state
   zoom: number
   pan: { x: number; y: number }
@@ -169,6 +172,9 @@ export const useUIStore = defineStore('ui', {
 
     // AI model manager modal
     aiModelManagerOpen: false,
+
+    // Node explorer modal
+    nodeExplorerOpen: false,
 
     // Canvas
     zoom: 1,
@@ -270,6 +276,15 @@ export const useUIStore = defineStore('ui', {
 
     toggleAIModelManager() {
       this.aiModelManagerOpen = !this.aiModelManagerOpen
+    },
+
+    // Node explorer modal
+    openNodeExplorer() {
+      this.nodeExplorerOpen = true
+    },
+
+    closeNodeExplorer() {
+      this.nodeExplorerOpen = false
     },
 
     setZoom(zoom: number) {

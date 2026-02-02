@@ -4,7 +4,7 @@ export const claspBundleNode: NodeDefinition = {
   id: 'clasp-bundle',
   name: 'CLASP Bundle',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Send atomic bundles of operations',
   icon: 'package',
   color: '#6366f1',

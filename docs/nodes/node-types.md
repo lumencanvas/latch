@@ -37,6 +37,8 @@ interface NodeDefinition {
   outputs: PortDefinition[]     // Output port definitions
   controls: ControlDefinition[] // Inline control definitions
   tags?: string[]              // Search tags
+  connections?: NodeConnectionRequirement[]  // Required protocol connections
+  info?: NodeInfo              // Educational info (overview, tips, pairsWith)
 }
 ```
 
@@ -61,6 +63,7 @@ type NodeCategory =
   | 'code'         // Custom code
   | '3d'           // 3D rendering
   | 'connectivity' // Network/device
+  | 'clasp'        // CLASP real-time protocol
   | 'subflows'     // Flow composition
   | 'string'       // String operations
   | 'messaging'    // Internal messaging
@@ -246,7 +249,59 @@ controls: [
   // Exposable control (can be promoted to subflow input)
   { id: 'value', type: 'slider', label: 'Value', default: 0.5,
     exposable: true, props: { min: 0, max: 1 } },
+
+  // Conditionally visible control (shown only when another control matches)
+  { id: 'mode', type: 'select', label: 'Mode', default: 'simple',
+    props: { options: ['simple', 'advanced'] } },
+  { id: 'threshold', type: 'number', label: 'Threshold', default: 0.5,
+    visibleWhen: { controlId: 'mode', value: 'advanced' } },
 ]
+```
+
+### visibleWhen
+
+Controls can be conditionally shown based on other control values:
+
+```typescript
+interface VisibleWhen {
+  controlId: string   // ID of the control to check
+  value: unknown      // Value that makes this control visible
+}
+```
+
+### NodeInfo
+
+Additional educational information displayed in the Info tab of the properties panel and in the Node Explorer:
+
+```typescript
+interface NodeInfo {
+  overview: string      // 2-4 sentence explanation of what this node does
+  tips?: string[]       // Short, actionable tips (one sentence each)
+  pairsWith?: string[]  // Node IDs of nodes that complement this one
+}
+```
+
+Example:
+```typescript
+info: {
+  overview: 'Compares two numeric values using a selectable operator and outputs a boolean result. Use this to create conditional logic in your flow.',
+  tips: [
+    'You can type values directly in the A and B controls without wiring constants.',
+    'Feed the boolean result into a Gate or Switch node for conditional routing.',
+  ],
+  pairsWith: ['gate', 'switch', 'equals', 'in-range'],
+}
+```
+
+### NodeConnectionRequirement
+
+Declares that a node requires a specific protocol connection to function:
+
+```typescript
+interface NodeConnectionRequirement {
+  protocol: string     // Protocol identifier (e.g., 'clasp', 'mqtt', 'osc')
+  description?: string // Human-readable description of the requirement
+}
 ```
 
 ---
@@ -499,9 +554,24 @@ flowsStore.updateNodeData(nodeId, {
 })
 ```
 
+### Dynamic Outputs
+
+Stored in `node.data._dynamicOutputs`:
+
+```typescript
+flowsStore.updateNodeData(nodeId, {
+  _dynamicOutputs: [
+    { id: 'out-0', type: 'any', label: '→ 1' },
+    { id: 'out-1', type: 'any', label: '→ 2' },
+  ]
+})
+```
+
+This is used by the Dispatch node to create/remove output ports as conditions are added or removed.
+
 ### Merging in BaseNode
 
-BaseNode merges static and dynamic ports at render time:
+BaseNode merges static and dynamic ports at render time. The same pattern is used for inputs, outputs, and controls:
 
 ```typescript
 const inputs = computed(() => {
@@ -513,7 +583,22 @@ const inputs = computed(() => {
 
   return [...staticInputs, ...mergedDynamic]
 })
+
+// Same pattern for outputs
+const outputs = computed(() => {
+  const staticOutputs = definition.value?.outputs ?? []
+  const dynamicOutputs = (props.data?._dynamicOutputs as PortDefinition[]) ?? []
+
+  const staticIds = new Set(staticOutputs.map(o => o.id))
+  const mergedDynamic = dynamicOutputs.filter(d => !staticIds.has(d.id))
+
+  return [...staticOutputs, ...mergedDynamic]
+})
 ```
+
+### Setting Dynamic Ports from Executors
+
+Executors can signal dynamic port changes by returning special keys (`_dynamicInputs`, `_dynamicOutputs`, `_dynamicControls`) in their output map. The execution engine's `handleSpecialOutputs()` method detects these keys and updates `node.data` accordingly.
 
 ---
 
@@ -538,6 +623,7 @@ const categoryMeta: Record<NodeCategory, { label: string; icon: string; color: s
   code:         { label: 'Code',        icon: 'terminal',   color: '#F59E0B' },
   '3d':         { label: '3D',          icon: 'box',        color: '#0EA5E9' },
   connectivity: { label: 'Connectivity',icon: 'plug',       color: '#2AAB8A' },
+  clasp:        { label: 'CLASP',       icon: 'radio',      color: '#6366F1' },
   subflows:     { label: 'Subflows',    icon: 'layers',     color: '#7C3AED' },
   string:       { label: 'String',      icon: 'text',       color: '#10B981' },
   messaging:    { label: 'Messaging',   icon: 'send',       color: '#8B5CF6' },

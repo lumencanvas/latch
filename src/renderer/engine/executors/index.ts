@@ -566,8 +566,8 @@ export const wrapExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // ============================================================================
 
 export const compareExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 0
+  const a = (ctx.inputs.get('a') as number) ?? (ctx.controls.get('a') as number) ?? 0
+  const b = (ctx.inputs.get('b') as number) ?? (ctx.controls.get('b') as number) ?? 0
   const operator = (ctx.controls.get('operator') as string) ?? '=='
 
   let result: boolean
@@ -598,14 +598,14 @@ export const compareExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 export const andExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = Boolean(ctx.inputs.get('a'))
-  const b = Boolean(ctx.inputs.get('b'))
+  const a = Boolean(ctx.inputs.get('a') ?? ctx.controls.get('a'))
+  const b = Boolean(ctx.inputs.get('b') ?? ctx.controls.get('b'))
   return new Map([['result', a && b ? 1 : 0]])
 }
 
 export const orExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = Boolean(ctx.inputs.get('a'))
-  const b = Boolean(ctx.inputs.get('b'))
+  const a = Boolean(ctx.inputs.get('a') ?? ctx.controls.get('a'))
+  const b = Boolean(ctx.inputs.get('b') ?? ctx.controls.get('b'))
   return new Map([['result', a || b ? 1 : 0]])
 }
 
@@ -618,7 +618,8 @@ export const notExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 const gateLastValue = new Map<string, unknown>()
 
 export const gateExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = ctx.inputs.get('value')
+  const valueControl = ctx.controls.get('value') as string | undefined
+  const value = ctx.inputs.get('value') ?? (valueControl !== '' ? valueControl : undefined)
   const gate = Boolean(ctx.inputs.get('gate') ?? ctx.controls.get('open') ?? true)
 
   // Only update stored value when gate is open and value is defined

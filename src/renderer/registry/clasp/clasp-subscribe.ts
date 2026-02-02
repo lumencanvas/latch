@@ -4,7 +4,7 @@ export const claspSubscribeNode: NodeDefinition = {
   id: 'clasp-subscribe',
   name: 'CLASP Subscribe',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Subscribe to CLASP address patterns and receive values',
   icon: 'bell',
   color: '#6366f1',

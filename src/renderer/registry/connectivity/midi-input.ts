@@ -4,7 +4,7 @@ export const midiInputNode: NodeDefinition = {
   id: 'midi-input',
   name: 'MIDI Input',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'inputs',
   description: 'Receive MIDI messages from devices',
   icon: 'music',
   platforms: ['web', 'electron'],

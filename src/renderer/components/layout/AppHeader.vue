@@ -13,6 +13,7 @@ import {
   Download,
   Upload,
   Settings,
+  GraduationCap,
   PanelLeftClose,
   PanelLeft,
   PanelRightClose,
@@ -316,9 +317,10 @@ const isMacElectron = computed(() => {
       </button>
       <button
         class="btn btn-icon btn-ghost"
-        title="Settings"
+        title="Node Explorer"
+        @click="uiStore.openNodeExplorer()"
       >
-        <Settings />
+        <GraduationCap />
       </button>
 
       <button

@@ -4,7 +4,7 @@ export const claspConnectionNode: NodeDefinition = {
   id: 'clasp-connection',
   name: 'CLASP Connection',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'clasp',
   description: 'Manage a named CLASP connection (can be shared across nodes)',
   icon: 'network',
   color: '#6366f1',

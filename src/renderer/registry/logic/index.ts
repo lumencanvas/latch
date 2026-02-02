@@ -17,6 +17,8 @@ export { typeOfNode } from './type-of'
 export { inRangeNode } from './in-range'
 export { sampleHoldNode } from './sample-hold'
 export { latchNode } from './latch'
+export { matchValueNode } from './match-value'
+export { dispatchNode, DispatchNode } from './dispatch'
 
 import { compareNode } from './compare'
 import { andNode } from './and'
@@ -37,6 +39,8 @@ import { typeOfNode } from './type-of'
 import { inRangeNode } from './in-range'
 import { sampleHoldNode } from './sample-hold'
 import { latchNode } from './latch'
+import { matchValueNode } from './match-value'
+import { dispatchNode } from './dispatch'
 import type { NodeDefinition } from '../types'
 
 export const logicNodes: NodeDefinition[] = [
@@ -59,4 +63,6 @@ export const logicNodes: NodeDefinition[] = [
   inRangeNode,
   sampleHoldNode,
   latchNode,
+  matchValueNode,
+  dispatchNode,
 ]

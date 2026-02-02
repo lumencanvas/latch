@@ -19,6 +19,7 @@ export type NodeCategory =
   | 'code'
   | '3d'
   | 'connectivity'
+  | 'clasp'
   | 'subflows'
   | 'string'
   | 'messaging'
@@ -64,6 +65,8 @@ export interface ControlDefinition {
   default?: unknown
   exposable?: boolean
   bindable?: boolean
+  /** Show this control only when another control has a specific value. */
+  visibleWhen?: { controlId: string; value: unknown }
   props?: Record<string, unknown>
 }
 
@@ -211,6 +214,7 @@ export const categoryMeta: Record<NodeCategory, { label: string; icon: string; c
   code: { label: 'Code', icon: 'terminal', color: '#F59E0B' },
   '3d': { label: '3D', icon: 'box', color: '#0EA5E9' },
   connectivity: { label: 'Connectivity', icon: 'plug', color: '#2AAB8A' },
+  clasp: { label: 'CLASP', icon: 'radio', color: '#6366F1' },
   subflows: { label: 'Subflows', icon: 'layers', color: '#7C3AED' },
   string: { label: 'String', icon: 'text', color: '#10B981' },
   messaging: { label: 'Messaging', icon: 'send', color: '#8B5CF6' },
