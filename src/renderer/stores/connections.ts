@@ -15,6 +15,7 @@ import type {
 } from '@/services/connections/types'
 import { getConnectionManager } from '@/services/connections'
 import { getPlatform } from '@/utils/platform'
+import { useFlowsStore } from '@/stores/flows'
 
 export const useConnectionsStore = defineStore('connections', () => {
   // =========================================================================
@@ -207,21 +208,33 @@ export const useConnectionsStore = defineStore('connections', () => {
     selectedProtocol.value = null
   }
 
+  /** Mark the active flow as dirty so auto-save picks up connection changes */
+  function markFlowDirty() {
+    const flowsStore = useFlowsStore()
+    if (flowsStore.activeFlow) {
+      flowsStore.activeFlow.dirty = true
+      flowsStore.activeFlow.updatedAt = new Date()
+    }
+  }
+
   /** Add a new connection */
   function addConnection(config: BaseConnectionConfig) {
     manager.addConnection(config)
     isCreating.value = false
     selectedConnectionId.value = config.id
+    markFlowDirty()
   }
 
   /** Update an existing connection */
   function updateConnection(connectionId: string, updates: Partial<BaseConnectionConfig>) {
     manager.updateConnection(connectionId, updates)
+    markFlowDirty()
   }
 
   /** Remove a connection */
   function removeConnection(connectionId: string) {
     manager.removeConnection(connectionId)
+    markFlowDirty()
   }
 
   /** Connect a connection */

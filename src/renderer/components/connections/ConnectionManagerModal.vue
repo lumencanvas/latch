@@ -6,9 +6,9 @@
  * Composes ConnectionList, ProtocolSelector, and ConnectionEditor sub-components.
  */
 
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { Plug, X } from 'lucide-vue-next'
+import { Plug, X, CheckCircle } from 'lucide-vue-next'
 import { useConnectionsStore } from '@/stores/connections'
 import ConnectionList from './ConnectionList.vue'
 import ProtocolSelector from './ProtocolSelector.vue'
@@ -19,6 +19,20 @@ import { nanoid } from 'nanoid'
 const connectionsStore = useConnectionsStore()
 const { modalOpen, selectedConnection, selectedConnectionId, isCreating, selectedProtocol, connections } =
   storeToRefs(connectionsStore)
+
+// Save feedback toast
+const saveMessage = ref<string | null>(null)
+let saveMessageTimeout: ReturnType<typeof setTimeout> | null = null
+
+function showSaveMessage(message: string) {
+  saveMessage.value = message
+  if (saveMessageTimeout) {
+    clearTimeout(saveMessageTimeout)
+  }
+  saveMessageTimeout = setTimeout(() => {
+    saveMessage.value = null
+  }, 2000)
+}
 
 // Get the type definition for the selected protocol or connection
 const currentTypeDef = computed((): ConnectionTypeDefinition | undefined => {
@@ -48,8 +62,10 @@ function handleSave(config: Partial<BaseConnectionConfig>) {
   if (isCreating.value) {
     connectionsStore.addConnection(fullConfig)
     connectionsStore.selectConnection(fullConfig.id)
+    showSaveMessage(`Connection "${fullConfig.name}" created`)
   } else if (selectedConnectionId.value) {
     connectionsStore.updateConnection(selectedConnectionId.value, fullConfig)
+    showSaveMessage(`Connection "${fullConfig.name}" saved`)
   }
 }
 
@@ -144,6 +160,17 @@ function handleCreate() {
               />
             </div>
           </div>
+
+          <!-- Save feedback toast -->
+          <Transition name="save-toast">
+            <div
+              v-if="saveMessage"
+              class="save-toast"
+            >
+              <CheckCircle class="save-toast-icon" />
+              {{ saveMessage }}
+            </div>
+          </Transition>
         </div>
       </div>
     </Transition>
@@ -281,6 +308,42 @@ function handleCreate() {
 .editor-placeholder p {
   margin: 0;
   font-size: var(--font-size-sm);
+}
+
+/* Save toast */
+.save-toast {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: #059669;
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  box-shadow: var(--shadow-offset);
+  white-space: nowrap;
+  z-index: 10;
+}
+
+.save-toast-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.save-toast-enter-active,
+.save-toast-leave-active {
+  transition: all 0.2s ease;
+}
+
+.save-toast-enter-from,
+.save-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
 }
 
 /* Transitions */
