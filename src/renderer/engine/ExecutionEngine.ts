@@ -112,6 +112,23 @@ export class ExecutionEngine {
   private prevControlSnapshots: Map<string, Map<string, unknown>> = new Map()
   /** Number of nodes actually executed in the most recent frame (for diagnostics/tests). */
   private lastFrameExecutedCount: number = 0
+
+  // --- Deferred (fire-and-latch) async execution (Phase 2) ---
+  /**
+   * Node types whose async executor should NOT block the frame: the engine kicks
+   * off the work, serves the last cached outputs immediately, and applies the
+   * result when it resolves. Intended for long, occasionally-triggered I/O
+   * (HTTP, heavy generative inference) — NOT per-frame async nodes like MediaPipe
+   * or webcam, which intentionally await their result each frame. Empty by
+   * default (no behavior change until a type is opted in).
+   */
+  private deferredNodeTypes: Set<string> = new Set()
+  /** Deferred node ids with an async op currently in flight (prevents request storms). */
+  private inFlightAsync: Set<string> = new Set()
+  /** Deferred node ids whose result landed out-of-band, for dirty-mode propagation. */
+  private pendingAsyncChange: Set<string> = new Set()
+  /** Whether late async results may still be applied (false after stop()). */
+  private acceptAsyncResults: boolean = true
   private nodeOutputs: Map<string, Map<string, unknown>> = new Map()
   private executors: Map<string, NodeExecutorFn> = new Map()
   private animationFrameId: number | null = null
@@ -173,9 +190,12 @@ export class ExecutionEngine {
         gcAIState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
-        // Drop dirty-mode control snapshots for removed nodes
+        // Drop dirty-mode / async tracking for removed nodes
         for (const id of this.prevControlSnapshots.keys()) {
           if (!validNodeIds.has(id)) this.prevControlSnapshots.delete(id)
+        }
+        for (const id of this.pendingAsyncChange) {
+          if (!validNodeIds.has(id)) this.pendingAsyncChange.delete(id)
         }
       }
     }
@@ -328,8 +348,33 @@ export class ExecutionEngine {
     }
 
     try {
-      // Execute
-      const outputs = await executor(context)
+      const isDeferred = this.deferredNodeTypes.has(nodeType)
+
+      // Deferred (fire-and-latch) path for long-latency async node types: never
+      // block the frame and never re-fire while an op is in flight (no request
+      // storm), serving the last cached outputs until the result lands.
+      if (isDeferred && this.inFlightAsync.has(node.id)) {
+        return { nodeId: node.id, outputs: this.stableCachedOutputs(node.id), duration: 0 }
+      }
+
+      // Call the executor once.
+      const result = executor(context)
+
+      if (isDeferred && result instanceof Promise) {
+        this.inFlightAsync.add(node.id)
+        result
+          .then((resolved) => this.applyDeferredResult(node.id, resolved))
+          .catch((err) => this.handleDeferredError(node.id, err))
+          .finally(() => this.inFlightAsync.delete(node.id))
+        return {
+          nodeId: node.id,
+          outputs: this.stableCachedOutputs(node.id),
+          duration: performance.now() - startTime,
+        }
+      }
+
+      // Default path — awaits sync Maps and non-deferred async results (unchanged)
+      const outputs = await result
       this.nodeOutputs.set(node.id, outputs)
 
       // Handle special executor outputs for dynamic port updates
@@ -443,6 +488,9 @@ export class ExecutionEngine {
         }
       }
       this.lastFrameExecutedCount = executed
+      // Full mode recomputes everything each frame, so async-change hints aren't
+      // needed; clear them to keep the set bounded.
+      this.pendingAsyncChange.clear()
     }
 
     // End-of-frame cleanup for messaging (reset change flags)
@@ -490,7 +538,10 @@ export class ExecutionEngine {
         const prevOutputs = this.nodeOutputs.get(nodeId)
         const result = await this.executeNode(node, deltaTime)
         executed++
-        if (this.outputsDiffer(prevOutputs, result.outputs)) changed.add(nodeId)
+        // A deferred async result that landed out-of-band counts as a change too
+        // (delete doubles as has-and-clear).
+        const asyncChanged = this.pendingAsyncChange.delete(nodeId)
+        if (asyncChanged || this.outputsDiffer(prevOutputs, result.outputs)) changed.add(nodeId)
         if (pure && curControls) this.prevControlSnapshots.set(nodeId, curControls)
       }
       // Skipped: outputs are unchanged and intentionally not added to `changed`.
@@ -565,6 +616,51 @@ export class ExecutionEngine {
   }
 
   /**
+   * Opt node types into fire-and-latch (non-blocking) execution. Use only for
+   * long, occasionally-triggered async work (HTTP, heavy inference) — never for
+   * per-frame async nodes (MediaPipe, webcam) that rely on awaited results.
+   */
+  setDeferredNodeTypes(types: Iterable<string>): void {
+    this.deferredNodeTypes = new Set(types)
+  }
+
+  getDeferredNodeTypes(): ReadonlySet<string> {
+    return this.deferredNodeTypes
+  }
+
+  /**
+   * Last resolved outputs for a deferred node, persisting a STABLE empty map
+   * until the first result so dirty mode sees an unchanged output while pending.
+   */
+  private stableCachedOutputs(id: string): Map<string, unknown> {
+    let cached = this.nodeOutputs.get(id)
+    if (!cached) {
+      cached = new Map<string, unknown>()
+      this.nodeOutputs.set(id, cached)
+    }
+    return cached
+  }
+
+  /** Apply a deferred async result that resolved out-of-band (between frames). */
+  private applyDeferredResult(id: string, outputs: Map<string, unknown>): void {
+    // The promise may resolve after stop() or after the node was removed — drop it.
+    if (!this.acceptAsyncResults || !this.nodeById.has(id)) return
+    this.nodeOutputs.set(id, outputs)
+    this.handleSpecialOutputs(id, outputs)
+    this.pendingAsyncChange.add(id) // signal dirty mode that this output changed
+    this.runtimeStore.updateNodeMetrics(id, {
+      lastExecutionTime: 0,
+      outputValues: Object.fromEntries(outputs),
+    })
+  }
+
+  private handleDeferredError(id: string, err: unknown): void {
+    if (!this.acceptAsyncResults || !this.nodeById.has(id)) return
+    const e = err instanceof Error ? err : new Error(String(err))
+    this.runtimeStore.addError({ nodeId: id, message: e.message, timestamp: Date.now() })
+  }
+
+  /**
    * Start the execution loop
    */
   start(): void {
@@ -576,6 +672,9 @@ export class ExecutionEngine {
     // Clear stale outputs from previous execution
     this.nodeOutputs.clear()
     this.prevControlSnapshots.clear()
+    this.inFlightAsync.clear()
+    this.pendingAsyncChange.clear()
+    this.acceptAsyncResults = true
     this.runtimeStore.start()
 
     this.addVisibilityListener()
@@ -690,6 +789,10 @@ export class ExecutionEngine {
     this.runtimeStore.stop()
     this.nodeOutputs.clear()
     this.prevControlSnapshots.clear()
+    // Stop accepting any in-flight async results that resolve after this point.
+    this.acceptAsyncResults = false
+    this.inFlightAsync.clear()
+    this.pendingAsyncChange.clear()
     this.frameCount = 0
 
     // Clean up all executor state to prevent memory leaks and stop audio

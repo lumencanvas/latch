@@ -221,6 +221,104 @@ describe('dirty execution mode', () => {
   })
 })
 
+describe('deferred (fire-and-latch) async execution', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0))
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('non-deferred async executors are still awaited (default behavior unchanged)', async () => {
+    const engine = new ExecutionEngine()
+    engine.registerExecutor('aio', async () => new Map<string, unknown>([['out', 'ready']]))
+    engine.updateGraph([node('a', 'aio')], [])
+    await engine.executeFrame()
+    expect(engine.getOutputValue('a', 'out')).toBe('ready') // available the same frame
+  })
+
+  it('a deferred async node does not block the frame and does not storm', async () => {
+    const engine = new ExecutionEngine()
+    let resolveIt!: () => void
+    const exec = vi.fn(
+      () =>
+        new Promise<Map<string, unknown>>((res) => {
+          resolveIt = () => res(new Map<string, unknown>([['out', 'DONE']]))
+        }),
+    )
+    engine.registerExecutor('slow', exec)
+    engine.setDeferredNodeTypes(['slow'])
+    expect(engine.getDeferredNodeTypes().has('slow')).toBe(true)
+    engine.updateGraph([node('s', 'slow')], [])
+
+    await engine.executeFrame() // fires, returns cached (empty) — frame does not block
+    expect(exec).toHaveBeenCalledTimes(1)
+    expect(engine.getOutputValue('s', 'out')).toBeUndefined()
+
+    await engine.executeFrame() // still in flight: must NOT fire again
+    expect(exec).toHaveBeenCalledTimes(1)
+
+    resolveIt()
+    await flush()
+    expect(engine.getOutputValue('s', 'out')).toBe('DONE') // applied out-of-band
+
+    await engine.executeFrame() // in-flight cleared: may fire again
+    expect(exec).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops a deferred result that resolves after stop()', async () => {
+    const engine = new ExecutionEngine()
+    let resolveIt!: () => void
+    engine.registerExecutor(
+      'slow',
+      () =>
+        new Promise<Map<string, unknown>>((res) => {
+          resolveIt = () => res(new Map<string, unknown>([['out', 'LATE']]))
+        }),
+    )
+    engine.setDeferredNodeTypes(['slow'])
+    engine.updateGraph([node('s', 'slow')], [])
+    await engine.executeFrame()
+    engine.stop()
+    resolveIt()
+    await flush()
+    expect(engine.getNodeOutputs('s')).toBeUndefined() // not applied; stop() cleared outputs
+  })
+
+  it('propagates a deferred result to a downstream pure node in dirty mode', async () => {
+    const engine = new ExecutionEngine()
+    let resolveIt!: () => void
+    engine.registerExecutor(
+      'slow',
+      () =>
+        new Promise<Map<string, unknown>>((res) => {
+          resolveIt = () => res(new Map<string, unknown>([['out', 5]]))
+        }),
+    )
+    let addCalls = 0
+    engine.registerExecutor('add', (ctx) => {
+      addCalls++
+      return new Map<string, unknown>([['result', ((ctx.inputs.get('a') as number) ?? 0) + 1]])
+    })
+    engine.setExecutionMode('dirty')
+    engine.setDeferredNodeTypes(['slow'])
+    engine.updateGraph([node('s', 'slow'), node('d', 'add')], [edge('s', 'd', 'out', 'a')])
+
+    await engine.executeFrame() // slow fires (empty), add runs with default -> 1
+    expect(engine.getOutputValue('d', 'result')).toBe(1)
+    const callsAfterFrame1 = addCalls
+
+    await engine.executeFrame() // slow pending (stable empty), add idle
+    expect(addCalls).toBe(callsAfterFrame1)
+
+    resolveIt()
+    await flush()
+
+    await engine.executeFrame() // slow result landed -> add re-runs with 5 -> 6
+    expect(engine.getOutputValue('d', 'result')).toBe(6)
+    expect(addCalls).toBe(callsAfterFrame1 + 1)
+  })
+})
+
 describe('frame timing helpers', () => {
   it('clampDelta caps the per-frame delta at MAX_FRAME_DELTA', () => {
     expect(clampDelta(0.016)).toBe(0.016)
