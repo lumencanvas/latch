@@ -26,6 +26,10 @@ Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
+> **Resuming?** Paste the prompt in `docs/handoff/NEXT_SESSION_KICKOFF.md` into a
+> fresh session. Source of truth for the work list is
+> `docs/plans/MODERNIZATION_PLAN_2026.md`.
+
 Large modernization effort on the `modernization` branch (NOT merged/pushed). Plan
 + live tracking: `docs/plans/MODERNIZATION_PLAN_2026.md`; sourced findings:
 `docs/MODERNIZATION_ASSESSMENT_2026-06.md`; deep audits: `docs/AUDIT_2026-06-14.md`.
