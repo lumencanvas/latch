@@ -1,0 +1,410 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden flows (current engine behavior) > diamond reconvergence 1`] = `
+[
+  {
+    "a": {
+      "value": 5,
+    },
+    "b": {
+      "value": 2,
+    },
+    "cmp": {
+      "result": 1,
+    },
+    "prod": {
+      "result": 10,
+    },
+    "sum": {
+      "result": 7,
+    },
+  },
+  {
+    "a": {
+      "value": 5,
+    },
+    "b": {
+      "value": 2,
+    },
+    "cmp": {
+      "result": 1,
+    },
+    "prod": {
+      "result": 10,
+    },
+    "sum": {
+      "result": 7,
+    },
+  },
+  {
+    "a": {
+      "value": 5,
+    },
+    "b": {
+      "value": 2,
+    },
+    "cmp": {
+      "result": 1,
+    },
+    "prod": {
+      "result": 10,
+    },
+    "sum": {
+      "result": 7,
+    },
+  },
+  {
+    "a": {
+      "value": 5,
+    },
+    "b": {
+      "value": 2,
+    },
+    "cmp": {
+      "result": 1,
+    },
+    "prod": {
+      "result": 10,
+    },
+    "sum": {
+      "result": 7,
+    },
+  },
+  {
+    "a": {
+      "value": 5,
+    },
+    "b": {
+      "value": 2,
+    },
+    "cmp": {
+      "result": 1,
+    },
+    "prod": {
+      "result": 10,
+    },
+    "sum": {
+      "result": 7,
+    },
+  },
+  {
+    "a": {
+      "value": 5,
+    },
+    "b": {
+      "value": 2,
+    },
+    "cmp": {
+      "result": 1,
+    },
+    "prod": {
+      "result": 10,
+    },
+    "sum": {
+      "result": 7,
+    },
+  },
+]
+`;
+
+exports[`golden flows (current engine behavior) > lfo-driven flow oscillates deterministically 1`] = `
+[
+  {
+    "k": {
+      "value": 2,
+    },
+    "lfo": {
+      "value": 1.9971,
+    },
+    "mul": {
+      "result": 3.9942,
+    },
+  },
+  {
+    "k": {
+      "value": 2,
+    },
+    "lfo": {
+      "value": 3.913737,
+    },
+    "mul": {
+      "result": 7.827473,
+    },
+  },
+  {
+    "k": {
+      "value": 2,
+    },
+    "lfo": {
+      "value": 5.672689,
+    },
+    "mul": {
+      "result": 11.345379,
+    },
+  },
+  {
+    "k": {
+      "value": 2,
+    },
+    "lfo": {
+      "value": 7.20309,
+    },
+    "mul": {
+      "result": 14.40618,
+    },
+  },
+  {
+    "k": {
+      "value": 2,
+    },
+    "lfo": {
+      "value": 8.443279,
+    },
+    "mul": {
+      "result": 16.886559,
+    },
+  },
+  {
+    "k": {
+      "value": 2,
+    },
+    "lfo": {
+      "value": 9.343289,
+    },
+    "mul": {
+      "result": 18.686579,
+    },
+  },
+]
+`;
+
+exports[`golden flows (current engine behavior) > pure static arithmetic is stable across frames 1`] = `
+[
+  {
+    "c1": {
+      "value": 5,
+    },
+    "c2": {
+      "value": 3,
+    },
+    "cl": {
+      "result": 8,
+    },
+    "sum": {
+      "result": 8,
+    },
+  },
+  {
+    "c1": {
+      "value": 5,
+    },
+    "c2": {
+      "value": 3,
+    },
+    "cl": {
+      "result": 8,
+    },
+    "sum": {
+      "result": 8,
+    },
+  },
+  {
+    "c1": {
+      "value": 5,
+    },
+    "c2": {
+      "value": 3,
+    },
+    "cl": {
+      "result": 8,
+    },
+    "sum": {
+      "result": 8,
+    },
+  },
+  {
+    "c1": {
+      "value": 5,
+    },
+    "c2": {
+      "value": 3,
+    },
+    "cl": {
+      "result": 8,
+    },
+    "sum": {
+      "result": 8,
+    },
+  },
+  {
+    "c1": {
+      "value": 5,
+    },
+    "c2": {
+      "value": 3,
+    },
+    "cl": {
+      "result": 8,
+    },
+    "sum": {
+      "result": 8,
+    },
+  },
+  {
+    "c1": {
+      "value": 5,
+    },
+    "c2": {
+      "value": 3,
+    },
+    "cl": {
+      "result": 8,
+    },
+    "sum": {
+      "result": 8,
+    },
+  },
+]
+`;
+
+exports[`golden flows (current engine behavior) > stateful smoothing converges over frames 1`] = `
+[
+  {
+    "k": {
+      "value": 10,
+    },
+    "sm": {
+      "_prev": 10,
+      "result": 10,
+    },
+  },
+  {
+    "k": {
+      "value": 10,
+    },
+    "sm": {
+      "_prev": 10,
+      "result": 10,
+    },
+  },
+  {
+    "k": {
+      "value": 10,
+    },
+    "sm": {
+      "_prev": 10,
+      "result": 10,
+    },
+  },
+  {
+    "k": {
+      "value": 10,
+    },
+    "sm": {
+      "_prev": 10,
+      "result": 10,
+    },
+  },
+  {
+    "k": {
+      "value": 10,
+    },
+    "sm": {
+      "_prev": 10,
+      "result": 10,
+    },
+  },
+  {
+    "k": {
+      "value": 10,
+    },
+    "sm": {
+      "_prev": 10,
+      "result": 10,
+    },
+  },
+]
+`;
+
+exports[`golden flows (current engine behavior) > time-driven flow advances deterministically 1`] = `
+[
+  {
+    "cl": {
+      "result": 1.6,
+    },
+    "mr": {
+      "result": 1.6,
+    },
+    "t": {
+      "delta": 0.016667,
+      "frame": 1,
+      "time": 0.016,
+    },
+  },
+  {
+    "cl": {
+      "result": 3.2,
+    },
+    "mr": {
+      "result": 3.2,
+    },
+    "t": {
+      "delta": 0.016,
+      "frame": 2,
+      "time": 0.032,
+    },
+  },
+  {
+    "cl": {
+      "result": 4.8,
+    },
+    "mr": {
+      "result": 4.8,
+    },
+    "t": {
+      "delta": 0.016,
+      "frame": 3,
+      "time": 0.048,
+    },
+  },
+  {
+    "cl": {
+      "result": 6.4,
+    },
+    "mr": {
+      "result": 6.4,
+    },
+    "t": {
+      "delta": 0.016,
+      "frame": 4,
+      "time": 0.064,
+    },
+  },
+  {
+    "cl": {
+      "result": 8,
+    },
+    "mr": {
+      "result": 8,
+    },
+    "t": {
+      "delta": 0.016,
+      "frame": 5,
+      "time": 0.08,
+    },
+  },
+  {
+    "cl": {
+      "result": 9.6,
+    },
+    "mr": {
+      "result": 9.6,
+    },
+    "t": {
+      "delta": 0.016,
+      "frame": 6,
+      "time": 0.096,
+    },
+  },
+]
+`;

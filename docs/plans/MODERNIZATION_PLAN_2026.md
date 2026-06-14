@@ -27,7 +27,7 @@
 |------:|-------|---------------|--------|------|
 | 0 | Foundation, headers & test guardrails | `modernization` | ◐ Done (headers want 1× browser check) | Low |
 | 1 | Render loop & lifecycle | `modernization` | ◐ Core complete (reduced-motion node-wiring follow-up) | Low |
-| 2 | Execution engine evolution | `mod/p2-engine-*` | ☐ Not started | **High** |
+| 2 | Execution engine evolution | `modernization` | ◐ Golden oracle done; dirty-flag impl next | **High** |
 | 3 | Staged dependency upgrades | `mod/p3-*` | ☐ Not started | Med |
 | 4 | ML modernization (WebLLM + RAG + caching) | `mod/p4-*` | ☐ Not started | Med |
 | 5 | Mobile / touch tier | `mod/p5-*` | ☐ Not started | Med |
@@ -81,7 +81,7 @@ mobile, free wins on laptops.
 **Goal:** stop re-running the whole graph every frame; stop async nodes stalling
 the frame. This is the core architectural bet (cables.gl's value-vs-trigger model).
 
-- [ ] `mod/p2-golden-tests` (FIRST) — Capture golden outputs: run a battery of representative sample flows through the *current* engine and snapshot per-node outputs over N frames. These become the regression oracle for the rewrite.
+- [x] `mod/p2-golden-tests` (FIRST) — Built a reusable harness (`tests/unit/engine/golden/flowHarness.ts`) that runs a flow through a real `ExecutionEngine` (all built-in executors) for N frames with a **mocked deterministic clock**, capturing serializable per-node outputs. Committed golden snapshots for 5 canonical flows (pure-static, time-driven, LFO, diamond, stateful-smooth) in `golden-flows.test.ts`. Verified deterministic + stable across re-runs (LFO oscillates frame-to-frame; pure-static constant). This is the oracle the dirty-flag rewrite must reproduce, and the harness's `configure` hook + `runFlow` snapshots are reused for full-vs-dirty equivalence next.
 - [ ] `mod/p2-dirty-flags` — Change-driven execution: nodes re-run only when an input/control changed or they self-declare as continuous (time/LFO/audio/video/AI). Add a `dirty` propagation pass.
   - **Test:** golden flows produce identical results; assert a static subgraph executes 0 times after settling.
 - [ ] `mod/p2-async-nonblocking` — Async executors (HTTP/AI/clasp) become fire-and-latch: kick off, return last cached output, never block the frame.
