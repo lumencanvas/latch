@@ -6,6 +6,7 @@ export { featureExtractionNode } from './feature-extraction'
 export { objectDetectionNode } from './object-detection'
 export { speechRecognitionNode } from './speech-recognition'
 export { textTransformationNode } from './text-transformation'
+export { retrieveNode } from './retrieve'
 
 // MediaPipe nodes with custom UI components
 export { mediapipeHandNode, MediaPipeHandNode } from './mediapipe-hand'
@@ -24,6 +25,7 @@ import { featureExtractionNode } from './feature-extraction'
 import { objectDetectionNode } from './object-detection'
 import { speechRecognitionNode } from './speech-recognition'
 import { textTransformationNode } from './text-transformation'
+import { retrieveNode } from './retrieve'
 import { mediapipeHandNode } from './mediapipe-hand'
 import { mediapipeFaceNode } from './mediapipe-face'
 import { mediapipePoseNode } from './mediapipe-pose'
@@ -42,6 +44,7 @@ export const aiNodes: NodeDefinition[] = [
   objectDetectionNode,
   speechRecognitionNode,
   textTransformationNode,
+  retrieveNode,
   mediapipeHandNode,
   mediapipeFaceNode,
   mediapipePoseNode,

@@ -16,10 +16,86 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ## Current Status
 
-**Version**: 0.1.8
-**Build**: Passing
-**Tests**: 812 passed | 11 todo (823 total)
-**Branch**: main
+**Version**: 0.3.2
+**Build**: Passing (`npm run build:web`)
+**Tests**: 1165 passed | 11 todo (1176 total)
+**Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
+Durable project rules now live in `CLAUDE.md`; this file is the change log.
+
+---
+
+## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
+
+Large modernization effort on the `modernization` branch (NOT merged/pushed). Plan
++ live tracking: `docs/plans/MODERNIZATION_PLAN_2026.md`; sourced findings:
+`docs/MODERNIZATION_ASSESSMENT_2026-06.md`; deep audits: `docs/AUDIT_2026-06-14.md`.
+All work is test-driven; suite went **1096 → 1165 passing / 11 todo**, with
+typecheck + lint + `build:web` clean throughout. **All new engine modes are
+OPT-IN and default OFF**, so production behavior is unchanged until explicitly
+enabled. Project rule added: no AI attribution in git history (see `CLAUDE.md`).
+
+### Phase 0 - Foundation
+- `ExecutionEngine`: per-frame node resolution O(n^2) -> O(1) (`nodeById` Map).
+- Cross-origin isolation: COOP/COEP (`credentialless`) in `netlify.toml` + Vite
+  dev/preview, plus vendored `public/coi-serviceworker.min.js` (host-agnostic, so
+  it survives the Netlify -> DigitalOcean App Platform move). Dev-only
+  `crossOriginIsolated` log in `main.ts`. Added `vite-env.d.ts` (vite/client types
+  were missing). CI already existed (`.github/workflows/ci.yml`) - verified, not
+  duplicated.
+
+### Phase 1 - Render-loop lifecycle (`ExecutionEngine`)
+- Pause on `visibilitychange` (hidden) and resume with reset timing (no delta
+  spike); optional FPS cap (`setTargetFps`, default uncapped); `MAX_FRAME_DELTA`
+  clamp; `prefersReducedMotion()` + `clampDevicePixelRatio()` utils (renderers
+  already pin pixelRatio to 1).
+- Audit caught + fixed a concurrency race: the loop re-armed after `await` and
+  could spawn a 2nd concurrent loop on hide->show; fixed with a `loopToken`.
+
+### Phase 2 - Execution engine evolution (all OPT-IN)
+- Golden oracle: `tests/unit/engine/golden/` deterministic harness + snapshots.
+- Dirty (change-driven) mode: `setExecutionMode('dirty')` - pure nodes skip when
+  inputs+controls unchanged; verified byte-identical to full mode + idle test.
+  Pure allowlist (`PURE_NODE_TYPES`, 24 types) built by READING executors (grep
+  is insufficient - e.g. `gate` hides module state).
+- Deferred (fire-and-latch) async: `setDeferredNodeTypes()` - long-I/O nodes
+  (HTTP, heavy AI) don't block the frame. A blanket change would harm per-frame
+  MediaPipe/webcam (they await each frame), so this is opt-in, default empty.
+- Latent pre-existing bug documented: the `smooth` node's `_prev` state never
+  persists -> it currently passes its input through unchanged.
+
+### Phase 3 - Dependency upgrades (staged)
+- 3a Vue Flow: `node_modules` was already 1.48.2 (carets resolved to latest);
+  aligned `package.json` + enabled `:only-render-visible-elements`.
+- 3d transformers.js 3.8.1 -> 4.2.0: verified `env`/`pipeline` API against the
+  installed type defs (zero code changes needed); typecheck + build + suite green.
+  Worker uses `(pipeline as any)`, so v4 runtime semantics need a 1x browser
+  check. Pulls native `sharp` + nightly `onnxruntime-web`; 52 npm advisories
+  (do NOT `npm audit fix --force`).
+- 3b three -> r184 and 3c clasp 3 -> 4 NOT done (need runtime validation).
+
+### Phase 4 - ML modernization (started)
+- `services/ai/VectorStore.ts`: dependency-free in-memory cosine vector store
+  (RAG retrieval core); chosen over Orama/PGlite for zero deps + testability;
+  12 tests.
+- `Retrieve` node (`registry/ai/retrieve.ts` + `retrieveExecutor` in
+  `engine/executors/index.ts`): Corpus `[{vector,text}]` + Query embedding ->
+  top-K `matches` + newline-joined `context` (prompt injection) + `bestText`;
+  pure, robust to malformed inputs; 6 tests. Embed already exists as the
+  `feature-extraction` "Text Embed" node, so Embed -> Retrieve is usable now.
+
+### NEEDS IN-BROWSER VALIDATION (cannot verify headless)
+1. `self.crossOriginIsolated === true` AND AI/MediaPipe nodes still load (headers).
+2. `onlyRenderVisibleElements` renders correctly when panning a large graph.
+3. transformers.js v4 actually loads + runs a model (WebGPU `device`, `dtype`,
+   chat `messages`, `progress_callback`).
+Run `npm run dev`, watch the console, load one AI model, pan a large graph. The
+opt-in engine modes (dirty/deferred) also want in-app validation before any
+default flip.
+
+### Next
+Phase 4: stateful Vector Memory node, WebLLM streaming node, model-catalog
+refresh, OPFS model caching, transferable image data. Then Phase 3b (three r184),
+3c (clasp 4), Phase 5 (mobile/touch), Phase 6 (Three TSL/WebGPU).
 
 ---
 

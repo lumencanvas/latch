@@ -125,7 +125,8 @@ Each sub-phase is **its own branch**, merged independently, typecheck + tests ga
 - [ ] `mod/p4-transfer` — Replace `Array.from(imageData.data)` (`AIInference.ts:927`) with transferable `ImageBitmap`/`ArrayBuffer` to the worker.
   - **Test:** round-trip image fidelity; assert no structured-clone of large arrays.
 - [◐] `mod/p4-rag` — **Retrieval core done**: `services/ai/VectorStore.ts` — a dependency-free in-memory cosine vector store (`add`/`query` top-k/`remove`/`clear`/`toJSON`/`fromJSON`, dimension enforcement, graceful 0-score on bad vectors). Chose this over Orama/PGlite: zero new dep, fully unit-testable, sufficient for the thousands-of-vectors range; persistence rides existing Dexie via toJSON/fromJSON. 12 tests (cosine correctness, top-k ordering, dim mismatch, round-trip, edge cases). Suite 1159 green.
-  - **Remaining:** the **Embed / Vector Store / Retrieve nodes** that wire this to the feature-extraction model (Embed needs runtime model validation); optional **LLMLingua-2** compress node.
+  - **Retrieve node done** (`registry/ai/retrieve.ts` + `retrieveExecutor`): pure, offline node — Corpus (`[{vector,text}]`) + Query embedding → top-K `matches` + newline-joined `context` (ready for prompt injection) + `bestText`. Robust to malformed inputs (0-score, no throw). 6 executor tests. **Embed already exists** as the `feature-extraction` "Text Embed" node, so Embed→Retrieve is a usable pair now.
+  - **Remaining:** a stateful **Vector Memory** node (accumulate embeddings over time via VectorStore + triggers) so a corpus can be built incrementally; optional **LLMLingua-2** compress node.
   - **Test (done):** deterministic top-k on fixtures, dimensionality enforcement, JSON round-trip. (Embedding dimensionality + compression are node-level, pending.)
 - **Acceptance:** a streaming LLM node runs a current model end-to-end on WebGPU; RAG retrieval feeds an LLM node; large weights persist across reload.
 

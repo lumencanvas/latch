@@ -5,6 +5,7 @@
 
 import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { cosineSimilarity } from '../../services/ai/VectorStore'
 import { audioExecutors } from './audio'
 import { visualExecutors } from './visual'
 import { aiExecutors } from './ai'
@@ -1188,6 +1189,56 @@ export function disposeAllInputState(): void {
 }
 
 // ============================================================================
+// RAG
+// ============================================================================
+
+interface RetrieveDoc {
+  id?: string
+  vector?: number[]
+  text?: string
+}
+
+/**
+ * Retrieve node: rank a corpus of pre-embedded documents by cosine similarity to
+ * a query embedding and return the top-K. Pure (no model call, no state) — the
+ * retrieval step of in-browser RAG. Robust to missing/malformed inputs (returns
+ * empty results rather than throwing).
+ */
+export const retrieveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const corpus = ctx.inputs.get('corpus') as RetrieveDoc[] | undefined
+  const query = ctx.inputs.get('query') as number[] | undefined
+  const topK = Math.max(1, Math.floor((ctx.controls.get('topK') as number) ?? 3))
+
+  if (!Array.isArray(corpus) || !Array.isArray(query) || query.length === 0) {
+    return new Map<string, unknown>([
+      ['matches', []],
+      ['context', ''],
+      ['bestText', ''],
+    ])
+  }
+
+  const matches = corpus
+    .map((doc, i) => ({
+      id: doc?.id ?? String(i),
+      score: Array.isArray(doc?.vector) ? cosineSimilarity(query, doc.vector as number[]) : 0,
+      text: typeof doc?.text === 'string' ? doc.text : '',
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+
+  const context = matches
+    .map((m) => m.text)
+    .filter((t) => t.length > 0)
+    .join('\n')
+
+  return new Map<string, unknown>([
+    ['matches', matches],
+    ['context', context],
+    ['bestText', matches[0]?.text ?? ''],
+  ])
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
@@ -1257,6 +1308,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
 
   // AI
   ...aiExecutors,
+  retrieve: retrieveExecutor,
 
   // Connectivity (legacy)
   ...connectivityExecutors,
