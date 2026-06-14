@@ -15,8 +15,22 @@ export default defineConfig({
       '@utils': resolve(__dirname, 'src/utils'),
     },
   },
+  // Cross-origin isolation in dev + preview so SharedArrayBuffer (multi-threaded
+  // WASM for transformers.js / ONNX Runtime) is available locally, matching the
+  // netlify.toml production headers. "credentialless" keeps cross-origin model /
+  // WASM fetches working without requiring CORP on those responses.
   server: {
     port: 5173,
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
   },
   build: {
     outDir: 'dist/web',

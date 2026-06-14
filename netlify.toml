@@ -2,6 +2,20 @@
   command = "npm run build:web"
   publish = "dist/web"
 
+# Cross-origin isolation enables SharedArrayBuffer, which lets transformers.js /
+# ONNX Runtime run multi-threaded WASM (~3-4x faster). COEP is "credentialless"
+# (not "require-corp") so cross-origin model weights and MediaPipe WASM
+# (Hugging Face / CDN, fetched no-cors without credentials) still load. Browsers
+# without credentialless support (e.g. Safari) fall back to non-isolated /
+# single-threaded WASM — everything still works, just slower.
+# NOTE: this only takes effect on hosts that honor custom headers (Netlify).
+# GitHub Pages cannot set these headers; see the modernization plan p0-headers.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "credentialless"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

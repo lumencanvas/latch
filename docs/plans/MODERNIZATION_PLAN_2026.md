@@ -43,15 +43,17 @@ depends on **1**. **6** depends on **3b** (three r184). Do **2** before **6**.
 **Goal:** unlock threaded WASM, kill the cheap perf bug, and establish the TDD/CI
 cadence everything else relies on.
 
-- [ ] `mod/p0-headers` — Add COOP/COEP headers to `netlify.toml` (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`) and a Vite dev-server header equivalent in `vite.config.ts`.
-  - **Test:** add a runtime assertion/log + a unit test that, given headers, `crossOriginIsolated` is expected true; manual check `self.crossOriginIsolated === true` on the web build. Verify MediaPipe/transformers still load (COEP can break cross-origin script/wasm fetches — confirm CDN assets send CORP or are self-hosted).
-  - **Acceptance:** web build is cross-origin isolated AND all existing AI/MediaPipe nodes still load.
+- [x] `mod/p0-headers` (implemented — ⚠ acceptance pending in-browser verification) — Added COOP `same-origin` + COEP **`credentialless`** to `netlify.toml` and to Vite `server` + `preview` in `vite.config.ts`. Chose `credentialless` over `require-corp` so cross-origin HF model weights + MediaPipe WASM (fetched no-cors) still load; Safari (no credentialless) degrades gracefully to non-isolated/single-threaded. Added `src/renderer/vite-env.d.ts` (`vite/client` types — project was missing them) and a dev-only `crossOriginIsolated` console log in `main.ts`.
+  - **Test:** `tests/unit/config/cross-origin-isolation.test.ts` guards the headers in both files against silent removal. (Runtime `crossOriginIsolated` can't be unit-tested — verified via the dev console log.)
+  - **⚠ Open question (blocks acceptance):** which host is canonical for the web demo? `ci.yml` deploys to **GitHub Pages, which cannot set custom headers** → no cross-origin isolation there. If prod is Netlify, the `[[headers]]` block applies. Confirm deploy target; if Pages must stay, use a `coi-serviceworker` shim instead.
+  - **Acceptance (NOT yet met):** on the live host, `self.crossOriginIsolated === true` AND all AI/MediaPipe nodes still load. Needs a browser + the confirmed host.
 - [x] `mod/p0-engine-map` — Replaced O(n²) `nodesSnapshot.find(...)` with a `nodeById` `Map<id,node>` rebuilt once per `updateGraph`; `executeFrame` resolves nodes in O(1).
   - **Test:** `tests/unit/engine/ExecutionEngine.test.ts` (7 characterization tests: topo order, output propagation, value retrieval, controls, diamond merge, graph re-sort) written green against the pre-refactor code, still green after — proving behavior unchanged.
   - **Acceptance:** ✅ identical outputs, lookups O(1). Full suite 1103 passing / 11 todo, typecheck clean.
   - **Note / follow-up:** discovered that `updateGraph`'s GC path (`gcVisualState`) eagerly constructs a `ThreeShaderRenderer`/`WebGLRenderer` even when only collecting garbage — forces a GL context where none is needed (and breaks in headless tests). Fold a lazy-GC fix into Phase 2 or a `mod/p0-*` follow-up.
-- [ ] `mod/p0-ci` — Add a CI workflow (`.github/workflows/`) running `typecheck` + `test:unit` on PRs; document the baseline green count.
-  - **Acceptance:** CI gates every `mod/*` branch.
+- [x] `mod/p0-ci` — Already satisfied: `.github/workflows/ci.yml` already runs `typecheck` + `lint` + `test:unit` + `build:web` on PRs to `main` (verified, not assumed). No new workflow needed. Baseline green documented above (1096 → now 1105 with new tests).
+  - **Follow-up (not blocking):** `ci.yml`'s `deploy-web` job pushes to GitHub Pages, which conflicts with the COOP/COEP headers goal — fold into the `mod/p0-headers` deploy-target decision.
+  - **Acceptance:** ✅ CI gates every `mod/*` PR.
 
 ---
 
