@@ -28,7 +28,7 @@
 | 0 | Foundation, headers & test guardrails | `modernization` | ◐ Done (headers want 1× browser check) | Low |
 | 1 | Render loop & lifecycle | `modernization` | ◐ Core complete (reduced-motion node-wiring follow-up) | Low |
 | 2 | Execution engine evolution | `modernization` | ◐ Oracle + dirty mode + async-defer done (all opt-in, tested); only flip-defaults (needs in-app validation) + optional trigger-edges remain | **High** |
-| 3 | Staged dependency upgrades | `mod/p3-*` | ☐ Not started | Med |
+| 3 | Staged dependency upgrades | `modernization` | ◐ 3a Vue Flow done; three/clasp/transformers next | Med |
 | 4 | ML modernization (WebLLM + RAG + caching) | `mod/p4-*` | ☐ Not started | Med |
 | 5 | Mobile / touch tier | `mod/p5-*` | ☐ Not started | Med |
 | 6 | Three.js TSL / WebGPU (flagship) | `mod/p6-tsl` | ☐ Not started | **High** |
@@ -98,9 +98,9 @@ the frame. This is the core architectural bet (cables.gl's value-vs-trigger mode
 
 Each sub-phase is **its own branch**, merged independently, typecheck + tests gated.
 
-- [ ] `mod/p3a-vueflow` — `@vue-flow/core` → 1.48.2 + `background`/`controls`/`minimap` siblings; enable `onlyRenderVisibleElements`; add `@vue-flow/node-resizer`.
-  - **Note:** auto-generated handle IDs were removed (default `null`) in a recent minor — audit edge/handle ID usage.
-  - **Test:** existing editor/component tests green; manual smoke of connect/pan/zoom/minimap; large-graph render check.
+- [x] `mod/p3a-vueflow` — **Already installed**: `node_modules`/lockfile were on `core 1.48.2 / background 1.3.2 / controls 1.1.3 / minimap 1.5.4` (carets resolved to latest); only `package.json` still declared the old floors. Aligned `package.json` to the real versions and enabled `:only-render-visible-elements="true"` on the editor `<VueFlow>` (large-graph DOM virtualization). The "auto handle IDs removed" 1.4x break does NOT affect LATCH — handles use explicit `:id` and edges carry explicit handles (verified). `@vue-flow/node-resizer` deferred (a feature needing per-node UI integration, not a bump).
+  - **Test:** `tests/unit/config/vue-flow.test.ts` guards the version floors + the perf flag; `npm run build:web` passes on 1.48.2; full suite green (1146).
+  - **Needs 1× visual check:** `onlyRenderVisibleElements` can have offscreen-edge rendering quirks (xyflow #4329/#4516); execution is unaffected (uses store data, not DOM). Confirm panning a large graph looks right.
 - [ ] `mod/p3b-three` — `three` r162 → r184 on the **existing WebGLRenderer path only** (no TSL yet).
   - **Test:** shader + 3D render regression (hash/snapshot of rendered canvas for fixture scenes); `@types/three` bumped in lockstep.
 - [ ] `mod/p3c-clasp` — `@clasp-to/core` 3.3.2 → 4.x. Read the first-party CHANGELOG for the v3→v4 break first; evaluate adopting `@clasp-to/sdk`.

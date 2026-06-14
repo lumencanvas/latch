@@ -661,6 +661,7 @@ onUnmounted(() => {
       :delete-key-code="'Delete'"
       :edges-updatable="true"
       :selectable-edges="true"
+      :only-render-visible-elements="true"
       fit-view-on-init
       class="flow-canvas"
       @dragover="onDragOver"
