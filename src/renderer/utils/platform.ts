@@ -106,6 +106,28 @@ export function getPlatformCapabilities(): PlatformCapabilities {
 }
 
 /**
+ * Whether the user has requested reduced motion at the OS level. Nodes and the
+ * render loop can honor this to limit animation (accessibility + battery).
+ */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+/**
+ * Clamp the device pixel ratio for renderer surfaces. Rendering at the full DPR
+ * of a high-density display is expensive; capping trades a little sharpness for
+ * a lot of GPU/battery headroom (use ~1.5 on phones, ~2 on desktop).
+ */
+export function clampDevicePixelRatio(max: number = 2): number {
+  const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1
+  return Math.min(dpr, max)
+}
+
+/**
  * Execute platform-specific code
  */
 export function onPlatform<T>(options: {

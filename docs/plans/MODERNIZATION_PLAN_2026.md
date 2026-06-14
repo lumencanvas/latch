@@ -25,8 +25,8 @@
 
 | Phase | Title | Branch prefix | Status | Risk |
 |------:|-------|---------------|--------|------|
-| 0 | Foundation, headers & test guardrails | `mod/p0-*` | ◐ In progress | Low |
-| 1 | Render loop & lifecycle | `mod/p1-render-loop` | ☐ Not started | Low |
+| 0 | Foundation, headers & test guardrails | `modernization` | ◐ Done (headers want 1× browser check) | Low |
+| 1 | Render loop & lifecycle | `modernization` | ◐ Core complete (reduced-motion node-wiring follow-up) | Low |
 | 2 | Execution engine evolution | `mod/p2-engine-*` | ☐ Not started | **High** |
 | 3 | Staged dependency upgrades | `mod/p3-*` | ☐ Not started | Med |
 | 4 | ML modernization (WebLLM + RAG + caching) | `mod/p4-*` | ☐ Not started | Med |
@@ -65,12 +65,13 @@ cadence everything else relies on.
 **Goal:** the `ExecutionEngine` rAF loop becomes a good citizen — mandatory for
 mobile, free wins on laptops.
 
-- [ ] Pause on `document.hidden` via `visibilitychange`; resume cleanly (reset `lastFrameTime` to avoid delta spike).
-- [ ] Optional FPS cap (engine setting, default uncapped on desktop): skip render until `now - last >= 1000/targetFps`, still schedule rAF.
-- [ ] Cap DPR for any renderer surface (`Math.min(devicePixelRatio, 2)`; 1.5 on phones).
-- [ ] Respect `prefers-reduced-motion: reduce` (expose as a runtime flag for nodes to honor).
-- **Tests:** mock `requestAnimationFrame` + `document.visibilityState`; assert loop stops when hidden and resumes when visible; assert frame interval honors the cap; assert no delta spike on resume.
-- **Acceptance:** backgrounding the tab stops execution; foreground resumes without a time jump; CPU drops measurably when hidden.
+- [x] Pause on `document.hidden` via `visibilitychange`; resume cleanly. `ExecutionEngine` cancels rAF when hidden (keeps "running" status), and on return resets frame timing before rescheduling so time-based nodes don't jump. User-initiated `pause()` detaches the listener so a focus change can't silently resume.
+- [x] Optional FPS cap — `setTargetFps()`/`getTargetFps()` (default 0 = uncapped); `scheduleLoop()` gates execution via the pure `shouldRenderFrame()` helper, still scheduling rAF each tick.
+- [x] Delta clamp — added `MAX_FRAME_DELTA` (0.25s) + pure `clampDelta()` in `executeFrame`, so a hidden tab / sleep / breakpoint can't produce a multi-second frame.
+- [x] DPR — **already conservative**: renderers hardcode `setPixelRatio(1)` (verified). Raising it would cost mobile perf, so left as-is; added `clampDevicePixelRatio()` util for future per-device tuning.
+- [~] `prefers-reduced-motion` — `prefersReducedMotion()` util added (accessibility + battery). Exposed for nodes/loop to honor; wiring individual animated nodes to it is a follow-up.
+- **Tests:** `tests/unit/engine/ExecutionEngine.test.ts` (+9: timing helpers, hidden→pause, visible→resume, no-resume-after-user-pause, fps clamp, fps-cap skips early frames via mocked rAF) and `tests/unit/utils/platform.test.ts` (+4). All green.
+- **Acceptance:** ✅ backgrounding stops ticking without losing running state; foreground resumes with no time jump; FPS cap verified. Full suite 1120 passing / 11 todo, typecheck + lint clean.
 
 ---
 

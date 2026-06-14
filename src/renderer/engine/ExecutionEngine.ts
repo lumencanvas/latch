@@ -21,6 +21,31 @@ import { disposeAllClaspConnections } from './executors/clasp'
 import { disposeAllAINodes, gcAIState } from './executors/ai'
 
 /**
+ * Largest delta (seconds) a single frame may report. Caps the time spike that
+ * would otherwise occur after the tab was backgrounded, a breakpoint paused
+ * execution, or the machine slept — preventing time/LFO/physics nodes from
+ * jumping forward by seconds in one frame.
+ */
+export const MAX_FRAME_DELTA = 0.25
+
+/**
+ * Pure FPS-cap gate: should a frame execute now given the last execution time
+ * and the target fps? `targetFps <= 0` means uncapped (always execute). The 1ms
+ * tolerance prevents a 60fps cap from skipping every other frame due to rAF
+ * timestamp jitter.
+ */
+export function shouldRenderFrame(now: number, lastRenderTime: number, targetFps: number): boolean {
+  if (targetFps <= 0) return true
+  const interval = 1000 / targetFps
+  return now - lastRenderTime >= interval - 1
+}
+
+/** Pure delta clamp — see {@link MAX_FRAME_DELTA}. */
+export function clampDelta(deltaSeconds: number, max: number = MAX_FRAME_DELTA): number {
+  return deltaSeconds > max ? max : deltaSeconds
+}
+
+/**
  * Result of executing a node
  */
 export interface ExecutionResult {
@@ -63,6 +88,16 @@ export class ExecutionEngine {
   private lastFrameTime: number = 0
   private frameCount: number = 0
   private runtimeStore = useRuntimeStore()
+
+  // --- Render-loop lifecycle (Phase 1) ---
+  /** Target frames per second; 0 = uncapped (run at the display refresh rate). */
+  private targetFps: number = 0
+  /** Timestamp of the last executed frame, for the FPS-cap gate. */
+  private lastRenderTime: number = 0
+  /** True when the loop was paused because the tab/document was hidden. */
+  private autoPausedByVisibility: boolean = false
+  /** Bound visibility handler; stored so it can be removed. */
+  private visibilityHandler: (() => void) | null = null
 
   /**
    * Register a node executor
@@ -334,7 +369,8 @@ export class ExecutionEngine {
    */
   async executeFrame(): Promise<void> {
     const now = performance.now()
-    const deltaTime = this.lastFrameTime > 0 ? (now - this.lastFrameTime) / 1000 : 1 / 60
+    const rawDelta = this.lastFrameTime > 0 ? (now - this.lastFrameTime) / 1000 : 1 / 60
+    const deltaTime = clampDelta(rawDelta)
     this.lastFrameTime = now
     this.frameCount++
 
@@ -367,21 +403,92 @@ export class ExecutionEngine {
     if (this.runtimeStore.isRunning) return
 
     this.startTime = performance.now()
-    this.lastFrameTime = 0
+    this.resetFrameTiming()
     this.frameCount = 0
     // Clear stale outputs from previous execution
     this.nodeOutputs.clear()
     this.runtimeStore.start()
 
-    const loop = async () => {
+    this.addVisibilityListener()
+    this.scheduleLoop()
+  }
+
+  /**
+   * Schedule the requestAnimationFrame loop. Shared by start(), resume(), and
+   * visibility-driven resume so timing/FPS-cap behavior stays consistent.
+   */
+  private scheduleLoop(): void {
+    const loop = async (timestamp?: number) => {
       if (!this.runtimeStore.isRunning) return
 
-      await this.executeFrame()
+      const now = timestamp ?? performance.now()
+      // FPS cap: only execute when enough time has elapsed (uncapped by default).
+      if (shouldRenderFrame(now, this.lastRenderTime, this.targetFps)) {
+        this.lastRenderTime = now
+        await this.executeFrame()
+      }
 
       this.animationFrameId = requestAnimationFrame(loop)
     }
 
-    loop()
+    this.animationFrameId = requestAnimationFrame(loop)
+  }
+
+  /** Reset frame timing so the next frame reports a normal delta, not a spike. */
+  private resetFrameTiming(): void {
+    this.lastFrameTime = 0
+    this.lastRenderTime = 0
+  }
+
+  /**
+   * Pause/resume the loop when the document is hidden/visible. Backgrounded tabs
+   * already throttle rAF; doing this explicitly also lets us reset timing on
+   * return so time-based nodes don't jump, and stops burning the frame budget
+   * when nothing is visible (battery/thermal — important on mobile).
+   */
+  private onVisibilityChange(): void {
+    if (typeof document === 'undefined') return
+
+    if (document.hidden) {
+      if (this.runtimeStore.isRunning && this.animationFrameId !== null) {
+        cancelAnimationFrame(this.animationFrameId)
+        this.animationFrameId = null
+        this.autoPausedByVisibility = true
+      }
+    } else if (this.autoPausedByVisibility) {
+      this.autoPausedByVisibility = false
+      if (this.runtimeStore.isRunning) {
+        this.resetFrameTiming()
+        this.scheduleLoop()
+      }
+    }
+  }
+
+  private addVisibilityListener(): void {
+    if (this.visibilityHandler || typeof document === 'undefined') return
+    this.visibilityHandler = () => this.onVisibilityChange()
+    document.addEventListener('visibilitychange', this.visibilityHandler)
+  }
+
+  private removeVisibilityListener(): void {
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler)
+    }
+    this.visibilityHandler = null
+    this.autoPausedByVisibility = false
+  }
+
+  /**
+   * Set the target frame rate. 0 (default) runs uncapped at the display refresh
+   * rate. A positive value throttles execution — useful on battery/mobile.
+   */
+  setTargetFps(fps: number): void {
+    this.targetFps = Number.isFinite(fps) && fps > 0 ? fps : 0
+  }
+
+  /** Current target fps (0 = uncapped). */
+  getTargetFps(): number {
+    return this.targetFps
   }
 
   /**
@@ -393,6 +500,7 @@ export class ExecutionEngine {
       this.animationFrameId = null
     }
 
+    this.removeVisibilityListener()
     this.runtimeStore.stop()
     this.nodeOutputs.clear()
     this.frameCount = 0
@@ -421,6 +529,9 @@ export class ExecutionEngine {
       this.animationFrameId = null
     }
 
+    // User-initiated pause: drop visibility handling so a tab focus change
+    // doesn't silently resume execution behind the user's back.
+    this.removeVisibilityListener()
     this.runtimeStore.pause()
   }
 
@@ -431,17 +542,9 @@ export class ExecutionEngine {
     if (!this.runtimeStore.isPaused) return
 
     this.runtimeStore.resume()
-    this.lastFrameTime = performance.now()
-
-    const loop = async () => {
-      if (!this.runtimeStore.isRunning) return
-
-      await this.executeFrame()
-
-      this.animationFrameId = requestAnimationFrame(loop)
-    }
-
-    loop()
+    this.resetFrameTiming()
+    this.addVisibilityListener()
+    this.scheduleLoop()
   }
 
   /**

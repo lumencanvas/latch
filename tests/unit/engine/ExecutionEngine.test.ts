@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { Node, Edge } from '@vue-flow/core'
-import { ExecutionEngine } from '@/engine/ExecutionEngine'
+import { ExecutionEngine, shouldRenderFrame, clampDelta, MAX_FRAME_DELTA } from '@/engine/ExecutionEngine'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { useRuntimeStore } from '@/stores/runtime'
 
 /**
  * Characterization tests for ExecutionEngine.
@@ -132,5 +133,134 @@ describe('ExecutionEngine', () => {
     )
     await engine.executeFrame()
     expect(order).toEqual(['A', 'C', 'B'])
+  })
+})
+
+describe('frame timing helpers', () => {
+  it('clampDelta caps the per-frame delta at MAX_FRAME_DELTA', () => {
+    expect(clampDelta(0.016)).toBe(0.016)
+    expect(clampDelta(5)).toBe(MAX_FRAME_DELTA)
+    expect(clampDelta(5, 1)).toBe(1)
+  })
+
+  it('shouldRenderFrame is always true when uncapped (targetFps <= 0)', () => {
+    expect(shouldRenderFrame(1000, 999, 0)).toBe(true)
+    expect(shouldRenderFrame(1000, 1000, -1)).toBe(true)
+  })
+
+  it('shouldRenderFrame respects the interval when capped', () => {
+    // 30fps -> ~33.3ms interval, 1ms tolerance.
+    expect(shouldRenderFrame(1000, 1000, 30)).toBe(false) // 0ms elapsed
+    expect(shouldRenderFrame(1010, 1000, 30)).toBe(false) // 10ms < 32.3
+    expect(shouldRenderFrame(1040, 1000, 30)).toBe(true) // 40ms >= 32.3
+  })
+})
+
+describe('ExecutionEngine render-loop lifecycle', () => {
+  let engine: ExecutionEngine
+  let rafCb: ((t?: number) => unknown) | null
+  let rafSpy: ReturnType<typeof vi.fn>
+  let cancelSpy: ReturnType<typeof vi.fn>
+
+  function setHidden(hidden: boolean) {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    engine = new ExecutionEngine()
+    rafCb = null
+    let id = 0
+    rafSpy = vi.fn((cb: (t?: number) => unknown) => {
+      rafCb = cb
+      return ++id
+    })
+    cancelSpy = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', rafSpy)
+    vi.stubGlobal('cancelAnimationFrame', cancelSpy)
+    setHidden(false)
+  })
+
+  afterEach(() => {
+    engine.stop()
+    vi.unstubAllGlobals()
+    setHidden(false)
+  })
+
+  it('start() marks running and schedules a frame', () => {
+    const rt = useRuntimeStore()
+    engine.start()
+    expect(rt.isRunning).toBe(true)
+    expect(rafSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('pauses ticking when the document is hidden, keeping running state', () => {
+    const rt = useRuntimeStore()
+    engine.start()
+    rafSpy.mockClear()
+
+    setHidden(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(cancelSpy).toHaveBeenCalled()
+    expect(rt.isRunning).toBe(true) // still "running", just not ticking
+    expect(rafSpy).not.toHaveBeenCalled() // no new frame scheduled while hidden
+  })
+
+  it('resumes ticking (and resets timing) when the document becomes visible', () => {
+    engine.start()
+    setHidden(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    rafSpy.mockClear()
+
+    setHidden(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(rafSpy).toHaveBeenCalledTimes(1) // loop rescheduled
+  })
+
+  it('does not auto-resume after a user-initiated pause', () => {
+    engine.start()
+    engine.pause()
+    rafSpy.mockClear()
+
+    // Visibility flapping must not restart a user-paused engine.
+    setHidden(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    setHidden(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(rafSpy).not.toHaveBeenCalled()
+  })
+
+  it('setTargetFps clamps invalid values to 0 (uncapped)', () => {
+    engine.setTargetFps(30)
+    expect(engine.getTargetFps()).toBe(30)
+    engine.setTargetFps(-5)
+    expect(engine.getTargetFps()).toBe(0)
+    engine.setTargetFps(Number.NaN)
+    expect(engine.getTargetFps()).toBe(0)
+  })
+
+  it('honors the FPS cap by skipping frames that arrive too soon', async () => {
+    let count = 0
+    engine.registerExecutor('rec', () => {
+      count++
+      return new Map<string, unknown>()
+    })
+    engine.updateGraph(
+      [{ id: 'A', type: 'default', position: { x: 0, y: 0 }, data: { nodeType: 'rec' } } as unknown as Node],
+      [],
+    )
+    engine.setTargetFps(30)
+    engine.start()
+    expect(rafCb).toBeTypeOf('function')
+
+    await rafCb!(1000) // first frame executes
+    expect(count).toBe(1)
+    await rafCb!(1010) // too soon -> skipped
+    expect(count).toBe(1)
+    await rafCb!(1040) // enough elapsed -> executes
+    expect(count).toBe(2)
   })
 })
