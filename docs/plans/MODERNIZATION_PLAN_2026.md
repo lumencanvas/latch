@@ -27,7 +27,7 @@
 |------:|-------|---------------|--------|------|
 | 0 | Foundation, headers & test guardrails | `modernization` | ◐ Done (headers want 1× browser check) | Low |
 | 1 | Render loop & lifecycle | `modernization` | ◐ Core complete (reduced-motion node-wiring follow-up) | Low |
-| 2 | Execution engine evolution | `modernization` | ◐ Golden oracle done; dirty-flag impl next | **High** |
+| 2 | Execution engine evolution | `modernization` | ◐ Oracle + opt-in dirty mode done (equiv-proven); async-nonblocking + flip-default next | **High** |
 | 3 | Staged dependency upgrades | `mod/p3-*` | ☐ Not started | Med |
 | 4 | ML modernization (WebLLM + RAG + caching) | `mod/p4-*` | ☐ Not started | Med |
 | 5 | Mobile / touch tier | `mod/p5-*` | ☐ Not started | Med |
