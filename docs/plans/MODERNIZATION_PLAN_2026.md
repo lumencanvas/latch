@@ -29,7 +29,7 @@
 | 1 | Render loop & lifecycle | `modernization` | ◐ Core complete (reduced-motion node-wiring follow-up) | Low |
 | 2 | Execution engine evolution | `modernization` | ◐ Oracle + dirty mode + async-defer done (all opt-in, tested); only flip-defaults (needs in-app validation) + optional trigger-edges remain | **High** |
 | 3 | Staged dependency upgrades | `modernization` | ◐ 3a Vue Flow + 3d transformers v4 done; 3b three / 3c clasp next | Med |
-| 4 | ML modernization (WebLLM + RAG + caching) | `mod/p4-*` | ☐ Not started | Med |
+| 4 | ML modernization (WebLLM + RAG + caching) | `modernization` | ◐ RAG retrieval core (VectorStore) done; nodes + WebLLM + catalog + cache next | Med |
 | 5 | Mobile / touch tier | `mod/p5-*` | ☐ Not started | Med |
 | 6 | Three.js TSL / WebGPU (flagship) | `mod/p6-tsl` | ☐ Not started | **High** |
 
@@ -124,8 +124,9 @@ Each sub-phase is **its own branch**, merged independently, typecheck + tests ga
   - **Test:** cache backend selection logic; persist() requested once; fallback to Cache API when OPFS absent.
 - [ ] `mod/p4-transfer` — Replace `Array.from(imageData.data)` (`AIInference.ts:927`) with transferable `ImageBitmap`/`ArrayBuffer` to the worker.
   - **Test:** round-trip image fidelity; assert no structured-clone of large arrays.
-- [ ] `mod/p4-rag` — RAG node trio: **Embed** / **Vector Store** (Orama or PGlite+pgvector) / **Retrieve**; optional **LLMLingua-2** compress node.
-  - **Test:** deterministic top-k retrieval on a fixture corpus; embedding dimensionality; compression ratio sanity.
+- [◐] `mod/p4-rag` — **Retrieval core done**: `services/ai/VectorStore.ts` — a dependency-free in-memory cosine vector store (`add`/`query` top-k/`remove`/`clear`/`toJSON`/`fromJSON`, dimension enforcement, graceful 0-score on bad vectors). Chose this over Orama/PGlite: zero new dep, fully unit-testable, sufficient for the thousands-of-vectors range; persistence rides existing Dexie via toJSON/fromJSON. 12 tests (cosine correctness, top-k ordering, dim mismatch, round-trip, edge cases). Suite 1159 green.
+  - **Remaining:** the **Embed / Vector Store / Retrieve nodes** that wire this to the feature-extraction model (Embed needs runtime model validation); optional **LLMLingua-2** compress node.
+  - **Test (done):** deterministic top-k on fixtures, dimensionality enforcement, JSON round-trip. (Embedding dimensionality + compression are node-level, pending.)
 - **Acceptance:** a streaming LLM node runs a current model end-to-end on WebGPU; RAG retrieval feeds an LLM node; large weights persist across reload.
 
 ---
