@@ -28,7 +28,7 @@
 | 0 | Foundation, headers & test guardrails | `modernization` | ◐ Done (headers want 1× browser check) | Low |
 | 1 | Render loop & lifecycle | `modernization` | ◐ Core complete (reduced-motion node-wiring follow-up) | Low |
 | 2 | Execution engine evolution | `modernization` | ◐ Oracle + dirty mode + async-defer done (all opt-in, tested); only flip-defaults (needs in-app validation) + optional trigger-edges remain | **High** |
-| 3 | Staged dependency upgrades | `modernization` | ◐ 3a Vue Flow done; three/clasp/transformers next | Med |
+| 3 | Staged dependency upgrades | `modernization` | ◐ 3a Vue Flow + 3d transformers v4 done; 3b three / 3c clasp next | Med |
 | 4 | ML modernization (WebLLM + RAG + caching) | `mod/p4-*` | ☐ Not started | Med |
 | 5 | Mobile / touch tier | `mod/p5-*` | ☐ Not started | Med |
 | 6 | Three.js TSL / WebGPU (flagship) | `mod/p6-tsl` | ☐ Not started | **High** |
@@ -105,8 +105,9 @@ Each sub-phase is **its own branch**, merged independently, typecheck + tests ga
   - **Test:** shader + 3D render regression (hash/snapshot of rendered canvas for fixture scenes); `@types/three` bumped in lockstep.
 - [ ] `mod/p3c-clasp` — `@clasp-to/core` 3.3.2 → 4.x. Read the first-party CHANGELOG for the v3→v4 break first; evaluate adopting `@clasp-to/sdk`.
   - **Test:** `ClaspAdapter` + clasp executor unit tests; video send/receive smoke.
-- [ ] `mod/p3d-transformers` — `@huggingface/transformers` 3.8.1 → 4.x. Handle `@huggingface/tokenizers` split, `ModelRegistry`, `env` API changes; v4 pins an ORT-web dev build — verify worker bundles.
-  - **Test:** AI worker load + each inference method (text/image/asr/embedding) against fixtures; cache clear still works.
+- [x] `mod/p3d-transformers` — Bumped `3.8.1 → 4.2.0`. Verified against installed type defs: `env.allowLocalModels`/`useBrowserCache` and `pipeline`/`env` exports unchanged → **typecheck passes with zero code changes**; `build:web` succeeds (browser export resolved, `sharp`/nightly-ORT not bundled); suite green (1147). `@huggingface/tokenizers`/`jinja` come as auto deps (not a manual split). Config test guards the v4 floor.
+  - **Runtime-validation gap:** worker uses `(pipeline as any)`, so v4 runtime changes to `device`/`dtype`/chat `messages`/`progress_callback` aren't caught headless — confirm a model loads + runs in a browser. 52 npm advisories from the heavy tree (sharp/dev-ORT) — review later, don't `audit fix --force`.
+  - **Unlocks Phase 4:** q1/q2 dtypes, WebGPU runtime, refreshed model catalog.
 - **Acceptance (per branch):** typecheck + tests green; no regression in the touched subsystem.
 
 ---
