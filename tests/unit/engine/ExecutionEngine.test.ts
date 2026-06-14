@@ -136,6 +136,91 @@ describe('ExecutionEngine', () => {
   })
 })
 
+describe('dirty execution mode', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('defaults to full mode and round-trips setExecutionMode', () => {
+    const engine = new ExecutionEngine()
+    expect(engine.getExecutionMode()).toBe('full')
+    engine.setExecutionMode('dirty')
+    expect(engine.getExecutionMode()).toBe('dirty')
+  })
+
+  it('skips a pure node when unchanged and re-runs it on a control edit', async () => {
+    const engine = new ExecutionEngine()
+    let calls = 0
+    // 'constant' is a verified pure type; a counting executor proves skip/run.
+    engine.registerExecutor('constant', (ctx) => {
+      calls++
+      return new Map<string, unknown>([['value', ctx.controls.get('value')]])
+    })
+    engine.setExecutionMode('dirty')
+
+    const k = node('k', 'constant', { value: 1 })
+    engine.updateGraph([k], [])
+
+    await engine.executeFrame() // first frame: runs
+    expect(calls).toBe(1)
+    expect(engine.getOutputValue('k', 'value')).toBe(1)
+
+    await engine.executeFrame() // unchanged: skipped
+    expect(calls).toBe(1)
+
+    ;(k.data as Record<string, unknown>).value = 9 // user edits the control
+    await engine.executeFrame() // control changed: re-runs
+    expect(calls).toBe(2)
+    expect(engine.getOutputValue('k', 'value')).toBe(9)
+  })
+
+  it('propagates input changes downstream and idles stable subgraphs', async () => {
+    const engine = new ExecutionEngine()
+    const calls = { src: 0, dn: 0 }
+    engine.registerExecutor('constant', (ctx) => {
+      calls.src++
+      return new Map<string, unknown>([['value', ctx.controls.get('value')]])
+    })
+    engine.registerExecutor('add', (ctx) => {
+      calls.dn++
+      return new Map<string, unknown>([['result', ((ctx.inputs.get('a') as number) ?? 0) + 1]])
+    })
+    engine.setExecutionMode('dirty')
+
+    const src = node('s', 'constant', { value: 5 })
+    const dn = node('d', 'add')
+    engine.updateGraph([src, dn], [edge('s', 'd', 'value', 'a')])
+
+    await engine.executeFrame()
+    expect(calls).toEqual({ src: 1, dn: 1 })
+    expect(engine.getOutputValue('d', 'result')).toBe(6)
+
+    await engine.executeFrame() // stable: both skipped
+    expect(calls).toEqual({ src: 1, dn: 1 })
+
+    ;(src.data as Record<string, unknown>).value = 10
+    await engine.executeFrame() // source changed: source + downstream re-run
+    expect(calls).toEqual({ src: 2, dn: 2 })
+    expect(engine.getOutputValue('d', 'result')).toBe(11)
+  })
+
+  it('always runs non-pure (unclassified) node types every frame', async () => {
+    const engine = new ExecutionEngine()
+    let calls = 0
+    engine.registerExecutor('mystery-type', () => {
+      calls++
+      return new Map<string, unknown>([['out', calls]])
+    })
+    engine.setExecutionMode('dirty')
+    engine.updateGraph([node('m', 'mystery-type')], [])
+
+    await engine.executeFrame()
+    await engine.executeFrame()
+    await engine.executeFrame()
+    expect(calls).toBe(3) // not in the pure allowlist -> never skipped
+  })
+})
+
 describe('frame timing helpers', () => {
   it('clampDelta caps the per-frame delta at MAX_FRAME_DELTA', () => {
     expect(clampDelta(0.016)).toBe(0.016)

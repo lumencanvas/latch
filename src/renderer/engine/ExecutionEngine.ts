@@ -45,6 +45,28 @@ export function clampDelta(deltaSeconds: number, max: number = MAX_FRAME_DELTA):
   return deltaSeconds > max ? max : deltaSeconds
 }
 
+export type ExecutionMode = 'full' | 'dirty'
+
+/**
+ * Node types whose executor is a verified PURE function of (inputs, controls):
+ * no module-level state, no time (`ctx.deltaTime`/`totalTime`/`frameCount`), no
+ * randomness, no side effects. Only these may be SKIPPED in dirty mode when their
+ * inputs and controls are unchanged. Everything else always runs (safe default —
+ * a misclassification can never freeze a node, only forgo a speedup).
+ *
+ * Verified by direct reading of `engine/executors/index.ts` (2026-06-14). Notable
+ * exclusions: `gate` (module state), `smooth` (deltaTime), `random` (Math.random),
+ * and all timing/stateful nodes. See docs/AUDIT_2026-06-14.md. Grow this set only
+ * after reading the executor.
+ */
+export const PURE_NODE_TYPES: ReadonlySet<string> = new Set([
+  'constant',
+  'add', 'subtract', 'multiply', 'divide',
+  'map-range', 'clamp', 'abs', 'trig', 'power', 'vector-math', 'modulo',
+  'lerp', 'step', 'smoothstep', 'remap', 'quantize', 'wrap',
+  'compare', 'and', 'or', 'not', 'select', 'switch',
+])
+
 /**
  * Result of executing a node
  */
@@ -81,6 +103,15 @@ export class ExecutionEngine {
   private nodeById: Map<string, Node> = new Map()
   private edges: Edge[] = []
   private executionOrder: string[] = []
+  /** target nodeId -> source nodeIds (incoming adjacency), for dirty-mode change propagation. */
+  private sourcesByTarget: Map<string, string[]> = new Map()
+
+  // --- Change-driven (dirty) execution (Phase 2) ---
+  private executionMode: ExecutionMode = 'full'
+  /** Last-seen control snapshot per node, to detect control edits between frames. */
+  private prevControlSnapshots: Map<string, Map<string, unknown>> = new Map()
+  /** Number of nodes actually executed in the most recent frame (for diagnostics/tests). */
+  private lastFrameExecutedCount: number = 0
   private nodeOutputs: Map<string, Map<string, unknown>> = new Map()
   private executors: Map<string, NodeExecutorFn> = new Map()
   private animationFrameId: number | null = null
@@ -142,6 +173,10 @@ export class ExecutionEngine {
         gcAIState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
+        // Drop dirty-mode control snapshots for removed nodes
+        for (const id of this.prevControlSnapshots.keys()) {
+          if (!validNodeIds.has(id)) this.prevControlSnapshots.delete(id)
+        }
       }
     }
 
@@ -150,6 +185,13 @@ export class ExecutionEngine {
     // instead of an O(n) Array.find() per node (O(n^2) per frame).
     this.nodeById = new Map(nodes.map((n) => [n.id, n]))
     this.edges = edges
+    // Incoming adjacency (target -> sources) for dirty-mode change propagation.
+    this.sourcesByTarget = new Map()
+    for (const edge of edges) {
+      const arr = this.sourcesByTarget.get(edge.target)
+      if (arr) arr.push(edge.source)
+      else this.sourcesByTarget.set(edge.target, [edge.source])
+    }
     this.executionOrder = this.topologicalSort()
   }
 
@@ -388,12 +430,19 @@ export class ExecutionEngine {
     const executionOrderSnapshot = [...this.executionOrder]
     const nodeByIdSnapshot = this.nodeById
 
-    // Execute nodes in topological order (O(1) node resolution)
-    for (const nodeId of executionOrderSnapshot) {
-      const node = nodeByIdSnapshot.get(nodeId)
-      if (node) {
-        await this.executeNode(node, deltaTime)
+    if (this.executionMode === 'dirty') {
+      await this.executeFrameDirty(executionOrderSnapshot, nodeByIdSnapshot, deltaTime)
+    } else {
+      // Full mode: execute every node in topological order, every frame.
+      let executed = 0
+      for (const nodeId of executionOrderSnapshot) {
+        const node = nodeByIdSnapshot.get(nodeId)
+        if (node) {
+          await this.executeNode(node, deltaTime)
+          executed++
+        }
       }
+      this.lastFrameExecutedCount = executed
     }
 
     // End-of-frame cleanup for messaging (reset change flags)
@@ -401,6 +450,118 @@ export class ExecutionEngine {
 
     // Update FPS
     this.runtimeStore.updateFps(deltaTime)
+  }
+
+  /**
+   * Change-driven frame execution. A node runs this frame only if it is not a
+   * verified-pure node (always run), or — for pure nodes — if it has never run,
+   * its controls changed, or any upstream output changed this frame. Skipped
+   * nodes keep their previous outputs, which (for pure nodes with unchanged
+   * inputs) are exactly what full mode would recompute. Behavior is identical to
+   * full mode; only redundant pure recomputation is avoided.
+   */
+  private async executeFrameDirty(
+    order: string[],
+    nodeById: Map<string, Node>,
+    deltaTime: number,
+  ): Promise<void> {
+    const changed = new Set<string>() // nodes whose output changed this frame
+    let executed = 0
+
+    for (const nodeId of order) {
+      const node = nodeById.get(nodeId)
+      if (!node) continue
+
+      const nodeType = node.data?.nodeType as string
+      const pure = PURE_NODE_TYPES.has(nodeType)
+
+      let curControls: Map<string, unknown> | null = null
+      let mustRun = true
+      if (pure) {
+        curControls = this.getControlSnapshot(node)
+        const neverRan = !this.nodeOutputs.has(nodeId)
+        const prevControls = this.prevControlSnapshots.get(nodeId)
+        const controlsChanged = !prevControls || !this.snapshotsEqual(prevControls, curControls)
+        const inputsChanged = this.anyUpstreamChanged(nodeId, changed)
+        mustRun = neverRan || controlsChanged || inputsChanged
+      }
+
+      if (mustRun) {
+        const prevOutputs = this.nodeOutputs.get(nodeId)
+        const result = await this.executeNode(node, deltaTime)
+        executed++
+        if (this.outputsDiffer(prevOutputs, result.outputs)) changed.add(nodeId)
+        if (pure && curControls) this.prevControlSnapshots.set(nodeId, curControls)
+      }
+      // Skipped: outputs are unchanged and intentionally not added to `changed`.
+    }
+
+    this.lastFrameExecutedCount = executed
+  }
+
+  /** Snapshot a node's controls (node.data minus engine metadata) for change detection. */
+  private getControlSnapshot(node: Node): Map<string, unknown> {
+    const snap = new Map<string, unknown>()
+    const data = node.data as Record<string, unknown> | undefined
+    if (data) {
+      for (const [key, value] of Object.entries(data)) {
+        if (key !== 'label' && key !== 'nodeType' && key !== 'definition') {
+          snap.set(key, value)
+        }
+      }
+    }
+    return snap
+  }
+
+  /** Equal iff same keys and each value is identical (Object.is). Objects compare by ref. */
+  private snapshotsEqual(a: Map<string, unknown>, b: Map<string, unknown>): boolean {
+    if (a.size !== b.size) return false
+    for (const [key, value] of a) {
+      if (!b.has(key) || !Object.is(value, b.get(key))) return false
+    }
+    return true
+  }
+
+  /** Conservative output comparison: any added/removed key or non-identical value ⇒ changed. */
+  private outputsDiffer(
+    prev: Map<string, unknown> | undefined,
+    next: Map<string, unknown>,
+  ): boolean {
+    if (!prev || prev.size !== next.size) return true
+    for (const [key, value] of next) {
+      if (!prev.has(key) || !Object.is(prev.get(key), value)) return true
+    }
+    return false
+  }
+
+  /** True if any node feeding this one changed its output this frame. */
+  private anyUpstreamChanged(nodeId: string, changed: Set<string>): boolean {
+    const sources = this.sourcesByTarget.get(nodeId)
+    if (!sources) return false
+    for (const src of sources) {
+      if (changed.has(src)) return true
+    }
+    return false
+  }
+
+  /**
+   * Select the execution strategy. 'full' (default) re-executes every node each
+   * frame. 'dirty' is change-driven (see executeFrameDirty). Switching modes
+   * clears change-tracking state so the next frame cold-starts correctly.
+   */
+  setExecutionMode(mode: ExecutionMode): void {
+    if (mode === this.executionMode) return
+    this.executionMode = mode
+    this.prevControlSnapshots.clear()
+  }
+
+  getExecutionMode(): ExecutionMode {
+    return this.executionMode
+  }
+
+  /** Number of nodes executed in the most recent frame (0 for a fully-idle dirty graph). */
+  getLastFrameExecutedCount(): number {
+    return this.lastFrameExecutedCount
   }
 
   /**
@@ -414,6 +575,7 @@ export class ExecutionEngine {
     this.frameCount = 0
     // Clear stale outputs from previous execution
     this.nodeOutputs.clear()
+    this.prevControlSnapshots.clear()
     this.runtimeStore.start()
 
     this.addVisibilityListener()
@@ -527,6 +689,7 @@ export class ExecutionEngine {
     this.removeVisibilityListener()
     this.runtimeStore.stop()
     this.nodeOutputs.clear()
+    this.prevControlSnapshots.clear()
     this.frameCount = 0
 
     // Clean up all executor state to prevent memory leaks and stop audio

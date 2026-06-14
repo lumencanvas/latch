@@ -30,6 +30,15 @@ export interface RunOptions {
   stepMs?: number
   /** Hook to configure the engine before the run (e.g. set execution mode). */
   configure?: (engine: ExecutionEngine) => void
+  /**
+   * Namespace applied to node ids for this run. Executor state is module-global
+   * keyed by nodeId, so two runs of the same flow (e.g. full vs dirty) use
+   * distinct prefixes to avoid cross-run state leakage. Snapshots are keyed by
+   * the ORIGINAL (unprefixed) id so runs remain comparable.
+   */
+  idPrefix?: string
+  /** If provided, the executed-node count for each frame is pushed here. */
+  executedPerFrame?: number[]
 }
 
 /** One frame's outputs: nodeId -> outputHandle -> serializable value. */
@@ -73,7 +82,7 @@ function serialize(value: unknown): unknown {
   return `[${(value as object).constructor?.name ?? 'object'}]`
 }
 
-function captureOutputs(engine: ExecutionEngine, nodes: Node[]): FrameSnapshot {
+function captureOutputs(engine: ExecutionEngine, nodes: Node[], prefix: string): FrameSnapshot {
   const snap: FrameSnapshot = {}
   for (const node of nodes) {
     const outputs = engine.getNodeOutputs(node.id)
@@ -81,9 +90,108 @@ function captureOutputs(engine: ExecutionEngine, nodes: Node[]): FrameSnapshot {
     if (outputs) {
       for (const [handle, val] of outputs) entry[handle] = serialize(val)
     }
-    snap[node.id] = entry
+    // Key by the original (unprefixed) id so prefixed runs stay comparable.
+    snap[node.id.slice(prefix.length)] = entry
   }
   return snap
+}
+
+function applyPrefix(flow: FlowDef, prefix: string): FlowDef {
+  if (!prefix) return flow
+  return {
+    nodes: flow.nodes.map((n) => ({ ...n, id: prefix + n.id })),
+    edges: flow.edges.map((e) => ({
+      ...e,
+      id: prefix + (e.id as string),
+      source: prefix + e.source,
+      target: prefix + e.target,
+    })) as Edge[],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Canonical flows — shared by the golden snapshots and the full-vs-dirty
+// equivalence tests. All use module-state-free node types so two runs don't
+// interfere (id-prefixing in runFlow also isolates state defensively).
+// ---------------------------------------------------------------------------
+
+/** Pure arithmetic — outputs constant across frames (no time/state). 4 nodes. */
+export function pureStaticFlow(): FlowDef {
+  return {
+    nodes: [
+      mkNode('c1', 'constant', { value: 5 }),
+      mkNode('c2', 'constant', { value: 3 }),
+      mkNode('sum', 'add'),
+      mkNode('cl', 'clamp', { min: 0, max: 10 }),
+    ],
+    edges: [
+      mkEdge('c1', 'value', 'sum', 'a'),
+      mkEdge('c2', 'value', 'sum', 'b'),
+      mkEdge('sum', 'result', 'cl', 'value'),
+    ],
+  }
+}
+
+/** Time-driven — Time changes every frame and propagates downstream. */
+export function timeDrivenFlow(): FlowDef {
+  return {
+    nodes: [
+      mkNode('t', 'time'),
+      mkNode('mr', 'map-range', { inMin: 0, inMax: 1, outMin: 0, outMax: 100 }),
+      mkNode('cl', 'clamp', { min: 0, max: 50 }),
+    ],
+    edges: [mkEdge('t', 'time', 'mr', 'value'), mkEdge('mr', 'result', 'cl', 'value')],
+  }
+}
+
+/** LFO-driven — continuous oscillator multiplied by a constant. */
+export function lfoFlow(): FlowDef {
+  return {
+    nodes: [
+      mkNode('lfo', 'lfo', { frequency: 2, amplitude: 10, offset: 0, waveform: 'sine' }),
+      mkNode('k', 'constant', { value: 2 }),
+      mkNode('mul', 'multiply'),
+    ],
+    edges: [mkEdge('lfo', 'value', 'mul', 'a'), mkEdge('k', 'value', 'mul', 'b')],
+  }
+}
+
+/** Diamond — one source fans out to two ops that reconverge at a comparison. 5 nodes. */
+export function diamondFlow(): FlowDef {
+  return {
+    nodes: [
+      mkNode('a', 'constant', { value: 5 }),
+      mkNode('b', 'constant', { value: 2 }),
+      mkNode('sum', 'add'),
+      mkNode('prod', 'multiply'),
+      mkNode('cmp', 'compare', { operator: '<' }),
+    ],
+    edges: [
+      mkEdge('a', 'value', 'sum', 'a'),
+      mkEdge('b', 'value', 'sum', 'b'),
+      mkEdge('a', 'value', 'prod', 'a'),
+      mkEdge('b', 'value', 'prod', 'b'),
+      mkEdge('sum', 'result', 'cmp', 'a'),
+      mkEdge('prod', 'result', 'cmp', 'b'),
+    ],
+  }
+}
+
+/** Mixed — time-driven source feeding a pure chain (some nodes idle, some not). */
+export function mixedFlow(): FlowDef {
+  return {
+    nodes: [
+      mkNode('t', 'time'),
+      mkNode('k', 'constant', { value: 100 }),
+      mkNode('mul', 'multiply'),
+      mkNode('cl', 'clamp', { min: 0, max: 1 }),
+    ],
+    edges: [
+      mkEdge('t', 'delta', 'mul', 'a'),
+      mkEdge('k', 'value', 'mul', 'b'),
+      mkEdge('mul', 'result', 'cl', 'value'),
+    ],
+  }
 }
 
 /**
@@ -92,6 +200,8 @@ function captureOutputs(engine: ExecutionEngine, nodes: Node[]): FrameSnapshot {
 export async function runFlow(flow: FlowDef, options: RunOptions = {}): Promise<FrameSnapshot[]> {
   const frames = options.frames ?? 6
   const stepMs = options.stepMs ?? 16
+  const prefix = options.idPrefix ?? ''
+  const engineFlow = applyPrefix(flow, prefix)
 
   setActivePinia(createPinia())
   const engine = new ExecutionEngine()
@@ -99,7 +209,7 @@ export async function runFlow(flow: FlowDef, options: RunOptions = {}): Promise<
     engine.registerExecutor(type, fn)
   }
   options.configure?.(engine)
-  engine.updateGraph(flow.nodes, flow.edges)
+  engine.updateGraph(engineFlow.nodes, engineFlow.edges)
 
   // Deterministic clock: performance.now() returns a controlled, increasing value.
   let nowMs = 0
@@ -110,7 +220,8 @@ export async function runFlow(flow: FlowDef, options: RunOptions = {}): Promise<
     for (let f = 0; f < frames; f++) {
       nowMs = (f + 1) * stepMs // start > 0 so frame deltas are stable
       await engine.executeFrame()
-      snapshots.push(captureOutputs(engine, flow.nodes))
+      snapshots.push(captureOutputs(engine, engineFlow.nodes, prefix))
+      options.executedPerFrame?.push(engine.getLastFrameExecutedCount())
     }
   } finally {
     nowSpy.mockRestore()
