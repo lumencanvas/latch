@@ -71,7 +71,8 @@ mobile, free wins on laptops.
 - [x] DPR — **already conservative**: renderers hardcode `setPixelRatio(1)` (verified). Raising it would cost mobile perf, so left as-is; added `clampDevicePixelRatio()` util for future per-device tuning.
 - [~] `prefers-reduced-motion` — `prefersReducedMotion()` util added (accessibility + battery). Exposed for nodes/loop to honor; wiring individual animated nodes to it is a follow-up.
 - **Tests:** `tests/unit/engine/ExecutionEngine.test.ts` (+9: timing helpers, hidden→pause, visible→resume, no-resume-after-user-pause, fps clamp, fps-cap skips early frames via mocked rAF) and `tests/unit/utils/platform.test.ts` (+4). All green.
-- **Acceptance:** ✅ backgrounding stops ticking without losing running state; foreground resumes with no time jump; FPS cap verified. Full suite 1120 passing / 11 todo, typecheck + lint clean.
+- **Acceptance:** ✅ backgrounding stops ticking without losing running state; foreground resumes with no time jump; FPS cap verified. Full suite 1121 passing / 11 todo, typecheck + lint clean.
+- **Audit (2026-06-14):** adversarial re-review found a concurrency race — the loop re-armed after `await executeFrame()` with no recheck, so a hide-during-frame + resume could spawn a *second* loop (2× execution). Fixed with a monotonic `loopToken` (stale loops don't re-arm; `invalidateLoop()` on stop/pause/hidden) + regression test. Also confirmed Electron is unaffected by the web-only coi-serviceworker (renderer uses `src/renderer/index.html`), and `npm run build:web` ships the shim correctly.
 
 ---
 

@@ -98,6 +98,13 @@ export class ExecutionEngine {
   private autoPausedByVisibility: boolean = false
   /** Bound visibility handler; stored so it can be removed. */
   private visibilityHandler: (() => void) | null = null
+  /**
+   * Monotonic token identifying the currently-active loop. Any loop whose
+   * captured token no longer matches must not re-arm. This prevents a second
+   * concurrent loop if the loop is paused (stop/pause/hidden) during the async
+   * `await executeFrame()` gap and then resumed.
+   */
+  private loopToken: number = 0
 
   /**
    * Register a node executor
@@ -418,8 +425,11 @@ export class ExecutionEngine {
    * visibility-driven resume so timing/FPS-cap behavior stays consistent.
    */
   private scheduleLoop(): void {
+    // Claim a fresh token; any previously-running loop is now superseded.
+    const token = ++this.loopToken
+
     const loop = async (timestamp?: number) => {
-      if (!this.runtimeStore.isRunning) return
+      if (!this.runtimeStore.isRunning || token !== this.loopToken) return
 
       const now = timestamp ?? performance.now()
       // FPS cap: only execute when enough time has elapsed (uncapped by default).
@@ -428,10 +438,19 @@ export class ExecutionEngine {
         await this.executeFrame()
       }
 
-      this.animationFrameId = requestAnimationFrame(loop)
+      // Re-arm only if this loop is still the active one (it may have been
+      // stopped/paused/hidden during the await above).
+      if (this.runtimeStore.isRunning && token === this.loopToken) {
+        this.animationFrameId = requestAnimationFrame(loop)
+      }
     }
 
     this.animationFrameId = requestAnimationFrame(loop)
+  }
+
+  /** Invalidate the active loop so a pending re-arm is suppressed. */
+  private invalidateLoop(): void {
+    this.loopToken++
   }
 
   /** Reset frame timing so the next frame reports a normal delta, not a spike. */
@@ -450,9 +469,13 @@ export class ExecutionEngine {
     if (typeof document === 'undefined') return
 
     if (document.hidden) {
-      if (this.runtimeStore.isRunning && this.animationFrameId !== null) {
-        cancelAnimationFrame(this.animationFrameId)
-        this.animationFrameId = null
+      if (this.runtimeStore.isRunning && !this.autoPausedByVisibility) {
+        if (this.animationFrameId !== null) {
+          cancelAnimationFrame(this.animationFrameId)
+          this.animationFrameId = null
+        }
+        // Suppress re-arm if a frame is mid-await right now.
+        this.invalidateLoop()
         this.autoPausedByVisibility = true
       }
     } else if (this.autoPausedByVisibility) {
@@ -500,6 +523,7 @@ export class ExecutionEngine {
       this.animationFrameId = null
     }
 
+    this.invalidateLoop()
     this.removeVisibilityListener()
     this.runtimeStore.stop()
     this.nodeOutputs.clear()
@@ -531,6 +555,7 @@ export class ExecutionEngine {
 
     // User-initiated pause: drop visibility handling so a tab focus change
     // doesn't silently resume execution behind the user's back.
+    this.invalidateLoop()
     this.removeVisibilityListener()
     this.runtimeStore.pause()
   }

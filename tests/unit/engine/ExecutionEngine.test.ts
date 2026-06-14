@@ -263,4 +263,30 @@ describe('ExecutionEngine render-loop lifecycle', () => {
     await rafCb!(1040) // enough elapsed -> executes
     expect(count).toBe(2)
   })
+
+  it('does not spawn a second loop if hidden+shown while a frame is in flight', async () => {
+    engine.registerExecutor('rec', () => new Map<string, unknown>())
+    engine.updateGraph(
+      [{ id: 'A', type: 'default', position: { x: 0, y: 0 }, data: { nodeType: 'rec' } } as unknown as Node],
+      [],
+    )
+    engine.start()
+    const staleLoop = rafCb! // the loop scheduled before hide
+
+    // Tab hidden then shown — engine invalidates the old loop and schedules a new one.
+    setHidden(true)
+    document.dispatchEvent(new Event('visibilitychange'))
+    setHidden(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    const activeLoop = rafCb!
+    expect(activeLoop).not.toBe(staleLoop)
+
+    rafSpy.mockClear()
+    // The stale loop finishing its in-flight frame must NOT re-arm (would double the rate).
+    await staleLoop(1000)
+    expect(rafSpy).not.toHaveBeenCalled()
+    // The active loop re-arms normally.
+    await activeLoop(1000)
+    expect(rafSpy).toHaveBeenCalledTimes(1)
+  })
 })
