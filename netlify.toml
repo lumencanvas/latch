@@ -8,8 +8,10 @@
 # (Hugging Face / CDN, fetched no-cors without credentials) still load. Browsers
 # without credentialless support (e.g. Safari) fall back to non-isolated /
 # single-threaded WASM — everything still works, just slower.
-# NOTE: this only takes effect on hosts that honor custom headers (Netlify).
-# GitHub Pages cannot set these headers; see the modernization plan p0-headers.
+# These server headers are the fast path on Netlify. On hosts that can't set
+# custom headers (DigitalOcean App Platform static sites, GitHub Pages) the
+# vendored coi-serviceworker shim (wired in index.html) provides the same
+# isolation, so the app works on either host without changes.
 [[headers]]
   for = "/*"
   [headers.values]

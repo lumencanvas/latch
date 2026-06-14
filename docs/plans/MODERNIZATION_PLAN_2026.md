@@ -12,8 +12,11 @@
   `npm run test:unit`): **1096 passing / 11 todo (1107 total)** — no phase may
   merge with fewer green than baseline + its new tests. (Note: HANDOFF.md's
   "812 passing" figure was stale; the live suite is the source of truth.)
-- **One concern per branch.** Branch names are given per phase/sub-task. Each
-  branch must pass `npm run typecheck` + `npm run test:unit` before merge to `main`.
+- **Single branch (`modernization`) for all phases** (decided 2026-06-14 with the
+  user). The per-phase branch names below are kept as task labels / commit
+  scopes, not separate branches. Every commit must keep `npm run typecheck` +
+  `npm run test:unit` green; the branch merges to `main` as one reviewable PR
+  (or in phase-sized chunks if the user prefers).
 - **Tracking:** tick the `[ ]` boxes as work lands. Update the Status Board.
 - **No AI attribution in commits** (see `/CLAUDE.md`).
 - **Acceptance criteria** are binary — a phase is "done" only when all are met.
@@ -45,8 +48,8 @@ cadence everything else relies on.
 
 - [x] `mod/p0-headers` (implemented — ⚠ acceptance pending in-browser verification) — Added COOP `same-origin` + COEP **`credentialless`** to `netlify.toml` and to Vite `server` + `preview` in `vite.config.ts`. Chose `credentialless` over `require-corp` so cross-origin HF model weights + MediaPipe WASM (fetched no-cors) still load; Safari (no credentialless) degrades gracefully to non-isolated/single-threaded. Added `src/renderer/vite-env.d.ts` (`vite/client` types — project was missing them) and a dev-only `crossOriginIsolated` console log in `main.ts`.
   - **Test:** `tests/unit/config/cross-origin-isolation.test.ts` guards the headers in both files against silent removal. (Runtime `crossOriginIsolated` can't be unit-tested — verified via the dev console log.)
-  - **⚠ Open question (blocks acceptance):** which host is canonical for the web demo? `ci.yml` deploys to **GitHub Pages, which cannot set custom headers** → no cross-origin isolation there. If prod is Netlify, the `[[headers]]` block applies. Confirm deploy target; if Pages must stay, use a `coi-serviceworker` shim instead.
-  - **Acceptance (NOT yet met):** on the live host, `self.crossOriginIsolated === true` AND all AI/MediaPipe nodes still load. Needs a browser + the confirmed host.
+  - **Host-agnostic (resolved):** prod is Netlify now, migrating to DigitalOcean App Platform later. Vendored `public/coi-serviceworker.min.js` (v0.1.7, MIT) wired into `index.html` injects COOP/COEP on any static host and no-ops when the server already sets them (Netlify). Works across the Netlify→DO swap with no code change; Electron renderer unaffected (different entry). Default is credentialless, matching the server header.
+  - **Acceptance:** ◐ implemented host-agnostically; final sign-off still wants a one-time in-browser check that `self.crossOriginIsolated === true` and AI/MediaPipe nodes load (use the dev console log in `main.ts`).
 - [x] `mod/p0-engine-map` — Replaced O(n²) `nodesSnapshot.find(...)` with a `nodeById` `Map<id,node>` rebuilt once per `updateGraph`; `executeFrame` resolves nodes in O(1).
   - **Test:** `tests/unit/engine/ExecutionEngine.test.ts` (7 characterization tests: topo order, output propagation, value retrieval, controls, diamond merge, graph re-sort) written green against the pre-refactor code, still green after — proving behavior unchanged.
   - **Acceptance:** ✅ identical outputs, lookups O(1). Full suite 1103 passing / 11 todo, typecheck clean.

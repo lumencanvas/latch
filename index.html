@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="LATCH - Live Art Tool for Creative Humans" />
     <title>LATCH</title>
+    <!--
+      Host-agnostic cross-origin isolation (enables SharedArrayBuffer ->
+      multi-threaded WASM for transformers.js / ONNX Runtime). When the host
+      already sets COOP/COEP (Netlify, see netlify.toml) this no-ops; on hosts
+      that can't set headers (e.g. DigitalOcean App Platform static sites,
+      GitHub Pages) this service worker injects them. Defaults to COEP
+      credentialless, so cross-origin model/WASM fetches keep working. Web build
+      only — the Electron renderer uses src/renderer/index.html.
+    -->
+    <script src="/coi-serviceworker.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />

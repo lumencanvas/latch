@@ -29,4 +29,17 @@ describe('cross-origin isolation headers', () => {
     expect(coop.length).toBeGreaterThanOrEqual(2)
     expect(coep.length).toBeGreaterThanOrEqual(2)
   })
+
+  it('wires the host-agnostic coi-serviceworker fallback into the web entry', () => {
+    const html = read('index.html')
+    expect(html).toMatch(/coi-serviceworker(\.min)?\.js/)
+  })
+
+  it('vendors the coi-serviceworker shim (credentialless-capable, MIT)', () => {
+    const sw = read('public/coi-serviceworker.min.js')
+    expect(sw).toMatch(/coi-serviceworker/)
+    expect(sw).toMatch(/licensed under MIT/)
+    // The shim must be able to emit credentialless COEP (matches our header choice).
+    expect(sw).toMatch(/credentialless/)
+  })
 })
