@@ -53,6 +53,7 @@ export type NodeExecutorFn = (ctx: ExecutionContext) => Promise<Map<string, unkn
  */
 export class ExecutionEngine {
   private nodes: Node[] = []
+  private nodeById: Map<string, Node> = new Map()
   private edges: Edge[] = []
   private executionOrder: string[] = []
   private nodeOutputs: Map<string, Map<string, unknown>> = new Map()
@@ -103,6 +104,9 @@ export class ExecutionEngine {
     }
 
     this.nodes = nodes
+    // Rebuild the id->node lookup so executeFrame() can resolve nodes in O(1)
+    // instead of an O(n) Array.find() per node (O(n^2) per frame).
+    this.nodeById = new Map(nodes.map((n) => [n.id, n]))
     this.edges = edges
     this.executionOrder = this.topologicalSort()
   }
@@ -334,14 +338,16 @@ export class ExecutionEngine {
     this.lastFrameTime = now
     this.frameCount++
 
-    // Snapshot execution order and nodes to prevent race conditions
-    // if updateGraph() is called during execution
+    // Snapshot execution order and the node lookup to prevent race conditions
+    // if updateGraph() is called during execution. updateGraph() replaces
+    // nodeById wholesale (never mutates in place), so capturing the reference
+    // is a consistent snapshot.
     const executionOrderSnapshot = [...this.executionOrder]
-    const nodesSnapshot = [...this.nodes]
+    const nodeByIdSnapshot = this.nodeById
 
-    // Execute nodes in topological order
+    // Execute nodes in topological order (O(1) node resolution)
     for (const nodeId of executionOrderSnapshot) {
-      const node = nodesSnapshot.find(n => n.id === nodeId)
+      const node = nodeByIdSnapshot.get(nodeId)
       if (node) {
         await this.executeNode(node, deltaTime)
       }
