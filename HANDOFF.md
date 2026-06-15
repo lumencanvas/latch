@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1165 passed | 11 todo (1176 total)
+**Tests**: 1245 passed | 11 todo (1256 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -33,7 +33,7 @@ Durable project rules now live in `CLAUDE.md`; this file is the change log.
 Large modernization effort on the `modernization` branch (NOT merged/pushed). Plan
 + live tracking: `docs/plans/MODERNIZATION_PLAN_2026.md`; sourced findings:
 `docs/MODERNIZATION_ASSESSMENT_2026-06.md`; deep audits: `docs/AUDIT_2026-06-14.md`.
-All work is test-driven; suite went **1096 → 1165 passing / 11 todo**, with
+All work is test-driven; suite went **1096 → 1245 passing / 11 todo**, with
 typecheck + lint + `build:web` clean throughout. **All new engine modes are
 OPT-IN and default OFF**, so production behavior is unchanged until explicitly
 enabled. Project rule added: no AI attribution in git history (see `CLAUDE.md`).
@@ -86,20 +86,151 @@ enabled. Project rule added: no AI attribution in git history (see `CLAUDE.md`).
   top-K `matches` + newline-joined `context` (prompt injection) + `bestText`;
   pure, robust to malformed inputs; 6 tests. Embed already exists as the
   `feature-extraction` "Text Embed" node, so Embed -> Retrieve is usable now.
+- `Vector Memory` node (`registry/ai/vector-memory.ts` + `vectorMemoryExecutor`):
+  stateful, incrementally-built corpus. Inputs `vector`/`text` + rising-edge
+  `add`/`clear` triggers -> outputs `corpus` ([{id,vector,text}], feeds Retrieve)
+  + `count`. Per-node `VectorStore` in a module Map; `maxSize` ring-buffer cap
+  (0 = unlimited); held triggers add once; malformed embeddings ignored (no
+  throw); stable corpus reference between frames. Cleanup wired:
+  `disposeVectorMemoryNode`/`gcRAGState` (node removal) + `disposeAllRAGState`
+  (stop). 16 tests incl. Vector Memory -> Retrieve interop + same-frame add/clear
+  ordering. Post-impl audit verified (by reading code): stable corpus ref is
+  correct under dirty mode, real embeddings are plain number[] (worker
+  Array.from), all port wirings type-compatible. Suite 1165 -> 1181.
+- Model-catalog refresh (`AI_MODELS` in `AIInference.ts`): repo ids + sizes
+  network-verified against live HF pages (2026-06-14). Added modern text-gen
+  decoders (Qwen2.5/Qwen3, SmolLM2, Llama-3.2-1B/3B, gemma-3, Phi-4-mini, a
+  verified abliterated Qwen3) + embedders (nomic, gte); moved whisper alts to
+  onnx-community; removed unresolvable `Xenova/mobilenet_v3_large` ->
+  mobilenetv4. Schema gained required `license`/`defaultLicense`; only consumer
+  (`AIModelManagerModal.vue`) reads id/name/size/webgpu so it's non-breaking.
+  Defaults intentionally UNCHANGED (conservative). 10 catalog-validation tests.
+  Suite 1181 -> 1191.
+- Deep audit (catalog + Vector Memory) found + fixed a real bug: the worker
+  picked chat-vs-plain prompt format by repo-id substring, and the new base-named
+  Qwen3 ids (no "instruct"/"chat"/"qwen" match) would've been prompted as raw
+  completion models -> garbage. Extracted detection to pure
+  `services/ai/textGenFormat.ts` (`isChatModel`, added `qwen`), worker imports it;
+  added a catalog<->worker CONTRACT test (every text-gen catalog model must be
+  chat-detected). Docs: added Vector Memory + Retrieve to `docs/nodes/ai.md`,
+  fixed the Text Embed output type (plain number[], not Float32Array), appended a
+  Phase-4 deep-audit section to `docs/AUDIT_2026-06-14.md`. (Note: ARCHITECTURE.md
+  is an aspirational design doc, not a live map — see the audit's analysis note.)
+  3 new tests. Suite 1191 -> 1194.
+- `mod/p4-transfer` (transferable image data): replaced `Array.from(imageData.data)`
+  with a Uint8ClampedArray payload whose ArrayBuffer is TRANSFERRED (zero-copy) to
+  the AI worker. New pure `services/ai/imageTransfer.ts` `collectTransferables()`
+  derives the postMessage transfer list; `sendToWorker` passes it; worker
+  `toPixels()` uses the transferred array directly. Caller-owned ImageData is
+  copied (not detached); audio stays number[] (never transferred). 4 tests.
+  Vision round-trip is browser-only (folds into the v4 vision check).
+  Suite 1194 -> 1198. (Audit follow-up: hardened collectTransferables to
+  Array.isArray-guard non-array args.)
+- `mod/p4-cache` (persistent storage): added `services/ai/modelStorage.ts` —
+  OPFS/Cache-API detection, `preferredCacheBackend()`, memoized
+  `requestPersistentStorage()` (wired into AIInference init), `getStorageEstimate()`
+  (surfaced as a "GB free" line in AIModelManagerModal). Web-research finding
+  drove scope: transformers.js v4 supports a custom cache (env.customCache) but
+  OPFS shares the Cache API's per-origin quota + all-or-nothing eviction, so OPFS
+  gives NO persistence win (only resumable downloads, upstream #1220 unimplemented)
+  -> a naive OPFS backend is strictly worse than default and is DEFERRED; persist()
+  is the real protection. 12 tests. Suite 1198 -> 1210.
+  (Audit follow-up: persist() now requested from loadModel, not the constructor —
+  engagement-timed — and a denied result is no longer cached forever: it retries
+  on the next load since browsers grant on growing engagement. +1 test.)
+- `mod/p4-webllm` (streaming WebGPU LLM): added `@mlc-ai/web-llm` 0.2.84
+  (version/API network-verified). New "LLM (Streaming)" node + `WebLLMService`
+  (one shared engine, per-node streaming state, injectable engine factory for
+  tests), `webgpu.ts` capability gate, dedicated `webllm.worker.ts`. The ~14 MB
+  runtime is dynamic-imported -> build confirms a SEPARATE ~6 MB lazy chunk, main
+  bundle unchanged. Fire-and-latch: executor starts generation without awaiting,
+  reads accumulated tokens per frame. Graceful no-WebGPU path (supported=false).
+  Cleanup: gcWebLLMState + disposeAllWebLLMState (engine.unload + worker.terminate).
+  13 tests (mock engine; jsdom's lack of WebGPU exercises the real gate). Phase 4
+  is now code-complete. Suite 1210 -> 1224.
+  (Audit follow-up: hardened WebLLMService against concurrent generations on the
+  shared engine with the monotonic genToken pattern — supersede + bail-on-stale,
+  same idiom as the render-loop race fix; +1 regression test. Suite 1224 -> 1225.)
 
-### NEEDS IN-BROWSER VALIDATION (cannot verify headless)
-1. `self.crossOriginIsolated === true` AND AI/MediaPipe nodes still load (headers).
+### IN-BROWSER VALIDATION
+**Automated browser check done (2026-06-15)** via Playwright + system Chrome
+(`channel:'chrome'`, headless) against `npm run dev`:
+- ✅ `self.crossOriginIsolated === true` (SharedArrayBuffer available) — COOP/COEP
+  `same-origin`/`credentialless` headers confirmed served + honored; console logs
+  `[LATCH] crossOriginIsolated=true`. **Item 1 cleared.**
+- ✅ App mounts (title "LATCH", #app populated).
+- ✅ **WebGPU available here** (`navigator.gpu.requestAdapter()` returns an adapter
+  — Chrome→Metal on macOS), so WebLLM / transformers WebGPU paths CAN run in this
+  env.
+- ✅ **transformers.js v4 loads + runs a model** — imported `@huggingface/transformers@4.2.0`
+  in the isolated page, ran `feature-extraction` on all-MiniLM-L6-v2 → real 384-dim
+  embedding, no errors (threaded WASM). **Item 3 runtime cleared** (the worker uses
+  the same pipeline API).
+
+Still needs a manual (or heavier automated) pass — these need GB-scale downloads,
+two peers, or graph interaction:
 2. `onlyRenderVisibleElements` renders correctly when panning a large graph.
-3. transformers.js v4 actually loads + runs a model (WebGPU `device`, `dtype`,
-   chat `messages`, `progress_callback`).
-Run `npm run dev`, watch the console, load one AI model, pan a large graph. The
-opt-in engine modes (dirty/deferred) also want in-app validation before any
+3b. transformers WebGPU *device* path + a couple refreshed catalog ids (Llama/Gemma
+   may need a license click-through); image nodes still work after the
+   transferable-ArrayBuffer change.
+5. clasp v4 realtime send/receive + video chunking against a live CLASP server.
+4. WebLLM node: pulse Generate → model downloads + tokens stream into Text; the
+   model-manager "GB free" storage line renders.
+Opt-in engine modes (dirty/deferred) also want in-app validation before any
 default flip.
 
+### Phase 3b - three r162 -> r184 (render-validated)
+- `three` r162 -> r184 + `@types/three` 0.162 -> 0.184.1 (lockstep), WebGLRenderer
+  path only. Small blast radius (scary breaks predate r162); only 6 TYPE-ONLY casts
+  needed for stricter @types/three 0.184 (`texture.image`->`{}`,
+  `renderer.properties.get()`->`unknown`) in ai.ts/visual.ts/TextureBridge.ts/
+  ThreeRenderer.ts/MainOutputNode.vue — zero runtime change. @webgpu/types stays
+  (from pixi.js). `tests/unit/config/three.test.ts` guards r184 + lockstep.
+  Browser-validated: r184 WebGLRenderer+ShaderMaterial fixture returned the exact
+  shader pixel [255,0,0,255] on WebGL2; app mounts with zero console errors.
+  Phase 3 is now COMPLETE. Suite 1235 -> 1237.
+
+### Phase 3c - clasp 3 -> 4 (drop-in)
+- `@clasp-to/core` 3.3.2 -> 4.3.2. Verified (npm + first-party source) the used
+  surface (`Clasp`/`ClaspBuilder`/`Value` in executors/clasp.ts + ClaspAdapter.ts)
+  is identical in v4 — only additive changes (browser export field, optional set()
+  3rd arg); deps unchanged; stayed on `core` (not `sdk`). Zero code changes;
+  typecheck + build + suite green. `tests/unit/config/clasp.test.ts` guards the v4
+  floor. Runtime send/receive vs a live CLASP server still wants a smoke test.
+  Suite 1234 -> 1235.
+
+### Phase 5 - Mobile / touch tier (started)
+- `mod/p5-capability`: extended `utils/platform.ts` with a capability matrix —
+  `webgpu`/`camera` caps, `isIOS`/`isAndroid`/`isMobile`, `getPlatformTier()`
+  (electron/ios-web/android-web/desktop-web), and `getCapabilityStatus(cap)` ->
+  {available, reason?, suggestion?} so nodes can show "unavailable here — use the
+  desktop app / CLASP Bridge / Chromium" instead of failing. 9 matrix tests
+  (navigator/window stubbed per tier). Suite 1225 -> 1234.
+  Follow-up (deferred — design finding): wiring getCapabilityStatus into
+  BaseNode.vue needs a per-platform requirement model, NOT a single capability key
+  — serial/midi/ble work via the web API on web OR native on Electron, so a naive
+  `requiresCapability:'webSerial'` would show a FALSE "unavailable" badge in
+  Electron. Only webgpu (LLM) + camera (webcam) are platform-agnostic. See AUDIT.
+- `mod/p5-audio-unlock`: pure `services/audio/audioUnlock.ts` (needsUserGesture /
+  isAudioRunning / tryResumeAudio + ExtendedAudioState incl. iOS `interrupted`)
+  wired into AudioManager — added `interrupted` state, a `needsUserGesture` flag in
+  getState, an `unlock()` gesture entry point, and a `statechange` watcher that
+  silently recovers on desktop / flags needs-gesture on iOS (detached in dispose).
+  8 tests (mocked context). Follow-up: a UI "Enable Audio" button bound to
+  audioManager.unlock(). Suite 1237 -> 1245.
+
 ### Next
-Phase 4: stateful Vector Memory node, WebLLM streaming node, model-catalog
-refresh, OPFS model caching, transferable image data. Then Phase 3b (three r184),
-3c (clasp 4), Phase 5 (mobile/touch), Phase 6 (Three TSL/WebGPU).
+**Phases 0-4 are code-complete and Phase 3 (all dep upgrades) is fully done.**
+Remaining modernization:
+- Phase 5 touch tier: `p5-touch-connect`, `p5-layout`, `p5-audio-unlock`, and the
+  deferred `getCapabilityStatus`→BaseNode.vue wiring (needs the per-platform
+  requirement model — see the capability-duality finding above).
+- Phase 6 (Three TSL/WebGPU) — now UNBLOCKED (3b three r184 done; WebGPU confirmed
+  available in this env). High risk / behind a flag with WebGL2 fallback.
+Browser-validated so far: cross-origin isolation, transformers.js v4 model load,
+three r184 WebGL render. Still want a real-browser pass for: WebLLM token stream
+(GB download), transformers WebGPU device, clasp realtime (two peers), large-graph
+pan (onlyRenderVisibleElements).
 
 ---
 

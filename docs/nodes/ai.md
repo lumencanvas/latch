@@ -195,7 +195,7 @@ Converts text into a numeric embedding vector using a transformer model. The res
 - Connect the trigger input to control when extraction runs, since it can be computationally expensive.
 - Use the dimensions output to verify the embedding size matches what downstream nodes expect.
 
-**Works well with:** Sentiment, String Template, Text Generate, Monitor
+**Works well with:** Vector Memory, Retrieve, String Template, Monitor
 
 | Property | Value |
 |----------|-------|
@@ -212,7 +212,7 @@ Converts text into a numeric embedding vector using a transformer model. The res
 ### Outputs
 | Port | Type | Description |
 |------|------|-------------|
-| `embedding` | `data` | Float32Array embedding vector |
+| `embedding` | `data` | Embedding vector (plain `number[]`; the worker returns `Array.from(tensor.data)`) |
 | `dimensions` | `number` | Vector dimensions |
 | `loading` | `boolean` | Extraction in progress |
 
@@ -220,7 +220,147 @@ Converts text into a numeric embedding vector using a transformer model. The res
 *None*
 
 ### Implementation
-Uses sentence transformer model to convert text into dense vector representations. Useful for semantic similarity comparisons or as input to other ML models.
+Uses a sentence-transformer model to convert text into dense vector representations. Forms the embedding step of the in-browser RAG pipeline: **Text Embed → Vector Memory → Retrieve**.
+
+---
+
+## Vector Memory
+
+Build a retrieval corpus incrementally from embeddings over time.
+
+### Info
+
+A stateful, incrementally-built RAG corpus. Pulse `add` to store the current Vector + Text; pulse `clear` to empty it. The accumulated Corpus output wires straight into the Retrieve node, so a small, short-context LLM can answer over text gathered across a whole session. Pure and offline — no model call here. State is held per-node (a `VectorStore` in a module map) and is **runtime-only**: it is cleared when execution stops and is not persisted to the saved flow (consistent with other stateful nodes).
+
+**Tips:**
+- Embed each document chunk with Text Embed, then pulse Add to remember it.
+- Wire the Corpus output into the Retrieve node's Corpus input to rank by relevance.
+- Set Max Size > 0 to cap the corpus (oldest entries are evicted) and bound memory in long-running sets; 0 means unlimited.
+- All embeddings must come from the same model — a dimension mismatch is ignored (not stored) rather than throwing.
+
+**Works well with:** Text Embed, Retrieve, Text Generate, Trigger
+
+| Property | Value |
+|----------|-------|
+| **ID** | `vector-memory` |
+| **Icon** | `database` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `vector` | `data` | Embedding to store (from Text Embed) |
+| `text` | `string` | Text associated with the embedding |
+| `add` | `trigger` | Rising edge stores the current vector + text |
+| `clear` | `trigger` | Rising edge empties the store |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `corpus` | `data` | `[{ id, vector, text }]` — feeds the Retrieve node |
+| `count` | `number` | Number of stored documents |
+
+### Controls
+| Control | Type | Default | Props | Description |
+|---------|------|---------|-------|-------------|
+| `maxSize` | `number` | `0` | - | Max entries (ring buffer); 0 = unlimited |
+
+### Implementation
+Backed by `services/ai/VectorStore.ts`. Rising-edge detection on `add`/`clear` means a held trigger acts once. The `corpus` output keeps a stable array reference between frames (rebuilt only on mutation), so change-driven (dirty) execution can correctly skip downstream Retrieve when nothing changed. Cleanup is wired via `gcRAGState` (node removal) and `disposeAllRAGState` (stop).
+
+---
+
+## Retrieve
+
+Rank pre-embedded documents by similarity to a query embedding (RAG).
+
+### Info
+
+Ranks a corpus of pre-embedded documents by cosine similarity to a query embedding and returns the top-K. This is the retrieval step of in-browser RAG: it lets a small, short-context LLM answer over far more text than fits in its window. Pure and offline — no model call here.
+
+**Tips:**
+- Feed Corpus from a Vector Memory node, or as an array of `{ vector, text }` objects embedded once with Text Embed.
+- Embed the user question with Text Embed and wire it to Query.
+- Wire the Context output into a Text Generate / String Template prompt to ground the model in the retrieved text.
+
+**Works well with:** Vector Memory, Text Embed, Text Generate, Monitor
+
+| Property | Value |
+|----------|-------|
+| **ID** | `retrieve` |
+| **Icon** | `search` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `corpus` | `data` | Array of `{ vector, text }` documents (e.g. from Vector Memory) |
+| `query` | `data` | Query embedding (from Text Embed) |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `matches` | `data` | Top-K `{ id, score, text }`, highest similarity first |
+| `context` | `string` | Newline-joined match texts, ready for prompt injection |
+| `bestText` | `string` | Text of the single best match |
+
+### Controls
+| Control | Type | Default | Props | Description |
+|---------|------|---------|-------|-------------|
+| `topK` | `number` | `3` | - | Number of matches to return |
+
+### Implementation
+Pure cosine-similarity ranking via `services/ai/VectorStore.ts` (`cosineSimilarity`). Robust to malformed inputs — a missing/wrong-dimension vector scores 0 instead of throwing, so a stray embedding can't crash the graph.
+
+---
+
+## LLM (Streaming)
+
+Stream text from a local WebGPU chat model (WebLLM / MLC).
+
+### Info
+
+Runs a full chat LLM locally on your GPU via [WebLLM](https://github.com/mlc-ai/web-llm) and streams tokens into the Text output in real time. **Requires WebGPU** (desktop Chrome/Edge, or another WebGPU-capable browser); without it the Supported output is false and nothing is generated. Weights download once (~1–4 GB depending on model) and are cached. The engine runs in its own worker and the package is loaded on demand, so it never blocks the render loop or bloats startup.
+
+**Tips:**
+- Start with Llama 3.2 1B (smallest/fastest); larger models need more VRAM.
+- Wire a Retrieve node's Context into Prompt or System to ground answers in your own documents (RAG): Text Embed → Vector Memory → Retrieve → LLM.
+- Watch Generating to drive a "thinking" indicator; Done pulses once when the stream finishes.
+
+**Works well with:** Retrieve, Vector Memory, Text Embed, String Template
+
+| Property | Value |
+|----------|-------|
+| **ID** | `llm` |
+| **Icon** | `sparkles` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `prompt` | `string` | User prompt (falls back to the Prompt control) |
+| `system` | `string` | Optional system prompt |
+| `trigger` | `trigger` | Generate now (rising edge) |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `text` | `string` | Generated text, accumulating as it streams |
+| `generating` | `boolean` | Loading or generating in progress |
+| `done` | `trigger` | Pulses once when a generation completes |
+| `supported` | `boolean` | False when WebGPU is unavailable |
+
+### Controls
+| Control | Type | Default | Props | Description |
+|---------|------|---------|-------|-------------|
+| `model` | `select` | `Llama-3.2-1B-Instruct-q4f16_1-MLC` | 6 MLC models | Which model to run |
+| `prompt` | `text` | `''` | - | Prompt (used when the input is unconnected) |
+| `system` | `text` | `''` | - | System prompt |
+| `maxTokens` | `number` | `512` | min: 16, max: 4096 | Max tokens to generate |
+| `temperature` | `slider` | `0.7` | min: 0, max: 2, step: 0.1 | Sampling temperature |
+
+### Implementation
+Backed by `services/ai/WebLLMService.ts` (one shared engine + per-node streaming state) and a dedicated `webllm.worker.ts`. `@mlc-ai/web-llm` is dynamic-imported (kept out of the main bundle) and WebGPU-gated via `services/ai/webgpu.ts`. Generation is fire-and-latch: the executor starts it without awaiting and reads accumulated tokens each frame. OpenAI-compatible streaming API under the hood.
 
 ---
 
