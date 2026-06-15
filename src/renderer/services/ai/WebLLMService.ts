@@ -232,9 +232,25 @@ export class WebLLMService {
       }
     }
     const handle = this.engines.get(model)
+    // If this model is mid-generation, invalidate + interrupt that stream BEFORE
+    // removing/disposing the engine, so its for-await bails instead of racing a
+    // terminated worker. (Interrupt via the local handle, since we then delete it.)
+    if (this.activeModel === model) {
+      this.genToken++
+      try {
+        handle?.engine.interruptGenerate()
+      } catch {
+        /* ignore */
+      }
+      if (this.activeNodeId) {
+        const s = this.getState(this.activeNodeId).status
+        if (s === 'generating' || s === 'loading') this.set(this.activeNodeId, { status: 'done' })
+      }
+      this.activeNodeId = null
+      this.activeModel = null
+    }
     this.engines.delete(model)
     this.loadStates.delete(model)
-    if (this.activeModel === model) this.interruptActiveGeneration()
     this.notify()
     if (handle) await handle.dispose()
   }

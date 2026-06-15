@@ -158,6 +158,47 @@ describe('WebLLMService', () => {
     expect(n).toBe(afterUnsub) // no longer notified
   })
 
+  it('interrupts the active generation when its model is unloaded', async () => {
+    // Regression: unload must interrupt + invalidate a model that's mid-generation
+    // BEFORE disposing it — otherwise the stream races a terminated worker. (The
+    // old code deleted the engine from the map before trying to interrupt it.)
+    let interrupted = false
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let disposes = 0
+    const engine: LLMEngine = {
+      chat: {
+        completions: {
+          create: async () =>
+            (async function* () {
+              yield { choices: [{ delta: { content: 'a' } }] }
+              await gate // park mid-stream
+              yield { choices: [{ delta: { content: 'b' } }] }
+            })(),
+        },
+      },
+      interruptGenerate: () => {
+        interrupted = true
+      },
+      unload: async () => {},
+    }
+    const svc = new WebLLMService({
+      gpuCheck: async () => true,
+      engineFactory: async () => ({ engine, dispose: async () => void disposes++ }),
+    })
+    await svc.preload('M')
+    const gen = svc.startGeneration('a', { model: 'M', prompt: 'p' })
+    await new Promise((r) => setTimeout(r, 10)) // stream 'a' and park at the gate
+    const unloadP = svc.unload('M')
+    release() // let the parked stream resume; it should see the bumped token and bail
+    await Promise.all([gen, unloadP])
+
+    expect(interrupted).toBe(true) // the active engine was interrupted
+    expect(svc.isLoaded('M')).toBe(false)
+    expect(disposes).toBe(1)
+    expect(svc.getState('a').status).not.toBe('error') // settled cleanly
+  })
+
   it('stopActive settles the generation but keeps loaded engines', async () => {
     let disposes = 0
     const svc = new WebLLMService({
