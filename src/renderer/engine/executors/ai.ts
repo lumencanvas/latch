@@ -576,6 +576,88 @@ export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
 }
 
 // ============================================================================
+// Vision-Language-Action (VLM-as-policy) Node
+// ============================================================================
+
+/**
+ * Runs a SmolVLM-style vision-language model on an image + a natural-language
+ * instruction and emits the model's response (an action/answer). Like captioning,
+ * inference is async + fire-and-latch (the frame never blocks); a rising `done`
+ * fires for one frame when a fresh result lands.
+ */
+export const vlaExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const imageInput = ctx.inputs.get('image')
+  const trigger = ctx.inputs.get('trigger')
+  const modelId = ctx.controls.get('model') as string | undefined
+  const instruction =
+    (ctx.inputs.get('instruction') as string) || (ctx.controls.get('instruction') as string) || ''
+  const maxTokens = Math.floor((ctx.controls.get('maxTokens') as number) ?? 64)
+
+  // Emit action/loading + a one-frame `done` when the result version advances.
+  const emit = (action: string, loading: boolean): Map<string, unknown> => {
+    const version = getCached<number>(`${ctx.nodeId}:version`, 0)
+    const lastDone = getCached<number>(`${ctx.nodeId}:lastDone`, 0)
+    const done = version !== lastDone
+    if (done) setCached(`${ctx.nodeId}:lastDone`, version)
+    outputs.set('action', action)
+    outputs.set('loading', loading)
+    outputs.set('done', done)
+    return outputs
+  }
+
+  if (!aiInference.isModelLoaded('image-text-to-text', modelId)) {
+    emit(getCached(`${ctx.nodeId}:action`, ''), false)
+    outputs.set('_error', 'Model not loaded. Open AI Model Manager → Vision-Language (VLA) → Load.')
+    return outputs
+  }
+
+  const imageData = convertToImageData(imageInput)
+  if (!imageData) {
+    emit('', false)
+    if (imageInput) {
+      outputs.set('_error', 'Unsupported image input. Use Webcam Snapshot or Texture to Data.')
+    }
+    return outputs
+  }
+
+  // Run on explicit trigger or every `interval` frames (VLA is expensive).
+  const hasTrigger = hasTriggerValue(trigger)
+  const currentFrame = ctx.frameCount
+  const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
+  const interval = (ctx.controls.get('interval') as number) ?? 120
+
+  if (!hasTrigger && lastFrame && currentFrame - lastFrame < interval) {
+    return emit(getCached(`${ctx.nodeId}:action`, ''), getCached(`${ctx.nodeId}:loading`, false))
+  }
+  if (pendingOperations.has(ctx.nodeId)) {
+    return emit(getCached(`${ctx.nodeId}:action`, ''), true)
+  }
+
+  setCached(`${ctx.nodeId}:loading`, true)
+  setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  const operation = (async () => {
+    try {
+      const action = await aiInference.visionAction(imageData, instruction, {
+        modelId,
+        maxNewTokens: maxTokens,
+      })
+      setCached(`${ctx.nodeId}:action`, action)
+      setCached(`${ctx.nodeId}:version`, getCached<number>(`${ctx.nodeId}:version`, 0) + 1)
+    } catch (error) {
+      console.error('[AI] VLA error:', error)
+    } finally {
+      setCached(`${ctx.nodeId}:loading`, false)
+      pendingOperations.delete(ctx.nodeId)
+    }
+  })()
+  pendingOperations.set(ctx.nodeId, operation)
+
+  return emit(getCached(`${ctx.nodeId}:action`, ''), true)
+}
+
+// ============================================================================
 // Feature Extraction (Embeddings) Node
 // ============================================================================
 
@@ -2043,6 +2125,7 @@ export const aiExecutors: Record<string, NodeExecutorFn> = {
   'image-classification': imageClassificationExecutor,
   'sentiment-analysis': sentimentAnalysisExecutor,
   'image-captioning': imageCaptioningExecutor,
+  'vla': vlaExecutor,
   'feature-extraction': featureExtractionExecutor,
   'object-detection': objectDetectionExecutor,
   'speech-recognition': speechRecognitionExecutor,

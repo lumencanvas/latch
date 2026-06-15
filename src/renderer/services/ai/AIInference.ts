@@ -206,6 +206,20 @@ export const AI_MODELS: ModelDefinition[] = [
       { id: 'Xenova/trocr-base-handwritten', name: 'TrOCR Handwritten', size: '~1.2 GB', license: 'mit' },
     ],
   },
+  {
+    id: 'vision-language',
+    name: 'Vision-Language (VLA)',
+    task: 'image-text-to-text',
+    description: 'Image + instruction → an answer or action (SmolVLM, vision-language-action style)',
+    defaultModel: 'HuggingFaceTB/SmolVLM-256M-Instruct',
+    defaultSize: '~300 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'multimodal',
+    alternateModels: [
+      { id: 'HuggingFaceTB/SmolVLM-500M-Instruct', name: 'SmolVLM 500M', size: '~600 MB', license: 'apache-2.0' },
+    ],
+  },
 ]
 
 // Progress callback type
@@ -933,6 +947,37 @@ class AIInferenceService {
       model,
       method: 'captionImage',
       args: [imageData],
+    })
+  }
+
+  /**
+   * Vision-language-action (VLM-as-policy): run a SmolVLM-style model on an image
+   * + a natural-language instruction and return the model's text response (an
+   * answer or an action). Loads the model on first use.
+   */
+  async visionAction(
+    image: ImageData | HTMLCanvasElement | HTMLImageElement,
+    instruction: string,
+    options?: { modelId?: string; maxNewTokens?: number }
+  ): Promise<string> {
+    const model = options?.modelId || this.getDefaultModel('image-text-to-text')
+    const key = `image-text-to-text:${model}`
+
+    if (!this._loadedModels.has(key)) {
+      await this.loadModel('image-text-to-text', model)
+    }
+
+    const imageData = this.imageToSerializable(image)
+    if (typeof imageData === 'string') {
+      throw new Error('visionAction requires pixel image data, not a URL string')
+    }
+
+    return this.sendToWorker<string>({
+      type: 'infer',
+      task: 'image-text-to-text',
+      model,
+      method: 'visionAction',
+      args: [imageData, instruction, options?.maxNewTokens ?? 64],
     })
   }
 

@@ -5,7 +5,13 @@
  * All model loading and inference happens in this worker.
  */
 
-import { pipeline, env } from '@huggingface/transformers'
+import {
+  pipeline,
+  env,
+  AutoProcessor,
+  AutoModelForVision2Seq,
+  RawImage,
+} from '@huggingface/transformers'
 import { isChatModel } from './textGenFormat'
 
 // Configure Transformers.js for browser usage
@@ -192,6 +198,24 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
       pipelineOptions.dtype = msg.options.dtype
     }
 
+    // Vision-language (SmolVLM-style) models run via the processor + model API,
+    // not a high-level pipeline. Cache both under the same key.
+    if (msg.task === 'image-text-to-text') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+      if (pipelineOptions.device) loadOpts.device = pipelineOptions.device
+      loadOpts.dtype = pipelineOptions.dtype ?? 'fp32'
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const processor = await (AutoProcessor as any).from_pretrained(msg.model, {
+        progress_callback: pipelineOptions.progress_callback,
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = await (AutoModelForVision2Seq as any).from_pretrained(msg.model, loadOpts)
+      pipelines.set(key, { processor, model, vlm: true })
+      respond({ type: 'loaded', id: msg.id, success: true })
+      return
+    }
+
     // Create pipeline
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pipe = await (pipeline as any)(msg.task, msg.model, pipelineOptions)
@@ -339,6 +363,46 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
         const output = await pipe(canvas)
         const res = Array.isArray(output) ? output[0] : output
         result = res?.generated_text ?? ''
+        break
+      }
+
+      case 'visionAction': {
+        // Vision-language-action (VLM-as-policy): image + instruction -> action text.
+        const [imageData, instruction, maxNewTokens] = msg.args as [
+          { width: number; height: number; data: Uint8ClampedArray | number[] },
+          string,
+          number,
+        ]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { processor, model } = pipe as { processor: any; model: any }
+        const image = new RawImage(
+          toPixels(imageData.data),
+          imageData.width,
+          imageData.height,
+          4
+        ).rgb()
+        const messages = [
+          {
+            role: 'user',
+            content: [
+              { type: 'image' },
+              { type: 'text', text: String(instruction || 'What action should be taken?') },
+            ],
+          },
+        ]
+        const prompt = processor.apply_chat_template(messages, { add_generation_prompt: true })
+        const inputs = await processor(prompt, [image])
+        const { sequences } = await model.generate({
+          ...inputs,
+          max_new_tokens: Math.max(1, Math.min(512, Math.floor(maxNewTokens || 64))),
+          do_sample: false,
+          return_dict_in_generate: true,
+        })
+        // Drop the prompt tokens; decode only what the model generated.
+        const promptLen = inputs.input_ids.dims.at(-1)
+        const trimmed = sequences.slice(null, [promptLen, null])
+        const decoded = processor.batch_decode(trimmed, { skip_special_tokens: true })
+        result = (decoded[0] ?? '').trim()
         break
       }
 

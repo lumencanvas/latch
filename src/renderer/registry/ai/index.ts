@@ -9,6 +9,7 @@ export { textTransformationNode } from './text-transformation'
 export { retrieveNode } from './retrieve'
 export { vectorMemoryNode } from './vector-memory'
 export { llmNode } from './llm'
+export { vlaNode } from './vla'
 
 // MediaPipe nodes with custom UI components
 export { mediapipeHandNode, MediaPipeHandNode } from './mediapipe-hand'
@@ -30,6 +31,7 @@ import { textTransformationNode } from './text-transformation'
 import { retrieveNode } from './retrieve'
 import { vectorMemoryNode } from './vector-memory'
 import { llmNode } from './llm'
+import { vlaNode } from './vla'
 import { mediapipeHandNode } from './mediapipe-hand'
 import { mediapipeFaceNode } from './mediapipe-face'
 import { mediapipePoseNode } from './mediapipe-pose'
@@ -51,6 +53,7 @@ export const aiNodes: NodeDefinition[] = [
   retrieveNode,
   vectorMemoryNode,
   llmNode,
+  vlaNode,
   mediapipeHandNode,
   mediapipeFaceNode,
   mediapipePoseNode,
