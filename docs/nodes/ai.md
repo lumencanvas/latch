@@ -183,6 +183,55 @@ Uses image-to-text model to generate natural language descriptions of image cont
 
 ---
 
+## Vision-Language-Action
+
+Image + instruction → an action/answer, in-browser.
+
+### Info
+
+Runs a vision-language model (SmolVLM) on an image plus a natural-language instruction and outputs the model's response — an answer or a chosen action. This is the "VLM-as-policy" pattern: the model reasons over what it sees and the instruction, then emits a short action/command in text. Runs entirely in the browser (WebGPU or WASM); load the model from the AI Model Manager (Vision-Language). A true robotics VLA action head (e.g. SmolVLA's flow-matching head) is not yet browser-runnable, so a vision-language model stands in.
+
+**Tips:**
+- Feed it a Webcam Snapshot (or any Texture → Data) image and pulse Run; read the Action output.
+- Constrain the output, e.g. *"Reply with exactly one of: left, right, forward, stop."*
+- Wire Action into an LLM, Switch, or expression node to drive behavior; Done pulses when a result lands.
+- SmolVLM 256M is fastest; 500M is more capable. Raise Frame Interval on live video to limit cost.
+
+**Works well with:** Webcam, Caption Image, LLM (Streaming), Text Generate
+
+| Property | Value |
+|----------|-------|
+| **ID** | `vla` |
+| **Icon** | `bot` |
+| **Version** | 1.0.0 |
+
+### Inputs
+| Port | Type | Description |
+|------|------|-------------|
+| `image` | `data` | Image data |
+| `instruction` | `string` | Natural-language instruction (overrides the control) |
+| `trigger` | `trigger` | Run inference |
+
+### Outputs
+| Port | Type | Description |
+|------|------|-------------|
+| `action` | `string` | The model's action/answer text |
+| `loading` | `boolean` | Inference in progress |
+| `done` | `trigger` | Pulses for one frame when a fresh result lands |
+
+### Controls
+| Control | Type | Default | Props | Description |
+|---------|------|---------|-------|-------------|
+| `model` | `select` | `SmolVLM-256M-Instruct` | 256M / 500M | Vision-language model |
+| `instruction` | `text` | (an action prompt) | — | Default instruction if no input wired |
+| `maxTokens` | `number` | `64` | min: 8, max: 256 | Max new tokens |
+| `interval` | `number` | `120` | min: 1, max: 600 | Frame interval for auto-run |
+
+### Implementation
+Runs `HuggingFaceTB/SmolVLM-*-Instruct` via transformers.js (`AutoProcessor` + `AutoModelForVision2Seq`): `apply_chat_template` → `processor(text, [image])` → `model.generate` → decode (prompt tokens trimmed). Async fire-and-latch like Caption Image, so the frame never blocks. Browser-validated end to end.
+
+---
+
 ## Text Embed
 
 Convert text to embedding vectors.

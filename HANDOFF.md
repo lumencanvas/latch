@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1292 passed | 11 todo (1303 total)
+**Tests**: 1297 passed | 11 todo (1308 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -148,21 +148,27 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   The manager's 'Chat LLM (Streaming)' card is now a normal card: select + Load/
   Unload + status + progress + a chip per loaded model. Tests rewritten for
   multi-engine. Suite 1292 green; typecheck + lint + build clean.
-- **VLA node — researched + de-risked (NEXT to build).** A true VLA (e.g. SmolVLA
-  0.5B) isn't browser-runnable yet: transformers.js supports its SmolVLM backbone
-  but not the flow-matching action head. The working in-browser approach is
-  **VLM-as-policy**: image + instruction → action text. Verified exact API from the
-  official `transformers.js-examples/smolvlm-webgpu`: `AutoProcessor` +
-  `AutoModelForVision2Seq` (both exported in v4.2) + `RawImage`, model
-  `HuggingFaceTB/SmolVLM-256M-Instruct` (~300 MB, browser-validatable):
-  `apply_chat_template([{role:'user',content:[{type:'image'},{type:'text',text}]}],
-  {add_generation_prompt:true})` → `processor(text, [image])` → `model.generate({
-  ...inputs, max_new_tokens, return_dict_in_generate:true})` → slice off the prompt
-  tokens → `processor.batch_decode(seq,{skip_special_tokens:true})`. Build plan: a
-  new `image-text-to-text` load path in `ai.worker.ts` (AutoProcessor +
-  AutoModelForVision2Seq, cache `{processor, model}`) + a `visionAction` infer
-  method; an `AIInference` catalog entry + method; a `vla` node (image + instruction
-  + trigger → action + text) + executor; tests; browser-validate with the 256M model.
+- **Audit fix: WebLLM `unload` race.** `unload` deleted the engine from the map
+  before `interruptActiveGeneration` looked it up there, so unloading a model
+  mid-generation never interrupted it (the stream then raced engine disposal).
+  Now interrupts + bumps `genToken` via the local handle before deleting. TDD
+  regression test added.
+- **VLA node — built + browser-validated.** A true robotics VLA (SmolVLA's
+  flow-matching action head) isn't transformers.js-runnable, so the node uses
+  **VLM-as-policy** with SmolVLM: image + instruction → action/answer text, fully
+  in-browser. `ai.worker.ts` gained a SmolVLM load path (`AutoProcessor` +
+  `AutoModelForVision2Seq`, cached `{processor, model}`) + a `visionAction` infer
+  method (`RawImage` → `apply_chat_template` → `processor(text,[image])` →
+  `model.generate({...,return_dict_in_generate:true})` → slice prompt tokens →
+  `batch_decode`). `AIInference`: a 'Vision-Language (VLA)' catalog entry (SmolVLM
+  256M default / 500M alt, apache-2.0) + `visionAction()`. New `vla` node (image +
+  instruction + trigger → action + loading + done) + async fire-and-latch executor.
+  **Browser-validated end to end**: SmolVLM-256M loaded + answered "Red." for a red
+  square (~60 s first run incl. download), zero console errors. 4 unit tests. Suite
+  1297 green. (It's a normal `AI_MODELS` entry, so the model manager already
+  renders it as a loadable 'Vision-Language (VLA)' card automatically.) Optional
+  follow-ups: structured/JSON action parsing + a discrete-action helper; pair with
+  a Webcam Snapshot for live VLA on video.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
