@@ -26,8 +26,10 @@ import {
   Type,
   Send,
   Radio,
+  AlertTriangle,
 } from 'lucide-vue-next'
 import { categoryMeta, dataTypeMeta, type NodeDefinition, type NodeCategory, useNodesStore } from '@/stores/nodes'
+import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
@@ -204,6 +206,17 @@ const connectionBindings = computed(() => {
   }
 
   return bindings
+})
+
+// Platform capability warnings: a node may declare abstract `requires` (e.g.
+// 'serial', 'webgpu'). Resolve each against the current platform honoring the
+// native-or-web duality, so we only warn when NO path works here (no false
+// "unavailable" on Electron, where serial/MIDI/BLE run natively).
+const capabilityWarnings = computed(() => {
+  const requirements = definition.value?.requires ?? []
+  return requirements
+    .map(req => resolveNodeRequirement(req))
+    .filter(status => !status.available)
 })
 
 // Check if this is a visual node with texture output
@@ -519,6 +532,25 @@ function onLabelKeydown(e: KeyboardEvent) {
         v-if="connectionBindings.length > 0 && !isCollapsed"
         :bindings="connectionBindings"
       />
+
+      <!-- Platform capability warning — this node needs hardware/runtime not
+           available on the current platform; explain what to do instead. -->
+      <div
+        v-if="capabilityWarnings.length > 0 && !isCollapsed"
+        class="node-capability-warning"
+      >
+        <div
+          v-for="(warning, i) in capabilityWarnings"
+          :key="i"
+          class="capability-warning-row"
+          :title="warning.suggestion"
+        >
+          <AlertTriangle :size="13" />
+          <span class="capability-warning-text">
+            {{ warning.reason }} {{ warning.suggestion }}
+          </span>
+        </div>
+      </div>
 
       <!-- Compact Body - just icon with category color -->
       <div
@@ -849,6 +881,35 @@ function onLabelKeydown(e: KeyboardEvent) {
 }
 
 /* Controls */
+.node-capability-warning {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  margin: 0 var(--space-2) var(--space-2);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+}
+
+.capability-warning-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--color-warning);
+}
+
+.capability-warning-row svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.capability-warning-text {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--color-neutral-700);
+}
+
 .node-controls {
   display: flex;
   flex-direction: column;

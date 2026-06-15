@@ -193,6 +193,63 @@ export function getCapabilityStatus(capability: keyof PlatformCapabilities): Cap
 }
 
 /**
+ * An abstract hardware/runtime capability a node needs in order to function,
+ * independent of HOW it's provided. Several of these are "dual": serial/midi/
+ * bluetooth are satisfied by EITHER the native (Electron) path OR the Web API,
+ * so a node can't gate on a single capability key without showing a false
+ * "unavailable" badge on the platform where the other path works.
+ */
+export type NodeRequirement = 'serial' | 'midi' | 'bluetooth' | 'webgpu' | 'camera'
+
+/**
+ * Each requirement is satisfied if ANY of its `satisfiedBy` capabilities is
+ * present on the current platform; `reason`/`suggestion` explain the gap when
+ * none are.
+ */
+const NODE_REQUIREMENTS: Record<
+  NodeRequirement,
+  { satisfiedBy: (keyof PlatformCapabilities)[]; reason: string; suggestion: string }
+> = {
+  serial: {
+    satisfiedBy: ['nativeSerial', 'webSerial'],
+    reason: 'Serial access needs the desktop app or a browser with Web Serial.',
+    suggestion: USE_BRIDGE,
+  },
+  midi: {
+    satisfiedBy: ['nativeMidi', 'webMidi'],
+    reason: 'MIDI access needs the desktop app or a browser with Web MIDI.',
+    suggestion: USE_BRIDGE,
+  },
+  bluetooth: {
+    satisfiedBy: ['webBluetooth'],
+    reason: "Web Bluetooth isn't available here.",
+    suggestion: USE_BRIDGE,
+  },
+  webgpu: {
+    satisfiedBy: ['webgpu'],
+    reason: "WebGPU isn't available in this browser.",
+    suggestion: 'Use a Chromium-based browser (Chrome/Edge) or the desktop app.',
+  },
+  camera: {
+    satisfiedBy: ['camera'],
+    reason: 'Camera/microphone access is unavailable.',
+    suggestion: 'Grant permission, or use a supported browser over HTTPS.',
+  },
+}
+
+/**
+ * Resolve a node's abstract requirement against the current platform, honoring
+ * the native-or-web duality. Use this (not `getCapabilityStatus` on a single
+ * key) to decide whether a node should render an "unavailable here" badge.
+ */
+export function resolveNodeRequirement(requirement: NodeRequirement): CapabilityStatus {
+  const spec = NODE_REQUIREMENTS[requirement]
+  const caps = getPlatformCapabilities()
+  if (spec.satisfiedBy.some((cap) => caps[cap])) return { available: true }
+  return { available: false, reason: spec.reason, suggestion: spec.suggestion }
+}
+
+/**
  * Whether the user has requested reduced motion at the OS level. Nodes and the
  * render loop can honor this to limit animation (accessibility + battery).
  */

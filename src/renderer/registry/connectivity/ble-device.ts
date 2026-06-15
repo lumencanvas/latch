@@ -8,6 +8,7 @@ export const bleDeviceNode: NodeDefinition = {
   description: 'Connect to a Bluetooth LE device and enumerate its services',
   icon: 'bluetooth-connected',
   platforms: ['web', 'electron'],
+  requires: ['bluetooth'],
   inputs: [
     { id: 'device', type: 'data', label: 'Device' },
     { id: 'connect', type: 'trigger', label: 'Connect' },

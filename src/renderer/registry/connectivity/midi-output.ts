@@ -8,6 +8,7 @@ export const midiOutputNode: NodeDefinition = {
   description: 'Send MIDI messages to devices',
   icon: 'music',
   platforms: ['web', 'electron'],
+  requires: ['midi'],
   inputs: [
     { id: 'note', type: 'number', label: 'Note' },
     { id: 'velocity', type: 'number', label: 'Velocity' },

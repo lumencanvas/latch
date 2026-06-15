@@ -18,11 +18,27 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1245 passed | 11 todo (1256 total)
+**Tests**: 1262 passed | 11 todo (1273 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
 ---
+
+## Session (2026-06-15) — Phase 5 capability-badge wiring + commit of the uncommitted batch
+
+- **Committed the prior working-tree batch** (Phase 4 ML + Phase 5 capability/audio
+  + clasp v4/three r184) in 7 task-aligned commits on `modernization` (deps+guards,
+  three casts, WebLLM+Vector-Memory nodes, AI service catalog/storage/transfer,
+  capability matrix, audio unlock, docs). HEAD was previously stuck at the Retrieve
+  node while ~42 files of green work sat uncommitted.
+- **`mod/p5-capability-badge`** (done) — built the per-platform requirement model
+  the AUDIT flagged as a prerequisite (capability-duality), then wired the badge
+  into `BaseNode.vue`. New `NodeRequirement` + `resolveNodeRequirement()` in
+  `utils/platform.ts` (any-of `satisfiedBy` → no false "unavailable" on Electron);
+  optional `requires?` on `NodeDefinition`; 9 gated nodes tagged. +17 tests
+  (duality matrix + registry tagging). Browser-validated both directions with
+  Playwright (badge shows when capability stripped; absent when present). Suite
+  1262 green; typecheck + lint + build:web clean. Details in the plan doc.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 

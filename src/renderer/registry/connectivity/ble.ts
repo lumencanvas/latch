@@ -8,6 +8,7 @@ export const bleNode: NodeDefinition = {
   description: 'Bluetooth Low Energy communication (Web Bluetooth API)',
   icon: 'bluetooth',
   platforms: ['web', 'electron'],
+  requires: ['bluetooth'],
   inputs: [
     { id: 'send', type: 'data', label: 'Send' },
   ],

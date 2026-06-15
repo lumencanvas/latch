@@ -8,6 +8,7 @@ export const serialNode: NodeDefinition = {
   description: 'Serial port communication (Web Serial API)',
   icon: 'usb',
   platforms: ['web', 'electron'],
+  requires: ['serial'],
   inputs: [
     { id: 'send', type: 'string', label: 'Send' },
   ],

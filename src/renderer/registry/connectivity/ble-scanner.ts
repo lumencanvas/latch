@@ -8,6 +8,7 @@ export const bleScannerNode: NodeDefinition = {
   description: 'Scan for Bluetooth LE devices and select one to connect',
   icon: 'bluetooth-searching',
   platforms: ['web', 'electron'],
+  requires: ['bluetooth'],
   inputs: [
     { id: 'trigger', type: 'trigger', label: 'Scan' },
   ],

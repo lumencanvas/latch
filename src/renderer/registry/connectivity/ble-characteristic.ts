@@ -8,6 +8,7 @@ export const bleCharacteristicNode: NodeDefinition = {
   description: 'Read, write, and subscribe to BLE characteristic values',
   icon: 'radio-receiver',
   platforms: ['web', 'electron'],
+  requires: ['bluetooth'],
   inputs: [
     { id: 'device', type: 'data', label: 'Device' },
     { id: 'read', type: 'trigger', label: 'Read' },

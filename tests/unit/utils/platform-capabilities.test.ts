@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   getPlatformCapabilities,
   getCapabilityStatus,
+  resolveNodeRequirement,
   getPlatformTier,
   isIOS,
   isAndroid,
@@ -122,5 +123,62 @@ describe('getCapabilityStatus', () => {
     const gpu = getCapabilityStatus('webgpu')
     expect(gpu.available).toBe(false)
     expect(gpu.suggestion).toMatch(/Chromium|Chrome|desktop/i)
+  })
+})
+
+describe('resolveNodeRequirement (capability-duality)', () => {
+  // Serial/MIDI/Bluetooth are satisfied by EITHER the native (Electron) path OR
+  // the Web API path, so a node requiring them must NOT show "unavailable" on a
+  // platform where either path works. A naive single-capability key would have
+  // falsely flagged these on Electron (where webSerial/webMidi are unset).
+
+  it('serial is available on Electron via the native path (no false badge)', () => {
+    setEnv({ electron: true }) // note: no `serial` web feature stubbed
+    expect(getPlatformCapabilities().webSerial).toBe(false)
+    expect(resolveNodeRequirement('serial')).toEqual({ available: true })
+  })
+
+  it('serial is available on desktop Chrome via the Web Serial path', () => {
+    setEnv({ ua: UA.desktopChrome, features: ['serial'], media: true })
+    expect(getPlatformCapabilities().nativeSerial).toBe(false)
+    expect(resolveNodeRequirement('serial')).toEqual({ available: true })
+  })
+
+  it('serial is unavailable on iOS Safari and suggests the bridge/desktop', () => {
+    setEnv({ ua: UA.iosSafari, media: true })
+    const status = resolveNodeRequirement('serial')
+    expect(status.available).toBe(false)
+    expect(status.reason).toBeTruthy()
+    expect(status.suggestion).toMatch(/CLASP Bridge|desktop/i)
+  })
+
+  it('midi resolves through either path (Electron native, desktop web, not iOS)', () => {
+    setEnv({ electron: true })
+    expect(resolveNodeRequirement('midi')).toEqual({ available: true })
+    setEnv({ ua: UA.desktopChrome, features: ['midi'], media: true })
+    expect(resolveNodeRequirement('midi')).toEqual({ available: true })
+    setEnv({ ua: UA.iosSafari, media: true })
+    expect(resolveNodeRequirement('midi').available).toBe(false)
+  })
+
+  it('bluetooth is available on Android Chrome but not iOS Safari', () => {
+    setEnv({ ua: UA.androidChrome, features: ['bluetooth', 'gpu'], media: true })
+    expect(resolveNodeRequirement('bluetooth')).toEqual({ available: true })
+    setEnv({ ua: UA.iosSafari, media: true })
+    expect(resolveNodeRequirement('bluetooth').available).toBe(false)
+  })
+
+  it('webgpu resolves to the WebGPU capability with a Chromium suggestion', () => {
+    setEnv({ ua: UA.desktopChrome, features: ['gpu'], media: true })
+    expect(resolveNodeRequirement('webgpu')).toEqual({ available: true })
+    setEnv({ ua: UA.iosSafari, media: true })
+    const status = resolveNodeRequirement('webgpu')
+    expect(status.available).toBe(false)
+    expect(status.suggestion).toMatch(/Chromium|Chrome|desktop/i)
+  })
+
+  it('camera works on iOS Safari, so a webcam node shows no badge there', () => {
+    setEnv({ ua: UA.iosSafari, media: true })
+    expect(resolveNodeRequirement('camera')).toEqual({ available: true })
   })
 })

@@ -8,6 +8,7 @@ export const webcamNode: NodeDefinition = {
   description: 'Capture video from camera',
   icon: 'camera',
   platforms: ['web', 'electron'],
+  requires: ['camera'],
   inputs: [],
   outputs: [
     { id: 'texture', type: 'texture', label: 'Texture' },

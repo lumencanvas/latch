@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import type { Component } from 'vue'
 import { fuzzySearch } from '@/utils/fuzzySearch'
 import type { NodeConnectionRequirement } from '@/services/connections/types'
+import type { NodeRequirement } from '@/utils/platform'
 
 export type NodeCategory =
   | 'debug'
@@ -95,6 +96,12 @@ export interface NodeDefinition {
   tags?: string[]
   /** Connection requirements for this node (protocols it needs) */
   connections?: NodeConnectionRequirement[]
+  /**
+   * Abstract hardware/runtime capabilities this node needs (e.g. 'serial',
+   * 'webgpu'). Resolved per-platform via `resolveNodeRequirement` so the node
+   * can show an "unavailable here" badge, honoring the native-or-web duality.
+   */
+  requires?: NodeRequirement[]
   /** Additional info displayed in the Info tab of the properties panel. */
   info?: NodeInfo
 }

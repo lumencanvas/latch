@@ -24,6 +24,7 @@ export const llmNode: NodeDefinition = {
   description: 'Stream text from a local WebGPU LLM (WebLLM / MLC)',
   icon: 'sparkles',
   platforms: ['web', 'electron'],
+  requires: ['webgpu'],
   inputs: [
     { id: 'prompt', type: 'string', label: 'Prompt' },
     { id: 'system', type: 'string', label: 'System' },
