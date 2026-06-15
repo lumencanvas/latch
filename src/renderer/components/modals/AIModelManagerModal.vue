@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { X, Download, Trash2, Loader, CheckCircle2, AlertCircle, Brain, Cpu, Zap, HardDrive, Play } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { aiInference, AI_MODELS, type ModelLoadState } from '@/services/ai/AIInference'
+import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/modelStorage'
 
 const uiStore = useUIStore()
 
@@ -14,6 +15,17 @@ const webgpuAvailable = ref(false)
 const useWebGPU = ref(false)
 const useBrowserCache = ref(true)
 const clearingCache = ref(false)
+const storageInfo = ref<StorageEstimateInfo | null>(null)
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 MB'
+  const gb = bytes / 1e9
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`
+}
+
+async function refreshStorageInfo() {
+  storageInfo.value = await getStorageEstimate()
+}
 
 // Initialize selected models with defaults
 let aiUnsubscribe: (() => void) | null = null
@@ -33,6 +45,7 @@ onMounted(async () => {
   autoLoadModels.value = new Set(state.autoLoadModels)
 
   updateState()
+  void refreshStorageInfo()
 
   // Subscribe to AI service state changes
   aiUnsubscribe = aiInference.subscribe(() => {
@@ -187,6 +200,7 @@ async function clearCache() {
     await aiInference.clearModelCache()
     // Update state after clearing
     updateState()
+    void refreshStorageInfo()
   } catch (error) {
     console.error('Failed to clear cache:', error)
   } finally {
@@ -308,6 +322,14 @@ function getCategoryColor(category: string): string {
                 />
                 <span>Clear Cache</span>
               </button>
+            </div>
+            <div
+              v-if="storageInfo"
+              class="storage-info"
+              :title="`${formatBytes(storageInfo.usage)} used of ~${formatBytes(storageInfo.quota)} (${Math.round(storageInfo.percentUsed * 100)}%)`"
+            >
+              <HardDrive :size="13" />
+              <span>{{ formatBytes(storageInfo.available) }} free for models</span>
             </div>
           </div>
 
@@ -570,6 +592,15 @@ function getCategoryColor(category: string): string {
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+.storage-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 .cache-toggle,
