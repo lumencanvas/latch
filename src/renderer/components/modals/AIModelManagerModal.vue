@@ -350,6 +350,37 @@ function getCategoryColor(category: string): string {
 
           <!-- Model List -->
           <div class="model-list">
+            <!-- Streaming chat LLMs (WebGPU / MLC) — selected & run from the
+                 LLM (Streaming) node, not loaded globally here. -->
+            <div class="model-card webllm-card">
+              <div class="model-info">
+                <div class="model-header">
+                  <h3 class="model-name">
+                    Chat LLM (Streaming)
+                  </h3>
+                  <span
+                    class="category-badge"
+                    style="background: #a855f7"
+                  >webgpu · {{ WEBLLM_MODELS.length }}</span>
+                </div>
+                <p class="model-description">
+                  Full chat models that stream token-by-token on your GPU (MLC / WebLLM).
+                  Add an <strong>LLM (Streaming)</strong> node to the canvas and pick one
+                  from its Model menu — weights cache on first use, like the models below.
+                </p>
+                <div class="webllm-grid">
+                  <span
+                    v-for="m in WEBLLM_MODELS"
+                    :key="m.id"
+                    class="webllm-chip"
+                    :title="m.id"
+                  >
+                    {{ m.name }} <em>{{ m.size }}</em>
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div
               v-for="task in AI_MODELS"
               :key="task.id"
@@ -489,37 +520,6 @@ function getCategoryColor(category: string): string {
                   <Trash2 :size="14" />
                   <span>Unload</span>
                 </button>
-              </div>
-            </div>
-
-            <!-- Streaming chat LLMs (WebGPU / MLC) — selected & run from the
-                 LLM (Streaming) node, not loaded globally here. -->
-            <div class="model-card webllm-card">
-              <div class="model-info">
-                <div class="model-header">
-                  <h3 class="model-name">
-                    Chat LLM (Streaming)
-                  </h3>
-                  <span
-                    class="category-badge"
-                    style="background: #a855f7"
-                  >webgpu · {{ WEBLLM_MODELS.length }}</span>
-                </div>
-                <p class="model-description">
-                  Full chat models that stream token-by-token on your GPU (MLC / WebLLM).
-                  Add an <strong>LLM (Streaming)</strong> node to the canvas and pick one
-                  from its Model menu — weights cache on first use, like the models above.
-                </p>
-                <div class="webllm-grid">
-                  <span
-                    v-for="m in WEBLLM_MODELS"
-                    :key="m.id"
-                    class="webllm-chip"
-                    :title="m.id"
-                  >
-                    {{ m.name }} <em>{{ m.size }}</em>
-                  </span>
-                </div>
               </div>
             </div>
           </div>
