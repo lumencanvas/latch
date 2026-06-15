@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1279 passed | 11 todo (1290 total)
+**Tests**: 1283 passed | 11 todo (1294 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -34,9 +34,12 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
 - **Phase 6 (flagship):** `p6-renderer` production wiring = the texture-bridge
   blocker (WebGPU `GPUTexture` → compositor's `WebGLTexture`); `p6-tsl-node`
   GLSL-parity + real shader-node wiring; `p6-postfx`.
-- **Latent bugs:** ~~`smooth` node `_prev` never persists~~ FIXED 2026-06-15
-  (per-node `smoothState` Map); WebLLM `disposeAll`-during-load can orphan an
-  engine (minor).
+- **Latent bugs:** ~~`smooth` node no-op~~, ~~WebLLM concurrent-engine leak~~,
+  ~~timing/debug/input/clasp per-node state leaks~~ all FIXED 2026-06-15. Remaining
+  minor: WebLLM `disposeAll`-during-load can orphan an engine.
+- **UI/UX backlog (from the 2026-06-15 audit):** Enable-Audio button (top win,
+  backend built), touch-tier (drag-only palette, sub-44px targets), modal a11y
+  (no dialog role/focus-trap), token drift (no `--color-ai-*`).
 - **Validation gaps (non-headless):** WebGPU streaming end-to-end, clasp realtime
   (2 peers), per-shader visual regression, real-device touch, dirty/deferred in-app.
 - **Meta:** all on `modernization`, not pushed/merged; ~52 npm advisories (don't
@@ -99,6 +102,19 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   `triggerPrevPressed`), emitting only `result`. 5 TDD tests (ease/converge/
   isolation/reset); golden flow #5 renamed + snapshot regenerated; dirty mode
   stays byte-identical (smooth isn't pure). Suite 1279 green; typecheck + lint +
+  build clean.
+- **High-level audit (2026-06-15) — architecture + UI/UX** (two parallel surveys).
+  Verdict: architecture fundamentally sound (new Phase 4/5/6 code is reference-
+  quality). Found + fixed a real leak: timing/debug/input/clasp per-node state had
+  a `disposeAll*` (stop) path but no `gc*`, so deleting timer/scope/EQ/smooth/clasp
+  nodes mid-session leaked their state (incl. heavy audio analysers + clasp media)
+  until stop(); the dead per-node `disposeXNode` helpers are now reused by new
+  `gcTimingState/gcDebugState/gcInputState/gcClaspState` wired into `updateGraph`
+  (+ fixed `gateLastValue` never clearing). 4 TDD tests. **UX wins:** surfaced
+  model `license` in the manager (gated-license flag; browser-validated 8 badges)
+  and improved capability-badge a11y (`role="status"`, decorative icon, 11px).
+  Backlog captured in docs/AUDIT_2026-06-14.md (top items: Enable-Audio UI button,
+  touch-tier palette/targets, modal a11y). Suite 1283 green; typecheck + lint +
   build clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)

@@ -28,13 +28,16 @@ coding yet: get context, confirm the baseline, then propose the next step.
   pass. Never drop below the test baseline. Keep typecheck + lint + build:web
   green. Update docs/plans/MODERNIZATION_PLAN_2026.md + HANDOFF.md as you go.
 
-## ⚠️ Git state (verify first — this surprises people)
-HEAD is `c791b38` ("Add next-session kickoff prompt"), which only contains
-through the **Retrieve** node. EVERYTHING since — the rest of Phase 4, all of
-Phase 5 so far, and the clasp + three bumps — is **UNCOMMITTED in the working
-tree** (~20 modified, ~21 untracked files). So `git log` will look far behind
-what the docs + code actually contain. The work is real and green; it just isn't
-committed (per the "commit only when asked" rule). Run `git status` to see it.
+## Git state (updated 2026-06-15 — the old "everything uncommitted" note is obsolete)
+Everything is now **committed** on the `modernization` branch in clean, task-aligned
+commits (nothing pushed/merged — eventual single PR to `main` when the maintainer
+says). The working tree is clean except `.DS_Store` (an already-tracked OS artifact,
+intentionally left unstaged). So `git log --oneline -20` reflects reality. The
+2026-06-15 session committed: the Phase 4 ML batch + Phase 5 + clasp/three bumps
+(7 commits), the capability-requirement badge, the Phase 6 WebGPU renderer scaffold
++ TSL prototype, and fixes for three real bugs found by adversarial audits (WebLLM
+concurrent-engine leak, `smooth` node no-op, and timing/debug/input/clasp per-node
+state leaks). Plus UX: model-license surfacing + badge a11y.
 
 ## Get context (read these in order, then run the checks)
 1. CLAUDE.md — project rules + the architecture map.
@@ -48,8 +51,8 @@ committed (per the "commit only when asked" rule). Run `git status` to see it.
 6. docs/nodes/ai.md — reference for the AI nodes (incl. the new Vector Memory,
    Retrieve, and LLM streaming nodes).
 Then run:
-- `git status` (see the uncommitted work) and `git log --oneline -8`.
-- `npm run test:unit` → baseline **1245 passing / 11 todo**.
+- `git status` (clean except `.DS_Store`) and `git log --oneline -20`.
+- `npm run test:unit` → baseline **1283 passing / 11 todo** (as of 2026-06-15).
 - `npm run typecheck` (0 errors). `npm run lint` (0 errors). `npm run build:web` (clean).
 
 ## How the repo works (architecture)
@@ -112,32 +115,45 @@ and real-device touch feel.
 
 ## Known issues / notes
 - OPT-IN dirty/deferred engine modes want in-app validation before any default flip.
-- Latent pre-existing bug: the `smooth` node's `_prev` state never persists
-  (currently passes input through unchanged) — documented in AUDIT, not yet fixed.
+- ✅ FIXED 2026-06-15: `smooth` node no-op (now per-node `smoothState`); WebLLM
+  concurrent-engine leak (serialized `ensureEngine`); timing/debug/input/clasp
+  per-node state leaks (added the missing `gc*` functions) + the `gateLastValue`
+  leak; the BaseNode capability-badge wiring (per-platform `resolveNodeRequirement`).
+- Remaining minor: WebLLM `disposeAll()` during an in-flight model load can orphan
+  the just-loaded engine (rare; the generation bails on token).
 - ~52 npm advisories from the heavy AI dep tree (sharp / nightly ORT) — do NOT
   `npm audit fix --force` (would break pinned ORT/transformers).
 - Vector Memory / WebLLM state is runtime-only (cleared on stop, not persisted to
   the saved flow) — consistent with other stateful nodes; persistence is a follow-up.
 
-## What REMAINS
-- Phase 5 (mobile/touch tier): `p5-touch-connect` (Vue Flow connect-on-click,
-  enlarged handles, connectionMode Loose, touch-action — component test),
-  `p5-layout` (bottom-sheet panels / radial menu — UI), `p5-osc-bridge-first`
-  (OSC-over-WebSocket default on mobile — config), plus two follow-ups: wire
-  `getCapabilityStatus` into BaseNode.vue (NEEDS a per-platform requirement model,
-  NOT a single capability key — serial/midi/ble work via web API OR Electron
-  native, so a naive key shows false "unavailable" on Electron; see the
-  capability-duality finding in AUDIT), and a UI "Enable Audio" button bound to
-  `audioManager.unlock()` / `state.needsUserGesture`.
-- Phase 6 (flagship, high risk, behind a flag): Three.js TSL / WebGPURenderer with
-  WebGL2 fallback — now UNBLOCKED by the r184 bump; WebGPU confirmed available here.
+## What REMAINS (full inventory in HANDOFF.md "Remaining work snapshot" + the plan)
+- Phase 1: wire `prefersReducedMotion()` into animated nodes (+ a CSS
+  `@media (prefers-reduced-motion)` block — currently none).
+- Phase 2: flip dirty/deferred opt-in → default (needs in-app validation); optional
+  trigger-edges.
+- Phase 4: Vector Memory corpus persistence across reload; optional LLMLingua-2
+  compress node; promote a modern ungated text-gen default.
+- Phase 5 (mobile/touch tier): **`Enable Audio` UI button** bound to
+  `audioManager.unlock()` / `needsUserGesture` (backend fully built — top UX win,
+  best validated on a real iOS device); `p5-touch-connect` (tap-to-connect, big
+  handles, Loose mode — note the node *palette* is drag-only, unusable on touch);
+  `p5-layout` (bottom sheets / radial menu; 44pt/48dp touch targets — current UI is
+  far below); `p5-osc-bridge-first` (config). Broader a11y: dialog semantics/focus
+  trap on modals, ARIA on the custom dropdown/tabs (see the 2026-06-15 UX audit in
+  docs/AUDIT_2026-06-14.md).
+- Phase 6 (flagship, high risk, behind a flag): renderer scaffold + TSL authoring
+  are **proven** (browser-validated on WebGPU, flag-gated/standalone). The blocker
+  for production wiring is the texture bridge — `ThreeRenderer.render()` returns a
+  raw `WebGLTexture` (`__webglTexture`) the compositor consumes, but WebGPU makes a
+  `GPUTexture`. Start with the WebGPU→readback→`DataTexture` path. Then GLSL-parity
+  + `p6-postfx`.
 
 ## What to do next
-Read the plan, confirm the baseline, then propose the next step and ask me to
-confirm. Prefer headless-verifiable work; for anything UI/touch/realtime, say so
-and use the Playwright+Chrome path to validate what you can. Good candidates:
-`p5-osc-bridge-first` (config-level, headless), the BaseNode capability-badge
-wiring (design the requirement model first), or scaffolding the Phase 6 WebGPU
-renderer behind a flag. The touch/layout items are best paired with my device
+Read the plan + HANDOFF, confirm the baseline (1283 green), then pick up a remaining
+item. Prefer headless-verifiable work and use the Playwright+Chrome path (incl. the
+Pinia-store-via-`__vue_app__` trick) to validate UI. The biggest levers: the
+Phase 6 texture-bridge integration (the production unlock — higher risk, worth
+confirming scope first) and the `Enable Audio` button (top mobile UX win, best
+paired with device testing). The touch/layout items are best paired with device
 testing.
 ```
