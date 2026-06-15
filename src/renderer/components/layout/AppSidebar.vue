@@ -55,7 +55,11 @@ function updateAIModelStatus() {
 }
 
 const sidebarStyle = computed(() => ({
-  width: uiStore.sidebarOpen ? `${uiStore.sidebarWidth}px` : '0px',
+  width: !uiStore.sidebarOpen
+    ? '0px'
+    : uiStore.isMobile
+      ? 'min(86vw, 300px)'
+      : `${uiStore.sidebarWidth}px`,
 }))
 
 // Get all categories with their metadata
@@ -147,6 +151,7 @@ function openAIModelManager() {
 <template>
   <aside
     class="app-sidebar"
+    :class="{ 'panel-overlay': uiStore.isMobile && uiStore.sidebarOpen }"
     :style="sidebarStyle"
   >
     <div
@@ -360,6 +365,16 @@ function openAIModelManager() {
   transition: width var(--transition-default);
   flex-shrink: 0;
   position: relative;
+}
+
+/* Mobile: float over the canvas instead of taking a fixed column. */
+.app-sidebar.panel-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.25);
 }
 
 .sidebar-content {

@@ -111,6 +111,9 @@ interface UIState {
   propertiesPanelOpen: boolean
   propertiesPanelWidth: number
 
+  // Responsive: true on phone/tablet-class viewports (panels become overlays)
+  isMobile: boolean
+
   // Shader editor modal
   shaderEditorOpen: boolean
   shaderEditorNodeId: string | null
@@ -161,6 +164,9 @@ export const useUIStore = defineStore('ui', {
     // Right properties panel
     propertiesPanelOpen: true,
     propertiesPanelWidth: 320,
+
+    // Responsive (set by App.vue from a matchMedia listener)
+    isMobile: false,
 
     // Shader editor modal
     shaderEditorOpen: false,
@@ -217,6 +223,16 @@ export const useUIStore = defineStore('ui', {
   },
 
   actions: {
+    // Responsive: entering mobile collapses both panels so the canvas gets the
+    // full viewport (on mobile they re-open as overlays, not fixed columns).
+    setIsMobile(value: boolean) {
+      if (value && !this.isMobile) {
+        this.sidebarOpen = false
+        this.propertiesPanelOpen = false
+      }
+      this.isMobile = value
+    },
+
     // Left sidebar
     toggleSidebar() {
       this.sidebarOpen = !this.sidebarOpen

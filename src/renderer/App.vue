@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { PanelLeft, PanelRight } from 'lucide-vue-next'
 import { useUIStore } from './stores/ui'
 import AppHeader from './components/layout/AppHeader.vue'
 import FlowTabs from './components/layout/FlowTabs.vue'
@@ -48,9 +49,28 @@ const appClasses = computed(() => ({
   'app': true,
   'sidebar-collapsed': !uiStore.sidebarOpen,
   'control-panel-mode': route.name === 'controls',
+  'is-mobile': uiStore.isMobile,
 }))
 
+// Mobile breakpoint: below this, panels become overlay drawers and default closed.
+let breakpointMql: MediaQueryList | null = null
+function onBreakpointChange() {
+  uiStore.setIsMobile(breakpointMql ? breakpointMql.matches : false)
+}
+
+function closePanels() {
+  uiStore.sidebarOpen = false
+  uiStore.propertiesPanelOpen = false
+}
+
 onMounted(async () => {
+  // Set up the responsive breakpoint immediately (before the async router wait).
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    breakpointMql = window.matchMedia('(max-width: 768px)')
+    onBreakpointChange()
+    breakpointMql.addEventListener('change', onBreakpointChange)
+  }
+
   // Wait for router to be ready before rendering route-dependent content
   await router.isReady()
   isRouterReady.value = true
@@ -73,6 +93,10 @@ onMounted(async () => {
     })
   })
 })
+
+onUnmounted(() => {
+  breakpointMql?.removeEventListener('change', onBreakpointChange)
+})
 </script>
 
 <template>
@@ -94,10 +118,41 @@ onMounted(async () => {
       <FlowTabs v-if="isEditorView" />
       <div class="app-body">
         <AppSidebar v-if="isEditorView" />
+
+        <!-- Reopen rail (left) — restores a collapsed sidebar from the edge -->
+        <button
+          v-if="isEditorView && !uiStore.sidebarOpen"
+          class="panel-rail panel-rail-left"
+          title="Open node palette"
+          aria-label="Open node palette"
+          @click="uiStore.toggleSidebar()"
+        >
+          <PanelLeft :size="16" />
+        </button>
+
         <main class="app-main">
           <router-view />
         </main>
+
+        <!-- Reopen rail (right) — restores a collapsed properties panel -->
+        <button
+          v-if="isEditorView && !uiStore.propertiesPanelOpen"
+          class="panel-rail panel-rail-right"
+          title="Open properties"
+          aria-label="Open properties"
+          @click="uiStore.openPropertiesPanel()"
+        >
+          <PanelRight :size="16" />
+        </button>
+
         <PropertiesPanel v-if="isEditorView" />
+
+        <!-- Mobile: tapping the backdrop dismisses an open overlay panel -->
+        <div
+          v-if="isEditorView && uiStore.isMobile && (uiStore.sidebarOpen || uiStore.propertiesPanelOpen)"
+          class="panel-backdrop"
+          @click="closePanels"
+        />
       </div>
       <StatusBar v-if="isEditorView" />
 
@@ -125,12 +180,65 @@ onMounted(async () => {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .app-main {
   flex: 1;
   overflow: hidden;
   position: relative;
+}
+
+/* Edge rails: a persistent, touch-sized way to reopen a collapsed panel. */
+.panel-rail {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 64px;
+  padding: 0;
+  color: var(--color-neutral-600);
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  cursor: pointer;
+  box-shadow: 2px 2px 0 0 var(--color-neutral-300);
+}
+
+.panel-rail:hover {
+  color: var(--color-primary-500);
+  border-color: var(--color-primary-400);
+}
+
+.panel-rail-left {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.panel-rail-right {
+  right: 0;
+  border-right: 0;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+/* Mobile: panels overlay the canvas; a backdrop sits between them. */
+.panel-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* Bigger touch targets for the reopen rails on coarse pointers. */
+@media (pointer: coarse) {
+  .panel-rail {
+    width: 36px;
+    height: 88px;
+  }
 }
 
 .loading-overlay {

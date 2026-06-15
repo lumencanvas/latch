@@ -196,7 +196,11 @@ function isExposed(controlId: string): boolean {
 
 // Panel width style
 const panelStyle = computed(() => ({
-  width: uiStore.propertiesPanelOpen ? `${uiStore.propertiesPanelWidth}px` : '0px',
+  width: !uiStore.propertiesPanelOpen
+    ? '0px'
+    : uiStore.isMobile
+      ? 'min(92vw, 360px)'
+      : `${uiStore.propertiesPanelWidth}px`,
 }))
 
 // Format output value for display
@@ -347,6 +351,7 @@ function shouldShowControl(control: { props?: Record<string, unknown> }): boolea
 <template>
   <aside
     class="properties-panel"
+    :class="{ 'panel-overlay': uiStore.isMobile && uiStore.propertiesPanelOpen }"
     :style="panelStyle"
   >
     <div
@@ -819,6 +824,16 @@ function shouldShowControl(control: { props?: Record<string, unknown> }): boolea
   transition: width var(--transition-default);
   flex-shrink: 0;
   position: relative;
+}
+
+/* Mobile: float over the canvas instead of taking a fixed column. */
+.properties-panel.panel-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 50;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.25);
 }
 
 .panel-content {

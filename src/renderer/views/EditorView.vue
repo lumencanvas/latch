@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, markRaw } from 'vue'
-import { VueFlow, useVueFlow, Panel } from '@vue-flow/core'
+import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
@@ -653,6 +653,7 @@ onUnmounted(() => {
         type: 'animated',
       }"
       :is-valid-connection="isValidConnection"
+      :connection-mode="ConnectionMode.Loose"
       :snap-to-grid="uiStore.snapToGrid"
       :snap-grid="[uiStore.gridSize, uiStore.gridSize]"
       :connection-line-style="{ stroke: 'var(--color-primary-400)', strokeWidth: 2 }"
@@ -733,6 +734,15 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   background: var(--canvas-background);
+}
+
+/* Touch: bigger connection handles so they can be tapped/dragged with a finger.
+   Only applies on coarse pointers, so desktop visuals are unchanged. */
+@media (pointer: coarse) {
+  .flow-canvas :deep(.vue-flow__handle) {
+    width: 18px;
+    height: 18px;
+  }
 }
 
 /* Override Vue Flow styles */
