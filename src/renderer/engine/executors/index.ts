@@ -1453,11 +1453,15 @@ export function gcWebLLMState(validNodeIds: Set<string>): void {
   webLLMService.gc(validNodeIds)
 }
 
-/** Release the LLM engine + all node state (called when execution stops). */
+/**
+ * Stop LLM generations + clear per-node trigger state when execution stops, but
+ * KEEP loaded engines (they're user-managed via the model manager, like the
+ * transformers models — persist until explicitly unloaded).
+ */
 export function disposeAllWebLLMState(): void {
   llmTriggerPrev.clear()
   llmPrevStatus.clear()
-  void webLLMService.disposeAll()
+  webLLMService.stopActive()
 }
 
 // ============================================================================

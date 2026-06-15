@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/ui'
 import { aiInference, AI_MODELS, type ModelLoadState } from '@/services/ai/AIInference'
 import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/modelStorage'
 import { WEBLLM_MODELS } from '@/registry/ai/llm'
+import { webLLMService } from '@/services/ai/WebLLMService'
 
 const uiStore = useUIStore()
 
@@ -17,6 +18,36 @@ const useWebGPU = ref(false)
 const useBrowserCache = ref(true)
 const clearingCache = ref(false)
 const storageInfo = ref<StorageEstimateInfo | null>(null)
+
+// --- Streaming chat LLMs (WebLLM) — user-managed loaded engines ---
+const selectedWebLLM = ref<string>(WEBLLM_MODELS[0].id)
+const webllmTick = ref(0) // bumped on service notify so the views below recompute
+let webllmUnsub: (() => void) | null = null
+
+const webllmLoaded = computed(() => {
+  void webllmTick.value
+  return webLLMService.loadedModels()
+})
+const selectedWebLLMState = computed(() => {
+  void webllmTick.value
+  return webLLMService.getLoadState(selectedWebLLM.value)
+})
+const selectedWebLLMLoaded = computed(() => {
+  void webllmTick.value
+  return webLLMService.isLoaded(selectedWebLLM.value)
+})
+function webllmName(id: string): string {
+  return WEBLLM_MODELS.find((m) => m.id === id)?.name ?? id
+}
+function webllmSize(id: string): string {
+  return WEBLLM_MODELS.find((m) => m.id === id)?.size ?? ''
+}
+function loadWebLLM(): void {
+  void webLLMService.preload(selectedWebLLM.value)
+}
+function unloadWebLLM(id: string): void {
+  void webLLMService.unload(id)
+}
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB'
@@ -52,10 +83,16 @@ onMounted(async () => {
   aiUnsubscribe = aiInference.subscribe(() => {
     updateState()
   })
+
+  // Subscribe to WebLLM loaded-model changes
+  webllmUnsub = webLLMService.subscribe(() => {
+    webllmTick.value++
+  })
 })
 
 onUnmounted(() => {
   aiUnsubscribe?.()
+  webllmUnsub?.()
 })
 
 // Watch for modal open to refresh state
@@ -350,9 +387,12 @@ function getCategoryColor(category: string): string {
 
           <!-- Model List -->
           <div class="model-list">
-            <!-- Streaming chat LLMs (WebGPU / MLC) — selected & run from the
-                 LLM (Streaming) node, not loaded globally here. -->
-            <div class="model-card webllm-card">
+            <!-- Streaming chat LLMs (WebGPU / MLC). Load one or more here; the
+                 LLM (Streaming) node uses whichever model it requests. -->
+            <div
+              class="model-card webllm-card"
+              :class="{ 'is-loaded': selectedWebLLMLoaded, 'is-loading': selectedWebLLMState?.status === 'loading' }"
+            >
               <div class="model-info">
                 <div class="model-header">
                   <h3 class="model-name">
@@ -361,23 +401,112 @@ function getCategoryColor(category: string): string {
                   <span
                     class="category-badge"
                     style="background: #a855f7"
-                  >webgpu · {{ WEBLLM_MODELS.length }}</span>
+                  >webgpu</span>
+                  <div class="model-status">
+                    <CheckCircle2
+                      v-if="selectedWebLLMLoaded"
+                      :size="16"
+                      class="status-icon ready"
+                    />
+                    <Loader
+                      v-else-if="selectedWebLLMState?.status === 'loading'"
+                      :size="16"
+                      class="status-icon loading"
+                    />
+                  </div>
                 </div>
                 <p class="model-description">
                   Full chat models that stream token-by-token on your GPU (MLC / WebLLM).
-                  Add an <strong>LLM (Streaming)</strong> node to the canvas and pick one
-                  from its Model menu — weights cache on first use, like the models below.
+                  Load one or more; an <strong>LLM (Streaming)</strong> node uses whichever
+                  you pick. Each model uses GPU memory, so large ones add up.
                 </p>
-                <div class="webllm-grid">
-                  <span
-                    v-for="m in WEBLLM_MODELS"
-                    :key="m.id"
-                    class="webllm-chip"
-                    :title="m.id"
+
+                <div class="model-selector">
+                  <select
+                    v-model="selectedWebLLM"
+                    :disabled="!webgpuAvailable"
+                    class="model-select"
                   >
-                    {{ m.name }} <em>{{ m.size }}</em>
+                    <option
+                      v-for="m in WEBLLM_MODELS"
+                      :key="m.id"
+                      :value="m.id"
+                    >
+                      {{ m.name }} ({{ m.size }})
+                    </option>
+                  </select>
+                  <span class="selected-size">{{ webllmSize(selectedWebLLM) }}</span>
+                </div>
+
+                <!-- Loaded models (several may be loaded at once) -->
+                <div
+                  v-if="webllmLoaded.length"
+                  class="webllm-loaded"
+                >
+                  <span
+                    v-for="id in webllmLoaded"
+                    :key="id"
+                    class="webllm-chip loaded"
+                    :title="id"
+                  >
+                    {{ webllmName(id) }}
+                    <button
+                      class="chip-x"
+                      title="Unload"
+                      aria-label="Unload model"
+                      @click="unloadWebLLM(id)"
+                    >
+                      <X :size="11" />
+                    </button>
                   </span>
                 </div>
+
+                <!-- Load progress -->
+                <div
+                  v-if="selectedWebLLMState?.status === 'loading'"
+                  class="progress-container"
+                >
+                  <div class="progress-bar">
+                    <div
+                      class="progress-fill"
+                      :style="{ width: `${Math.round((selectedWebLLMState.progress || 0) * 100)}%` }"
+                    />
+                  </div>
+                  <span class="progress-text">{{ Math.round((selectedWebLLMState.progress || 0) * 100) }}%</span>
+                </div>
+
+                <div
+                  v-if="selectedWebLLMState?.status === 'error'"
+                  class="error-message"
+                >
+                  {{ selectedWebLLMState.error }}
+                </div>
+                <div
+                  v-if="!webgpuAvailable"
+                  class="webgpu-required"
+                >
+                  Requires WebGPU (Chrome/Edge desktop, or a WebGPU-capable browser).
+                </div>
+              </div>
+
+              <div class="model-actions">
+                <button
+                  v-if="!selectedWebLLMLoaded"
+                  class="btn btn-primary btn-sm"
+                  :disabled="!webgpuAvailable || selectedWebLLMState?.status === 'loading'"
+                  @click="loadWebLLM"
+                >
+                  <Download :size="14" />
+                  <span>{{ selectedWebLLMState?.status === 'loading' ? 'Loading...' : 'Load' }}</span>
+                </button>
+                <button
+                  v-else
+                  class="btn btn-secondary btn-sm"
+                  @click="unloadWebLLM(selectedWebLLM)"
+                >
+                  <Trash2 :size="14" />
+                  <span>Unload</span>
+                </button>
               </div>
             </div>
 
@@ -929,11 +1058,7 @@ function getCategoryColor(category: string): string {
   border-color: var(--color-warning);
 }
 
-.webllm-card {
-  border-style: dashed;
-}
-
-.webllm-grid {
+.webllm-loaded {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
@@ -941,19 +1066,42 @@ function getCategoryColor(category: string): string {
 }
 
 .webllm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--color-neutral-700);
   background: var(--color-neutral-0);
   border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-xs);
-  padding: 2px var(--space-1);
+  padding: 2px 4px 2px var(--space-1);
   white-space: nowrap;
 }
 
-.webllm-chip em {
+.webllm-chip.loaded {
+  color: var(--color-success, #16a34a);
+  border-color: color-mix(in srgb, var(--color-success, #16a34a) 50%, var(--color-neutral-200));
+}
+
+.webllm-chip .chip-x {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
   color: var(--color-neutral-500);
-  font-style: normal;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.webllm-chip .chip-x:hover {
+  color: var(--color-error, #dc2626);
+}
+
+.webgpu-required {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-500);
 }
 
 .webgpu-badge {

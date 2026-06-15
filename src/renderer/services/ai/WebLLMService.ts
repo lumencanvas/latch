@@ -1,13 +1,19 @@
 /**
  * Streaming in-browser LLM via @mlc-ai/web-llm (WebGPU). The heavy WebLLM runtime
- * (~14 MB + WASM) is **dynamic-imported inside the engine factory** and the engine
- * itself runs in a dedicated worker (`webllm.worker.ts`) — so nothing here lands
- * in the main bundle and tests never load the real package (they inject a factory).
+ * (~14 MB + WASM) is **dynamic-imported inside the engine factory** and each engine
+ * runs in its own dedicated worker (`webllm.worker.ts`) — so nothing here lands in
+ * the main bundle and tests never load the real package (they inject a factory).
  *
- * The service owns one active engine (a browser can realistically hold one
- * multi-GB model) and per-node generation state. The LLM node executor reads that
- * state each frame (sync) while a background stream appends tokens — a
- * fire-and-latch pattern, so generation never blocks the render loop.
+ * Models are **user-managed loaded engines**, consistent with the transformers.js
+ * model manager: you can `preload()` several at once and `unload()` them; loaded
+ * engines persist across flow start/stop (only `disposeAll()` or `unload()` frees
+ * them). The LLM node uses whichever model it requests, loading it on demand if it
+ * isn't already loaded. Generation is one-at-a-time (fire-and-latch: the executor
+ * polls {@link getState} per frame while a background stream appends tokens), so it
+ * never blocks the render loop; a monotonic `genToken` supersedes stale streams.
+ *
+ * Note: each loaded chat model uses real GPU VRAM (~0.4–5 GB), so loading several
+ * large models at once can exhaust it — that's the user's call, like disk cache.
  *
  * WebGPU is mandatory; without it generation resolves to an `unsupported` state
  * with a clear message rather than throwing.
@@ -64,6 +70,13 @@ export interface GenState {
   model?: string
 }
 
+/** Load state for one model id (for the model-manager UI). */
+export interface ModelLoadState {
+  status: 'loading' | 'loaded' | 'error'
+  progress: number
+  error?: string
+}
+
 export interface GenerationRequest {
   model: string
   prompt: string
@@ -97,17 +110,26 @@ const defaultEngineFactory: EngineFactory = async (modelId, onProgress) => {
 export class WebLLMService {
   private readonly gpuCheck: () => Promise<boolean>
   private readonly engineFactory: EngineFactory
-  private handle: EngineHandle | null = null
-  private loadedModel: string | null = null
   private supported: boolean | null = null
+
+  /** Loaded chat engines, keyed by model id — several may be loaded at once. */
+  private readonly engines = new Map<string, EngineHandle>()
+  /** In-flight loads, keyed by model id, so concurrent loads of the same model coalesce. */
+  private readonly engineLoads = new Map<string, Promise<EngineHandle>>()
+  /** Load state per model id, surfaced to the manager UI. */
+  private readonly loadStates = new Map<string, ModelLoadState>()
+  /** Per-node generation state. */
   private readonly states = new Map<string, GenState>()
-  /** The node whose generation currently owns the engine. */
+  /** Listeners notified when loaded-model state changes (manager reactivity). */
+  private readonly listeners = new Set<() => void>()
+
+  /** The node + model that currently own generation (one stream at a time). */
   private activeNodeId: string | null = null
+  private activeModel: string | null = null
   /**
-   * Monotonic generation token. Each startGeneration bumps it; a generation
-   * checks it after every await and bails if a newer one (or interrupt/dispose)
-   * has superseded it. Guards the single shared engine against concurrent
-   * triggers and stale tokens landing — same pattern as the render-loop fix.
+   * Monotonic generation token. Each startGeneration bumps it; a generation checks
+   * it after every await and bails if a newer one (or interrupt/dispose) superseded
+   * it — guards the single active stream against concurrent triggers + stale tokens.
    */
   private genToken = 0
 
@@ -116,12 +138,108 @@ export class WebLLMService {
     this.engineFactory = opts?.engineFactory ?? defaultEngineFactory
   }
 
+  // ---- reactivity for the manager UI ----------------------------------------
+  /** Subscribe to loaded-model state changes; returns an unsubscribe fn. */
+  subscribe(fn: () => void): () => void {
+    this.listeners.add(fn)
+    return () => this.listeners.delete(fn)
+  }
+  private notify(): void {
+    for (const fn of this.listeners) {
+      try {
+        fn()
+      } catch {
+        /* ignore listener errors */
+      }
+    }
+  }
+
   /** Memoized WebGPU support check. */
   async isSupported(): Promise<boolean> {
     if (this.supported === null) this.supported = await this.gpuCheck()
     return this.supported
   }
 
+  // ---- loaded-model management ----------------------------------------------
+  isLoaded(model: string): boolean {
+    return this.engines.has(model)
+  }
+  loadedModels(): string[] {
+    return [...this.engines.keys()]
+  }
+  getLoadState(model: string): ModelLoadState | undefined {
+    return this.loadStates.get(model)
+  }
+
+  /**
+   * Load (and cache) an engine for `model`. Idempotent and serialized per model, so
+   * concurrent loads of the same id coalesce into one factory call (no double-create
+   * leak). Returns false when WebGPU is unavailable or the load fails.
+   */
+  async preload(model: string, onProgress?: (r: ProgressReport) => void): Promise<boolean> {
+    if (!(await this.isSupported())) return false
+    try {
+      await this.loadEngineFor(model, onProgress)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private loadEngineFor(model: string, onProgress?: (r: ProgressReport) => void): Promise<EngineHandle> {
+    const existing = this.engines.get(model)
+    if (existing) return Promise.resolve(existing)
+    const inFlight = this.engineLoads.get(model)
+    if (inFlight) return inFlight
+
+    const load = (async () => {
+      this.loadStates.set(model, { status: 'loading', progress: 0 })
+      this.notify()
+      try {
+        const handle = await this.engineFactory(model, (p) => {
+          this.loadStates.set(model, { status: 'loading', progress: p.progress })
+          this.notify()
+          onProgress?.(p)
+        })
+        this.engines.set(model, handle)
+        this.loadStates.set(model, { status: 'loaded', progress: 1 })
+        this.notify()
+        return handle
+      } catch (e) {
+        this.loadStates.set(model, {
+          status: 'error',
+          progress: 0,
+          error: e instanceof Error ? e.message : String(e),
+        })
+        this.notify()
+        throw e
+      } finally {
+        this.engineLoads.delete(model)
+      }
+    })()
+    this.engineLoads.set(model, load)
+    return load
+  }
+
+  /** Unload a specific model's engine, freeing its VRAM. */
+  async unload(model: string): Promise<void> {
+    const inFlight = this.engineLoads.get(model)
+    if (inFlight) {
+      try {
+        await inFlight
+      } catch {
+        /* ignore — load already failed */
+      }
+    }
+    const handle = this.engines.get(model)
+    this.engines.delete(model)
+    this.loadStates.delete(model)
+    if (this.activeModel === model) this.interruptActiveGeneration()
+    this.notify()
+    if (handle) await handle.dispose()
+  }
+
+  // ---- generation -----------------------------------------------------------
   /** Current generation state for a node (never undefined). */
   getState(nodeId: string): GenState {
     return this.states.get(nodeId) ?? IDLE
@@ -131,24 +249,30 @@ export class WebLLMService {
     this.states.set(nodeId, { ...this.getState(nodeId), ...patch })
   }
 
+  private interruptActiveGeneration(): void {
+    if (this.activeModel) {
+      try {
+        this.engines.get(this.activeModel)?.engine.interruptGenerate()
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   /**
-   * Start (or restart) generation for a node. Resolves when the stream finishes.
-   * The executor calls this fire-and-forget and polls {@link getState} per frame.
+   * Start (or restart) generation for a node, loading its model on demand if it
+   * isn't already loaded. Resolves when the stream finishes; the executor calls it
+   * fire-and-forget and polls {@link getState} per frame.
    */
   async startGeneration(nodeId: string, req: GenerationRequest): Promise<void> {
     const token = ++this.genToken
 
-    // Supersede any other in-flight generation on the shared engine: settle its
-    // state now and stop the engine; its loop bails on the token mismatch below.
+    // Supersede any other in-flight generation: settle its state and stop its stream.
     if (this.activeNodeId && this.activeNodeId !== nodeId) {
       const s = this.getState(this.activeNodeId).status
       if (s === 'generating' || s === 'loading') this.set(this.activeNodeId, { status: 'done' })
     }
-    try {
-      this.handle?.engine.interruptGenerate()
-    } catch {
-      /* ignore */
-    }
+    this.interruptActiveGeneration()
     this.activeNodeId = nodeId
     this.set(nodeId, { status: 'loading', text: '', progress: 0, error: undefined, model: req.model })
 
@@ -160,10 +284,12 @@ export class WebLLMService {
     }
 
     try {
-      const engine = await this.ensureEngine(req.model, (p) => {
+      const handle = await this.loadEngineFor(req.model, (p) => {
         if (token === this.genToken) this.set(nodeId, { progress: p.progress })
       })
       if (token !== this.genToken) return // superseded during model load
+      this.activeModel = req.model
+      const engine = handle.engine
 
       const messages: Array<{ role: string; content: string }> = []
       if (req.system) messages.push({ role: 'system', content: req.system })
@@ -191,91 +317,64 @@ export class WebLLMService {
         this.set(nodeId, { status: 'error', error: err instanceof Error ? err.message : String(err) })
       }
     } finally {
-      if (token === this.genToken && this.activeNodeId === nodeId) this.activeNodeId = null
+      if (token === this.genToken && this.activeNodeId === nodeId) {
+        this.activeNodeId = null
+        this.activeModel = null
+      }
     }
   }
 
-  /** A model (re)load currently in flight; resolves (never rejects) when settled. */
-  private engineLoad: Promise<void> | null = null
-
-  /** Load the engine for `model`, reloading if a different model is active. */
-  private async ensureEngine(
-    model: string,
-    onProgress: (r: ProgressReport) => void,
-  ): Promise<LLMEngine> {
-    // Serialize loads: wait out any in-flight (re)load so the factory never runs
-    // twice in parallel — that would create (and leak) a second multi-GB engine
-    // whose handle gets overwritten without dispose(). genToken guards the stream
-    // but not engine creation, so two triggers during a load could both reach here.
-    while (this.engineLoad) await this.engineLoad
-    if (this.handle && this.loadedModel === model) return this.handle.engine
-
-    const load = this.loadEngine(model, onProgress)
-    // Mirror as a non-rejecting promise so waiters above just re-check state and
-    // retry on failure instead of seeing an unhandled rejection.
-    this.engineLoad = load.then(
-      () => {},
-      () => {},
-    )
-    try {
-      await load
-    } finally {
-      this.engineLoad = null
-    }
-    return this.handle!.engine
-  }
-
-  /** Dispose any current engine, then construct + load `model`. */
-  private async loadEngine(model: string, onProgress: (r: ProgressReport) => void): Promise<void> {
-    if (this.handle) {
-      await this.handle.dispose()
-      this.handle = null
-      this.loadedModel = null
-    }
-    this.handle = await this.engineFactory(model, onProgress)
-    this.loadedModel = model
-  }
-
-  /** Interrupt an in-flight generation for a node. */
+  /** Interrupt an in-flight generation for a node (its engine stays loaded). */
   interrupt(nodeId: string): void {
     if (this.activeNodeId === nodeId) {
       this.genToken++ // make the in-flight loop bail at its next checkpoint
+      this.interruptActiveGeneration()
       this.activeNodeId = null
-      try {
-        this.handle?.engine.interruptGenerate()
-      } catch {
-        /* ignore */
-      }
+      this.activeModel = null
     }
     const status = this.getState(nodeId).status
     if (status === 'generating' || status === 'loading') this.set(nodeId, { status: 'done' })
   }
 
-  /** Drop a node's state (node removed). */
+  /** Drop a node's generation state (node removed). Loaded engines are untouched. */
   disposeNode(nodeId: string): void {
     if (this.activeNodeId === nodeId) this.interrupt(nodeId)
     this.states.delete(nodeId)
   }
 
-  /** GC state for nodes no longer in the graph. */
+  /** GC generation state for nodes no longer in the graph. Engines are untouched. */
   gc(validNodeIds: Set<string>): void {
     for (const id of this.states.keys()) {
       if (!validNodeIds.has(id)) this.states.delete(id)
     }
   }
 
-  /** Release the engine + all state (execution stopped). */
-  async disposeAll(): Promise<void> {
-    this.genToken++ // bail any in-flight generation loops
-    const handle = this.handle
-    this.handle = null
-    this.loadedModel = null
+  /**
+   * Stop the active generation and clear per-node state, but KEEP loaded engines
+   * (execution stopped). Loaded models are user-managed and persist until unloaded.
+   */
+  stopActive(): void {
+    this.genToken++
+    this.interruptActiveGeneration()
     this.activeNodeId = null
+    this.activeModel = null
+    this.states.clear()
+  }
+
+  /** Release ALL engines + state (full teardown / unload everything). */
+  async disposeAll(): Promise<void> {
+    this.genToken++
+    this.activeNodeId = null
+    this.activeModel = null
     this.states.clear()
     this.supported = null
-    if (handle) await handle.dispose()
+    const handles = [...this.engines.values()]
+    this.engines.clear()
+    this.loadStates.clear()
+    this.notify()
+    await Promise.all(handles.map((h) => h.dispose().catch(() => {})))
   }
 }
 
-/** Singleton used by the LLM node executor. */
+/** Singleton used by the LLM node executor + the model manager. */
 export const webLLMService = new WebLLMService()

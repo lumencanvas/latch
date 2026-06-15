@@ -89,7 +89,7 @@ describe('WebLLMService', () => {
     expect(seen?.max_tokens).toBe(99)
   })
 
-  it('reuses the engine for the same model and reloads for a different one', async () => {
+  it('keeps multiple models loaded and reuses by model id', async () => {
     let creates = 0
     let disposes = 0
     const factory: EngineFactory = async () => {
@@ -99,10 +99,77 @@ describe('WebLLMService', () => {
     const svc = new WebLLMService({ gpuCheck: async () => true, engineFactory: factory })
     await svc.startGeneration('a', { model: 'M1', prompt: '1' })
     await svc.startGeneration('a', { model: 'M1', prompt: '2' })
-    expect(creates).toBe(1) // reused
+    expect(creates).toBe(1) // same model reused
     await svc.startGeneration('a', { model: 'M2', prompt: '3' })
-    expect(creates).toBe(2)
-    expect(disposes).toBe(1) // old engine released on model switch
+    expect(creates).toBe(2) // second model loaded...
+    expect(disposes).toBe(0) // ...without unloading the first
+    expect(svc.loadedModels().sort()).toEqual(['M1', 'M2'])
+    await svc.startGeneration('a', { model: 'M1', prompt: '4' })
+    expect(creates).toBe(2) // M1 still loaded, reused
+  })
+
+  it('preloads, reports load state, and unloads models (manager API)', async () => {
+    let creates = 0
+    let disposes = 0
+    const factory: EngineFactory = async () => {
+      creates++
+      return { engine: mockEngine(['x']), dispose: async () => void disposes++ }
+    }
+    const svc = new WebLLMService({ gpuCheck: async () => true, engineFactory: factory })
+    expect(await svc.preload('M1')).toBe(true)
+    expect(svc.isLoaded('M1')).toBe(true)
+    expect(svc.getLoadState('M1')?.status).toBe('loaded')
+    expect(await svc.preload('M1')).toBe(true) // idempotent
+    expect(creates).toBe(1)
+    await svc.preload('M2')
+    expect(svc.loadedModels().sort()).toEqual(['M1', 'M2'])
+    await svc.unload('M1')
+    expect(svc.isLoaded('M1')).toBe(false)
+    expect(svc.getLoadState('M1')).toBeUndefined()
+    expect(disposes).toBe(1)
+    expect(svc.loadedModels()).toEqual(['M2'])
+  })
+
+  it('preload returns false (and records error) on failure or no WebGPU', async () => {
+    const failing: EngineFactory = async () => {
+      throw new Error('nope')
+    }
+    const svc = new WebLLMService({ gpuCheck: async () => true, engineFactory: failing })
+    expect(await svc.preload('M')).toBe(false)
+    expect(svc.getLoadState('M')?.status).toBe('error')
+
+    const noGpu = new WebLLMService({ gpuCheck: async () => false, engineFactory: factoryFor(mockEngine(['x'])) })
+    expect(await noGpu.preload('M')).toBe(false)
+    expect(noGpu.isLoaded('M')).toBe(false)
+  })
+
+  it('notifies subscribers on load + unload, and stops after unsubscribe', async () => {
+    let n = 0
+    const svc = new WebLLMService({ gpuCheck: async () => true, engineFactory: factoryFor(mockEngine(['x'])) })
+    const unsub = svc.subscribe(() => n++)
+    await svc.preload('M')
+    expect(n).toBeGreaterThan(0)
+    const afterLoad = n
+    await svc.unload('M')
+    expect(n).toBeGreaterThan(afterLoad)
+    unsub()
+    const afterUnsub = n
+    await svc.preload('M2')
+    expect(n).toBe(afterUnsub) // no longer notified
+  })
+
+  it('stopActive settles the generation but keeps loaded engines', async () => {
+    let disposes = 0
+    const svc = new WebLLMService({
+      gpuCheck: async () => true,
+      engineFactory: async () => ({ engine: mockEngine(['x']), dispose: async () => void disposes++ }),
+    })
+    await svc.preload('M')
+    await svc.startGeneration('a', { model: 'M', prompt: 'p' })
+    svc.stopActive()
+    expect(svc.isLoaded('M')).toBe(true) // engine kept loaded
+    expect(disposes).toBe(0)
+    expect(svc.getState('a').status).toBe('idle') // per-node state cleared
   })
 
   it('creates only one engine when generations race during a slow model load', async () => {
