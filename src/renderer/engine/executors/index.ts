@@ -1145,6 +1145,7 @@ export function disposeDebugNode(nodeId: string): void {
 export function disposeInputNode(nodeId: string): void {
   triggerPrevPressed.delete(nodeId)
   smoothState.delete(nodeId)
+  gateLastValue.delete(nodeId)
 }
 
 /**
@@ -1193,6 +1194,37 @@ export function disposeAllDebugState(): void {
 export function disposeAllInputState(): void {
   triggerPrevPressed.clear()
   smoothState.clear()
+  gateLastValue.clear()
+}
+
+/**
+ * GC timing/debug/input state for nodes no longer in the graph (per-node removal).
+ * Each mirrors the wired `gc*` functions in the other executors: reuse the
+ * per-node `disposeXNode` helper for ids absent from the valid set. Without these
+ * the state only cleared on stop(), so deleting timer/oscilloscope/equalizer/
+ * smooth nodes mid-session leaked their state (incl. heavy audio analysers).
+ */
+export function gcTimingState(validNodeIds: Set<string>): void {
+  const ids = new Set<string>([
+    ...intervalState.keys(), ...delayState.keys(), ...timerState.keys(),
+    ...metronomeState.keys(), ...stepSequencerState.keys(), ...startFiredNodes.keys(),
+  ])
+  for (const id of ids) if (!validNodeIds.has(id)) disposeTimingNode(id)
+}
+
+export function gcDebugState(validNodeIds: Set<string>): void {
+  const ids = new Set<string>([
+    ...consolePrevValues.keys(), ...monitorLastValue.keys(),
+    ...scopeAnalyzers.keys(), ...eqAnalyzers.keys(),
+  ])
+  for (const id of ids) if (!validNodeIds.has(id)) disposeDebugNode(id)
+}
+
+export function gcInputState(validNodeIds: Set<string>): void {
+  const ids = new Set<string>([
+    ...triggerPrevPressed.keys(), ...smoothState.keys(), ...gateLastValue.keys(),
+  ])
+  for (const id of ids) if (!validNodeIds.has(id)) disposeInputNode(id)
 }
 
 // ============================================================================

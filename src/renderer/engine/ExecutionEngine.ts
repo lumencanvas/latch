@@ -8,6 +8,9 @@ import {
   disposeAllTimingState,
   disposeAllDebugState,
   disposeAllInputState,
+  gcTimingState,
+  gcDebugState,
+  gcInputState,
   disposeAllRAGState,
   gcRAGState,
   disposeAllWebLLMState,
@@ -21,7 +24,7 @@ import {
 import { gcCodeState, disposeAllCodeNodes } from './executors/code'
 import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
-import { disposeAllClaspConnections } from './executors/clasp'
+import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
 import { disposeAllAINodes, gcAIState } from './executors/ai'
 
 /**
@@ -192,6 +195,10 @@ export class ExecutionEngine {
         gc3DState(validNodeIds)
         gcConnectivityState(validNodeIds)
         gcAIState(validNodeIds)
+        gcTimingState(validNodeIds)
+        gcDebugState(validNodeIds)
+        gcInputState(validNodeIds)
+        gcClaspState(validNodeIds)
         gcRAGState(validNodeIds)
         gcWebLLMState(validNodeIds)
         // Clean up node metrics for deleted nodes

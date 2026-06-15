@@ -1533,6 +1533,26 @@ export function disposeAllClaspConnections(): void {
 }
 
 /**
+ * GC CLASP node state for nodes no longer in the graph (per-node removal). Reuses
+ * `disposeClaspNode` (unsubscribes, disconnects orphaned connections, clears the
+ * state cache, disposes video/gesture media). Without this, removing a clasp
+ * subscribe/video node mid-session leaked its subscription + media state until
+ * stop(). `claspConnections` is keyed by connectionId and reclaimed by
+ * `disposeClaspNode` once a connection has no subscribers left.
+ */
+export function gcClaspState(validNodeIds: Set<string>): void {
+  const ids = new Set<string>([
+    ...nodeSubscriptions.keys(),
+    ...videoReceiveState.keys(),
+    ...videoSendState.keys(),
+    ...gestureState.keys(),
+  ])
+  // claspState keys are `${nodeId}:...`; recover the node ids.
+  for (const key of claspState.keys()) ids.add(key.split(':')[0])
+  for (const id of ids) if (!validNodeIds.has(id)) disposeClaspNode(id)
+}
+
+/**
  * Get connection status for debugging
  */
 export function getClaspConnectionStatus(): Map<string, { status: string; session: string | null; subscribers: number }> {
