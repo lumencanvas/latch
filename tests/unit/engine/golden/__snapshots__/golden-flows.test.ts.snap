@@ -267,14 +267,13 @@ exports[`golden flows (current engine behavior) > pure static arithmetic is stab
 ]
 `;
 
-exports[`golden flows (current engine behavior) > stateful smoothing converges over frames 1`] = `
+exports[`golden flows (current engine behavior) > stateful smooth settles on a constant source and emits only result 1`] = `
 [
   {
     "k": {
       "value": 10,
     },
     "sm": {
-      "_prev": 10,
       "result": 10,
     },
   },
@@ -283,7 +282,6 @@ exports[`golden flows (current engine behavior) > stateful smoothing converges o
       "value": 10,
     },
     "sm": {
-      "_prev": 10,
       "result": 10,
     },
   },
@@ -292,7 +290,6 @@ exports[`golden flows (current engine behavior) > stateful smoothing converges o
       "value": 10,
     },
     "sm": {
-      "_prev": 10,
       "result": 10,
     },
   },
@@ -301,7 +298,6 @@ exports[`golden flows (current engine behavior) > stateful smoothing converges o
       "value": 10,
     },
     "sm": {
-      "_prev": 10,
       "result": 10,
     },
   },
@@ -310,7 +306,6 @@ exports[`golden flows (current engine behavior) > stateful smoothing converges o
       "value": 10,
     },
     "sm": {
-      "_prev": 10,
       "result": 10,
     },
   },
@@ -319,7 +314,6 @@ exports[`golden flows (current engine behavior) > stateful smoothing converges o
       "value": 10,
     },
     "sm": {
-      "_prev": 10,
       "result": 10,
     },
   },

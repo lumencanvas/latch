@@ -18,9 +18,29 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1274 passed | 11 todo (1285 total)
+**Tests**: 1279 passed | 11 todo (1290 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
+
+### Remaining work snapshot (2026-06-15)
+Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
+- **Phase 1:** wire `prefersReducedMotion()` into animated nodes.
+- **Phase 2:** flip dirty/deferred from opt-in → default (needs in-app validation);
+  optional trigger-edges.
+- **Phase 4:** Vector Memory corpus persistence across reload; optional LLMLingua-2
+  compress node; promote a modern ungated text-gen default + license in the UI.
+- **Phase 5:** `p5-touch-connect` (component-testable), `p5-layout` (UI/device),
+  `p5-osc-bridge-first` (headless config), "Enable Audio" button.
+- **Phase 6 (flagship):** `p6-renderer` production wiring = the texture-bridge
+  blocker (WebGPU `GPUTexture` → compositor's `WebGLTexture`); `p6-tsl-node`
+  GLSL-parity + real shader-node wiring; `p6-postfx`.
+- **Latent bugs:** ~~`smooth` node `_prev` never persists~~ FIXED 2026-06-15
+  (per-node `smoothState` Map); WebLLM `disposeAll`-during-load can orphan an
+  engine (minor).
+- **Validation gaps (non-headless):** WebGPU streaming end-to-end, clasp realtime
+  (2 peers), per-shader visual regression, real-device touch, dirty/deferred in-app.
+- **Meta:** all on `modernization`, not pushed/merged; ~52 npm advisories (don't
+  `audit fix --force`).
 
 ---
 
@@ -72,6 +92,14 @@ Durable project rules now live in `CLAUDE.md`; this file is the change log.
   Vector Memory cleanup, transferable-image detachment (caller ImageData is
   deep-copied), WebLLM token supersession. Full writeup in docs/AUDIT_2026-06-14.md
   (2026-06-15 follow-up section). Suite 1274 green; typecheck + lint + build clean.
+- **Fixed `smooth` node no-op** (documented latent bug) — it read `_prev` from
+  controls and wrote it as an output, which the engine never feeds back, so it
+  passed input through unchanged. Now holds previous value in a per-node
+  `smoothState` Map (cleared on stop via `disposeAllInputState`, like
+  `triggerPrevPressed`), emitting only `result`. 5 TDD tests (ease/converge/
+  isolation/reset); golden flow #5 renamed + snapshot regenerated; dirty mode
+  stays byte-identical (smooth isn't pure). Suite 1279 green; typecheck + lint +
+  build clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 

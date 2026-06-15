@@ -240,21 +240,24 @@ export const absExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return new Map([['result', Math.abs(value)]])
 }
 
+// Per-node smoothing state (previous output). Outputs aren't fed back as inputs,
+// so the previous value must live here, not in controls/outputs. Cleared on stop
+// via disposeAllInputState (cheap per-node number — no per-removal gc needed,
+// same as triggerPrevPressed).
+const smoothState = new Map<string, number>()
+
 export const smoothExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const target = (ctx.inputs.get('value') as number) ?? 0
   const rawFactor = (ctx.controls.get('factor') as number) ?? 0.1
   // Guard against NaN and invalid values
   const factor = Number.isFinite(rawFactor) ? rawFactor : 0.1
 
-  // Get previous value from outputs (stateful node)
-  const prev = (ctx.controls.get('_prev') as number) ?? target
+  // First frame (no stored state) initializes to the target, then eases toward it.
+  const prev = smoothState.get(ctx.nodeId) ?? target
   const smoothed = prev + (target - prev) * Math.min(1, factor * ctx.deltaTime * 60)
+  smoothState.set(ctx.nodeId, smoothed)
 
-  // Store for next frame (this would need special handling in the engine)
-  return new Map([
-    ['result', smoothed],
-    ['_prev', smoothed], // Internal state
-  ])
+  return new Map<string, unknown>([['result', smoothed]])
 }
 
 export const randomExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
@@ -1141,6 +1144,7 @@ export function disposeDebugNode(nodeId: string): void {
  */
 export function disposeInputNode(nodeId: string): void {
   triggerPrevPressed.delete(nodeId)
+  smoothState.delete(nodeId)
 }
 
 /**
@@ -1188,6 +1192,7 @@ export function disposeAllDebugState(): void {
  */
 export function disposeAllInputState(): void {
   triggerPrevPressed.clear()
+  smoothState.clear()
 }
 
 // ============================================================================

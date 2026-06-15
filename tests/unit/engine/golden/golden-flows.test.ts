@@ -24,10 +24,11 @@ import {
 
 const FRAMES = 6
 
-// Smooth currently passes its input through unchanged (its `_prev` state is never
-// persisted — see docs/AUDIT_2026-06-14.md). Kept as a golden so a future fix to
-// Smooth is caught here.
-function smoothPassthroughFlow(): FlowDef {
+// Smooth holds per-node state (`smoothState`) and eases toward its target; fed a
+// constant it settles on that value and emits only `result` (the old `_prev`
+// pass-through bug is fixed — see docs/AUDIT_2026-06-14.md). Convergence math is
+// covered in tests/unit/executors/smooth.test.ts.
+function smoothFlow(): FlowDef {
   return {
     nodes: [
       mkNode('k', 'constant', { value: 10 }),
@@ -54,7 +55,7 @@ describe('golden flows (current engine behavior)', () => {
     expect(await runFlow(diamondFlow(), { frames: FRAMES })).toMatchSnapshot()
   })
 
-  it('stateful smoothing converges over frames', async () => {
-    expect(await runFlow(smoothPassthroughFlow(), { frames: FRAMES })).toMatchSnapshot()
+  it('stateful smooth settles on a constant source and emits only result', async () => {
+    expect(await runFlow(smoothFlow(), { frames: FRAMES })).toMatchSnapshot()
   })
 })
