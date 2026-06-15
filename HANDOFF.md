@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1288 passed | 11 todo (1299 total)
+**Tests**: 1292 passed | 11 todo (1303 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -138,6 +138,31 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   **Known next gap:** the node palette is still drag-only, so you can open it on
   touch but can't place a node — tap-to-add is the top remaining mobile item. Suite
   1288 green; typecheck + lint + build clean.
+- **Unified the streaming chat LLM UX (2026-06-15).** The WebLLM card behaved unlike
+  the transformers cards (no Load button; loaded on-demand from the node; one engine
+  at a time). Refactored `WebLLMService` to **multiple user-managed loaded engines**
+  (`engines`/`engineLoads`/`loadStates` keyed by model id + `subscribe`/`preload`/
+  `unload`/`isLoaded`/`loadedModels`/`getLoadState`); generation loads on demand and
+  reuses; one active stream at a time; engines now PERSIST across flow start/stop
+  (`stopActive()` settles the gen but keeps engines — like the transformers models).
+  The manager's 'Chat LLM (Streaming)' card is now a normal card: select + Load/
+  Unload + status + progress + a chip per loaded model. Tests rewritten for
+  multi-engine. Suite 1292 green; typecheck + lint + build clean.
+- **VLA node — researched + de-risked (NEXT to build).** A true VLA (e.g. SmolVLA
+  0.5B) isn't browser-runnable yet: transformers.js supports its SmolVLM backbone
+  but not the flow-matching action head. The working in-browser approach is
+  **VLM-as-policy**: image + instruction → action text. Verified exact API from the
+  official `transformers.js-examples/smolvlm-webgpu`: `AutoProcessor` +
+  `AutoModelForVision2Seq` (both exported in v4.2) + `RawImage`, model
+  `HuggingFaceTB/SmolVLM-256M-Instruct` (~300 MB, browser-validatable):
+  `apply_chat_template([{role:'user',content:[{type:'image'},{type:'text',text}]}],
+  {add_generation_prompt:true})` → `processor(text, [image])` → `model.generate({
+  ...inputs, max_new_tokens, return_dict_in_generate:true})` → slice off the prompt
+  tokens → `processor.batch_decode(seq,{skip_special_tokens:true})`. Build plan: a
+  new `image-text-to-text` load path in `ai.worker.ts` (AutoProcessor +
+  AutoModelForVision2Seq, cache `{processor, model}`) + a `visionAction` infer
+  method; an `AIInference` catalog entry + method; a `vla` node (image + instruction
+  + trigger → action + text) + executor; tests; browser-validate with the 256M model.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
