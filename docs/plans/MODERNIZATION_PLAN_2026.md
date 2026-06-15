@@ -31,7 +31,7 @@
 | 3 | Staged dependency upgrades | `modernization` | ☑ All done (3a Vue Flow, 3b three r184, 3c clasp v4, 3d transformers v4) | Med |
 | 4 | ML modernization (WebLLM + RAG + caching) | `modernization` | ☑ Code-complete (RAG + catalog + transfer + persistent-storage + WebLLM streaming node); WebGPU streaming needs 1× browser validation | Med |
 | 5 | Mobile / touch tier | `mod/p5-*` | ◐ p5-capability (+ BaseNode requirement-badge wiring) + p5-audio-unlock done; touch-connect / layout / osc-bridge next | Med |
-| 6 | Three.js TSL / WebGPU (flagship) | `mod/p6-tsl` | ☐ Not started | **High** |
+| 6 | Three.js TSL / WebGPU (flagship) | `mod/p6-tsl` | ◐ Renderer seam scaffolded (flag-gated, default off; WebGPU render path browser-validated). Texture-bridge integration + TSL nodes remain | **High** |
 
 Legend: ☐ not started · ◐ in progress · ☑ merged.
 
@@ -166,8 +166,11 @@ Each sub-phase is **its own branch**, merged independently, typecheck + tests ga
 **Goal:** WebGPU rendering + a node-native shader graph; eliminate GLSL-string
 injection. Staged behind a feature flag with WebGL2 fallback.
 
-- [ ] `mod/p6-renderer` — Introduce `three/webgpu` `WebGPURenderer` (async `init()`) behind a flag; keep `WebGLRenderer` as default + fallback.
-  - **Test:** renderer factory selects WebGPU when available, falls back otherwise; fixture scene renders on both.
+- [~] `mod/p6-renderer` — **Selection seam scaffolded + WebGPU render path browser-validated** (flag default OFF ⇒ zero production change). New `services/visual/rendererBackend.ts`: `selectRendererBackend()` returns `'webgpu'` only when opted-in (explicit override or the `latch.renderer.webgpu` localStorage flag) AND a real adapter exists (reuses the shared `isWebGPUAvailable()` gate), else `'webgl'`; never throws (adapter-probe rejection ⇒ webgl). `createWebGPURenderer()` **dynamic-imports `three/webgpu`** (keeps the heavy chunk out of the main bundle) and awaits `init()`.
+  - **Test:** `tests/unit/services/renderer-backend.test.ts` (8) — flag default-off + localStorage round-trip + no-throw when storage absent; selection returns webgl when off (without probing), webgpu when on+available, falls back when on+unavailable or when the probe throws, and honors the persisted flag. Suite 1270 green; typecheck + lint + build:web clean.
+  - **Browser-validated** (Playwright + Chrome, via the Vite dev server importing the real module): `selectRendererBackend({webgpu:true})`→`'webgpu'`, `{webgpu:false}`→`'webgl'`; `createWebGPURenderer` built a real `WebGPURenderer` on a **`WebGPUBackend`** (the actual WebGPU device path, not three's internal WebGL fallback) and rendered a red fixture whose center pixel read back exactly `[255,0,0,255]`. Zero console errors. This proves `three/webgpu` resolves/bundles in this app and the r184 WebGPU renderer is viable here.
+  - **⚠️ Integration blocker (next slice):** `ThreeRenderer.render()` returns a raw `WebGLTexture` via `properties.get(target.texture).__webglTexture` — the texture-bridge/compositor contract every visual node consumes. `WebGPURenderer` produces a `GPUTexture` instead, so swapping the production renderer requires either a GPUTexture→consumer bridge or a WebGPU→readback→`DataTexture` path. The flag is intentionally *not* wired into `ThreeRenderer` yet; `rendererBackend.ts` is the isolated seam for that work.
+  - **Test (original):** renderer factory selects WebGPU when available, falls back otherwise; fixture scene renders. ✅ (selection unit-tested; WebGPU fixture render browser-validated; WebGL path unchanged.)
 - [ ] `mod/p6-tsl-node` — Prototype one TSL-backed shader node compiling a TSL graph to WGSL+GLSL; validate against an existing GLSL shader node's output.
   - **Test:** TSL compile snapshot; visual parity (within tolerance) vs the GLSL equivalent.
 - [ ] `mod/p6-postfx` — Rebuild postprocessing (blur/blend) on TSL-native `pass()`/`bloom()`/`gaussianBlur()` where WebGPU is active.

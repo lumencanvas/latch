@@ -18,13 +18,13 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1262 passed | 11 todo (1273 total)
+**Tests**: 1270 passed | 11 todo (1281 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
 ---
 
-## Session (2026-06-15) — Phase 5 capability-badge wiring + commit of the uncommitted batch
+## Session (2026-06-15) — commit backlog + Phase 5 capability badge + Phase 6 renderer scaffold
 
 - **Committed the prior working-tree batch** (Phase 4 ML + Phase 5 capability/audio
   + clasp v4/three r184) in 7 task-aligned commits on `modernization` (deps+guards,
@@ -39,6 +39,18 @@ Durable project rules now live in `CLAUDE.md`; this file is the change log.
   (duality matrix + registry tagging). Browser-validated both directions with
   Playwright (badge shows when capability stripped; absent when present). Suite
   1262 green; typecheck + lint + build:web clean. Details in the plan doc.
+- **`mod/p6-renderer`** (scaffold, flag-gated, default OFF) — first Phase 6 slice.
+  New `services/visual/rendererBackend.ts`: `selectRendererBackend()` (picks WebGPU
+  only when opted-in AND a real adapter exists, else WebGL; never throws) +
+  `createWebGPURenderer()` (dynamic-imports `three/webgpu`, awaits `init()`). 8
+  unit tests. **Browser-validated** the actual WebGPU device path (Playwright →
+  Vite dev module import): real `WebGPURenderer`/`WebGPUBackend` rendered a red
+  fixture, center pixel `[255,0,0,255]`. **Blocker for the next slice:**
+  `ThreeRenderer.render()` hands downstream nodes a raw `WebGLTexture`
+  (`__webglTexture`); `WebGPURenderer` makes a `GPUTexture`, so wiring it into the
+  production texture bridge is a separate effort (documented in the plan). The flag
+  is NOT yet wired into `ThreeRenderer` — production rendering is untouched. Suite
+  1270 green; typecheck + lint + build:web clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
