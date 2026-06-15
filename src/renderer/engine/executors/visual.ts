@@ -1256,9 +1256,10 @@ export const textureToDataExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
 
   const renderer = getThreeShaderRenderer()
 
-  // Get canvas dimensions from texture or use default
-  const width = texture.image?.width || 512
-  const height = texture.image?.height || 512
+  // Get canvas dimensions from texture or use default (image is `{}` in @types/three 0.184)
+  const image = texture.image as { width?: number; height?: number } | undefined
+  const width = image?.width || 512
+  const height = image?.height || 512
 
   // Create or reuse temp canvas
   if (!textureToDataCanvas) {

@@ -263,7 +263,8 @@ export class ThreeRenderer {
     this.renderer.setRenderTarget(null)
 
     // Get the raw WebGL texture
-    const textureProperties = this.renderer.properties.get(target.texture)
+    // renderer.properties.get() returns `unknown` in @types/three 0.184.
+    const textureProperties = this.renderer.properties.get(target.texture) as { __webglTexture?: WebGLTexture }
     const webglTexture = textureProperties.__webglTexture as WebGLTexture
 
     const output: ThreeRenderOutput = {
@@ -271,7 +272,7 @@ export class ThreeRenderer {
     }
 
     if (includeDepth && target.depthTexture) {
-      const depthProperties = this.renderer.properties.get(target.depthTexture)
+      const depthProperties = this.renderer.properties.get(target.depthTexture) as { __webglTexture?: WebGLTexture }
       output.depthTexture = depthProperties.__webglTexture as WebGLTexture
     }
 

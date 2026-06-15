@@ -74,8 +74,10 @@ function updatePreview() {
 
   // Fall back to ThreeShaderRenderer's renderToCanvas for render target textures
   if (texture.image) {
-    const srcW = texture.image.width ?? texture.image.videoWidth ?? 0
-    const srcH = texture.image.height ?? texture.image.videoHeight ?? 0
+    // texture.image is typed `{}` in @types/three 0.184; it's an image/video/canvas source.
+    const image = texture.image as { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
+    const srcW = image.width ?? image.videoWidth ?? 0
+    const srcH = image.height ?? image.videoHeight ?? 0
     if (srcW > 0 && srcH > 0) {
       inputResolution.value = { w: srcW, h: srcH }
     }

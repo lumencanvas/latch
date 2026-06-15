@@ -87,9 +87,10 @@ export class TextureBridge {
 
     const webglTexture = textureProperties.__webglTexture
 
-    // Determine dimensions
-    const w = width ?? texture.image?.width ?? 512
-    const h = height ?? texture.image?.height ?? 512
+    // Determine dimensions (texture.image is typed `{}` in @types/three 0.184)
+    const image = texture.image as { width?: number; height?: number } | undefined
+    const w = width ?? image?.width ?? 512
+    const h = height ?? image?.height ?? 512
 
     try {
       // Create a PixiJS texture source from the WebGL texture

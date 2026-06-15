@@ -136,9 +136,10 @@ function threeTextureToImageData(texture: THREE.Texture): ImageData | null {
   try {
     const renderer = getThreeShaderRenderer()
 
-    // Get texture dimensions
-    const width = texture.image?.width || 512
-    const height = texture.image?.height || 512
+    // Get texture dimensions (texture.image is typed `{}` in @types/three 0.184)
+    const image = texture.image as { width?: number; height?: number } | undefined
+    const width = image?.width || 512
+    const height = image?.height || 512
 
     // Create a temporary canvas to render the texture
     const tempCanvas = document.createElement('canvas')
