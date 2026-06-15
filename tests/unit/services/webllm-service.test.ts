@@ -105,6 +105,32 @@ describe('WebLLMService', () => {
     expect(disposes).toBe(1) // old engine released on model switch
   })
 
+  it('creates only one engine when generations race during a slow model load', async () => {
+    // Regression: the genToken guards the stream, but engine creation must also
+    // be serialized — two triggers during a multi-GB load (e.g. an impatient
+    // double-click, or two LLM nodes) must not both run the factory and leak the
+    // engine whose handle gets overwritten without dispose().
+    let creates = 0
+    let disposes = 0
+    let releaseLoad!: () => void
+    const loadGate = new Promise<void>((r) => (releaseLoad = r))
+    const factory: EngineFactory = async () => {
+      creates++
+      await loadGate // simulate a slow model load
+      return { engine: mockEngine(['x']), dispose: async () => void disposes++ }
+    }
+    const svc = new WebLLMService({ gpuCheck: async () => true, engineFactory: factory })
+
+    const p1 = svc.startGeneration('a', { model: 'M', prompt: '1' })
+    const p2 = svc.startGeneration('b', { model: 'M', prompt: '2' })
+    await Promise.resolve() // let both reach ensureEngine while the load is gated
+    releaseLoad()
+    await Promise.all([p1, p2])
+
+    expect(creates).toBe(1) // one engine despite the racing triggers
+    expect(disposes).toBe(0) // nothing created-then-orphaned
+  })
+
   it('supersedes an in-flight generation when another starts (shared engine)', async () => {
     let releaseA!: () => void
     const aGate = new Promise<void>((r) => (releaseA = r))

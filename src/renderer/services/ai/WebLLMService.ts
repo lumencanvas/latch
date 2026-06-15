@@ -195,12 +195,38 @@ export class WebLLMService {
     }
   }
 
+  /** A model (re)load currently in flight; resolves (never rejects) when settled. */
+  private engineLoad: Promise<void> | null = null
+
   /** Load the engine for `model`, reloading if a different model is active. */
   private async ensureEngine(
     model: string,
     onProgress: (r: ProgressReport) => void,
   ): Promise<LLMEngine> {
+    // Serialize loads: wait out any in-flight (re)load so the factory never runs
+    // twice in parallel — that would create (and leak) a second multi-GB engine
+    // whose handle gets overwritten without dispose(). genToken guards the stream
+    // but not engine creation, so two triggers during a load could both reach here.
+    while (this.engineLoad) await this.engineLoad
     if (this.handle && this.loadedModel === model) return this.handle.engine
+
+    const load = this.loadEngine(model, onProgress)
+    // Mirror as a non-rejecting promise so waiters above just re-check state and
+    // retry on failure instead of seeing an unhandled rejection.
+    this.engineLoad = load.then(
+      () => {},
+      () => {},
+    )
+    try {
+      await load
+    } finally {
+      this.engineLoad = null
+    }
+    return this.handle!.engine
+  }
+
+  /** Dispose any current engine, then construct + load `model`. */
+  private async loadEngine(model: string, onProgress: (r: ProgressReport) => void): Promise<void> {
     if (this.handle) {
       await this.handle.dispose()
       this.handle = null
@@ -208,7 +234,6 @@ export class WebLLMService {
     }
     this.handle = await this.engineFactory(model, onProgress)
     this.loadedModel = model
-    return this.handle.engine
   }
 
   /** Interrupt an in-flight generation for a node. */

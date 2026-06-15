@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1273 passed | 11 todo (1284 total)
+**Tests**: 1274 passed | 11 todo (1285 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -63,6 +63,15 @@ Durable project rules now live in `CLAUDE.md`; this file is the change log.
   (graph builds without a GPU) + browser-validated WGSL compile/render: correct
   UV gradient on WebGPU (red L→R, green B→T, blue 0). Same texture-bridge blocker
   for production wiring. Suite 1273 green; typecheck + lint + build:web clean.
+- **Deep audit (2026-06-15)** — adversarial re-read of the Phase 4 ML batch I
+  committed but didn't author, against the repo's known bug classes. Found + fixed
+  a **WebLLM concurrent-engine-creation leak**: `genToken` guarded the stream but
+  not engine creation, so two triggers during a model load both ran the factory
+  and leaked the overwritten (multi-GB) engine/worker. Serialized loads via an
+  `engineLoad` promise + regression test (red→green). Independently verified safe:
+  Vector Memory cleanup, transferable-image detachment (caller ImageData is
+  deep-copied), WebLLM token supersession. Full writeup in docs/AUDIT_2026-06-14.md
+  (2026-06-15 follow-up section). Suite 1274 green; typecheck + lint + build clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
