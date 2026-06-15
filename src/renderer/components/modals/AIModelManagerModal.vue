@@ -127,6 +127,20 @@ function getSelectedModelSize(taskId: string): string {
   return alt?.size ?? ''
 }
 
+function getSelectedModelLicense(taskId: string): string {
+  const modelId = selectedModels.value.get(taskId)
+  const task = AI_MODELS.find(m => m.id === taskId)
+  if (!task) return ''
+  if (modelId === task.defaultModel) return task.defaultLicense
+  const alt = task.alternateModels.find(m => m.id === modelId)
+  return alt?.license ?? task.defaultLicense
+}
+
+/** Licenses (Llama, Gemma) that require accepting terms on Hugging Face first. */
+function isGatedLicense(license: string): boolean {
+  return /^(llama|gemma)/i.test(license)
+}
+
 async function loadModel(taskId: string) {
   const modelId = selectedModels.value.get(taskId)
   const task = AI_MODELS.find(m => m.id === taskId)
@@ -398,6 +412,15 @@ function getCategoryColor(category: string): string {
                     </option>
                   </select>
                   <span class="selected-size">{{ getSelectedModelSize(task.id) }}</span>
+                  <span
+                    class="model-license"
+                    :class="{ 'is-gated': isGatedLicense(getSelectedModelLicense(task.id)) }"
+                    :title="isGatedLicense(getSelectedModelLicense(task.id))
+                      ? `${getSelectedModelLicense(task.id)} license — requires accepting the model terms on Hugging Face before download`
+                      : `License: ${getSelectedModelLicense(task.id)}`"
+                  >
+                    {{ getSelectedModelLicense(task.id) }}<template v-if="isGatedLicense(getSelectedModelLicense(task.id))"> · gated</template>
+                  </span>
                 </div>
 
                 <!-- Auto-load toggle -->
@@ -857,6 +880,21 @@ function getCategoryColor(category: string): string {
   font-weight: var(--font-weight-semibold);
   color: var(--color-neutral-600);
   white-space: nowrap;
+}
+
+.model-license {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--color-neutral-500);
+  white-space: nowrap;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-xs);
+}
+
+.model-license.is-gated {
+  color: var(--color-warning);
+  border-color: var(--color-warning);
 }
 
 .webgpu-badge {

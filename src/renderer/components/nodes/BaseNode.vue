@@ -538,6 +538,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       <div
         v-if="capabilityWarnings.length > 0 && !isCollapsed"
         class="node-capability-warning"
+        role="status"
       >
         <div
           v-for="(warning, i) in capabilityWarnings"
@@ -545,7 +546,10 @@ function onLabelKeydown(e: KeyboardEvent) {
           class="capability-warning-row"
           :title="warning.suggestion"
         >
-          <AlertTriangle :size="13" />
+          <AlertTriangle
+            :size="13"
+            aria-hidden="true"
+          />
           <span class="capability-warning-text">
             {{ warning.reason }} {{ warning.suggestion }}
           </span>
@@ -905,8 +909,8 @@ function onLabelKeydown(e: KeyboardEvent) {
 }
 
 .capability-warning-text {
-  font-size: 10px;
-  line-height: 1.3;
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--color-neutral-700);
 }
 
