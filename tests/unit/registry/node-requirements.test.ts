@@ -9,7 +9,10 @@ import { bleScannerNode } from '@/registry/connectivity/ble-scanner'
 import { bleCharacteristicNode } from '@/registry/connectivity/ble-characteristic'
 import { llmNode } from '@/registry/ai/llm'
 import { webcamNode } from '@/registry/visual/webcam'
+import { audioInputNode } from '@/registry/inputs/audio-input'
 import { oscNode } from '@/registry/connectivity/osc'
+import { speechRecognitionNode } from '@/registry/ai/speech-recognition'
+import { mediapipeAudioNode } from '@/registry/ai/mediapipe-audio/definition'
 
 /**
  * Hardware/runtime-gated nodes declare an abstract `requires` capability so
@@ -28,6 +31,8 @@ describe('node platform requirements', () => {
     ['ble-characteristic', bleCharacteristicNode, 'bluetooth'],
     ['llm', llmNode, 'webgpu'],
     ['webcam', webcamNode, 'camera'],
+    // audio-input self-captures the mic (getUserMedia), same gate as webcam.
+    ['audio-input', audioInputNode, 'camera'],
   ]
 
   it.each(cases)('%s requires %s', (_id, node, requirement) => {
@@ -37,5 +42,12 @@ describe('node platform requirements', () => {
   it('does not over-tag nodes that work everywhere (OSC is bridge-based)', () => {
     // OSC runs over a WebSocket bridge on every platform — no hardware gate.
     expect(oscNode.requires).toBeUndefined()
+  })
+
+  it('does not tag nodes that consume an input rather than self-capture', () => {
+    // These take an `audio` input (typically from audio-input) and never call
+    // getUserMedia themselves, so the upstream node owns the capability gate.
+    expect(speechRecognitionNode.requires).toBeUndefined()
+    expect(mediapipeAudioNode.requires).toBeUndefined()
   })
 })

@@ -8,6 +8,9 @@ export const audioInputNode: NodeDefinition = {
   description: 'Capture audio from microphone',
   icon: 'mic',
   platforms: ['web', 'electron'],
+  // Self-captures the mic via getUserMedia (same capability as webcam), so it
+  // warns when media capture is unavailable instead of failing silently.
+  requires: ['camera'],
   inputs: [],
   outputs: [
     { id: 'audio', type: 'audio', label: 'Audio' },
