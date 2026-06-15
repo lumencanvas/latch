@@ -6,6 +6,7 @@
  */
 
 import { pipeline, env } from '@huggingface/transformers'
+import { isChatModel } from './textGenFormat'
 
 // Configure Transformers.js for browser usage
 env.allowLocalModels = false
@@ -15,6 +16,16 @@ env.useBrowserCache = true
 // Pipeline cache
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pipelines = new Map<string, any>()
+
+// Image pixels arrive as a transferred Uint8ClampedArray (zero-copy) or, as a
+// fallback, a plain number[]. Use the typed array directly when possible. The
+// cast is sound: transferred image buffers are always ArrayBuffer-backed (a
+// SharedArrayBuffer can't be transferred), and the number[] path allocates one.
+function toPixels(data: Uint8ClampedArray | number[]): Uint8ClampedArray<ArrayBuffer> {
+  return (
+    data instanceof Uint8ClampedArray ? data : new Uint8ClampedArray(data)
+  ) as Uint8ClampedArray<ArrayBuffer>
+}
 
 // Message types
 interface LoadModelMessage {
@@ -218,19 +229,11 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
       case 'generateText': {
         const [prompt, options] = msg.args as [string, { maxLength?: number; temperature?: number }?]
 
-        // For chat/instruct models, use messages format
-        // For non-chat models, use plain prompt
-        const modelLower = msg.model.toLowerCase()
-        const isChatModel = modelLower.includes('chat') ||
-                           modelLower.includes('instruct') ||
-                           modelLower.includes('llama') ||
-                           modelLower.includes('-it-') ||  // Gemma instruction-tuned
-                           modelLower.includes('-it_') ||
-                           modelLower.endsWith('-it') ||
-                           modelLower.includes('phi-')
-
+        // Chat/instruct models use the messages format (so transformers.js
+        // applies the tokenizer's chat template); plain completion models get a
+        // raw prompt. Detection lives in textGenFormat.ts (catalog-contract tested).
         let output
-        if (isChatModel) {
+        if (isChatModel(msg.model)) {
           // Chat format for models like TinyLlama-Chat
           const messages = [
             { role: 'user', content: prompt }
@@ -275,10 +278,10 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
       }
 
       case 'classifyImage': {
-        const [imageData, topK] = msg.args as [{ width: number; height: number; data: number[] }, number]
+        const [imageData, topK] = msg.args as [{ width: number; height: number; data: Uint8ClampedArray | number[] }, number]
         // Reconstruct ImageData from serialized format
         const reconstructed = new ImageData(
-          new Uint8ClampedArray(imageData.data),
+          toPixels(imageData.data),
           imageData.width,
           imageData.height
         )
@@ -292,9 +295,9 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
       }
 
       case 'detectObjects': {
-        const [imageData, threshold] = msg.args as [{ width: number; height: number; data: number[] }, number]
+        const [imageData, threshold] = msg.args as [{ width: number; height: number; data: Uint8ClampedArray | number[] }, number]
         const reconstructed = new ImageData(
-          new Uint8ClampedArray(imageData.data),
+          toPixels(imageData.data),
           imageData.width,
           imageData.height
         )
@@ -324,9 +327,9 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
       }
 
       case 'captionImage': {
-        const [imageData] = msg.args as [{ width: number; height: number; data: number[] }]
+        const [imageData] = msg.args as [{ width: number; height: number; data: Uint8ClampedArray | number[] }]
         const reconstructed = new ImageData(
-          new Uint8ClampedArray(imageData.data),
+          toPixels(imageData.data),
           imageData.width,
           imageData.height
         )

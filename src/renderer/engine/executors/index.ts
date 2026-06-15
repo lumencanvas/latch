@@ -5,7 +5,9 @@
 
 import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
-import { cosineSimilarity } from '../../services/ai/VectorStore'
+import { cosineSimilarity, VectorStore } from '../../services/ai/VectorStore'
+import { webLLMService } from '../../services/ai/WebLLMService'
+import { DEFAULT_WEBLLM_MODEL } from '../../registry/ai/llm'
 import { audioExecutors } from './audio'
 import { visualExecutors } from './visual'
 import { aiExecutors } from './ai'
@@ -1238,6 +1240,189 @@ export const retrieveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   ])
 }
 
+/**
+ * Vector Memory node: a stateful, incrementally-built RAG corpus. On a rising
+ * `add` trigger it stores the current `vector` + `text` in a per-node
+ * {@link VectorStore}; on a rising `clear` trigger it empties the store. Each
+ * frame it emits the accumulated `corpus` (`{ id, vector, text }[]`, ready to
+ * wire straight into the Retrieve node) and the `count`. With `maxSize > 0` it
+ * behaves as a ring buffer, evicting the oldest entries — bounding memory in a
+ * long-running session. Robust to missing/malformed inputs (never throws).
+ */
+interface VectorMemoryState {
+  store: VectorStore<{ text: string }>
+  /** Insertion order of ids, for oldest-first eviction. */
+  order: string[]
+  /** Monotonic counter for unique record ids. */
+  seq: number
+  prevAdd: boolean
+  prevClear: boolean
+  /** Cached corpus output, rebuilt only on mutation (stable reference else). */
+  snapshot: RetrieveDoc[]
+}
+
+const vectorMemoryStores = new Map<string, VectorMemoryState>()
+
+function getVectorMemoryState(nodeId: string): VectorMemoryState {
+  let s = vectorMemoryStores.get(nodeId)
+  if (!s) {
+    s = {
+      store: new VectorStore<{ text: string }>(),
+      order: [],
+      seq: 0,
+      prevAdd: false,
+      prevClear: false,
+      snapshot: [],
+    }
+    vectorMemoryStores.set(nodeId, s)
+  }
+  return s
+}
+
+function rebuildVectorMemorySnapshot(s: VectorMemoryState): void {
+  s.snapshot = s.store.toJSON().map((r) => ({
+    id: r.id,
+    vector: r.vector,
+    text: r.metadata?.text ?? '',
+  }))
+}
+
+export const vectorMemoryExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const s = getVectorMemoryState(ctx.nodeId)
+  const addPressed = Boolean(ctx.inputs.get('add'))
+  const clearPressed = Boolean(ctx.inputs.get('clear'))
+  let mutated = false
+
+  // Clear on rising edge.
+  if (clearPressed && !s.prevClear) {
+    s.store.clear()
+    s.order.length = 0
+    s.seq = 0
+    mutated = true
+  }
+  s.prevClear = clearPressed
+
+  // Add on rising edge.
+  if (addPressed && !s.prevAdd) {
+    const vector = ctx.inputs.get('vector')
+    if (Array.isArray(vector) && vector.length > 0) {
+      const rawText = ctx.inputs.get('text')
+      const text =
+        typeof rawText === 'string'
+          ? rawText
+          : typeof rawText === 'number'
+            ? String(rawText)
+            : ''
+      const id = `${ctx.nodeId}#${s.seq}`
+      try {
+        // Throws on an empty vector or a dimension mismatch — leave the store
+        // unchanged so a stray embedding can't corrupt the corpus or crash.
+        s.store.add(id, vector as number[], { text })
+        s.seq++
+        s.order.push(id)
+        mutated = true
+
+        const maxSize = Math.floor((ctx.controls.get('maxSize') as number) ?? 0)
+        if (maxSize > 0) {
+          while (s.order.length > maxSize) {
+            const oldest = s.order.shift()
+            if (oldest !== undefined) s.store.remove(oldest)
+          }
+        }
+      } catch {
+        // Malformed embedding (empty / dimension mismatch) — ignored.
+      }
+    }
+  }
+  s.prevAdd = addPressed
+
+  if (mutated) rebuildVectorMemorySnapshot(s)
+
+  return new Map<string, unknown>([
+    ['corpus', s.snapshot],
+    ['count', s.store.size],
+  ])
+}
+
+/** Drop a single Vector Memory node's accumulated corpus (node removed). */
+export function disposeVectorMemoryNode(nodeId: string): void {
+  vectorMemoryStores.delete(nodeId)
+}
+
+/** GC RAG node state for nodes no longer in the graph. */
+export function gcRAGState(validNodeIds: Set<string>): void {
+  for (const id of vectorMemoryStores.keys()) {
+    if (!validNodeIds.has(id)) vectorMemoryStores.delete(id)
+  }
+}
+
+/** Clear all RAG node state (called when execution stops). */
+export function disposeAllRAGState(): void {
+  vectorMemoryStores.clear()
+}
+
+// ============================================================================
+// WebLLM (streaming LLM, WebGPU)
+// ============================================================================
+
+/**
+ * LLM node: stream text from a local WebGPU model via {@link webLLMService}. On a
+ * rising `trigger` edge it kicks off generation (fire-and-forget — never awaited,
+ * so the render loop isn't blocked) and each frame outputs the current streamed
+ * text + status. Without WebGPU the service yields an `unsupported` state and
+ * `supported` goes false (a clear, non-throwing capability gate).
+ */
+const llmTriggerPrev = new Map<string, boolean>()
+const llmPrevStatus = new Map<string, string>()
+
+export const llmExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const pressed = Boolean(ctx.inputs.get('trigger'))
+  const prevPressed = llmTriggerPrev.get(ctx.nodeId) ?? false
+  if (pressed && !prevPressed) {
+    const prompt = String(ctx.inputs.get('prompt') ?? ctx.controls.get('prompt') ?? '')
+    const system = String(ctx.inputs.get('system') ?? ctx.controls.get('system') ?? '')
+    const model = (ctx.controls.get('model') as string) || DEFAULT_WEBLLM_MODEL
+    const maxTokens = Math.floor((ctx.controls.get('maxTokens') as number) ?? 512)
+    const temperature = (ctx.controls.get('temperature') as number) ?? 0.7
+    if (prompt) {
+      void webLLMService.startGeneration(ctx.nodeId, {
+        model,
+        prompt,
+        system: system || undefined,
+        maxTokens,
+        temperature,
+      })
+    }
+  }
+  llmTriggerPrev.set(ctx.nodeId, pressed)
+
+  const state = webLLMService.getState(ctx.nodeId)
+  const prevStatus = llmPrevStatus.get(ctx.nodeId)
+  llmPrevStatus.set(ctx.nodeId, state.status)
+
+  return new Map<string, unknown>([
+    ['text', state.text],
+    ['generating', state.status === 'loading' || state.status === 'generating'],
+    // Fire `done` for a single frame on the transition into the done state.
+    ['done', state.status === 'done' && prevStatus !== 'done'],
+    ['supported', state.status !== 'unsupported'],
+  ])
+}
+
+/** GC LLM node state for nodes no longer in the graph. */
+export function gcWebLLMState(validNodeIds: Set<string>): void {
+  for (const id of llmTriggerPrev.keys()) if (!validNodeIds.has(id)) llmTriggerPrev.delete(id)
+  for (const id of llmPrevStatus.keys()) if (!validNodeIds.has(id)) llmPrevStatus.delete(id)
+  webLLMService.gc(validNodeIds)
+}
+
+/** Release the LLM engine + all node state (called when execution stops). */
+export function disposeAllWebLLMState(): void {
+  llmTriggerPrev.clear()
+  llmPrevStatus.clear()
+  void webLLMService.disposeAll()
+}
+
 // ============================================================================
 // Registry
 // ============================================================================
@@ -1309,6 +1494,8 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   // AI
   ...aiExecutors,
   retrieve: retrieveExecutor,
+  'vector-memory': vectorMemoryExecutor,
+  llm: llmExecutor,
 
   // Connectivity (legacy)
   ...connectivityExecutors,

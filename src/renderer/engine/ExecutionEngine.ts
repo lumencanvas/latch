@@ -8,6 +8,10 @@ import {
   disposeAllTimingState,
   disposeAllDebugState,
   disposeAllInputState,
+  disposeAllRAGState,
+  gcRAGState,
+  disposeAllWebLLMState,
+  gcWebLLMState,
 } from './executors/index'
 import { disposeAllUtilityState } from './executors/utility'
 import {
@@ -188,6 +192,8 @@ export class ExecutionEngine {
         gc3DState(validNodeIds)
         gcConnectivityState(validNodeIds)
         gcAIState(validNodeIds)
+        gcRAGState(validNodeIds)
+        gcWebLLMState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
         // Drop dirty-mode / async tracking for removed nodes
@@ -807,6 +813,8 @@ export class ExecutionEngine {
     disposeAllConnectivityNodes()
     disposeAllClaspConnections()
     disposeAllAINodes()
+    disposeAllRAGState()
+    disposeAllWebLLMState()
     disposeAllUtilityState()
   }
 
