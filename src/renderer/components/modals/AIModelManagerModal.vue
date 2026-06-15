@@ -4,6 +4,7 @@ import { X, Download, Trash2, Loader, CheckCircle2, AlertCircle, Brain, Cpu, Zap
 import { useUIStore } from '@/stores/ui'
 import { aiInference, AI_MODELS, type ModelLoadState } from '@/services/ai/AIInference'
 import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/modelStorage'
+import { WEBLLM_MODELS } from '@/registry/ai/llm'
 
 const uiStore = useUIStore()
 
@@ -490,6 +491,37 @@ function getCategoryColor(category: string): string {
                 </button>
               </div>
             </div>
+
+            <!-- Streaming chat LLMs (WebGPU / MLC) — selected & run from the
+                 LLM (Streaming) node, not loaded globally here. -->
+            <div class="model-card webllm-card">
+              <div class="model-info">
+                <div class="model-header">
+                  <h3 class="model-name">
+                    Chat LLM (Streaming)
+                  </h3>
+                  <span
+                    class="category-badge"
+                    style="background: #a855f7"
+                  >webgpu · {{ WEBLLM_MODELS.length }}</span>
+                </div>
+                <p class="model-description">
+                  Full chat models that stream token-by-token on your GPU (MLC / WebLLM).
+                  Add an <strong>LLM (Streaming)</strong> node to the canvas and pick one
+                  from its Model menu — weights cache on first use, like the models above.
+                </p>
+                <div class="webllm-grid">
+                  <span
+                    v-for="m in WEBLLM_MODELS"
+                    :key="m.id"
+                    class="webllm-chip"
+                    :title="m.id"
+                  >
+                    {{ m.name }} <em>{{ m.size }}</em>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Footer -->
@@ -895,6 +927,33 @@ function getCategoryColor(category: string): string {
 .model-license.is-gated {
   color: var(--color-warning);
   border-color: var(--color-warning);
+}
+
+.webllm-card {
+  border-style: dashed;
+}
+
+.webllm-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.webllm-chip {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--color-neutral-700);
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-xs);
+  padding: 2px var(--space-1);
+  white-space: nowrap;
+}
+
+.webllm-chip em {
+  color: var(--color-neutral-500);
+  font-style: normal;
 }
 
 .webgpu-badge {
