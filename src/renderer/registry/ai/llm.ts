@@ -1,17 +1,45 @@
 import type { NodeDefinition } from '../types'
 
 /**
- * WebLLM (MLC) model ids, verified present in `prebuiltAppConfig.model_list`
- * (2026-06). q4f16_1 variants — the practical browser sweet spot (~0.9–3.7 GB
- * VRAM). Llama-3.2-1B is the default (smallest, low-resource flag upstream).
+ * WebLLM (MLC) model ids. All are q4f16_1 variants (the practical browser sweet
+ * spot) and verified present in the installed `@mlc-ai/web-llm`
+ * `prebuiltAppConfig.model_list`. Ordered roughly small → large, with coder and
+ * reasoning families grouped. Sizes are approximate download/VRAM. Llama-3.2-1B
+ * stays the default (smallest reliable, low-resource flag upstream). Mobile-class
+ * GPUs realistically handle the ≤2 GB tier; 7-8B needs a desktop GPU.
  */
 export const WEBLLM_MODELS = [
+  // — tiny / mobile-friendly (≤ ~1 GB) —
   { id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', name: 'Llama 3.2 1B', size: '~0.9 GB' },
   { id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 0.5B', size: '~0.9 GB' },
+  { id: 'Qwen3-0.6B-q4f16_1-MLC', name: 'Qwen3 0.6B', size: '~0.9 GB' },
+  { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC', name: 'SmolLM2 360M', size: '~0.4 GB' },
+  { id: 'TinyLlama-1.1B-Chat-v1.0-q4f16_1-MLC', name: 'TinyLlama 1.1B', size: '~0.7 GB' },
+  { id: 'OLMo-2-0425-1B-Instruct-q4f16_1-MLC', name: 'OLMo 2 1B', size: '~1.0 GB' },
+  // — small (≤ ~2 GB) —
   { id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 1.5B', size: '~1.6 GB' },
+  { id: 'Qwen3-1.7B-q4f16_1-MLC', name: 'Qwen3 1.7B', size: '~1.8 GB' },
   { id: 'SmolLM2-1.7B-Instruct-q4f16_1-MLC', name: 'SmolLM2 1.7B', size: '~1.8 GB' },
   { id: 'gemma-2-2b-it-q4f16_1-MLC', name: 'Gemma 2 2B', size: '~1.9 GB' },
+  // — mid (≤ ~4 GB) —
+  { id: 'Llama-3.2-3B-Instruct-q4f16_1-MLC', name: 'Llama 3.2 3B', size: '~2.3 GB' },
+  { id: 'Qwen2.5-3B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 3B', size: '~2.5 GB' },
+  { id: 'Hermes-3-Llama-3.2-3B-q4f16_1-MLC', name: 'Hermes 3 (Llama 3.2 3B)', size: '~2.3 GB' },
+  { id: 'Qwen3-4B-q4f16_1-MLC', name: 'Qwen3 4B', size: '~3.3 GB' },
   { id: 'Phi-3.5-mini-instruct-q4f16_1-MLC', name: 'Phi-3.5 Mini', size: '~3.7 GB' },
+  { id: 'Phi-4-mini-instruct-q4f16_1-MLC', name: 'Phi-4 Mini', size: '~3.7 GB' },
+  // — coder —
+  { id: 'Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 Coder 0.5B', size: '~0.9 GB' },
+  { id: 'Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 Coder 1.5B', size: '~1.6 GB' },
+  { id: 'Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 Coder 3B', size: '~2.5 GB' },
+  { id: 'Qwen2.5-Coder-7B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 Coder 7B', size: '~5.1 GB' },
+  // — reasoning (DeepSeek-R1 distills emit <think> traces) —
+  { id: 'DeepSeek-R1-Distill-Qwen-1.5B-q4f16_1-MLC', name: 'DeepSeek R1 Distill 1.5B', size: '~1.6 GB' },
+  { id: 'DeepSeek-R1-Distill-Qwen-7B-q4f16_1-MLC', name: 'DeepSeek R1 Distill 7B', size: '~5.1 GB' },
+  // — large (desktop GPU) —
+  { id: 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC', name: 'Mistral 7B v0.3', size: '~4.6 GB' },
+  { id: 'Qwen2.5-7B-Instruct-q4f16_1-MLC', name: 'Qwen2.5 7B', size: '~5.1 GB' },
+  { id: 'Llama-3.1-8B-Instruct-q4f16_1-MLC', name: 'Llama 3.1 8B', size: '~5.0 GB' },
 ] as const
 
 export const DEFAULT_WEBLLM_MODEL = WEBLLM_MODELS[0].id
