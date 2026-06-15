@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1270 passed | 11 todo (1281 total)
+**Tests**: 1273 passed | 11 todo (1284 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -51,6 +51,18 @@ Durable project rules now live in `CLAUDE.md`; this file is the change log.
   production texture bridge is a separate effort (documented in the plan). The flag
   is NOT yet wired into `ThreeRenderer` — production rendering is untouched. Suite
   1270 green; typecheck + lint + build:web clean.
+- **Audit + fixes** — adversarial re-review of the two commits above. Found one
+  real gap: `audio-input` self-captures the mic (getUserMedia) like `webcam` but
+  was left untagged → tagged it `requires: ['camera']` (commit). Confirmed the
+  rest correct: serial/MIDI/BLE use Web APIs (work on Electron via Chromium, so
+  the duality resolves available there); MediaPipe vision/audio + speech-recog
+  take inputs (no self-capture) → correctly untagged; no DMX/UDP nodes exist.
+- **`mod/p6-tsl-node`** (prototype) — proved the TSL authoring path (Phase 6's
+  core bet: shader graph, no GLSL strings). `services/visual/tslShader.ts`
+  `createUVGradientMaterial()` (`colorNode = vec4(uv(), 0, 1)`). 1 headless test
+  (graph builds without a GPU) + browser-validated WGSL compile/render: correct
+  UV gradient on WebGPU (red L→R, green B→T, blue 0). Same texture-bridge blocker
+  for production wiring. Suite 1273 green; typecheck + lint + build:web clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
