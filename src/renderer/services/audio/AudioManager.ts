@@ -9,8 +9,13 @@
  */
 
 import * as Tone from 'tone'
+import {
+  needsUserGesture as audioNeedsGesture,
+  tryResumeAudio,
+  type ResumableContext,
+} from './audioUnlock'
 
-export type AudioState = 'suspended' | 'running' | 'closed'
+export type AudioState = 'suspended' | 'running' | 'closed' | 'interrupted'
 
 export interface AudioDevice {
   deviceId: string
@@ -27,6 +32,8 @@ export interface AudioManagerState {
   currentInputDevice: string | null
   masterVolume: number
   muted: boolean
+  /** True when audio is suspended/interrupted and a user gesture is required to (re)start it. */
+  needsUserGesture: boolean
 }
 
 class AudioManagerService {
@@ -41,6 +48,9 @@ class AudioManagerService {
   private _masterVolume = 0.8
   private _muted = false
   private _listeners: Set<() => void> = new Set()
+  private _needsUserGesture = false
+  /** Detaches the AudioContext `statechange` listener; null when not attached. */
+  private _ctxWatcher: (() => void) | null = null
 
   /**
    * Initialize the audio system
@@ -56,6 +66,9 @@ class AudioManagerService {
     try {
       // Start Tone.js audio context
       await Tone.start()
+      // Watch for iOS interruptions / inactivity suspends so we can recover or
+      // surface a "needs gesture" state.
+      this.watchContextState()
 
       // Create master gain
       this._masterGain = new Tone.Gain(this._masterVolume).toDestination()
@@ -228,14 +241,59 @@ class AudioManagerService {
   }
 
   /**
-   * Resume the audio context if suspended
-   * Browsers may suspend AudioContext after periods of inactivity
+   * Resume the audio context if suspended/interrupted (inactivity or iOS).
    */
   async resume(): Promise<void> {
-    const context = Tone.getContext()
-    if (context.state === 'suspended') {
-      await Tone.start()
+    const running = await tryResumeAudio(this.contextAdapter())
+    this._needsUserGesture = !running
+  }
+
+  /**
+   * Resume/unlock audio in response to a user gesture (the mobile "Enable Audio"
+   * affordance). Initializes on first call. Returns true if audio is running.
+   */
+  async unlock(): Promise<boolean> {
+    if (!this._initialized) {
+      await this.initialize()
     }
+    const running = await tryResumeAudio(this.contextAdapter())
+    this._needsUserGesture = !running
+    this.notifyListeners()
+    return running
+  }
+
+  /** Minimal {@link ResumableContext} adapter over the Tone.js context. */
+  private contextAdapter(): ResumableContext {
+    return {
+      get state() {
+        return Tone.getContext().state
+      },
+      resume: () => Tone.start(),
+    }
+  }
+
+  /** Attach a one-time `statechange` listener to recover from interruptions. */
+  private watchContextState(): void {
+    if (this._ctxWatcher) return
+    const raw = Tone.getContext().rawContext as unknown as AudioContext | undefined
+    if (!raw || typeof raw.addEventListener !== 'function') return
+    const handler = () => {
+      void this.handleContextStateChange()
+    }
+    raw.addEventListener('statechange', handler)
+    this._ctxWatcher = () => raw.removeEventListener('statechange', handler)
+  }
+
+  /** On an interruption/suspend, try a silent resume; iOS will need a gesture. */
+  private async handleContextStateChange(): Promise<void> {
+    const state = Tone.getContext().state
+    if (audioNeedsGesture(state)) {
+      const resumed = await tryResumeAudio(this.contextAdapter())
+      this._needsUserGesture = !resumed
+    } else {
+      this._needsUserGesture = false
+    }
+    this.notifyListeners()
   }
 
   /**
@@ -251,6 +309,7 @@ class AudioManagerService {
       currentInputDevice: this._currentInputDevice,
       masterVolume: this._masterVolume,
       muted: this._muted,
+      needsUserGesture: this._needsUserGesture,
     }
   }
 
@@ -287,6 +346,11 @@ class AudioManagerService {
    */
   dispose(): void {
     this.closeMicrophone()
+
+    if (this._ctxWatcher) {
+      this._ctxWatcher()
+      this._ctxWatcher = null
+    }
 
     if (this._analyzer) {
       this._analyzer.dispose()
