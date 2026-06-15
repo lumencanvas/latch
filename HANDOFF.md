@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1283 passed | 11 todo (1294 total)
+**Tests**: 1288 passed | 11 todo (1299 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -28,9 +28,15 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
 - **Phase 2:** flip dirty/deferred from opt-in → default (needs in-app validation);
   optional trigger-edges.
 - **Phase 4:** Vector Memory corpus persistence across reload; optional LLMLingua-2
-  compress node; promote a modern ungated text-gen default + license in the UI.
-- **Phase 5:** `p5-touch-connect` (component-testable), `p5-layout` (UI/device),
-  `p5-osc-bridge-first` (headless config), "Enable Audio" button.
+  compress node; promote a modern ungated text-gen default. (license now in the UI ✓;
+  WebLLM catalog expanded to ~25 models ✓)
+- **Phase 5:** ✅ responsive overlay panels + reopen rails + mobile default-closed
+  (the "panels eat space / no reopen" bug); ConnectionMode.Loose + bigger handles.
+  STILL REMAINING (key): **node palette is drag-only — no tap-to-add, so you can
+  open the palette on touch but can't place a node** (highest mobile gap now);
+  full tap-to-connect verify (connect-on-click flow); `p5-layout` polish (radial
+  menu, 44px targets across all controls); `p5-osc-bridge-first` (headless config);
+  **Enable Audio** button. Real-device touch feel still wants your testing.
 - **Phase 6 (flagship):** `p6-renderer` production wiring = the texture-bridge
   blocker (WebGPU `GPUTexture` → compositor's `WebGLTexture`); `p6-tsl-node`
   GLSL-parity + real shader-node wiring; `p6-postfx`.
@@ -38,8 +44,9 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   ~~timing/debug/input/clasp per-node state leaks~~ all FIXED 2026-06-15. Remaining
   minor: WebLLM `disposeAll`-during-load can orphan an engine.
 - **UI/UX backlog (from the 2026-06-15 audit):** Enable-Audio button (top win,
-  backend built), touch-tier (drag-only palette, sub-44px targets), modal a11y
-  (no dialog role/focus-trap), token drift (no `--color-ai-*`).
+  backend built); **palette tap-to-add** (drag-only, blocks placing nodes on touch);
+  remaining sub-44px targets; modal a11y (no dialog role/focus-trap); token drift
+  (no `--color-ai-*`). (Model license ✓, capability-badge a11y ✓, panel reopen ✓.)
 - **Validation gaps (non-headless):** WebGPU streaming end-to-end, clasp realtime
   (2 peers), per-shader visual regression, real-device touch, dirty/deferred in-app.
 - **Meta:** all on `modernization`, not pushed/merged; ~52 npm advisories (don't
@@ -116,6 +123,21 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   Backlog captured in docs/AUDIT_2026-06-14.md (top items: Enable-Audio UI button,
   touch-tier palette/targets, modal a11y). Suite 1283 green; typecheck + lint +
   build clean.
+- **Mobile/touch tier + model catalog (2026-06-15, user-driven).** (1) **Expanded
+  the WebLLM catalog** from 6 → ~25 verified ids pulled from the installed
+  `@mlc-ai/web-llm` `prebuiltAppConfig` (tiny→8B, coder + DeepSeek-R1 reasoning +
+  Qwen3/Phi-4); default stays Llama-3.2-1B. (2) **Responsive panel system** fixing
+  the reported "panels eat space / no way to reopen when collapsed": a 768px
+  matchMedia breakpoint sets `uiStore.isMobile`; on mobile both panels start closed
+  and open as **overlay drawers** (absolute, never shrink the canvas) with a
+  tap-to-dismiss backdrop; **persistent edge rails** reopen a collapsed panel on
+  any screen size. (3) Canvas touch: `ConnectionMode.Loose` + larger handle
+  hit-targets on coarse pointers. All mobile behavior gated on `isMobile`/
+  `pointer:coarse` → desktop unchanged. Browser-validated at a 390px touch viewport
+  (canvas stays full width with an overlay open; rails open, backdrop closes).
+  **Known next gap:** the node palette is still drag-only, so you can open it on
+  touch but can't place a node — tap-to-add is the top remaining mobile item. Suite
+  1288 green; typecheck + lint + build clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
