@@ -65,6 +65,12 @@ watch(
       if (props.typeDef.defaultConfig) {
         Object.assign(defaults, props.typeDef.defaultConfig)
       }
+      // Connection-level behavior (not part of protocol configControls). NEW
+      // connections never auto-connect, so creating one makes no surprise network
+      // connection (or local-network permission prompt) — the user opts in via the
+      // toggle. (Overrides any protocol defaultConfig.autoConnect.)
+      defaults.autoConnect = false
+      if (defaults.autoReconnect === undefined) defaults.autoReconnect = true
       formValues.value = defaults
     }
   },
@@ -86,6 +92,14 @@ function handleClaspServerSelect(url: string) {
   formValues.value = {
     ...formValues.value,
     url,
+  }
+}
+
+// Toggle a boolean behavior field (autoConnect / autoReconnect).
+function setBehavior(key: 'autoConnect' | 'autoReconnect', event: Event) {
+  formValues.value = {
+    ...formValues.value,
+    [key]: (event.target as HTMLInputElement).checked,
   }
 }
 
@@ -238,6 +252,29 @@ async function handleTestConnection() {
     <template v-if="['osc', 'midi', 'serial'].includes(typeDef.id)">
       <ClaspBridgeDownload />
     </template>
+
+    <!-- Connection behavior -->
+    <div class="behavior-settings">
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          :checked="!!formValues.autoConnect"
+          @change="setBehavior('autoConnect', $event)"
+        >
+        <span class="toggle-text">
+          Auto-connect on startup
+          <span class="toggle-hint">Off by default — connecting to a localhost router may ask your browser for local-network access.</span>
+        </span>
+      </label>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          :checked="!!formValues.autoReconnect"
+          @change="setBehavior('autoReconnect', $event)"
+        >
+        <span class="toggle-text">Auto-reconnect if dropped</span>
+      </label>
+    </div>
 
     <!-- Actions -->
     <div class="editor-actions">
@@ -407,6 +444,42 @@ async function handleTestConnection() {
 
 .advanced-body {
   margin-top: var(--space-3);
+}
+
+/* Connection behavior (auto-connect / auto-reconnect) — explicit + controllable. */
+.behavior-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.toggle-row input[type='checkbox'] {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary-500);
+  flex-shrink: 0;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+  color: var(--color-neutral-700);
+}
+
+.toggle-hint {
+  font-size: var(--text-xs);
+  color: var(--color-neutral-500);
+  line-height: 1.4;
 }
 
 /* Pinned to the bottom of the scrolling editor pane so Create/Save/Test are

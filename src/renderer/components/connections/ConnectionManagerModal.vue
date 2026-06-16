@@ -52,7 +52,9 @@ function handleSave(config: Partial<BaseConnectionConfig>) {
     id: config.id || nanoid(8),
     name: config.name || 'New Connection',
     protocol: config.protocol || selectedProtocol.value || 'clasp',
-    autoConnect: config.autoConnect ?? true,
+    // Default OFF: a new connection shouldn't connect (or prompt for localhost
+    // access) until the user opts in via the editor's auto-connect toggle.
+    autoConnect: config.autoConnect ?? false,
     autoReconnect: config.autoReconnect ?? true,
     reconnectDelay: config.reconnectDelay ?? 5000,
     maxReconnectAttempts: config.maxReconnectAttempts ?? 0,
