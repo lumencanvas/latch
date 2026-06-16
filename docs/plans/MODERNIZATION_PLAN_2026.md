@@ -185,6 +185,13 @@ injection. Staged behind a feature flag with WebGL2 fallback.
 - Vue Flow v2 (alpha unshipped — re-evaluate when released).
 - Splitting the monolithic executors (`ai.ts`/`connectivity.ts`/`visual.ts`) — fold into the phase that touches each.
 - PWA install/offline packaging — natural follow-on to Phase 5 + Phase 4 caching.
+- **Cross-cutting findings from `docs/AUDIT_2026-06-16.md`** (full-app audit): the
+  resource leaks it found are fixed (mqtt/ws/http GC wiring, utility/messaging
+  per-node GC, VLA model dispose, AudioManager notify). Still open: BleAdapter
+  listener removal + ThreeShaderRenderer material disposal (HIGH leaks),
+  `--radius-xs` + numbered error/success/warning color tokens undefined app-wide
+  (decide intent / add scales), subflow + TextureBridge cleanup, AIInference
+  worker `onerror` rejection. Fold each into the phase that touches its subsystem.
 
 ## Definition of Done (whole effort)
 

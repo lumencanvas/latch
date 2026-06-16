@@ -22,6 +22,26 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
+**Deep full audit (2026-06-16).** Three parallel read-only passes over the whole
+app + all 63 branch commits — design-system/theme, resource-leak/lifecycle, and
+session-work correctness — written up in `docs/AUDIT_2026-06-16.md`. Ground truth:
+1298 tests pass, typecheck + eslint clean. **Fixed this pass (resource leaks, the
+class CLAUDE.md flags):** (1) mqtt/websocket/http executors leaked live
+`WebSocket`s — their `gc*State`/`disposeAll*` existed in `executors/index.ts` but
+were never wired into `ExecutionEngine` (the standalone executors override the
+legacy connectivity ones, so `gcConnectivityState` never covered them); wired into
+both the per-node GC path and `stop()`. (2) Added missing `gcUtilityState` /
+`gcMessagingState` per-node GC (only `disposeAll*` existed). (3) VLA/SmolVLM model
+leaked GPU/WASM on unload — the `{processor,model,vlm:true}` wrapper has no
+`dispose()` so `model.dispose()` never ran; added `disposePipe()` used on
+unload/dispose/clear-cache. (4) `AudioManager.resume()` now calls
+`notifyListeners()` so the "Enable Audio" UI doesn't go stale. **Top outstanding
+(see audit doc):** BleAdapter notification listener never removed (HIGH),
+ThreeShaderRenderer compiled materials never disposed (HIGH), `--radius-xs` +
+numbered error/success/warning color tokens undefined across the app (decide
+intent / add scales), subflow/TextureBridge cleanup gaps, AIInference worker
+`onerror` doesn't reject pending requests.
+
 **Connection-manager / CLASP UX review (2026-06-15).** The modal is a clean
 master–detail (280px list + editor), but the **editor pane is the "busy" part**:
 for CLASP it stacks, flat with equal weight, badge → Name → `ClaspInfo` (a protocol
