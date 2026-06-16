@@ -8,7 +8,7 @@
  */
 
 import { ref, onMounted } from 'vue'
-import { Loader2, Radar, AlertCircle, Radio, Server, ChevronRight, Globe, Check } from 'lucide-vue-next'
+import { Loader2, Radar, AlertCircle, Server, ChevronRight, Globe, Check } from 'lucide-vue-next'
 
 const emit = defineEmits<{
   (e: 'select', url: string): void
@@ -181,82 +181,94 @@ onMounted(() => {
     </div>
 
     <!-- Local discovery -->
-    <div class="discovery-header">
-      <span class="discovery-title">Local Servers</span>
+    <div class="discovery-section">
+      <div class="discovery-header">
+        <span class="discovery-title">Local Servers</span>
+        <button
+          v-if="discoveredServers.length > 0 || isScanning"
+          class="scan-btn"
+          :disabled="isScanning"
+          @click="scanNetwork"
+        >
+          <Loader2
+            v-if="isScanning"
+            :size="12"
+            class="spinning"
+          />
+          <Radar
+            v-else
+            :size="12"
+          />
+          {{ isScanning ? 'Scanning…' : 'Rescan' }}
+        </button>
+      </div>
+
+      <div
+        v-if="scanError"
+        class="discovery-error"
+      >
+        <AlertCircle :size="14" />
+        {{ scanError }}
+      </div>
+
+      <!-- Discovered servers -->
+      <div
+        v-if="discoveredServers.length > 0"
+        class="server-list"
+      >
+        <button
+          v-for="server in discoveredServers"
+          :key="server.url"
+          class="server-item"
+          :class="{ selected: selectedUrl === server.url }"
+          @click="selectServer(server)"
+        >
+          <Check
+            v-if="selectedUrl === server.url"
+            class="server-icon selected-check"
+            :size="16"
+          />
+          <Server
+            v-else
+            class="server-icon"
+            :size="16"
+          />
+          <div class="server-info">
+            <span class="server-url">{{ server.url }}</span>
+            <span class="server-latency">{{ server.latency }}ms</span>
+          </div>
+          <ChevronRight
+            class="server-arrow"
+            :size="14"
+          />
+        </button>
+      </div>
+
+      <!-- Compact, clickable scan row (pre-scan or empty result). -->
       <button
-        class="scan-btn"
+        v-else
+        class="scan-row"
         :disabled="isScanning"
         @click="scanNetwork"
       >
         <Loader2
           v-if="isScanning"
-          :size="14"
+          :size="16"
           class="spinning"
         />
         <Radar
           v-else
-          :size="14"
+          :size="16"
         />
-        {{ isScanning ? 'Scanning...' : 'Scan' }}
-      </button>
-    </div>
-
-    <div
-      v-if="scanError"
-      class="discovery-error"
-    >
-      <AlertCircle :size="16" />
-      {{ scanError }}
-    </div>
-
-    <!-- Before any scan: explain what Scan does (incl. the browser permission). -->
-    <div
-      v-if="!hasScanned && !isScanning"
-      class="discovery-empty"
-    >
-      <Radar :size="24" />
-      <span>Scan for CLASP routers on this computer</span>
-      <span class="discovery-hint">Your browser may ask to allow access to local devices.</span>
-    </div>
-
-    <div
-      v-else-if="discoveredServers.length === 0 && !isScanning"
-      class="discovery-empty"
-    >
-      <Radio :size="24" />
-      <span>No CLASP servers found on localhost</span>
-      <span class="discovery-hint">Start a CLASP router or CLASP Bridge, then Scan again.</span>
-    </div>
-
-    <div
-      v-if="discoveredServers.length > 0"
-      class="server-list"
-    >
-      <button
-        v-for="server in discoveredServers"
-        :key="server.url"
-        class="server-item"
-        :class="{ selected: selectedUrl === server.url }"
-        @click="selectServer(server)"
-      >
-        <Check
-          v-if="selectedUrl === server.url"
-          class="server-icon selected-check"
-          :size="18"
-        />
-        <Server
-          v-else
-          class="server-icon"
-          :size="18"
-        />
-        <div class="server-info">
-          <span class="server-url">{{ server.url }}</span>
-          <span class="server-latency">{{ server.latency }}ms</span>
-        </div>
-        <ChevronRight
-          class="server-arrow"
-          :size="14"
-        />
+        <span class="scan-row-text">
+          <template v-if="isScanning">Scanning localhost…</template>
+          <template v-else-if="hasScanned">No routers found — scan again</template>
+          <template v-else>Scan localhost for CLASP routers</template>
+          <span class="scan-row-hint">
+            <template v-if="hasScanned">Start a CLASP router or Bridge, then rescan.</template>
+            <template v-else>Your browser may ask to allow local-network access.</template>
+          </span>
+        </span>
       </button>
     </div>
   </div>
@@ -266,11 +278,13 @@ onMounted(() => {
 .clasp-discovery {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  background: var(--color-neutral-50);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-neutral-200);
+  gap: var(--space-4);
+}
+
+.discovery-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .discovery-header {
@@ -280,21 +294,25 @@ onMounted(() => {
 }
 
 .discovery-title {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--color-neutral-600);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500);
 }
 
 .scan-btn {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  background: white;
-  border: 1px solid var(--color-neutral-300);
+  padding: 2px var(--space-2);
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--color-neutral-700);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-600);
   cursor: pointer;
 }
 
@@ -326,32 +344,54 @@ onMounted(() => {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2);
-  background: var(--color-error-bg);
+  background: rgba(239, 68, 68, 0.1);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-error);
 }
 
-.discovery-empty {
+/* Compact, clickable scan affordance — replaces the old large empty box. */
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-neutral-50);
+  border: 1px dashed var(--color-neutral-300);
+  border-radius: var(--radius-sm);
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.scan-row:hover:not(:disabled) {
+  border-color: var(--color-primary-400);
+  border-style: solid;
+  background: var(--color-primary-50);
+  color: var(--color-primary-600);
+}
+
+.scan-row:disabled {
+  cursor: progress;
+}
+
+.scan-row svg {
+  flex-shrink: 0;
+}
+
+.scan-row-text {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-4);
+  gap: 2px;
+  font-size: var(--font-size-sm);
+}
+
+.scan-row-hint {
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
-  font-size: var(--text-sm);
-  text-align: center;
-}
-
-.discovery-empty svg {
-  width: 24px;
-  height: 24px;
-  opacity: 0.5;
-}
-
-.discovery-hint {
-  font-size: var(--text-xs);
-  opacity: 0.7;
+  line-height: 1.4;
 }
 
 .server-list {
@@ -385,8 +425,9 @@ onMounted(() => {
 }
 
 .server-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   color: var(--color-primary-500);
 }
 
@@ -401,13 +442,13 @@ onMounted(() => {
 }
 
 .server-url {
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   font-family: var(--font-mono);
   color: var(--color-neutral-800);
 }
 
 .server-latency {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
 }
 
@@ -446,7 +487,7 @@ onMounted(() => {
 }
 
 .preset-url {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--color-neutral-500);
 }

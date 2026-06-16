@@ -102,14 +102,14 @@ function openDownloadPage() {
 
 .bridge-title {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: var(--color-neutral-800);
 }
 
 .bridge-description {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-neutral-600);
   max-width: 300px;
 }
@@ -142,7 +142,7 @@ function openDownloadPage() {
   background: var(--color-primary-600);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: white;
   cursor: pointer;

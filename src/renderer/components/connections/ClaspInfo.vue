@@ -115,14 +115,17 @@ function openBridgeDownload() {
 }
 
 .info-title {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-neutral-700);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-600);
 }
 
 .info-text {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-neutral-600);
   line-height: 1.5;
 }
@@ -140,7 +143,7 @@ function openBridgeDownload() {
   background: white;
   border: 1px solid var(--color-neutral-300);
   border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-primary-600);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -156,11 +159,7 @@ function openBridgeDownload() {
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-3);
-  background: linear-gradient(
-    135deg,
-    var(--color-primary-50) 0%,
-    white 100%
-  );
+  background: var(--color-primary-50);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-primary-200);
 }
@@ -178,13 +177,13 @@ function openBridgeDownload() {
 }
 
 .bridge-label {
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   font-weight: 600;
   color: var(--color-neutral-700);
 }
 
 .bridge-text {
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-neutral-600);
   line-height: 1.4;
 }

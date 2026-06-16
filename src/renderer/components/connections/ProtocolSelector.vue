@@ -122,7 +122,7 @@ function selectType(typeDef: ConnectionTypeDefinition) {
 }
 
 .category-label {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   font-weight: 600;
   color: var(--color-neutral-500);
   text-transform: uppercase;
@@ -179,13 +179,13 @@ function selectType(typeDef: ConnectionTypeDefinition) {
 }
 
 .protocol-name {
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-neutral-800);
 }
 
 .protocol-description {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   white-space: nowrap;
   overflow: hidden;

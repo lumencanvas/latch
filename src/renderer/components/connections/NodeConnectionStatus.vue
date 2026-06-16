@@ -107,9 +107,9 @@ function getTooltip(info: BindingInfo): string {
   align-items: center;
   gap: var(--space-1-5);
   padding: var(--space-1) var(--space-2);
-  background: var(--color-neutral-850);
+  background: var(--color-neutral-800);
   border-top: 1px solid var(--color-neutral-700);
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
 }
 
 .status-dots {
@@ -119,7 +119,7 @@ function getTooltip(info: BindingInfo): string {
 }
 
 .status-label {
-  color: var(--color-text-muted);
+  color: var(--color-neutral-500);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

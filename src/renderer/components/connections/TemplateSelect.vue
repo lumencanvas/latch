@@ -193,7 +193,7 @@ onUnmounted(() => {
   padding: var(--space-2);
   background: var(--color-neutral-50);
   border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   color: var(--color-neutral-900);
   cursor: pointer;
@@ -337,7 +337,7 @@ onUnmounted(() => {
   padding: 0;
   background: var(--color-neutral-100);
   border: none;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   color: var(--color-neutral-500);
   cursor: pointer;
   opacity: 0;

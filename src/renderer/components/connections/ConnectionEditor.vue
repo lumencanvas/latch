@@ -7,7 +7,7 @@
  */
 
 import { ref, computed, watch, type Component } from 'vue'
-import { Trash2, Check, Plus, Plug, Radio, RadioTower, Globe, Cable, Bluetooth, Usb, Play, Loader2, CheckCircle, XCircle, SlidersHorizontal, ChevronDown } from 'lucide-vue-next'
+import { Trash2, Check, Plus, Plug, Radio, RadioTower, Globe, Cable, Bluetooth, Usb, Play, Loader2, CheckCircle, XCircle } from 'lucide-vue-next'
 import { useConnectionsStore } from '@/stores/connections'
 import ProtocolFormFields from './ProtocolFormFields.vue'
 import ClaspDiscovery from './ClaspDiscovery.vue'
@@ -231,31 +231,23 @@ async function handleTestConnection() {
       >
     </div>
 
-    <!-- CLASP: discovery is the primary path; raw fields go under Advanced. -->
+    <!-- CLASP: pick a server (relay/local), then the URL + token are editable directly. -->
     <template v-if="typeDef.id === 'clasp'">
       <ClaspInfo />
-      <ClaspDiscovery
-        :selected-url="selectedServerUrl"
-        @select="handleClaspServerSelect"
-      />
-      <details class="advanced-fields">
-        <summary class="advanced-summary">
-          <SlidersHorizontal :size="14" />
-          <span>Advanced</span>
-          <span class="advanced-url">{{ selectedServerUrl || 'no server set' }}</span>
-          <ChevronDown
-            :size="14"
-            class="advanced-chevron"
-          />
-        </summary>
-        <div class="advanced-body">
-          <ProtocolFormFields
-            :controls="protocolControls"
-            :values="formValues"
-            @update:values="formValues = $event"
-          />
-        </div>
-      </details>
+      <section class="editor-section">
+        <h4 class="section-label">
+          Server
+        </h4>
+        <ClaspDiscovery
+          :selected-url="selectedServerUrl"
+          @select="handleClaspServerSelect"
+        />
+        <ProtocolFormFields
+          :controls="protocolControls"
+          :values="formValues"
+          @update:values="formValues = $event"
+        />
+      </section>
     </template>
 
     <!-- Other protocols: the form fields ARE the primary input. -->
@@ -481,54 +473,6 @@ async function handleTestConnection() {
 .field-input:focus {
   outline: none;
   border-color: var(--color-primary-500);
-}
-
-/* Advanced (manual host/port/token) — collapsed; discovery is the primary path. */
-.advanced-fields {
-  border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-}
-
-.advanced-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  cursor: pointer;
-  list-style: none;
-  user-select: none;
-  font-size: var(--font-size-sm);
-  font-weight: 500;
-  color: var(--color-neutral-700);
-}
-
-.advanced-summary::-webkit-details-marker {
-  display: none;
-}
-
-.advanced-url {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-neutral-500);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 50%;
-}
-
-.advanced-chevron {
-  color: var(--color-neutral-400);
-  transition: transform var(--transition-fast);
-  flex-shrink: 0;
-}
-
-.advanced-fields[open] .advanced-chevron {
-  transform: rotate(180deg);
-}
-
-.advanced-body {
-  margin-top: var(--space-3);
 }
 
 /* Connection behavior (auto-connect / auto-reconnect) — explicit + controllable. */

@@ -244,7 +244,7 @@ function selectConnection(connectionId: string) {
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
-  color: var(--color-text-muted);
+  color: var(--color-neutral-500);
   gap: var(--space-2);
 }
 
@@ -261,7 +261,7 @@ function selectConnection(connectionId: string) {
   color: white;
   border: none;
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   cursor: pointer;
 }
 
@@ -279,8 +279,8 @@ function selectConnection(connectionId: string) {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-500);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -299,7 +299,7 @@ function selectConnection(connectionId: string) {
   color: var(--color-neutral-600);
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
 }
 
 .connection-item {
@@ -327,8 +327,8 @@ function selectConnection(connectionId: string) {
 
 .connection-name {
   flex: 1;
-  font-size: var(--text-sm);
-  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-800);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -364,7 +364,7 @@ function selectConnection(connectionId: string) {
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--color-neutral-500);
   cursor: pointer;
 }
 
