@@ -8,11 +8,14 @@
  */
 
 import { ref, onMounted } from 'vue'
-import { Loader2, Radar, AlertCircle, Radio, Server, ChevronRight, Globe } from 'lucide-vue-next'
+import { Loader2, Radar, AlertCircle, Radio, Server, ChevronRight, Globe, Check } from 'lucide-vue-next'
 
 const emit = defineEmits<{
   (e: 'select', url: string): void
 }>()
+
+// The currently-configured server URL, so the chosen one is highlighted.
+defineProps<{ selectedUrl?: string }>()
 
 interface DiscoveredServer {
   url: string
@@ -134,9 +137,16 @@ onMounted(() => {
           v-for="preset in PUBLIC_PRESETS"
           :key="preset.url"
           class="server-item preset-item"
+          :class="{ selected: selectedUrl === preset.url }"
           @click="selectPreset(preset)"
         >
+          <Check
+            v-if="selectedUrl === preset.url"
+            class="server-icon selected-check"
+            :size="18"
+          />
           <Globe
+            v-else
             class="server-icon preset-icon"
             :size="18"
           />
@@ -226,9 +236,16 @@ onMounted(() => {
         v-for="server in discoveredServers"
         :key="server.url"
         class="server-item"
+        :class="{ selected: selectedUrl === server.url }"
         @click="selectServer(server)"
       >
+        <Check
+          v-if="selectedUrl === server.url"
+          class="server-icon selected-check"
+          :size="18"
+        />
         <Server
+          v-else
           class="server-icon"
           :size="18"
         />
@@ -361,10 +378,20 @@ onMounted(() => {
   background: var(--color-neutral-50);
 }
 
+.server-item.selected {
+  border-color: var(--color-primary-500);
+  background: var(--color-primary-50);
+  box-shadow: inset 0 0 0 1px var(--color-primary-500);
+}
+
 .server-icon {
   width: 18px;
   height: 18px;
   color: var(--color-primary-500);
+}
+
+.selected-check {
+  color: var(--color-primary-600);
 }
 
 .server-info {

@@ -7,7 +7,7 @@
  */
 
 import { ref, computed, watch, type Component } from 'vue'
-import { Trash2, Check, Plus, Plug, Radio, RadioTower, Globe, Cable, Bluetooth, Usb, Play, Loader2, CheckCircle, XCircle } from 'lucide-vue-next'
+import { Trash2, Check, Plus, Plug, Radio, RadioTower, Globe, Cable, Bluetooth, Usb, Play, Loader2, CheckCircle, XCircle, SlidersHorizontal, ChevronDown } from 'lucide-vue-next'
 import { useConnectionsStore } from '@/stores/connections'
 import ProtocolFormFields from './ProtocolFormFields.vue'
 import ClaspDiscovery from './ClaspDiscovery.vue'
@@ -72,6 +72,10 @@ watch(
 )
 
 const isEditing = computed(() => !!props.connection)
+
+// The configured CLASP server URL (set by Quick Connect / Scan, or manually in
+// Advanced). Drives the selected-server highlight + the Advanced summary.
+const selectedServerUrl = computed(() => String(formValues.value.url ?? ''))
 
 // Test connection state
 const testStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle')
@@ -195,14 +199,36 @@ async function handleTestConnection() {
       >
     </div>
 
-    <!-- CLASP-specific: Info and server discovery -->
+    <!-- CLASP: discovery is the primary path; raw fields go under Advanced. -->
     <template v-if="typeDef.id === 'clasp'">
       <ClaspInfo />
-      <ClaspDiscovery @select="handleClaspServerSelect" />
+      <ClaspDiscovery
+        :selected-url="selectedServerUrl"
+        @select="handleClaspServerSelect"
+      />
+      <details class="advanced-fields">
+        <summary class="advanced-summary">
+          <SlidersHorizontal :size="14" />
+          <span>Advanced</span>
+          <span class="advanced-url">{{ selectedServerUrl || 'no server set' }}</span>
+          <ChevronDown
+            :size="14"
+            class="advanced-chevron"
+          />
+        </summary>
+        <div class="advanced-body">
+          <ProtocolFormFields
+            :controls="typeDef.configControls"
+            :values="formValues"
+            @update:values="formValues = $event"
+          />
+        </div>
+      </details>
     </template>
 
-    <!-- Protocol-specific form fields -->
+    <!-- Other protocols: the form fields ARE the primary input. -->
     <ProtocolFormFields
+      v-else
       :controls="typeDef.configControls"
       :values="formValues"
       @update:values="formValues = $event"
@@ -333,6 +359,54 @@ async function handleTestConnection() {
 .field-input:focus {
   outline: none;
   border-color: var(--color-primary-500);
+}
+
+/* Advanced (manual host/port/token) — collapsed; discovery is the primary path. */
+.advanced-fields {
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.advanced-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-neutral-700);
+}
+
+.advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-url {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-neutral-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+
+.advanced-chevron {
+  color: var(--color-neutral-400);
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.advanced-fields[open] .advanced-chevron {
+  transform: rotate(180deg);
+}
+
+.advanced-body {
+  margin-top: var(--space-3);
 }
 
 /* Pinned to the bottom of the scrolling editor pane so Create/Save/Test are
