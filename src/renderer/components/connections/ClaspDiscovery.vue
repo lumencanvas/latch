@@ -7,7 +7,7 @@
  * Also offers quick-connect presets for the public relay.
  */
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Loader2, Radar, AlertCircle, Radio, Server, ChevronRight, Globe } from 'lucide-vue-next'
 
 const emit = defineEmits<{
@@ -36,6 +36,7 @@ const PUBLIC_PRESETS: ServerPreset[] = [
 ]
 
 const isScanning = ref(false)
+const hasScanned = ref(false)
 const discoveredServers = ref<DiscoveredServer[]>([])
 const scanError = ref<string | null>(null)
 const publicRelayStatus = ref<'idle' | 'checking' | 'online' | 'offline'>('idle')
@@ -79,30 +80,15 @@ async function checkServer(host: string, port: number): Promise<DiscoveredServer
 
 async function scanNetwork() {
   isScanning.value = true
+  hasScanned.value = true
   scanError.value = null
   discoveredServers.value = []
 
-  const hosts = ['localhost', '127.0.0.1']
-
-  // Add common local network addresses
-  for (let i = 1; i <= 254; i++) {
-    hosts.push(`192.168.1.${i}`)
-    hosts.push(`192.168.0.${i}`)
-  }
-
-  // For performance, we'll just scan localhost for now
-  const scanHosts = ['localhost']
-
+  // Probe the common CLASP router ports on THIS machine (localhost) only. Opening
+  // a WebSocket to localhost is what triggers the browser's local-network-access
+  // permission, so this runs ONLY when the user clicks Scan — never automatically.
   try {
-    const promises: Promise<DiscoveredServer | null>[] = []
-
-    for (const host of scanHosts) {
-      for (const port of CLASP_PORTS) {
-        promises.push(checkServer(host, port))
-      }
-    }
-
-    const results = await Promise.all(promises)
+    const results = await Promise.all(CLASP_PORTS.map((port) => checkServer('localhost', port)))
     discoveredServers.value = results.filter((r): r is DiscoveredServer => r !== null)
   } catch (error) {
     scanError.value = error instanceof Error ? error.message : 'Scan failed'
@@ -130,26 +116,11 @@ async function checkPublicRelay() {
 }
 
 onMounted(() => {
-  // Auto-scan on mount
-  scanNetwork()
+  // Only check the EXTERNAL public relay's status (wss://relay.clasp.to) — that
+  // doesn't touch the local network. Local discovery is on-demand (the Scan
+  // button), so opening this panel never probes localhost / prompts for local
+  // device access, and there's no background re-scan loop.
   checkPublicRelay()
-})
-
-let scanInterval: ReturnType<typeof setInterval> | null = null
-
-onMounted(() => {
-  // Rescan every 10 seconds
-  scanInterval = setInterval(() => {
-    if (!isScanning.value) {
-      scanNetwork()
-    }
-  }, 10000)
-})
-
-onUnmounted(() => {
-  if (scanInterval) {
-    clearInterval(scanInterval)
-  }
 })
 </script>
 
@@ -228,13 +199,23 @@ onUnmounted(() => {
       {{ scanError }}
     </div>
 
+    <!-- Before any scan: explain what Scan does (incl. the browser permission). -->
     <div
-      v-if="discoveredServers.length === 0 && !isScanning"
+      v-if="!hasScanned && !isScanning"
+      class="discovery-empty"
+    >
+      <Radar :size="24" />
+      <span>Scan for CLASP routers on this computer</span>
+      <span class="discovery-hint">Your browser may ask to allow access to local devices.</span>
+    </div>
+
+    <div
+      v-else-if="discoveredServers.length === 0 && !isScanning"
       class="discovery-empty"
     >
       <Radio :size="24" />
       <span>No CLASP servers found on localhost</span>
-      <span class="discovery-hint">Start a CLASP router or CLASP Bridge</span>
+      <span class="discovery-hint">Start a CLASP router or CLASP Bridge, then Scan again.</span>
     </div>
 
     <div
