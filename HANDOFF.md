@@ -36,7 +36,19 @@ gradient + ad-hoc tinted boxes (token drift). **Recommended fixes (ranked):**
 collapse `ClaspInfo` into a disclosure/popover; one clear primary path + Advanced;
 **sticky action footer**; group with real section hierarchy; don't re-educate on
 edit; token cleanup. Subsystem: 16 components, ~4900 lines (incl. a 947-line
-HttpTemplateEditor). Not yet implemented — pending direction.
+HttpTemplateEditor).
+  - **DONE 2026-06-15:** (1) **Fixed the surprise permission** — `ClaspDiscovery`
+    auto-scanned localhost via WebSocket on mount + every 10s, firing Chrome's
+    local-network-access prompt with no explanation. Made local discovery
+    on-demand (Scan button only; kept the external relay status check), removed
+    the 10s interval + dead 508-IP code, and added a pre-scan explanation. Verified
+    0 localhost WebSockets on open (only after Scan). (2) **Decluttered the editor**
+    — `ClaspInfo` → collapsed `<details>` disclosure; sticky Cancel/Create/Test
+    footer; re-tokened the off-brand indigo/purple header → teal `--color-primary-*`.
+    Editor height 1311 → 1054px. Browser-validated.
+  - **Still optional:** one-primary-server-path + Advanced collapse for the host/
+    port fields; real section hierarchy; the broader subsystem (ProtocolSelector,
+    TemplateSelect, the 947-line HttpTemplateEditor) is untouched.
 
 ### Remaining work snapshot (2026-06-15)
 Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
