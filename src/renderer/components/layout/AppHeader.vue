@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, ref, onMounted, onUnmounted } from 'vue'
 import { isElectron } from '@/utils/platform'
+import { APP_VERSION } from '@/version'
 import { useRoute, useRouter } from 'vue-router'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
@@ -333,7 +334,7 @@ const isMacElectron = computed(() => {
         <Github :size="16" />
       </button>
 
-      <span class="header-version">v0.1.0</span>
+      <span class="header-version">v{{ APP_VERSION }}</span>
     </div>
   </header>
 </template>

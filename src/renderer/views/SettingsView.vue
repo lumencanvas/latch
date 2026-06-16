@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useUIStore } from '@/stores/ui'
+import { APP_VERSION } from '@/version'
 
 const uiStore = useUIStore()
 </script>
@@ -87,7 +88,7 @@ const uiStore = useUIStore()
           About
         </h2>
         <p class="about-text">
-          LATCH v0.1.0<br>
+          LATCH v{{ APP_VERSION }}<br>
           Live Art Tool for Creative Humans<br><br>
           Created by LumenCanvas - 2026
         </p>
