@@ -26,6 +26,7 @@ LATCH uses a node-based system where each node represents a discrete operation o
 | [Messaging](#messaging) | 2 | Internal message passing | [messaging.md](./messaging.md) |
 | [Subflows](#subflows) | 2 | Flow composition | [subflows.md](./subflows.md) |
 | [Outputs](#outputs) | 1 | Final output destinations | [outputs.md](./outputs.md) |
+| [Emulation](./emulation.md) | 3 | Game controllers + in-browser retro emulator | [emulation.md](./emulation.md) |
 
 **Total: 196 nodes**
 

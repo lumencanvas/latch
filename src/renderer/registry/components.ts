@@ -14,6 +14,7 @@ import { XYPadNode } from './inputs/xy-pad'
 import { TextboxNode } from './inputs/textbox'
 import { KnobNode } from './inputs/_knob'
 import { KeyboardNode } from './inputs/keyboard'
+import { GamepadVisualNode } from './inputs/gamepad-visual'
 import { MonitorNode } from './debug/monitor'
 import { OscilloscopeNode } from './debug/oscilloscope'
 import { GraphNode } from './debug/graph'
@@ -33,6 +34,7 @@ import { MediaPipeGestureNode } from './ai/mediapipe-gesture'
 import { MediaPipeAudioNode } from './ai/mediapipe-audio'
 import { FunctionNode } from './code/_function'
 import { DispatchNode } from './logic/dispatch'
+import { EmulatorNode } from './emulation/emulator'
 
 /**
  * Node type to Vue component mapping.
@@ -49,6 +51,7 @@ export const nodeTypes = {
   textbox: markRaw(TextboxNode),
   knob: markRaw(KnobNode),
   keyboard: markRaw(KeyboardNode),
+  'gamepad-visual': markRaw(GamepadVisualNode),
 
   // Custom UI nodes - debug
   monitor: markRaw(MonitorNode),
@@ -82,4 +85,7 @@ export const nodeTypes = {
 
   // Custom UI nodes - Logic
   dispatch: markRaw(DispatchNode),
+
+  // Custom UI nodes - Emulation
+  emulator: markRaw(EmulatorNode),
 }

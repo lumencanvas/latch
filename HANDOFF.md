@@ -29,7 +29,27 @@ notarization failed with `TeamIdentifier=not set`, or was skipped entirely when
 `v0.1.0`. Fixes: corrected the `Prod` Apple secrets (`APPLE_PASSWORD`/`APPLE_ID`),
 added a macOS keychain cert-import step to `release.yml`, and sourced the
 displayed version from `package.json` (`src/renderer/version.ts`). Tagged
-`v1.0.1`.
+`v1.0.1` → release workflow building (signed/notarized desktop + web); Netlify
+auto-deploys `main`.
+
+**Controller + emulation nodes (2026-06-16).** Shipped three interoperating nodes
+around a shared unified `ControllerState` (`services/input/controllerState.ts`):
+(1) **Gamepad** (`inputs`) — Web Gamepad API → ControllerState, per-frame polling;
+(2) **Visual Gamepad** (`inputs`) — interactive SVG controller on the node body and
+in the Control Panel, visualizes an input state and outputs touches
+(`components/controls/GamepadDisplay.vue`); (3) **Emulator** (`video`) — EmulatorJS
+libretro cores, ROM uploaded to IndexedDB via the asset store, resizable, canvas →
+`texture` + audio → `audio` outputs, and N controller inlets (= core's maxPlayers)
+that accept a ControllerState (Gamepad node or a CLASP receive). Mapping +
+EmulatorJS integration in `services/emulation/{coreMap,emulatorjs}.ts`, executors in
+`engine/executors/{gamepad,emulation}.ts` (gc/dispose wired). Referenced
+doot-games' retro-arcade for the `gameManager.simulateInput` + per-core index
+tables and the WebGL/AudioNode capture patches. Plan:
+`~/.claude/plans/soft-spinning-umbrella.md`. Browser-only paths (EmulatorJS boot,
+texture/audio capture, in-game controller injection) need manual verification with a
+real ROM; everything else is typecheck/lint/test-green (1321 unit tests, +20 new)
+and UI-verified (all three nodes render). EmulatorJS is single-instance (one
+Emulator node at a time); cores load from the EmulatorJS CDN (path-configurable).
 
 **v1.0.0 release (2026-06-16).** First stable. `main` fast-forwarded to the
 modernization work (68 commits: transformers.js 4 / three r184 / clasp v4

@@ -33,6 +33,8 @@ import { disposeAllAINodes, gcAIState } from './executors/ai'
 import { disposeAllMqttNodes, gcMqttState } from './executors/mqtt'
 import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocket'
 import { disposeAllHttpNodes, gcHttpState } from './executors/http'
+import { disposeAllGamepadState, gcGamepadState } from './executors/gamepad'
+import { disposeAllEmulationNodes, gcEmulationState } from './executors/emulation'
 
 /**
  * Largest delta (seconds) a single frame may report. Caps the time spike that
@@ -213,6 +215,8 @@ export class ExecutionEngine {
         gcHttpState(validNodeIds)
         gcUtilityState(validNodeIds)
         gcMessagingState(validNodeIds)
+        gcGamepadState(validNodeIds)
+        gcEmulationState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
         // Drop dirty-mode / async tracking for removed nodes
@@ -838,6 +842,8 @@ export class ExecutionEngine {
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()
     disposeAllHttpNodes()
+    disposeAllGamepadState()
+    disposeAllEmulationNodes()
   }
 
   /**

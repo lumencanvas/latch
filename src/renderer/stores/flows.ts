@@ -175,7 +175,7 @@ export const useFlowsStore = defineStore('flows', {
         'textbox', 'knob', 'keyboard', 'envelope-visual', 'parametric-eq', 'wavetable', 'step-sequencer',
         'mediapipe-hand', 'mediapipe-face', 'mediapipe-pose', 'mediapipe-object',
         'mediapipe-segmentation', 'mediapipe-gesture', 'mediapipe-audio',
-        'function', 'synth', 'dispatch',
+        'function', 'synth', 'dispatch', 'gamepad-visual', 'emulator',
       ]
       const vueFlowType = specialNodeTypes.includes(nodeType) ? nodeType : 'custom'
 

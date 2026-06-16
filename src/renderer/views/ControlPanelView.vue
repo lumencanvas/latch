@@ -10,6 +10,8 @@ import EnvelopeEditor from '@/components/controls/EnvelopeEditor.vue'
 import EQEditor from '@/components/controls/EQEditor.vue'
 import WaveformEditor from '@/components/controls/WaveformEditor.vue'
 import PianoKeyboard from '@/components/controls/PianoKeyboard.vue'
+import GamepadDisplay from '@/components/controls/GamepadDisplay.vue'
+import { emptyControllerState, type ControllerState } from '@/services/input/controllerState'
 import * as THREE from 'three'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
@@ -28,7 +30,7 @@ const containerWidth = ref(1200)
 const GRID_COLS = computed(() => Math.max(6, Math.floor(containerWidth.value / CELL_SIZE)))
 
 // Control node types that should auto-appear
-const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable', 'keyboard', 'synth']
+const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable', 'keyboard', 'synth', 'gamepad-visual']
 const monitorNodeTypes = ['monitor', 'oscilloscope', 'main-output']
 
 // Edit mode
@@ -66,6 +68,7 @@ const accentColors: Record<string, string> = {
   keyboard: '#22c55e',
   synth: '#f59e0b',
   'main-output': '#3b82f6',
+  'gamepad-visual': '#1A9A7A',
 }
 
 // Get all control-type nodes
@@ -704,6 +707,15 @@ onUnmounted(() => {
                 <span>X: {{ (getControlValue(node.id, 'x', 0.5) as number).toFixed(2) }}</span>
                 <span>Y: {{ (getControlValue(node.id, 'y', 0.5) as number).toFixed(2) }}</span>
               </div>
+            </template>
+
+            <!-- Visual Gamepad -->
+            <template v-else-if="nodeType === 'gamepad-visual'">
+              <GamepadDisplay
+                :display-state="(runtimeStore.nodeMetrics.get(node.id)?.outputValues?.state as ControllerState) ?? (getControlValue(node.id, 'interactive', emptyControllerState()) as ControllerState)"
+                :interactive-state="(getControlValue(node.id, 'interactive', emptyControllerState()) as ControllerState)"
+                @update:interactive-state="(v) => updateControlValue(node.id, 'interactive', v)"
+              />
             </template>
 
             <!-- Constant -->

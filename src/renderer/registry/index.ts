@@ -25,6 +25,7 @@ import { threeDNodes } from './3d'
 import { outputNodes } from './outputs'
 import { stringNodes } from './string'
 import { messagingNodes } from './messaging'
+import { emulationNodes } from './emulation'
 
 // Combine all nodes into a single array
 export const allNodes = [
@@ -45,6 +46,7 @@ export const allNodes = [
   ...outputNodes,
   ...stringNodes,
   ...messagingNodes,
+  ...emulationNodes,
 ]
 
 /**

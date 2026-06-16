@@ -23,6 +23,8 @@ import { stringExecutors } from './string'
 import { messagingExecutors } from './messaging'
 import { utilityExecutors, disposeUtilityNode, disposeAllUtilityState } from './utility'
 import { dataExecutors } from './data'
+import { gamepadExecutor, gamepadVisualExecutor, gcGamepadState, disposeAllGamepadState } from './gamepad'
+import { emulatorExecutor, gcEmulationState, disposeAllEmulationNodes } from './emulation'
 
 // Re-export CLASP utilities for external use
 export { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus }
@@ -31,6 +33,12 @@ export { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus 
 export { disposeMqttNode, disposeAllMqttNodes, gcMqttState }
 export { disposeWebSocketNode, disposeAllWebSocketNodes, gcWebSocketState }
 export { disposeHttpNode, disposeAllHttpNodes, gcHttpState }
+
+// Re-export gamepad executor state cleanup
+export { gcGamepadState, disposeAllGamepadState }
+
+// Re-export emulation executor state cleanup
+export { gcEmulationState, disposeAllEmulationNodes }
 
 // Re-export utility node disposal functions
 export { disposeUtilityNode, disposeAllUtilityState }
@@ -1476,6 +1484,9 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   slider: sliderExecutor,
   knob: knobExecutor,
   'xy-pad': xyPadExecutor,
+  gamepad: gamepadExecutor,
+  'gamepad-visual': gamepadVisualExecutor,
+  emulator: emulatorExecutor,
   keyboard: keyboardExecutor,
   time: timeExecutor,
   lfo: lfoExecutor,
