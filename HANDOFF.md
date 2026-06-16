@@ -45,10 +45,15 @@ HttpTemplateEditor).
     0 localhost WebSockets on open (only after Scan). (2) **Decluttered the editor**
     — `ClaspInfo` → collapsed `<details>` disclosure; sticky Cancel/Create/Test
     footer; re-tokened the off-brand indigo/purple header → teal `--color-primary-*`.
-    Editor height 1311 → 1054px. Browser-validated.
-  - **Still optional:** one-primary-server-path + Advanced collapse for the host/
-    port fields; real section hierarchy; the broader subsystem (ProtocolSelector,
-    TemplateSelect, the 947-line HttpTemplateEditor) is untouched.
+    Editor height 1311 → 1054px. Browser-validated. (3) **Primary-path + Advanced**
+    — for CLASP, discovery (Quick Connect relay / Scan local) now leads and the raw
+    Server URL / Auth Token fields are tucked under a collapsed "Advanced"
+    disclosure (its summary shows the chosen URL); selecting a server highlights it
+    (✓) and updates that summary. Non-CLASP protocols keep fields inline. The whole
+    CLASP create flow now fits without scrolling: editor height **1311 → 649px**.
+  - **Still optional:** real section grouping for the other protocols; the broader
+    subsystem (ProtocolSelector, TemplateSelect, the 947-line HttpTemplateEditor) is
+    untouched and lower-priority.
 
 ### Remaining work snapshot (2026-06-15)
 Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
