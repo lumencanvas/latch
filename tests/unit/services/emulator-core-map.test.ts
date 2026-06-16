@@ -78,4 +78,37 @@ describe('coreMap — controllerStateToEmuInputs', () => {
     expect(out.get(0)).toBe(1) // a → cross → 0
     expect(out.get(20)).toBe(ANALOG_FULL) // right stick right
   })
+
+  it('maps Genesis 6-button (l1→Z, r1→C)', () => {
+    expect(emuIndexForLogical(EMU_CORES.genesis, 'a')).toBe(1)
+    expect(emuIndexForLogical(EMU_CORES.genesis, 'b')).toBe(0)
+    expect(emuIndexForLogical(EMU_CORES.genesis, 'l1')).toBe(11) // l → Z
+    expect(emuIndexForLogical(EMU_CORES.genesis, 'r1')).toBe(8) // r → C
+  })
+
+  it('maps GBA shoulder buttons (l1→L, r1→R)', () => {
+    const out = controllerStateToEmuInputs(EMU_CORES.gba, state((s) => { s.buttons.l1 = 1; s.buttons.r1 = 1; s.buttons.a = 1 }))
+    expect(out.get(10)).toBe(1) // L
+    expect(out.get(11)).toBe(1) // R
+    expect(out.get(8)).toBe(1) // a → A → 8
+  })
+
+  it('maps Atari start→reset and a→fire', () => {
+    const out = controllerStateToEmuInputs(EMU_CORES.atari2600, state((s) => { s.buttons.a = 1; s.buttons.start = 1 }))
+    expect(out.get(0)).toBe(1) // fire
+    expect(out.get(3)).toBe(1) // start → reset → 3
+  })
+
+  it('on dpad cores the analog left stick acts as the d-pad', () => {
+    // SNES has no analog stick; pushing the stick right should press d-pad right (idx 7).
+    const out = controllerStateToEmuInputs(EMU_CORES.snes, state((s) => { s.axes.lx = 1 }))
+    expect(out.get(7)).toBe(1)
+    expect(out.get(16) ?? 0).toBe(0) // not sent as an analog axis
+  })
+
+  it('leaves unmapped logical buttons (l3/r3/home) out entirely', () => {
+    const out = controllerStateToEmuInputs(EMU_CORES.snes, state((s) => { s.buttons.l3 = 1; s.buttons.home = 1 }))
+    // Nothing pressed maps to an index; the map only holds the (zero) digital buttons.
+    expect([...out.values()].every((v) => v === 0)).toBe(true)
+  })
 })

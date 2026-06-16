@@ -8,7 +8,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useAssetsStore } from '@/stores/assets'
 import { coreSpec, detectCoreFromFilename } from '@/services/emulation/coreMap'
 import { EmulatorJSLoader, DEFAULT_EJS_DATA } from '@/services/emulation/emulatorjs'
-import { registerEmulator, unregisterEmulator } from '@/engine/executors/emulation'
+import { registerEmulatorNode, unregisterEmulator } from '@/engine/executors/emulation'
 
 const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
@@ -91,7 +91,6 @@ async function onLoad() {
         if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
       },
     })
-    registerEmulator(props.id, loader, key)
     // If the core never reports a start (bad ROM, network, wrong core), don't leave
     // the Load button stuck disabled.
     loadWatchdog = window.setTimeout(() => {
@@ -123,6 +122,7 @@ watch(volume, (v) => loader?.setVolume(v))
 
 // --- resize (bottom-right handle), mirrors the Monitor node ---
 function startResize(event: MouseEvent) {
+  event.preventDefault()
   event.stopPropagation()
   const startX = event.clientX
   const startY = event.clientY
@@ -143,7 +143,17 @@ function startResize(event: MouseEvent) {
 }
 
 onMounted(() => {
-  if (container.value) loader = new EmulatorJSLoader(container.value)
+  if (!container.value) return
+  loader = new EmulatorJSLoader(container.value)
+  // Register on mount (not after Load) so the start/stop/reset trigger inlets can
+  // drive the emulator from the graph, and the executor can inject + capture.
+  registerEmulatorNode(props.id, {
+    loader,
+    getCoreKey: () => resolvedCoreKey.value,
+    onStart: onLoad,
+    onStop,
+    onReset,
+  })
 })
 
 onUnmounted(() => {
@@ -225,7 +235,7 @@ onUnmounted(() => {
           :class="{ on: booted }"
         />
         <button
-          class="hbtn"
+          class="hbtn nodrag"
           title="Load ROM"
           :disabled="loading || !romId"
           @click.stop="onLoad"
@@ -234,7 +244,7 @@ onUnmounted(() => {
           <Play :size="12" />
         </button>
         <button
-          class="hbtn"
+          class="hbtn nodrag"
           title="Reset"
           @click.stop="onReset"
           @mousedown.stop
@@ -242,7 +252,7 @@ onUnmounted(() => {
           <RotateCcw :size="12" />
         </button>
         <button
-          class="hbtn"
+          class="hbtn nodrag"
           title="Stop"
           @click.stop="onStop"
           @mousedown.stop
@@ -254,7 +264,7 @@ onUnmounted(() => {
       <!-- EmulatorJS renders into this container -->
       <div
         ref="container"
-        class="emulator-screen"
+        class="emulator-screen nodrag"
         :style="{ height: `${screenHeight}px` }"
         @mousedown.stop
       >
@@ -269,7 +279,7 @@ onUnmounted(() => {
 
       <!-- resize handle -->
       <div
-        class="resize-handle"
+        class="resize-handle nodrag"
         title="Resize"
         @mousedown="startResize"
       />

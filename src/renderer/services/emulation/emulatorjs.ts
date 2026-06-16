@@ -149,14 +149,6 @@ export class EmulatorJSLoader {
     return lastAudioTap
   }
 
-  pause(): void {
-    try { (window as EJSWindow).EJS_emulator?.pause?.() } catch { /* ignore */ }
-  }
-
-  resume(): void {
-    try { (window as EJSWindow).EJS_emulator?.play?.() } catch { /* ignore */ }
-  }
-
   reset(): void {
     try { (window as EJSWindow).EJS_emulator?.gameManager?.restart?.() } catch { /* ignore */ }
   }

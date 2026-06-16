@@ -99,7 +99,7 @@ const outputPorts = [
         />
         <span class="node-title">Visual Gamepad</span>
       </div>
-      <div class="node-body">
+      <div class="node-body nodrag">
         <GamepadDisplay
           v-model:interactive-state="interactiveState"
           :display-state="displayState"

@@ -47,9 +47,31 @@ doot-games' retro-arcade for the `gameManager.simulateInput` + per-core index
 tables and the WebGL/AudioNode capture patches. Plan:
 `~/.claude/plans/soft-spinning-umbrella.md`. Browser-only paths (EmulatorJS boot,
 texture/audio capture, in-game controller injection) need manual verification with a
-real ROM; everything else is typecheck/lint/test-green (1321 unit tests, +20 new)
-and UI-verified (all three nodes render). EmulatorJS is single-instance (one
-Emulator node at a time); cores load from the EmulatorJS CDN (path-configurable).
+real ROM; everything else is typecheck/lint/test-green and UI-verified.
+EmulatorJS is single-instance (one Emulator node at a time); cores load from the
+EmulatorJS CDN (path-configurable).
+
+**Emulator/controller follow-up fixes (2026-06-16).** Audit + fixes after testing:
+(a) the custom-component nodes (`emulator`, `gamepad-visual`) could persist with
+Vue Flow `type:'custom'` and render as a generic BaseNode — fixed by deriving the
+custom-component set from the registry (`CUSTOM_NODE_TYPE_IDS`) and healing node
+types on flow activation (`flows.ts` `healNodeTypes`). (b) **Start/Stop/Reset
+inlets** now boot/teardown/reset the emulator (they only `resume()`d a running game
+before): the component registers boot/stop/reset callbacks on mount via
+`registerEmulatorNode`, and the executor drives them on trigger rising edges; removed
+the now-unused `loader.pause()/resume()` cruft. (c) **Resize** verified working
+(280×240→370×310 via a real drag); added `nodrag` + `preventDefault` so the game
+screen/buttons don't drag the node. Note: the Vue Flow minimap (bottom-right panel)
+can cover a node's resize handle when the node sits in that corner — pan the node
+out to resize. (d) **ROM uploads**: added a `rom` asset type + broadened the asset
+browser `accept` to ROM/disc extensions + a ROMs filter tab (ROMs were `image`-typed
+and the upload `accept` blocked them). (e) Controller mapping re-audited and sound
+(faithful to doot's per-core `padAlias`→`touchIndex`, Y-axis negated for the Web
+Gamepad convention, analog-axis indices get full-scale); +5 cross-core tests.
+**Still unverified headless** (needs a real ROM in a browser): the actual EmulatorJS
+boot, canvas→texture, audio bridge, and in-game controller injection — the engine
+runs the executor for all nodes (topo sort, no pruning) so the trigger→boot wiring
+is sound, but it can't be exercised in the headless test harness.
 
 **v1.0.0 release (2026-06-16).** First stable. `main` fast-forwarded to the
 modernization work (68 commits: transformers.js 4 / three r184 / clasp v4

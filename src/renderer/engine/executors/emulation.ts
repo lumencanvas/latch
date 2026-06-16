@@ -1,11 +1,11 @@
 /**
  * EmulatorJS node executor.
  *
- * The EmulatorJS container lives in the node's Vue component (it owns the DOM), so
- * the component creates the loader and registers it here; the executor reads it each
- * frame to inject controller input (diffed) and to expose the emulator canvas + audio
- * as texture/audio outputs. The start/stop/reset trigger inlets pause/resume/reset the
- * already-loaded emulator (Load happens from the editor, which has the ROM blob).
+ * The EmulatorJS container + ROM blob live in the node's Vue component, so the
+ * component registers its loader and boot/stop/reset callbacks here on mount. The
+ * executor drives those callbacks from the start/stop/reset trigger inlets, injects
+ * controller input each frame (diffed), and exposes the emulator canvas + audio as
+ * texture/audio outputs.
  */
 
 import * as THREE from 'three'
@@ -16,9 +16,21 @@ import { coreSpec, controllerStateToEmuInputs } from '@/services/emulation/coreM
 import { setExcludedAudioContext, type EmulatorJSLoader } from '@/services/emulation/emulatorjs'
 import type { ControllerState } from '@/services/input/controllerState'
 
-interface EmulatorEntry {
+/** The control surface a node component registers so triggers can drive it. */
+export interface EmulatorControls {
   loader: EmulatorJSLoader
-  coreKey: string
+  /** Current resolved core key (reactive — follows the ROM/system selection). */
+  getCoreKey: () => string
+  /** Boot (Load) the emulator with the current ROM. */
+  onStart: () => void
+  /** Tear the emulator down. */
+  onStop: () => void
+  /** Reset the running game. */
+  onReset: () => void
+}
+
+interface EmulatorEntry {
+  controls: EmulatorControls
   prevInputs: Map<number, Map<number, number>>
   prevTrigger: { start: boolean; stop: boolean; reset: boolean }
   texture?: THREE.Texture
@@ -28,18 +40,17 @@ interface EmulatorEntry {
 
 const emulators = new Map<string, EmulatorEntry>()
 
-/** Called by the node component once it has booted (or rebooted) its loader. */
-export function registerEmulator(nodeId: string, loader: EmulatorJSLoader, coreKey: string): void {
+/** Registered by the node component on mount (one stable loader per node). */
+export function registerEmulatorNode(nodeId: string, controls: EmulatorControls): void {
   const existing = emulators.get(nodeId)
-  if (existing && existing.loader !== loader) cleanupEntry(existing, false)
+  if (existing && existing.controls.loader !== controls.loader) cleanupEntry(existing, false)
   emulators.set(nodeId, {
-    loader,
-    coreKey,
+    controls,
     prevInputs: new Map(),
     prevTrigger: { start: false, stop: false, reset: false },
-    texture: existing?.loader === loader ? existing.texture : undefined,
-    audioSource: existing?.loader === loader ? existing.audioSource : undefined,
-    audioGain: existing?.loader === loader ? existing.audioGain : undefined,
+    texture: existing?.controls.loader === controls.loader ? existing.texture : undefined,
+    audioSource: existing?.controls.loader === controls.loader ? existing.audioSource : undefined,
+    audioGain: existing?.controls.loader === controls.loader ? existing.audioGain : undefined,
   })
 }
 
@@ -69,16 +80,18 @@ export const emulatorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const { loader } = entry
-  const spec = coreSpec(entry.coreKey)
+  const { controls } = entry
+  const { loader } = controls
+  const spec = coreSpec(controls.getCoreKey())
 
-  // start/stop/reset trigger inlets → resume/pause/reset (rising edge).
+  // start/stop/reset trigger inlets → boot / teardown / reset (rising edge),
+  // mirroring the node's Load/Stop/Reset buttons so the graph can drive them.
   const startNow = isTrigger(ctx.inputs.get('start'))
   const stopNow = isTrigger(ctx.inputs.get('stop'))
   const resetNow = isTrigger(ctx.inputs.get('reset'))
-  if (startNow && !entry.prevTrigger.start) loader.resume()
-  if (stopNow && !entry.prevTrigger.stop) loader.pause()
-  if (resetNow && !entry.prevTrigger.reset) loader.reset()
+  if (startNow && !entry.prevTrigger.start) controls.onStart()
+  if (stopNow && !entry.prevTrigger.stop) controls.onStop()
+  if (resetNow && !entry.prevTrigger.reset) controls.onReset()
   entry.prevTrigger = { start: startNow, stop: stopNow, reset: resetNow }
 
   const ready = loader.isReady()
@@ -146,7 +159,7 @@ function cleanupEntry(entry: EmulatorEntry, teardownLoader: boolean): void {
     entry.audioSource = undefined
   }
   if (teardownLoader) {
-    try { entry.loader.teardown() } catch { /* ignore */ }
+    try { entry.controls.loader.teardown() } catch { /* ignore */ }
   }
 }
 
