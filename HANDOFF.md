@@ -51,6 +51,15 @@ HttpTemplateEditor).
     disclosure (its summary shows the chosen URL); selecting a server highlights it
     (✓) and updates that summary. Non-CLASP protocols keep fields inline. The whole
     CLASP create flow now fits without scrolling: editor height **1311 → 649px**.
+    (4) **Auto-connect toggle** — audit found `ConnectionManager` auto-`connect()`s
+    any `autoConnect` connection (incl. on app load), and `autoConnect` defaulted to
+    true and was **never exposed in the editor** → every connection silently
+    auto-connected on create + every load, prompting for localhost access with no
+    off switch. Added visible auto-connect / auto-reconnect toggles; new connections
+    now default `autoConnect=false` (editor overrides protocol defaultConfig + modal
+    backstop), so creating one makes 0 network connections until the user opts in.
+    Browser-verified (toggle off by default, 0 localhost WS on create). Existing
+    connections keep their saved value.
   - **Still optional:** real section grouping for the other protocols; the broader
     subsystem (ProtocolSelector, TemplateSelect, the 947-line HttpTemplateEditor) is
     untouched and lower-priority.
