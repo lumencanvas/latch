@@ -2,15 +2,18 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeCategory, type NodeDefinition } from '@/stores/nodes'
-import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen } from 'lucide-vue-next'
+import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen, Plug } from 'lucide-vue-next'
 import { aiInference } from '@/services/ai/AIInference'
 import AssetBrowser from '@/components/assets/AssetBrowser.vue'
+import ConnectionSidebar from '@/components/connections/ConnectionSidebar.vue'
+import { useConnectionsStore } from '@/stores/connections'
 
 const uiStore = useUIStore()
 const nodesStore = useNodesStore()
+const connectionsStore = useConnectionsStore()
 
 // Tab state
-type SidebarTab = 'nodes' | 'assets'
+type SidebarTab = 'nodes' | 'assets' | 'connections'
 const activeTab = ref<SidebarTab>('nodes')
 
 // All categories collapsed by default
@@ -146,6 +149,12 @@ function onDragStart(event: DragEvent, nodeId: string) {
 function openAIModelManager() {
   uiStore.openAIModelManager()
 }
+
+// Open the connection manager for a connection selected in the Connections tab.
+function onSelectConnection(connectionId: string) {
+  connectionsStore.selectConnection(connectionId)
+  connectionsStore.openModal()
+}
 </script>
 
 <template>
@@ -177,6 +186,14 @@ function openAIModelManager() {
             <FolderOpen :size="14" />
             <span>Assets</span>
           </button>
+          <button
+            class="sidebar-tab"
+            :class="{ active: activeTab === 'connections' }"
+            @click="activeTab = 'connections'"
+          >
+            <Plug :size="14" />
+            <span>Links</span>
+          </button>
         </div>
         <button
           class="collapse-btn"
@@ -189,6 +206,13 @@ function openAIModelManager() {
 
       <!-- Assets Tab -->
       <AssetBrowser v-if="activeTab === 'assets'" />
+
+      <!-- Connections Tab -->
+      <ConnectionSidebar
+        v-else-if="activeTab === 'connections'"
+        @open-manager="connectionsStore.openModal()"
+        @select-connection="onSelectConnection"
+      />
 
       <!-- Nodes Tab -->
       <template v-else>
@@ -675,7 +699,7 @@ function openAIModelManager() {
 }
 
 .ai-icon {
-  background: #A855F7;
+  background: var(--color-primary-500);
   color: white;
 }
 
@@ -685,7 +709,7 @@ function openAIModelManager() {
   gap: var(--space-1);
   padding: 4px var(--space-2);
   margin-right: var(--space-2);
-  background: #A855F7;
+  background: var(--color-primary-500);
   border: none;
   border-radius: var(--radius-xs);
   color: white;
@@ -697,7 +721,7 @@ function openAIModelManager() {
 }
 
 .ai-load-btn:hover {
-  background: #9333EA;
+  background: var(--color-primary-600);
 }
 
 .category-expand {
