@@ -13,7 +13,7 @@ import * as Tone from 'tone'
 import type { NodeExecutorFn, ExecutionContext } from '../ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { coreSpec, controllerStateToEmuInputs } from '@/services/emulation/coreMap'
-import type { EmulatorJSLoader } from '@/services/emulation/emulatorjs'
+import { setExcludedAudioContext, type EmulatorJSLoader } from '@/services/emulation/emulatorjs'
 import type { ControllerState } from '@/services/input/controllerState'
 
 interface EmulatorEntry {
@@ -57,6 +57,9 @@ function isTrigger(v: unknown): boolean {
 
 export const emulatorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
+  // Keep LATCH's Tone context out of the emulator audio tap (idempotent, must be set
+  // before the emulator's audio connects so the tap never grabs the master mix).
+  setExcludedAudioContext(Tone.getContext().rawContext as unknown as BaseAudioContext)
   const entry = emulators.get(ctx.nodeId)
   if (!entry) {
     outputs.set('running', false)

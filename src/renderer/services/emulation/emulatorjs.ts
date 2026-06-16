@@ -38,6 +38,15 @@ export const DEFAULT_EJS_DATA = 'https://cdn.emulatorjs.org/stable/data/'
 
 let capturePatched = false
 let lastAudioTap: MediaStream | null = null
+// Context to NOT tap (LATCH's own Tone context); otherwise the tap would capture
+// the master mix — wrong audio, and a feedback loop once the emulator's audio
+// output is routed back to the master. Set by the emulation executor.
+let excludedContext: BaseAudioContext | null = null
+
+/** Exclude an AudioContext (e.g. Tone's) from the emulator audio tap. */
+export function setExcludedAudioContext(ctx: BaseAudioContext | null): void {
+  excludedContext = ctx
+}
 
 /**
  * Patch (once) so the emulator canvas is sampleable as a texture and its audio is
@@ -64,7 +73,7 @@ function patchForCapture(): void {
     aproto.connect = function (this: AudioNode, dest: any, ...rest: any[]) {
       try {
         const ctx = this.context as any
-        if (ctx && dest === ctx.destination && typeof ctx.createMediaStreamDestination === 'function') {
+        if (ctx && ctx !== excludedContext && dest === ctx.destination && typeof ctx.createMediaStreamDestination === 'function') {
           const tap = ctx.__latchTap ?? (ctx.__latchTap = ctx.createMediaStreamDestination())
           lastAudioTap = tap.stream
           ;(origConnect as any).call(this, tap)

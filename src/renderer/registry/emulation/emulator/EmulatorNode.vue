@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import { Gamepad2, Play, Square, RotateCcw } from 'lucide-vue-next'
@@ -16,6 +16,7 @@ const assetsStore = useAssetsStore()
 
 const container = ref<HTMLDivElement | null>(null)
 let loader: EmulatorJSLoader | null = null
+let loadWatchdog: number | null = null
 let currentRomUrl: string | null = null
 const booted = ref(false)
 const loading = ref(false)
@@ -56,6 +57,7 @@ async function onLoad() {
   }
   loading.value = true
   error.value = null
+  if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
   try {
     const url = await assetsStore.getAssetUrl(romId.value)
     if (!url) throw new Error('ROM not found')
@@ -70,10 +72,22 @@ async function onLoad() {
       pathToData: pathToData.value,
       volume: volume.value,
       threaded: spec.threaded,
-      onStart: () => { booted.value = true; loading.value = false },
+      onStart: () => {
+        booted.value = true
+        loading.value = false
+        if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
+      },
     })
     registerEmulator(props.id, loader, key)
-    booted.value = true
+    // If the core never reports a start (bad ROM, network, wrong core), don't leave
+    // the Load button stuck disabled.
+    loadWatchdog = window.setTimeout(() => {
+      loadWatchdog = null
+      if (loading.value) {
+        loading.value = false
+        if (!booted.value) error.value = 'Load timed out — check the ROM and system'
+      }
+    }, 30000)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load'
     loading.value = false
@@ -83,11 +97,16 @@ async function onLoad() {
 function onStop() {
   loader?.teardown()
   booted.value = false
+  loading.value = false
+  if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
 }
 
 function onReset() {
   loader?.reset()
 }
+
+// Apply live volume changes to a running emulator without a reload.
+watch(volume, (v) => loader?.setVolume(v))
 
 // --- resize (bottom-right handle), mirrors the Monitor node ---
 function startResize(event: MouseEvent) {
@@ -115,6 +134,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
   unregisterEmulator(props.id)
   loader = null
   if (currentRomUrl) {
@@ -219,7 +239,7 @@ onUnmounted(() => {
           class="screen-placeholder"
         >
           <Gamepad2 :size="28" />
-          <span>{{ error || (romId ? 'Press ▶ to load' : 'Pick a ROM in the panel') }}</span>
+          <span>{{ error || (loading ? 'Loading…' : romId ? 'Press ▶ to load' : 'Pick a ROM in the panel') }}</span>
         </div>
       </div>
 
