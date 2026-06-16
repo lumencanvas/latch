@@ -79,6 +79,17 @@ watch(
 
 const isEditing = computed(() => !!props.connection)
 
+// Connection behavior (auto-connect / auto-reconnect / reconnect delay) is owned by
+// the dedicated Behavior section below — strip it from the protocol field list so it
+// isn't rendered twice.
+const BEHAVIOR_FIELDS = ['autoConnect', 'autoReconnect', 'reconnectDelay']
+const protocolControls = computed(() =>
+  props.typeDef.configControls.filter((c) => !BEHAVIOR_FIELDS.includes(c.id))
+)
+const supportsReconnect = computed(() =>
+  props.typeDef.configControls.some((c) => c.id === 'autoReconnect')
+)
+
 // The configured CLASP server URL (set by Quick Connect / Scan, or manually in
 // Advanced). Drives the selected-server highlight + the Advanced summary.
 const selectedServerUrl = computed(() => String(formValues.value.url ?? ''))
@@ -100,6 +111,13 @@ function setBehavior(key: 'autoConnect' | 'autoReconnect', event: Event) {
   formValues.value = {
     ...formValues.value,
     [key]: (event.target as HTMLInputElement).checked,
+  }
+}
+
+function setReconnectDelay(event: Event) {
+  formValues.value = {
+    ...formValues.value,
+    reconnectDelay: Number((event.target as HTMLInputElement).value),
   }
 }
 
@@ -232,7 +250,7 @@ async function handleTestConnection() {
         </summary>
         <div class="advanced-body">
           <ProtocolFormFields
-            :controls="typeDef.configControls"
+            :controls="protocolControls"
             :values="formValues"
             @update:values="formValues = $event"
           />
@@ -241,12 +259,19 @@ async function handleTestConnection() {
     </template>
 
     <!-- Other protocols: the form fields ARE the primary input. -->
-    <ProtocolFormFields
+    <section
       v-else
-      :controls="typeDef.configControls"
-      :values="formValues"
-      @update:values="formValues = $event"
-    />
+      class="editor-section"
+    >
+      <h4 class="section-label">
+        Configuration
+      </h4>
+      <ProtocolFormFields
+        :controls="protocolControls"
+        :values="formValues"
+        @update:values="formValues = $event"
+      />
+    </section>
 
     <!-- CLASP Bridge download (for OSC/MIDI/Serial) -->
     <template v-if="['osc', 'midi', 'serial'].includes(typeDef.id)">
@@ -254,27 +279,56 @@ async function handleTestConnection() {
     </template>
 
     <!-- Connection behavior -->
-    <div class="behavior-settings">
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          :checked="!!formValues.autoConnect"
-          @change="setBehavior('autoConnect', $event)"
+    <section class="editor-section">
+      <h4 class="section-label">
+        Behavior
+      </h4>
+      <div class="behavior-settings">
+        <label class="toggle-row">
+          <input
+            type="checkbox"
+            :checked="!!formValues.autoConnect"
+            @change="setBehavior('autoConnect', $event)"
+          >
+          <span class="toggle-text">
+            Auto-connect on startup
+            <span class="toggle-hint">Off by default — connecting to a localhost router may ask your browser for local-network access.</span>
+          </span>
+        </label>
+        <label
+          v-if="supportsReconnect"
+          class="toggle-row"
         >
-        <span class="toggle-text">
-          Auto-connect on startup
-          <span class="toggle-hint">Off by default — connecting to a localhost router may ask your browser for local-network access.</span>
-        </span>
-      </label>
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          :checked="!!formValues.autoReconnect"
-          @change="setBehavior('autoReconnect', $event)"
+          <input
+            type="checkbox"
+            :checked="!!formValues.autoReconnect"
+            @change="setBehavior('autoReconnect', $event)"
+          >
+          <span class="toggle-text">Auto-reconnect if dropped</span>
+        </label>
+        <div
+          v-if="supportsReconnect && !!formValues.autoReconnect"
+          class="reconnect-delay"
         >
-        <span class="toggle-text">Auto-reconnect if dropped</span>
-      </label>
-    </div>
+          <label
+            for="reconnect-delay"
+            class="delay-label"
+          >Reconnect delay</label>
+          <div class="delay-input-wrap">
+            <input
+              id="reconnect-delay"
+              type="number"
+              min="0"
+              step="500"
+              :value="Number(formValues.reconnectDelay ?? 5000)"
+              class="delay-input"
+              @input="setReconnectDelay"
+            >
+            <span class="delay-unit">ms</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Actions -->
     <div class="editor-actions">
@@ -362,14 +416,36 @@ async function handleTestConnection() {
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  font-size: var(--text-sm);
-  font-weight: 500;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .type-badge svg {
   width: 14px;
   height: 14px;
+}
+
+/* Grouped section (Configuration / Behavior) with a mono uppercase header. */
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.section-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-neutral-400);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .name-field {
@@ -379,18 +455,27 @@ async function handleTestConnection() {
 }
 
 .field-label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--color-neutral-700);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500);
 }
 
 .field-input {
-  padding: var(--space-2) var(--space-3);
-  background: white;
-  border: 1px solid var(--color-neutral-300);
+  padding: var(--space-2);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  color: var(--color-neutral-800);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-900);
+  transition: border-color var(--transition-fast);
+}
+
+.field-input:hover {
+  border-color: var(--color-neutral-300);
 }
 
 .field-input:focus {
@@ -401,7 +486,7 @@ async function handleTestConnection() {
 /* Advanced (manual host/port/token) — collapsed; discovery is the primary path. */
 .advanced-fields {
   border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -412,7 +497,7 @@ async function handleTestConnection() {
   cursor: pointer;
   list-style: none;
   user-select: none;
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-neutral-700);
 }
@@ -424,7 +509,7 @@ async function handleTestConnection() {
 .advanced-url {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   white-space: nowrap;
   overflow: hidden;
@@ -472,14 +557,64 @@ async function handleTestConnection() {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-neutral-700);
 }
 
 .toggle-hint {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   line-height: 1.4;
+}
+
+/* Reconnect delay — compact inline number, revealed only when auto-reconnect is on. */
+.reconnect-delay {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-left: calc(16px + var(--space-2));
+}
+
+.delay-label {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500);
+}
+
+.delay-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.delay-input {
+  width: 92px;
+  padding: var(--space-1) var(--space-2);
+  padding-right: var(--space-6);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-900);
+  text-align: right;
+}
+
+.delay-input:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+
+.delay-unit {
+  position: absolute;
+  right: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-400);
+  pointer-events: none;
 }
 
 /* Pinned to the bottom of the scrolling editor pane so Create/Save/Test are
@@ -510,13 +645,13 @@ async function handleTestConnection() {
   background: transparent;
   border: 1px solid var(--color-error);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-error);
   cursor: pointer;
 }
 
 .delete-btn:hover {
-  background: var(--color-error-bg);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .test-btn {
@@ -527,7 +662,7 @@ async function handleTestConnection() {
   background: var(--color-neutral-100);
   border: 1px solid var(--color-neutral-300);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-neutral-700);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -556,7 +691,7 @@ async function handleTestConnection() {
 .test-btn.error {
   color: var(--color-error);
   border-color: var(--color-error);
-  background: var(--color-error-bg);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .spin {
@@ -577,7 +712,7 @@ async function handleTestConnection() {
   background: transparent;
   border: 1px solid var(--color-neutral-300);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   color: var(--color-neutral-700);
   cursor: pointer;
 }
@@ -595,7 +730,7 @@ async function handleTestConnection() {
   background: var(--color-primary-600);
   border: none;
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: white;
   cursor: pointer;

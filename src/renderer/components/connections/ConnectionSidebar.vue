@@ -216,8 +216,7 @@ function selectConnection(connectionId: string) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-neutral-900);
-  border-left: 1px solid var(--color-neutral-700);
+  background: var(--color-neutral-0);
 }
 
 .sidebar-header {
@@ -225,14 +224,17 @@ function selectConnection(connectionId: string) {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3);
-  border-bottom: 1px solid var(--color-neutral-700);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .sidebar-title {
   margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-neutral-500);
 }
 
 .add-btn {
@@ -262,16 +264,17 @@ function selectConnection(connectionId: string) {
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-neutral-850);
-  border-bottom: 1px solid var(--color-neutral-700);
+  background: var(--color-neutral-50);
+  border-bottom: 1px solid var(--color-neutral-200);
 }
 
 .stat {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-600);
 }
 
 .stat-spacer {
@@ -287,13 +290,13 @@ function selectConnection(connectionId: string) {
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
+  color: var(--color-neutral-500);
   cursor: pointer;
 }
 
 .action-btn:hover {
-  background: var(--color-neutral-700);
-  color: var(--color-text);
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-700);
 }
 
 .action-btn svg {
@@ -312,16 +315,17 @@ function selectConnection(connectionId: string) {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-2) var(--space-3);
-  background: var(--color-neutral-850);
-  border-top: 1px solid var(--color-neutral-700);
-  font-size: var(--text-xs);
+  background: var(--color-neutral-50);
+  border-top: 1px solid var(--color-neutral-200);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }
 
 .usage-label {
-  color: var(--color-text-muted);
+  color: var(--color-neutral-500);
 }
 
 .usage-count {
-  color: var(--color-text);
+  color: var(--color-neutral-700);
 }
 </style>

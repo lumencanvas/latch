@@ -3,6 +3,8 @@
  * ProtocolFormFields
  *
  * Dynamically renders form controls based on a connection type definition's configControls.
+ * Fields flow into a two-column grid; long fields (URLs, selects, textareas, checkboxes)
+ * span the full width while short fields (host/port, user/pass, numbers) pair up.
  */
 
 import { computed } from 'vue'
@@ -48,6 +50,15 @@ function getValue(control: ConnectionFormControl) {
   return props.values[control.id] ?? control.default
 }
 
+// Long-form fields take the whole row; short scalar inputs (text/number) pair up
+// into two columns. Keeps related pairs — host/port, user/password — side by side.
+function isWide(control: ConnectionFormControl): boolean {
+  if (control.type === 'textarea' || control.type === 'select' || control.type === 'checkbox') {
+    return true
+  }
+  return /url/i.test(control.id)
+}
+
 const visibleControls = computed(() => {
   return props.controls.filter((control) => {
     // Check visibility conditions if defined
@@ -65,21 +76,46 @@ const visibleControls = computed(() => {
 
 <template>
   <div class="form-fields">
-    <div
+    <template
       v-for="control in visibleControls"
       :key="control.id"
-      class="form-field"
     >
+      <!-- Checkbox: inline label, no stacked header -->
       <label
-        :for="`field-${control.id}`"
-        class="field-label"
+        v-if="control.type === 'checkbox'"
+        class="form-field is-wide checkbox-field"
       >
-        {{ control.label }}
+        <input
+          type="checkbox"
+          :checked="Boolean(getValue(control))"
+          class="field-checkbox"
+          @change="(e) => updateValue(control.id, (e.target as HTMLInputElement).checked)"
+        >
+        <span class="checkbox-text">
+          {{ control.label }}
+          <span
+            v-if="control.description"
+            class="checkbox-description"
+          >{{ control.description }}</span>
+        </span>
       </label>
 
-      <!-- Text input -->
-      <template v-if="control.type === 'text'">
+      <!-- Everything else: stacked label + input -->
+      <div
+        v-else
+        class="form-field"
+        :class="{ 'is-wide': isWide(control) }"
+      >
+        <label
+          :for="`field-${control.id}`"
+          class="field-label"
+        >
+          {{ control.label }}
+        </label>
+
+        <!-- Text input -->
         <input
+          v-if="control.type === 'text'"
           :id="`field-${control.id}`"
           :type="control.props?.type || 'text'"
           :value="getValue(control)"
@@ -87,11 +123,10 @@ const visibleControls = computed(() => {
           class="field-input"
           @input="(e) => updateValue(control.id, (e.target as HTMLInputElement).value)"
         >
-      </template>
 
-      <!-- Number input -->
-      <template v-else-if="control.type === 'number'">
+        <!-- Number input -->
         <input
+          v-else-if="control.type === 'number'"
           :id="`field-${control.id}`"
           type="number"
           :value="getValue(control)"
@@ -101,30 +136,10 @@ const visibleControls = computed(() => {
           class="field-input"
           @input="(e) => updateValue(control.id, Number((e.target as HTMLInputElement).value))"
         >
-      </template>
 
-      <!-- Checkbox -->
-      <template v-else-if="control.type === 'checkbox'">
-        <div class="checkbox-wrapper">
-          <input
-            :id="`field-${control.id}`"
-            type="checkbox"
-            :checked="Boolean(getValue(control))"
-            class="field-checkbox"
-            @change="(e) => updateValue(control.id, (e.target as HTMLInputElement).checked)"
-          >
-          <span
-            v-if="control.description"
-            class="checkbox-description"
-          >
-            {{ control.description }}
-          </span>
-        </div>
-      </template>
-
-      <!-- Select -->
-      <template v-else-if="control.type === 'select'">
+        <!-- Select -->
         <select
+          v-else-if="control.type === 'select'"
           :id="`field-${control.id}`"
           :value="getValue(control)"
           class="field-select"
@@ -138,11 +153,10 @@ const visibleControls = computed(() => {
             {{ option.label }}
           </option>
         </select>
-      </template>
 
-      <!-- Textarea -->
-      <template v-else-if="control.type === 'textarea'">
+        <!-- Textarea -->
         <textarea
+          v-else-if="control.type === 'textarea'"
           :id="`field-${control.id}`"
           :value="getValue(control) as string"
           :rows="control.props?.rows || 3"
@@ -150,48 +164,64 @@ const visibleControls = computed(() => {
           class="field-textarea"
           @input="(e) => updateValue(control.id, (e.target as HTMLTextAreaElement).value)"
         />
-      </template>
 
-      <!-- Description (if not checkbox) -->
-      <span
-        v-if="control.description && control.type !== 'checkbox'"
-        class="field-description"
-      >
-        {{ control.description }}
-      </span>
-    </div>
+        <!-- Description -->
+        <span
+          v-if="control.description"
+          class="field-description"
+        >
+          {{ control.description }}
+        </span>
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .form-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
 }
 
 .form-field {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+}
+
+.form-field.is-wide {
+  grid-column: 1 / -1;
 }
 
 .field-label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--color-neutral-700);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-500);
 }
 
 .field-input,
 .field-select,
 .field-textarea {
-  padding: var(--space-2) var(--space-3);
-  background: white;
-  border: 1px solid var(--color-neutral-300);
+  width: 100%;
+  padding: var(--space-2);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
-  color: var(--color-neutral-800);
   font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-900);
+  transition: border-color var(--transition-fast);
+}
+
+.field-input:hover,
+.field-select:hover,
+.field-textarea:hover {
+  border-color: var(--color-neutral-300);
 }
 
 .field-input:focus,
@@ -208,37 +238,54 @@ const visibleControls = computed(() => {
 
 .field-select {
   appearance: none;
+  cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right var(--space-2) center;
-  padding-right: var(--space-8);
+  padding-right: var(--space-6);
 }
 
 .field-textarea {
   resize: vertical;
-  min-height: 80px;
+  min-height: 72px;
+  line-height: 1.5;
 }
 
 .field-description {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
+  line-height: 1.4;
 }
 
-.checkbox-wrapper {
+/* Checkbox field — inline switch + label */
+.checkbox-field {
   display: flex;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-start;
   gap: var(--space-2);
+  cursor: pointer;
 }
 
 .field-checkbox {
+  margin-top: 2px;
   width: 16px;
   height: 16px;
   accent-color: var(--color-primary-500);
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+.checkbox-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-700);
 }
 
 .checkbox-description {
-  font-size: var(--text-xs);
+  font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
+  line-height: 1.4;
 }
 </style>
