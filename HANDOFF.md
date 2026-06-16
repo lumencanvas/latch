@@ -31,21 +31,20 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   compress node; promote a modern ungated text-gen default. (license now in the UI ✓;
   WebLLM catalog expanded to ~25 models ✓)
 - **Phase 5:** ✅ responsive overlay panels + reopen rails + mobile default-closed;
-  ConnectionMode.Loose + bigger handles; **tap/click-to-add nodes from the palette**
-  (the prior #1 mobile gap). STILL REMAINING: verify/enable explicit tap-to-connect
-  (connect-on-click); `p5-layout` polish (radial menu, 44px targets across all
-  controls); `p5-osc-bridge-first` (headless config); **Enable Audio** button.
-  Real-device touch feel still wants your testing.
+  ConnectionMode.Loose + bigger handles; **tap/click-to-add nodes** (cascade so
+  they don't stack); **Enable Audio button** (iOS/suspended recovery). STILL
+  REMAINING: verify/enable explicit tap-to-connect (connect-on-click); `p5-layout`
+  polish (radial menu, 44px targets across all controls); `p5-osc-bridge-first`
+  (headless config). Real-device touch feel still wants your testing.
 - **Phase 6 (flagship):** `p6-renderer` production wiring = the texture-bridge
   blocker (WebGPU `GPUTexture` → compositor's `WebGLTexture`); `p6-tsl-node`
   GLSL-parity + real shader-node wiring; `p6-postfx`.
 - **Latent bugs:** ~~`smooth` node no-op~~, ~~WebLLM concurrent-engine leak~~,
   ~~timing/debug/input/clasp per-node state leaks~~ all FIXED 2026-06-15. Remaining
   minor: WebLLM `disposeAll`-during-load can orphan an engine.
-- **UI/UX backlog (from the 2026-06-15 audit):** Enable-Audio button (top win,
-  backend built); remaining sub-44px targets; modal a11y (no dialog role/focus-trap);
-  token drift (no `--color-ai-*`). (Model license ✓, capability-badge a11y ✓, panel
-  reopen ✓, palette tap-to-add ✓.)
+- **UI/UX backlog (from the 2026-06-15 audit):** remaining sub-44px targets; modal
+  a11y (no dialog role/focus-trap); token drift (no `--color-ai-*`). (Model license
+  ✓, capability-badge a11y ✓, panel reopen ✓, palette tap-to-add ✓, Enable-Audio ✓.)
 - **Validation gaps (non-headless):** WebGPU streaming end-to-end, clasp realtime
   (2 peers), per-shader visual regression, real-device touch, dirty/deferred in-app.
 - **Meta:** all on `modernization`, not pushed/merged; ~52 npm advisories (don't
@@ -179,6 +178,15 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   ui store `pendingNodeAdd`+nonce; the editor projects + places; mobile closes the
   overlay palette after). Browser-validated at 390px (19→20 nodes, palette closes).
   Suite 1298 green.
+- **Audit fix + Enable Audio (2026-06-15).** Audit of tap-to-add found adds stacked
+  on the exact center (worst on mobile) and that the single-value request coalesced
+  same-tick calls → **cascade** the positions + **queue** the requests (3 synchronous
+  requests now place 3 distinct nodes). Then built the **Enable Audio button**: the
+  `AudioManager.needsUserGesture`/`unlock()` backend had no UI, so iOS/suspended
+  audio went silent with no recovery — added a warning-styled status-bar button
+  (reactive via `subscribe`, shown only when a gesture is needed, calls `unlock()`).
+  Browser-validated the binding (hidden by default, appears when needed). Suite
+  1298 green; typecheck + lint + build clean.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
