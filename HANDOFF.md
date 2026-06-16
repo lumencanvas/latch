@@ -43,7 +43,16 @@ worker `onerror` doesn't reject pending requests. A follow-up adversarial
 verification pass (also 2026-06-16) **overturned** the first pass's
 "ThreeShaderRenderer materials leak (HIGH)" as a false positive — the materials
 are disposed by `visual.ts`; only vestigial dead code remains. Added +3 GC
-regression tests (suite now 1301).
+regression tests (suite now 1301). **Pass 2** added security + async-robustness
+audits (in the audit doc): headline findings are that the Function/Expression
+"sandbox" is `new Function` + `with(ctx)` with full global reach (not sandboxed),
+flow import does zero validation (shared flows can carry code + auto-connect
+targets), and several per-frame async storms (imageLoader asset-fail, webcam
+getUserMedia, http-request flood, connect storms). UI fixes this session: moved
+the new-tab `+` to sit right after the flow tabs (`FlowTabs.vue`, `flex:0 1 auto`)
+and made the VLA node show its loading spinner while the model downloads (it only
+showed during inference before — `ai.ts` reports `loading` when
+`getModelInfo(...).state==='loading'`).
 
 **Connection-manager / CLASP UX review (2026-06-15).** The modal is a clean
 master–detail (280px list + editor), but the **editor pane is the "busy" part**:
