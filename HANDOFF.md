@@ -1142,3 +1142,20 @@ npm run typecheck
 
 Project: LATCH - Live Art Tool for Creative Humans
 Repository: lumencanvas/latch
+
+## Theme/UX audit (2026-06-16) — "doesn't follow the theme"
+The theme (tokens.css) is **monospace (JetBrains Mono) + teal `--color-primary-*`
++ brutalist hard-offset shadows (`Npx Npx 0`) + flat fills**. Mono is applied
+app-wide (good). Drift found: (1) **off-palette colors** — a purple `#A855F7`
+used ~19× as an "AI brand" accent (clashing with teal), plus stray indigos/
+oranges/wrong-teal `#00d4aa`, and many hardcoded neutrals/semantic hexes instead
+of tokens; (2) **soft blurred shadows** (`0 Npx Npx rgba`) instead of the
+brutalist offset in many components; (3) **gradients** where the theme is flat.
+- **DONE:** recolored the worst offender — the **AI purple → teal** across the AI
+  Model Manager, the header "LOAD LOCAL AI" button, and the sidebar "Load Models"
+  button (browser-verified teal). Also wired the dead `ConnectionSidebar` in as a
+  **"Links" sidebar tab** (Nodes/Assets/Links) so it's viewable — keep it.
+- **Remaining drift (follow-up):** purple still in `EQEditor.vue`,
+  `ConnectionSelect.vue`, `ControlPanelView.vue`; systemic soft-shadow → brutalist
+  cleanup; tokenize the many hardcoded neutral/semantic hexes; flatten gradients.
+  A token pass (and maybe a lint rule banning raw hex in components) would lock it in.
