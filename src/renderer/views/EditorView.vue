@@ -187,14 +187,21 @@ function onDrop(event: DragEvent) {
   endBatch(before, `Add ${definition.name} node`)
 }
 
-// Tap-to-add: place a node requested from the palette at the canvas center
+// Tap-to-add: place a node requested from the palette near the canvas center
 // (the palette is outside the Vue Flow tree, so it can't project coordinates).
+// Successive adds cascade diagonally so they don't stack on the exact center.
+let tapAddCascade = 0
 function addNodeAtCenter(nodeType: string) {
   const definition = nodesStore.getDefinition(nodeType)
   if (!definition) return
   const pane = document.querySelector('.vue-flow__pane') as HTMLElement | null
   const rect = pane?.getBoundingClientRect()
-  const position = project(rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 200, y: 200 })
+  const step = (tapAddCascade % 6) * 36
+  tapAddCascade++
+  const center = rect
+    ? { x: rect.width / 2 + step, y: rect.height / 2 + step }
+    : { x: 200 + step, y: 200 + step }
+  const position = project(center)
   const before = startBatch()
   flowsStore.addNode(nodeType, position, {
     label: definition.name,
@@ -207,11 +214,10 @@ function addNodeAtCenter(nodeType: string) {
 watch(
   () => uiStore.nodeAddNonce,
   () => {
-    const nodeType = uiStore.pendingNodeAdd
-    if (nodeType) {
-      addNodeAtCenter(nodeType)
-      uiStore.pendingNodeAdd = null
-    }
+    if (uiStore.pendingNodeAdds.length === 0) return
+    const types = [...uiStore.pendingNodeAdds]
+    uiStore.pendingNodeAdds = []
+    types.forEach(addNodeAtCenter)
   }
 )
 

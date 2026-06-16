@@ -18,23 +18,25 @@ describe('UI Store', () => {
     expect(store.theme).toBe('light')
   })
 
-  it('requestNodeAdd queues a node and bumps the nonce; closes the palette on mobile', () => {
+  it('requestNodeAdd queues node types and bumps the nonce; closes the palette on mobile', () => {
     const store = useUIStore()
-    expect(store.pendingNodeAdd).toBeNull()
+    expect(store.pendingNodeAdds).toEqual([])
 
     store.requestNodeAdd('constant')
-    expect(store.pendingNodeAdd).toBe('constant')
+    expect(store.pendingNodeAdds).toEqual(['constant'])
     expect(store.nodeAddNonce).toBe(1)
     expect(store.sidebarOpen).toBe(true) // desktop: palette stays open
 
+    // Multiple requests in one tick all queue (not coalesced).
     store.requestNodeAdd('add')
-    expect(store.pendingNodeAdd).toBe('add')
-    expect(store.nodeAddNonce).toBe(2) // nonce advances so the editor re-fires
+    store.requestNodeAdd('multiply')
+    expect(store.pendingNodeAdds).toEqual(['constant', 'add', 'multiply'])
+    expect(store.nodeAddNonce).toBe(3)
 
     // On mobile, adding closes the overlay palette so the new node is visible.
     store.setIsMobile(true)
     store.sidebarOpen = true
-    store.requestNodeAdd('multiply')
+    store.requestNodeAdd('subtract')
     expect(store.sidebarOpen).toBe(false)
   })
 
