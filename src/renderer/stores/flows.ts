@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia'
 import { nanoid } from 'nanoid'
 import type { Node, Edge, XYPosition } from '@vue-flow/core'
+import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+
+/**
+ * Resolve the Vue Flow node `type`: a node whose nodeType has a dedicated custom
+ * component renders with that component; everything else uses 'custom' (BaseNode).
+ */
+function resolveVueFlowType(nodeType: string): string {
+  return CUSTOM_NODE_TYPE_IDS.includes(nodeType) ? nodeType : 'custom'
+}
 
 /**
  * Port definition for subflow inputs/outputs
@@ -122,8 +131,24 @@ export const useFlowsStore = defineStore('flows', {
     },
 
     setActiveFlow(flowId: string) {
-      if (this.flows.some((f) => f.id === flowId)) {
+      const flow = this.flows.find((f) => f.id === flowId)
+      if (flow) {
         this.activeFlowId = flowId
+        this.healNodeTypes(flow)
+      }
+    },
+
+    /**
+     * Heal nodes whose custom-component Vue Flow `type` was lost — e.g. a node added
+     * before its component was registered, then persisted with type 'custom'/'default'.
+     * Without this they'd render as a generic BaseNode (no custom UI, no resize).
+     */
+    healNodeTypes(flow: FlowState) {
+      for (const node of flow.nodes) {
+        const nt = (node.data as Record<string, unknown> | undefined)?.nodeType as string | undefined
+        if (nt && CUSTOM_NODE_TYPE_IDS.includes(nt) && node.type !== nt) {
+          node.type = nt
+        }
       }
     },
 
@@ -168,16 +193,8 @@ export const useFlowsStore = defineStore('flows', {
     ): Node | null {
       if (!this.activeFlow) return null
 
-      // Determine Vue Flow node type
-      // Special nodes get their own type, others use 'custom' (BaseNode)
-      const specialNodeTypes = [
-        'main-output', 'trigger', 'xy-pad', 'monitor', 'oscilloscope', 'graph', 'equalizer',
-        'textbox', 'knob', 'keyboard', 'envelope-visual', 'parametric-eq', 'wavetable', 'step-sequencer',
-        'mediapipe-hand', 'mediapipe-face', 'mediapipe-pose', 'mediapipe-object',
-        'mediapipe-segmentation', 'mediapipe-gesture', 'mediapipe-audio',
-        'function', 'synth', 'dispatch', 'gamepad-visual', 'emulator',
-      ]
-      const vueFlowType = specialNodeTypes.includes(nodeType) ? nodeType : 'custom'
+      // Nodes with a dedicated custom component render with it; others use BaseNode.
+      const vueFlowType = resolveVueFlowType(nodeType)
 
       const node: Node = {
         id: nanoid(),

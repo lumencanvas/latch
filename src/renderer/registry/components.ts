@@ -89,3 +89,12 @@ export const nodeTypes = {
   // Custom UI nodes - Emulation
   emulator: markRaw(EmulatorNode),
 }
+
+/**
+ * Node type ids that have a dedicated custom component (everything except the
+ * generic BaseNode renderers). Single source of truth so the flows store's
+ * node-type decision can never drift from this map.
+ */
+export const CUSTOM_NODE_TYPE_IDS: string[] = Object.keys(nodeTypes).filter(
+  (k) => k !== 'default' && k !== 'custom',
+)
