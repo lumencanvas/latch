@@ -16,11 +16,29 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ## Current Status
 
-**Version**: 0.3.2
-**Build**: Passing (`npm run build:web`)
-**Tests**: 1298 passed | 11 todo (1309 total)
-**Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
+**Version**: 1.0.0 (released 2026-06-16 — the modernization branch shipped)
+**Build**: Passing (`npm run build:web`, 24s)
+**Tests**: 1301 passed | 11 todo (1312 total)
+**Branch**: `modernization` fast-forwarded into `main` for the v1.0.0 release.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
+
+**v1.0.0 release (2026-06-16).** First stable. `main` fast-forwarded to the
+modernization work (68 commits: transformers.js 4 / three r184 / clasp v4
+upgrades, in-browser WebLLM + VLA + RAG nodes, dirty-flag engine + golden harness,
+connection-manager + CLASP UI redesign, mobile/touch tier, and the resource-leak
+fixes from `docs/AUDIT_2026-06-16.md`). Tagged `v1.0.0` → triggers
+`.github/workflows/release.yml` (signed mac/win/linux builds + GitHub Release + web
+to GitHub Pages); Netlify auto-deploys `main`.
+
+**Release sweep (2026-06-16).** Pre-deploy verification all green: `typecheck`
+clean, `eslint src/renderer` clean, unit suite 1301 passing, `build:web` succeeds.
+Release/deploy is tag-triggered: pushing a `v*` tag runs `.github/workflows/release.yml`
+→ builds signed Electron apps (mac arm64/x64, win, linux), creates a public
+GitHub Release with artifacts, and deploys web to GitHub Pages; Netlify
+auto-deploys web from its production branch. Known non-blockers carried into the
+release: security findings (intentionally deferred by the maintainer — the code
+node is not sandboxed; flows import unvalidated) and the per-frame async storms
+documented in `docs/AUDIT_2026-06-16.md`.
 
 **Deep full audit (2026-06-16).** Three parallel read-only passes over the whole
 app + all 63 branch commits — design-system/theme, resource-leak/lifecycle, and
