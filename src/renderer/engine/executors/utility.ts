@@ -556,6 +556,21 @@ export function disposeAllUtilityState(): void {
   throttleState.clear()
 }
 
+/** Drop per-node state for nodes no longer in the graph (called on node removal). */
+export function gcUtilityState(validNodeIds: Set<string>): void {
+  const ids = new Set<string>([
+    ...changedPrevValue.keys(),
+    ...sampleHoldValue.keys(),
+    ...latchState.keys(),
+    ...counterState.keys(),
+    ...debounceState.keys(),
+    ...throttleState.keys(),
+  ])
+  for (const id of ids) {
+    if (!validNodeIds.has(id)) disposeUtilityNode(id)
+  }
+}
+
 // ============================================================================
 // Registry
 // ============================================================================

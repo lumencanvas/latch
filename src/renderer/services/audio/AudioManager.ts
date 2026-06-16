@@ -246,6 +246,9 @@ class AudioManagerService {
   async resume(): Promise<void> {
     const running = await tryResumeAudio(this.contextAdapter())
     this._needsUserGesture = !running
+    // Mirror unlock()/handleContextStateChange() so the "Enable Audio" affordance
+    // reflects the new gesture state instead of going stale after a resume.
+    this.notifyListeners()
   }
 
   /**

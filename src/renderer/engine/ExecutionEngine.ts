@@ -16,9 +16,10 @@ import {
   disposeAllWebLLMState,
   gcWebLLMState,
 } from './executors/index'
-import { disposeAllUtilityState } from './executors/utility'
+import { disposeAllUtilityState, gcUtilityState } from './executors/utility'
 import {
   disposeAllMessagingState,
+  gcMessagingState,
   endMessagingFrame,
 } from './executors/messaging'
 import { gcCodeState, disposeAllCodeNodes } from './executors/code'
@@ -26,6 +27,12 @@ import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
 import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
 import { disposeAllAINodes, gcAIState } from './executors/ai'
+// mqtt/websocket/http executors override the legacy connectivity ones for those
+// node types, so their per-node state (live WebSockets, fetch caches) needs its
+// own GC + teardown — gcConnectivityState only covers OSC/Serial/MIDI/BLE.
+import { disposeAllMqttNodes, gcMqttState } from './executors/mqtt'
+import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocket'
+import { disposeAllHttpNodes, gcHttpState } from './executors/http'
 
 /**
  * Largest delta (seconds) a single frame may report. Caps the time spike that
@@ -201,6 +208,11 @@ export class ExecutionEngine {
         gcClaspState(validNodeIds)
         gcRAGState(validNodeIds)
         gcWebLLMState(validNodeIds)
+        gcMqttState(validNodeIds)
+        gcWebSocketState(validNodeIds)
+        gcHttpState(validNodeIds)
+        gcUtilityState(validNodeIds)
+        gcMessagingState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
         // Drop dirty-mode / async tracking for removed nodes
@@ -823,6 +835,9 @@ export class ExecutionEngine {
     disposeAllRAGState()
     disposeAllWebLLMState()
     disposeAllUtilityState()
+    disposeAllMqttNodes()
+    disposeAllWebSocketNodes()
+    disposeAllHttpNodes()
   }
 
   /**

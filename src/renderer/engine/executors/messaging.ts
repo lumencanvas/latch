@@ -38,6 +38,17 @@ export function disposeAllMessagingState(): void {
   messageBus.clear()
 }
 
+/** Drop per-node state for nodes no longer in the graph (called on node removal). */
+export function gcMessagingState(validNodeIds: Set<string>): void {
+  const ids = new Set<string>([...sendPrevValues.keys(), ...activeReceiveNodes])
+  for (const [, processed] of receiveProcessed) {
+    for (const id of processed.keys()) ids.add(id)
+  }
+  for (const id of ids) {
+    if (!validNodeIds.has(id)) disposeMessagingNode(id)
+  }
+}
+
 /**
  * Called at the end of each frame to reset change tracking
  */

@@ -427,15 +427,27 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
   }
 }
 
+// Release a cached pipeline/model. Vision-language entries are a { processor,
+// model, vlm: true } wrapper with no top-level dispose(), so dispose the model
+// (and processor) directly — otherwise the GPU/WASM model leaks on unload.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function disposePipe(pipe: any): void {
+  if (!pipe) return
+  if (pipe.vlm) {
+    if (typeof pipe.model?.dispose === 'function') pipe.model.dispose()
+    if (typeof pipe.processor?.dispose === 'function') pipe.processor.dispose()
+  } else if (typeof pipe.dispose === 'function') {
+    pipe.dispose()
+  }
+}
+
 // Handle model unload
 function handleUnload(msg: UnloadModelMessage): void {
   const key = getCacheKey(msg.task, msg.model)
   const pipe = pipelines.get(key)
 
   if (pipe) {
-    if (typeof pipe.dispose === 'function') {
-      pipe.dispose()
-    }
+    disposePipe(pipe)
     pipelines.delete(key)
   }
 
@@ -452,9 +464,7 @@ function handleCheck(msg: CheckModelMessage): void {
 // Handle dispose all
 function handleDispose(msg: DisposeMessage): void {
   for (const [, pipe] of pipelines) {
-    if (pipe && typeof pipe.dispose === 'function') {
-      pipe.dispose()
-    }
+    disposePipe(pipe)
   }
   pipelines.clear()
   respond({ type: 'result', id: msg.id, success: true })
@@ -469,9 +479,7 @@ function handleSetCache(msg: SetCacheMessage): void {
 async function handleClearCache(msg: ClearCacheMessage): Promise<void> {
   // Dispose all loaded models first
   for (const [, pipe] of pipelines) {
-    if (pipe && typeof pipe.dispose === 'function') {
-      pipe.dispose()
-    }
+    disposePipe(pipe)
   }
   pipelines.clear()
 
