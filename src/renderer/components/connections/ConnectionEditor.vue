@@ -335,12 +335,19 @@ async function handleTestConnection() {
   border-color: var(--color-primary-500);
 }
 
+/* Pinned to the bottom of the scrolling editor pane so Create/Save/Test are
+   always reachable without scrolling past the form. The negative margins bleed
+   it to the pane edges (cancelling the editor-area's space-4 padding). */
 .editor-actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-4));
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-2);
-  padding-top: var(--space-4);
+  margin: var(--space-2) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-neutral-0);
   border-top: 1px solid var(--color-neutral-200);
 }
 

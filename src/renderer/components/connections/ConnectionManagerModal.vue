@@ -206,8 +206,8 @@ function handleCreate() {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4);
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  border-bottom: 2px solid #4f46e5;
+  background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+  border-bottom: 2px solid var(--color-primary-700);
 }
 
 .header-left {
@@ -319,7 +319,7 @@ function handleCreate() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  background: #059669;
+  background: var(--color-success);
   color: white;
   padding: var(--space-2) var(--space-4);
   font-size: var(--font-size-sm);
