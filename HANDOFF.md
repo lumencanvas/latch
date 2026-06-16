@@ -16,11 +16,20 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ## Current Status
 
-**Version**: 1.0.0 (released 2026-06-16 — the modernization branch shipped)
+**Version**: 1.0.1 (2026-06-16 — fixes macOS signing + the UI version string)
 **Build**: Passing (`npm run build:web`, 24s)
 **Tests**: 1301 passed | 11 todo (1312 total)
 **Branch**: `modernization` fast-forwarded into `main` for the v1.0.0 release.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
+
+**v1.0.1 release (2026-06-16).** Patch over v1.0.0. The v1.0.0 desktop apps were
+unsigned/un-notarized (the release workflow never imported the Developer ID cert —
+notarization failed with `TeamIdentifier=not set`, or was skipped entirely when
+`APPLE_PASSWORD` was an empty/misnamed secret) and the UI showed a hardcoded
+`v0.1.0`. Fixes: corrected the `Prod` Apple secrets (`APPLE_PASSWORD`/`APPLE_ID`),
+added a macOS keychain cert-import step to `release.yml`, and sourced the
+displayed version from `package.json` (`src/renderer/version.ts`). Tagged
+`v1.0.1`.
 
 **v1.0.0 release (2026-06-16).** First stable. `main` fast-forwarded to the
 modernization work (68 commits: transformers.js 4 / three r184 / clasp v4
