@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   smoothExecutor,
   gateExecutor,
@@ -10,8 +10,14 @@ import {
   disposeAllInputState,
   disposeAllTimingState,
   disposeAllDebugState,
+  gcMqttState,
+  gcWebSocketState,
+  gcHttpState,
 } from '@/engine/executors'
 import { gcClaspState } from '@/engine/executors/clasp'
+import { changedExecutor, gcUtilityState, disposeAllUtilityState } from '@/engine/executors/utility'
+import { sendExecutor, gcMessagingState, disposeAllMessagingState } from '@/engine/executors/messaging'
+import { messageBus } from '@/services/messaging/MessageBus'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 /**
@@ -90,5 +96,56 @@ describe('gcDebugState', () => {
 describe('gcClaspState', () => {
   it('is callable and does not throw when there is no state', () => {
     expect(() => gcClaspState(new Set(['x']))).not.toThrow()
+  })
+})
+
+describe('gcUtilityState', () => {
+  beforeEach(() => disposeAllUtilityState())
+
+  it('drops change-tracking state for removed nodes but keeps valid ones', () => {
+    // Seed prev-value for both nodes (first call always reports changed).
+    changedExecutor(ctx('keep', { value: 5 }))
+    changedExecutor(ctx('drop', { value: 5 }))
+    // Same value again → unchanged (state retained).
+    expect((changedExecutor(ctx('keep', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(0)
+    expect((changedExecutor(ctx('drop', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(0)
+
+    gcUtilityState(new Set(['keep'])) // 'drop' removed
+
+    // 'drop' lost its prev → the same value now reads as changed again.
+    expect((changedExecutor(ctx('drop', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(1)
+    // 'keep' retained its prev → still unchanged.
+    expect((changedExecutor(ctx('keep', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(0)
+  })
+})
+
+describe('gcMessagingState', () => {
+  beforeEach(() => disposeAllMessagingState())
+
+  it('drops send change-detection state for removed nodes', () => {
+    const sendSpy = vi.spyOn(messageBus, 'send')
+    const send = (value: unknown) =>
+      sendExecutor(ctx('drop', { value }, { channel: 'c', sendOnChange: true }))
+
+    send(1) // new value → sends
+    send(1) // unchanged → no send
+    expect(sendSpy).toHaveBeenCalledTimes(1)
+
+    gcMessagingState(new Set([])) // 'drop' removed → prevValue cleared
+
+    send(1) // prev gone → sends again
+    expect(sendSpy).toHaveBeenCalledTimes(2)
+    sendSpy.mockRestore()
+  })
+})
+
+describe('connection executor GC (mqtt / websocket / http)', () => {
+  // These executors override the legacy connectivity ones for their node types,
+  // so their GC must be wired separately into the engine. Pin that the functions
+  // exist on the index the engine imports and tolerate empty state.
+  it('gc functions are callable and do not throw with no state', () => {
+    expect(() => gcMqttState(new Set(['x']))).not.toThrow()
+    expect(() => gcWebSocketState(new Set(['x']))).not.toThrow()
+    expect(() => gcHttpState(new Set(['x']))).not.toThrow()
   })
 })

@@ -37,10 +37,13 @@ leaked GPU/WASM on unload — the `{processor,model,vlm:true}` wrapper has no
 unload/dispose/clear-cache. (4) `AudioManager.resume()` now calls
 `notifyListeners()` so the "Enable Audio" UI doesn't go stale. **Top outstanding
 (see audit doc):** BleAdapter notification listener never removed (HIGH),
-ThreeShaderRenderer compiled materials never disposed (HIGH), `--radius-xs` +
-numbered error/success/warning color tokens undefined across the app (decide
-intent / add scales), subflow/TextureBridge cleanup gaps, AIInference worker
-`onerror` doesn't reject pending requests.
+`--radius-xs` + numbered error/success/warning color tokens undefined across the
+app (decide intent / add scales), subflow/TextureBridge cleanup gaps, AIInference
+worker `onerror` doesn't reject pending requests. A follow-up adversarial
+verification pass (also 2026-06-16) **overturned** the first pass's
+"ThreeShaderRenderer materials leak (HIGH)" as a false positive — the materials
+are disposed by `visual.ts`; only vestigial dead code remains. Added +3 GC
+regression tests (suite now 1301).
 
 **Connection-manager / CLASP UX review (2026-06-15).** The modal is a clean
 master–detail (280px list + editor), but the **editor pane is the "busy" part**:
