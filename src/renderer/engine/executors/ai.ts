@@ -607,8 +607,13 @@ export const vlaExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   if (!aiInference.isModelLoaded('image-text-to-text', modelId)) {
-    emit(getCached(`${ctx.nodeId}:action`, ''), false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager → Vision-Language (VLA) → Load.')
+    // While the model is downloading/loading (e.g. from the Model Manager), report
+    // `loading` so the node shows its spinner instead of only a "not loaded" error.
+    const modelLoading = aiInference.getModelInfo('image-text-to-text', modelId)?.state === 'loading'
+    emit(getCached(`${ctx.nodeId}:action`, ''), modelLoading)
+    if (!modelLoading) {
+      outputs.set('_error', 'Model not loaded. Open AI Model Manager → Vision-Language (VLA) → Load.')
+    }
     return outputs
   }
 

@@ -348,7 +348,10 @@ function handleRenameKeydown(event: KeyboardEvent) {
   align-items: center;
   gap: 2px;
   overflow-x: auto;
-  flex: 1;
+  /* Size to the tabs so the new-tab button sits right after them, not at the far
+     end of the row; still shrinks + scrolls when the tabs overflow. */
+  flex: 0 1 auto;
+  min-width: 0;
   scrollbar-width: none;
 }
 
