@@ -469,7 +469,7 @@ const isMacElectron = computed(() => {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3);
-  background: var(--color-primary-500);
+  background: #A855F7;
   border: none;
   border-radius: var(--radius-sm);
   color: white;
@@ -480,11 +480,11 @@ const isMacElectron = computed(() => {
 }
 
 .ai-load-btn:hover {
-  background: var(--color-primary-600);
+  background: #9333EA;
 }
 
 .ai-btn-loaded {
-  color: var(--color-primary-500);
+  color: #A855F7;
 }
 
 .ai-btn-loaded:hover {
@@ -497,12 +497,12 @@ const isMacElectron = computed(() => {
 }
 
 .connections-btn:hover {
-  color: var(--color-primary-500);
+  color: #6366f1;
   background: var(--color-neutral-700);
 }
 
 .connections-btn.has-connections {
-  color: var(--color-primary-500);
+  color: #6366f1;
 }
 
 .github-btn {

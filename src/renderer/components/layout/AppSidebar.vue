@@ -699,7 +699,7 @@ function onSelectConnection(connectionId: string) {
 }
 
 .ai-icon {
-  background: var(--color-primary-500);
+  background: #A855F7;
   color: white;
 }
 
@@ -709,7 +709,7 @@ function onSelectConnection(connectionId: string) {
   gap: var(--space-1);
   padding: 4px var(--space-2);
   margin-right: var(--space-2);
-  background: var(--color-primary-500);
+  background: #A855F7;
   border: none;
   border-radius: var(--radius-xs);
   color: white;
@@ -721,7 +721,7 @@ function onSelectConnection(connectionId: string) {
 }
 
 .ai-load-btn:hover {
-  background: var(--color-primary-600);
+  background: #9333EA;
 }
 
 .category-expand {

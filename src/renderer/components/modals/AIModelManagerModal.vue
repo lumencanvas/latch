@@ -282,7 +282,7 @@ function supportsWebGPU(taskId: string): boolean {
 // Get category badge color
 function getCategoryColor(category: string): string {
   switch (category) {
-    case 'text': return 'var(--color-primary-500)'
+    case 'text': return '#A855F7'
     case 'vision': return '#3B82F6'
     case 'audio': return '#22C55E'
     case 'multimodal': return '#F59E0B'
@@ -400,7 +400,7 @@ function getCategoryColor(category: string): string {
                   </h3>
                   <span
                     class="category-badge"
-                    style="background: var(--color-primary-500)"
+                    style="background: #a855f7"
                   >webgpu</span>
                   <div class="model-status">
                     <CheckCircle2
@@ -704,8 +704,8 @@ function getCategoryColor(category: string): string {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-4);
-  background: linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-primary-500) 100%);
-  border-bottom: 2px solid var(--color-primary-700);
+  background: linear-gradient(135deg, #7C3AED 0%, #A855F7 100%);
+  border-bottom: 2px solid #6D28D9;
 }
 
 .header-left {
@@ -866,7 +866,7 @@ function getCategoryColor(category: string): string {
 }
 
 .toggle-label input:checked + .toggle-switch {
-  background: var(--color-primary-500);
+  background: #A855F7;
 }
 
 .toggle-label input:checked + .toggle-switch::after {
@@ -992,7 +992,7 @@ function getCategoryColor(category: string): string {
 }
 
 .status-icon.loading {
-  color: var(--color-primary-500);
+  color: #A855F7;
   animation: spin 1s linear infinite;
 }
 
@@ -1109,7 +1109,7 @@ function getCategoryColor(category: string): string {
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+  background: linear-gradient(135deg, #A855F7 0%, #7C3AED 100%);
   color: white;
   font-size: 10px;
   font-weight: var(--font-weight-medium);
@@ -1134,14 +1134,14 @@ function getCategoryColor(category: string): string {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+  background: linear-gradient(90deg, #A855F7 0%, #7C3AED 100%);
   transition: width 0.3s ease;
 }
 
 .progress-text {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-medium);
-  color: var(--color-primary-500);
+  color: #A855F7;
   min-width: 36px;
   text-align: right;
 }
@@ -1173,12 +1173,12 @@ function getCategoryColor(category: string): string {
 }
 
 .model-actions .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+  background: linear-gradient(135deg, #A855F7 0%, #7C3AED 100%);
   color: white;
 }
 
 .model-actions .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-primary-700) 100%);
+  background: linear-gradient(135deg, #9333EA 0%, #6D28D9 100%);
 }
 
 .model-actions .btn-primary:disabled {
@@ -1210,7 +1210,7 @@ function getCategoryColor(category: string): string {
 }
 
 .footer-hint a {
-  color: var(--color-primary-500);
+  color: #A855F7;
   text-decoration: none;
 }
 
