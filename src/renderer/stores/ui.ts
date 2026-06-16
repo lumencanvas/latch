@@ -114,6 +114,11 @@ interface UIState {
   // Responsive: true on phone/tablet-class viewports (panels become overlays)
   isMobile: boolean
 
+  // Tap-to-add: the palette requests a node; the editor places it at the canvas
+  // center (the palette is outside the Vue Flow tree, so it can't project itself).
+  pendingNodeAdd: string | null
+  nodeAddNonce: number
+
   // Shader editor modal
   shaderEditorOpen: boolean
   shaderEditorNodeId: string | null
@@ -167,6 +172,10 @@ export const useUIStore = defineStore('ui', {
 
     // Responsive (set by App.vue from a matchMedia listener)
     isMobile: false,
+
+    // Tap-to-add request (consumed by the editor view)
+    pendingNodeAdd: null,
+    nodeAddNonce: 0,
 
     // Shader editor modal
     shaderEditorOpen: false,
@@ -231,6 +240,15 @@ export const useUIStore = defineStore('ui', {
         this.propertiesPanelOpen = false
       }
       this.isMobile = value
+    },
+
+    // Tap-to-add: ask the editor to drop a node at the canvas center. Works on
+    // touch (where the palette's HTML5 drag-and-drop doesn't) and as click-to-add
+    // on desktop. On mobile, close the overlay palette so the new node is visible.
+    requestNodeAdd(nodeType: string) {
+      this.pendingNodeAdd = nodeType
+      this.nodeAddNonce++
+      if (this.isMobile) this.sidebarOpen = false
     },
 
     // Left sidebar

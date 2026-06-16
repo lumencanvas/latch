@@ -187,6 +187,34 @@ function onDrop(event: DragEvent) {
   endBatch(before, `Add ${definition.name} node`)
 }
 
+// Tap-to-add: place a node requested from the palette at the canvas center
+// (the palette is outside the Vue Flow tree, so it can't project coordinates).
+function addNodeAtCenter(nodeType: string) {
+  const definition = nodesStore.getDefinition(nodeType)
+  if (!definition) return
+  const pane = document.querySelector('.vue-flow__pane') as HTMLElement | null
+  const rect = pane?.getBoundingClientRect()
+  const position = project(rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 200, y: 200 })
+  const before = startBatch()
+  flowsStore.addNode(nodeType, position, {
+    label: definition.name,
+    nodeType,
+    definition,
+  })
+  endBatch(before, `Add ${definition.name} node`)
+}
+
+watch(
+  () => uiStore.nodeAddNonce,
+  () => {
+    const nodeType = uiStore.pendingNodeAdd
+    if (nodeType) {
+      addNodeAtCenter(nodeType)
+      uiStore.pendingNodeAdd = null
+    }
+  }
+)
+
 // Sync zoom with UI store
 watch(
   () => uiStore.zoom,

@@ -320,7 +320,9 @@ function openAIModelManager() {
                   :key="node.id"
                   class="node-item"
                   draggable="true"
+                  :title="`Drag onto the canvas, or tap to add`"
                   @dragstart="(e) => onDragStart(e, node.id)"
+                  @click="uiStore.requestNodeAdd(node.id)"
                 >
                   <span
                     class="node-item-color"
