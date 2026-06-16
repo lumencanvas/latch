@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, ref } from 'vue'
+import { computed, watch, ref, onUnmounted } from 'vue'
 import { ChevronDown, Plus, Pencil } from 'lucide-vue-next'
 import { useConnectionsStore } from '@/stores/connections'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
@@ -74,6 +74,12 @@ watch(isOpen, (open) => {
   } else {
     document.removeEventListener('click', handleClickOutside)
   }
+})
+
+// Safety net: if the component unmounts while the dropdown is open, the watcher
+// never fires its close branch — remove the document listener so it can't dangle.
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 

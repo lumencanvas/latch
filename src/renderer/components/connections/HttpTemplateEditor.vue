@@ -172,8 +172,13 @@ async function handleTest() {
   testing.value = true
   testResult.value = null
 
+  let adapter: HttpAdapterImpl | null = null
+  let connection: HttpConnectionConfig | undefined
+  let originalTemplates: HttpEndpointTemplate[] | undefined
+  let templatesSwapped = false
+
   try {
-    const connection = connectionsStore.connections.find(
+    connection = connectionsStore.connections.find(
       (c) => c.id === props.connectionId
     ) as HttpConnectionConfig | undefined
 
@@ -181,10 +186,8 @@ async function handleTest() {
       throw new Error('Connection not found')
     }
 
-    // Create a temporary adapter
-    const adapter = new HttpAdapterImpl(connection)
-
-    // First connect
+    // Create a temporary adapter and connect
+    adapter = new HttpAdapterImpl(connection)
     await adapter.connect()
 
     // Convert headers array to object
@@ -206,9 +209,10 @@ async function handleTest() {
       parameters: form.value.parameters,
     }
 
-    // Temporarily add the template to the config
-    const originalTemplates = connection.templates
+    // Temporarily swap in the test template (restored in finally).
+    originalTemplates = connection.templates
     connection.templates = [tempTemplate]
+    templatesSwapped = true
 
     // Convert test params to proper types
     const params: Record<string, unknown> = {}
@@ -238,11 +242,6 @@ async function handleTest() {
       status: 200,
       body: result,
     }
-
-    // Restore original templates
-    connection.templates = originalTemplates
-
-    adapter.dispose()
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)
     testResult.value = {
@@ -251,6 +250,13 @@ async function handleTest() {
       error,
     }
   } finally {
+    // Always restore the connection's real templates + release the temp adapter,
+    // even if connect/execute threw — otherwise a failed test (common) leaves the
+    // connection's saved templates clobbered with the temp "Test" template.
+    if (templatesSwapped && connection) {
+      connection.templates = originalTemplates
+    }
+    adapter?.dispose()
     testing.value = false
   }
 }
