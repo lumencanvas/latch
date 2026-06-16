@@ -18,7 +18,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 **Version**: 0.3.2
 **Build**: Passing (`npm run build:web`)
-**Tests**: 1297 passed | 11 todo (1308 total)
+**Tests**: 1298 passed | 11 todo (1309 total)
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
@@ -30,13 +30,12 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
 - **Phase 4:** Vector Memory corpus persistence across reload; optional LLMLingua-2
   compress node; promote a modern ungated text-gen default. (license now in the UI ✓;
   WebLLM catalog expanded to ~25 models ✓)
-- **Phase 5:** ✅ responsive overlay panels + reopen rails + mobile default-closed
-  (the "panels eat space / no reopen" bug); ConnectionMode.Loose + bigger handles.
-  STILL REMAINING (key): **node palette is drag-only — no tap-to-add, so you can
-  open the palette on touch but can't place a node** (highest mobile gap now);
-  full tap-to-connect verify (connect-on-click flow); `p5-layout` polish (radial
-  menu, 44px targets across all controls); `p5-osc-bridge-first` (headless config);
-  **Enable Audio** button. Real-device touch feel still wants your testing.
+- **Phase 5:** ✅ responsive overlay panels + reopen rails + mobile default-closed;
+  ConnectionMode.Loose + bigger handles; **tap/click-to-add nodes from the palette**
+  (the prior #1 mobile gap). STILL REMAINING: verify/enable explicit tap-to-connect
+  (connect-on-click); `p5-layout` polish (radial menu, 44px targets across all
+  controls); `p5-osc-bridge-first` (headless config); **Enable Audio** button.
+  Real-device touch feel still wants your testing.
 - **Phase 6 (flagship):** `p6-renderer` production wiring = the texture-bridge
   blocker (WebGPU `GPUTexture` → compositor's `WebGLTexture`); `p6-tsl-node`
   GLSL-parity + real shader-node wiring; `p6-postfx`.
@@ -44,9 +43,9 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   ~~timing/debug/input/clasp per-node state leaks~~ all FIXED 2026-06-15. Remaining
   minor: WebLLM `disposeAll`-during-load can orphan an engine.
 - **UI/UX backlog (from the 2026-06-15 audit):** Enable-Audio button (top win,
-  backend built); **palette tap-to-add** (drag-only, blocks placing nodes on touch);
-  remaining sub-44px targets; modal a11y (no dialog role/focus-trap); token drift
-  (no `--color-ai-*`). (Model license ✓, capability-badge a11y ✓, panel reopen ✓.)
+  backend built); remaining sub-44px targets; modal a11y (no dialog role/focus-trap);
+  token drift (no `--color-ai-*`). (Model license ✓, capability-badge a11y ✓, panel
+  reopen ✓, palette tap-to-add ✓.)
 - **Validation gaps (non-headless):** WebGPU streaming end-to-end, clasp realtime
   (2 peers), per-shader visual regression, real-device touch, dirty/deferred in-app.
 - **Meta:** all on `modernization`, not pushed/merged; ~52 npm advisories (don't
@@ -169,6 +168,17 @@ Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
   renders it as a loadable 'Vision-Language (VLA)' card automatically.) Optional
   follow-ups: structured/JSON action parsing + a discrete-action helper; pair with
   a Webcam Snapshot for live VLA on video.
+- **Audit + tap-to-add nodes (2026-06-15).** Audited the VLA node: gc is handled
+  (no leak); documented one pre-existing, cross-cutting issue — `isNodeDisposed`
+  (ai.ts) is exported but never called, so async AI-node completions can resurrect
+  a removed node's cache (minor; cleaned on next GC/stop). NOT cleanly fixable —
+  `disposedNodes` conflates removed-vs-stopped and isn't cleared on restart, so a
+  naive guard would break a stop→start cycle (details in AUDIT). Then closed the
+  **#1 mobile gap**: the node palette was drag-only (no touch), so **tap/click a
+  palette item now adds the node at the canvas center** (palette requests via the
+  ui store `pendingNodeAdd`+nonce; the editor projects + places; mobile closes the
+  overlay palette after). Browser-validated at 390px (19→20 nodes, palette closes).
+  Suite 1298 green.
 
 ## Recent Session (2026-06-14) - Modernization (Phases 0-4, branch `modernization`)
 
