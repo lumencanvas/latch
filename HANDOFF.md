@@ -60,6 +60,18 @@ HttpTemplateEditor).
     backstop), so creating one makes 0 network connections until the user opts in.
     Browser-verified (toggle off by default, 0 localhost WS on create). Existing
     connections keep their saved value.
+  - **Forward audit of the rest of the subsystem (2026-06-16):** (5) **HttpTemplate
+    Editor.handleTest** swapped the test template into the live `connection.templates`
+    and only restored it / disposed the temp adapter on success — a failed test (the
+    common case) clobbered the connection's saved templates + leaked the adapter.
+    Moved restore + dispose into `finally`. (6) **TemplateSelect** leaked a `document`
+    click listener if unmounted while its dropdown was open — added `onUnmounted`
+    cleanup. Everything else (ConnectionStatusBadge, ProtocolSelector/FormFields,
+    ConnectionSelect, NodeConnectionStatus, ConnectionList) is clean — no auto-network,
+    no polling, no leaks.
+  - **Dead code (surfaced, NOT removed):** `ConnectionSidebar.vue` (327 lines) is
+    imported by 0 files (the modal uses `ConnectionList` directly). Likely a
+    superseded alternative UI — flag for the maintainer to remove or wire up.
   - **Still optional:** real section grouping for the other protocols; the broader
     subsystem (ProtocolSelector, TemplateSelect, the 947-line HttpTemplateEditor) is
     untouched and lower-priority.
