@@ -22,6 +22,22 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 **Branch**: `modernization` (in progress, not merged/pushed) — see the session below.
 Durable project rules now live in `CLAUDE.md`; this file is the change log.
 
+**Connection-manager / CLASP UX review (2026-06-15).** The modal is a clean
+master–detail (280px list + editor), but the **editor pane is the "busy" part**:
+for CLASP it stacks, flat with equal weight, badge → Name → `ClaspInfo` (a protocol
+paragraph + doc link + MIDI/OSC/Serial→Bridge callout) → `ClaspDiscovery` (Public
+Relay row + Local-Servers/Scan) → `ProtocolFormFields` (URL/host) → actions. Measured:
+**1311px tall in a 740px pane (1.8× overflow), 12 controls, 6 sections**, and the
+primary action (Create/Save) is buried at the very bottom. Root causes: (1) education
+dominates config (ClaspInfo shown inline every create/edit), (2) three competing
+"set the server" paths shown at once (relay / scan / manual), (3) no hierarchy
+(same-weight boxed sections), (4) buried primary action, (5) hardcoded purple
+gradient + ad-hoc tinted boxes (token drift). **Recommended fixes (ranked):**
+collapse `ClaspInfo` into a disclosure/popover; one clear primary path + Advanced;
+**sticky action footer**; group with real section hierarchy; don't re-educate on
+edit; token cleanup. Subsystem: 16 components, ~4900 lines (incl. a 947-line
+HttpTemplateEditor). Not yet implemented — pending direction.
+
 ### Remaining work snapshot (2026-06-15)
 Source of truth: `docs/plans/MODERNIZATION_PLAN_2026.md` (checkboxes). In short:
 - **Phase 1:** wire `prefersReducedMotion()` into animated nodes.
