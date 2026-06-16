@@ -1,12 +1,31 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { Volume2 } from 'lucide-vue-next'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
+import { audioManager } from '@/services/audio/AudioManager'
 
 const runtimeStore = useRuntimeStore()
 const flowsStore = useFlowsStore()
 const uiStore = useUIStore()
+
+// Audio needs a user gesture to (re)start when suspended/interrupted (iOS, tab
+// inactivity, autoplay policy). Surface a button bound to audioManager.unlock().
+const audioNeedsGesture = ref(audioManager.getState().needsUserGesture)
+let audioUnsub: (() => void) | null = null
+onMounted(() => {
+  audioNeedsGesture.value = audioManager.getState().needsUserGesture
+  audioUnsub = audioManager.subscribe(() => {
+    audioNeedsGesture.value = audioManager.getState().needsUserGesture
+  })
+})
+onUnmounted(() => audioUnsub?.())
+
+async function enableAudio() {
+  await audioManager.unlock()
+  audioNeedsGesture.value = audioManager.getState().needsUserGesture
+}
 
 const statusText = computed(() => {
   switch (runtimeStore.status) {
@@ -57,6 +76,16 @@ const isElectron = computed(() => {
       >
         <span class="status-value error">{{ errorCount }}</span> errors
       </span>
+
+      <button
+        v-if="audioNeedsGesture"
+        class="enable-audio-btn"
+        title="Audio is suspended (iOS / inactivity / autoplay). Tap to enable sound."
+        @click="enableAudio"
+      >
+        <Volume2 :size="13" />
+        <span>Enable Audio</span>
+      </button>
     </div>
 
     <div class="status-right">
@@ -91,6 +120,33 @@ const isElectron = computed(() => {
   font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   flex-shrink: 0;
+}
+
+/* Prominent so a muted-audio state (esp. on iOS) is noticed and fixable in one tap. */
+.enable-audio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 2px var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-warning-ink, #1a1300);
+  background: var(--color-warning);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.enable-audio-btn:hover {
+  filter: brightness(1.05);
+}
+
+@media (pointer: coarse) {
+  .enable-audio-btn {
+    min-height: 32px;
+    padding: 4px var(--space-3);
+  }
 }
 
 .status-left,
