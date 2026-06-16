@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Trash2, Image, Video, Music, File } from 'lucide-vue-next'
+import { Trash2, Image, Video, Music, File, Gamepad2 } from 'lucide-vue-next'
 import type { Asset } from '@/services/database'
 import { useAssetsStore } from '@/stores/assets'
 
@@ -58,6 +58,7 @@ const typeIcon = {
   image: Image,
   video: Video,
   audio: Music,
+  rom: Gamepad2,
 }
 </script>
 

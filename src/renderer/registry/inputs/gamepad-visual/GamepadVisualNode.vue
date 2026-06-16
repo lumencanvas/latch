@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import { Gamepad2 } from 'lucide-vue-next'
@@ -30,6 +30,12 @@ const interactiveState = computed<ControllerState>({
 function typeColor(type: string): string {
   return dataTypeMeta[type as keyof typeof dataTypeMeta]?.color ?? 'var(--color-neutral-400)'
 }
+
+const hoveredPort = ref<string | null>(null)
+const outputPorts = [
+  { id: 'state', label: 'State', type: 'data' },
+  { id: 'connected', label: 'Connected', type: 'boolean' },
+]
 </script>
 
 <template>
@@ -39,7 +45,11 @@ function typeColor(type: string): string {
   >
     <!-- input handle (left) -->
     <div class="handles-column handles-left">
-      <div class="handle-slot">
+      <div
+        class="handle-slot"
+        @mouseenter="hoveredPort = 'in-state'"
+        @mouseleave="hoveredPort = null"
+      >
         <Handle
           id="state"
           type="target"
@@ -47,19 +57,37 @@ function typeColor(type: string): string {
           :style="{ background: typeColor('data') }"
           class="port-handle"
         />
+        <div
+          class="port-label port-label-left"
+          :class="{ visible: hoveredPort === 'in-state' || props.selected }"
+        >
+          State
+        </div>
       </div>
     </div>
 
-    <!-- output handle (right) -->
+    <!-- output handles (right) -->
     <div class="handles-column handles-right">
-      <div class="handle-slot">
+      <div
+        v-for="out in outputPorts"
+        :key="out.id"
+        class="handle-slot"
+        @mouseenter="hoveredPort = out.id"
+        @mouseleave="hoveredPort = null"
+      >
         <Handle
-          id="state"
+          :id="out.id"
           type="source"
           :position="Position.Right"
-          :style="{ background: typeColor('data') }"
+          :style="{ background: typeColor(out.type) }"
           class="port-handle"
         />
+        <div
+          class="port-label port-label-right"
+          :class="{ visible: hoveredPort === out.id || props.selected }"
+        >
+          {{ out.label }}
+        </div>
       </div>
     </div>
 
@@ -119,6 +147,27 @@ function typeColor(type: string): string {
   display: flex;
   align-items: center;
 }
+.port-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+  background: var(--color-neutral-0);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--color-neutral-200);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 1000;
+}
+.port-label.visible { opacity: 1; }
+.port-label-left { right: 14px; }
+.port-label-right { left: 14px; }
 .node-header {
   display: flex;
   align-items: center;

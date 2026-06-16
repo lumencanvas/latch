@@ -89,6 +89,7 @@ export const useAssetsStore = defineStore('assets', {
         image: 0,
         video: 0,
         audio: 0,
+        rom: 0,
       }
 
       for (const asset of state.assets) {

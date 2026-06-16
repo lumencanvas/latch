@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Search, Upload, Image, Video, Music, Layers } from 'lucide-vue-next'
+import { Search, Upload, Image, Video, Music, Layers, Gamepad2 } from 'lucide-vue-next'
 import { useAssetsStore, type AssetFilter } from '@/stores/assets'
 import AssetCard from './AssetCard.vue'
 import type { Asset } from '@/services/database'
@@ -15,6 +15,7 @@ const filterTabs: { id: AssetFilter; label: string; icon: typeof Layers }[] = [
   { id: 'image', label: 'Images', icon: Image },
   { id: 'video', label: 'Video', icon: Video },
   { id: 'audio', label: 'Audio', icon: Music },
+  { id: 'rom', label: 'ROMs', icon: Gamepad2 },
 ]
 
 // Load assets on mount
@@ -122,7 +123,7 @@ function formatSize(bytes: number): string {
         ref="fileInput"
         type="file"
         multiple
-        accept="image/*,video/*,audio/*"
+        accept="image/*,video/*,audio/*,.nes,.fds,.sfc,.smc,.swc,.fig,.n64,.z64,.v64,.gb,.sgb,.gbc,.gba,.md,.gen,.smd,.sms,.gg,.pce,.a26,.bin,.iso,.cue,.pbp,.chd,.zip"
         class="file-input"
         @change="onFileSelect"
       >

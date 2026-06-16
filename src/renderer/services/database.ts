@@ -35,7 +35,7 @@ export interface AppSettings {
 /**
  * Asset types supported
  */
-export type AssetType = 'image' | 'video' | 'audio'
+export type AssetType = 'image' | 'video' | 'audio' | 'rom'
 
 /**
  * Asset schema for media library

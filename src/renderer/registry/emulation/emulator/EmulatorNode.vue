@@ -40,11 +40,24 @@ const nodeWidth = computed(() => (props.data?.width as number) ?? 280)
 const screenHeight = computed(() => (props.data?.height as number) ?? 240)
 
 const outputs = [
-  { id: 'texture', label: 'Vid', type: 'texture' },
-  { id: 'audio', label: 'Aud', type: 'audio' },
-  { id: 'running', label: 'Run', type: 'boolean' },
-  { id: 'system', label: 'Sys', type: 'string' },
+  { id: 'texture', label: 'Video', type: 'texture' },
+  { id: 'audio', label: 'Audio', type: 'audio' },
+  { id: 'running', label: 'Running', type: 'boolean' },
+  { id: 'system', label: 'System', type: 'string' },
 ]
+
+const inputPorts = computed(() => [
+  { id: 'start', label: 'Start', type: 'trigger' },
+  { id: 'stop', label: 'Stop', type: 'trigger' },
+  { id: 'reset', label: 'Reset', type: 'trigger' },
+  ...Array.from({ length: maxPlayers.value }, (_, i) => ({
+    id: `controller${i}`,
+    label: `Player ${i + 1}`,
+    type: 'data',
+  })),
+])
+
+const hoveredPort = ref<string | null>(null)
 
 function typeColor(type: string): string {
   return dataTypeMeta[type as keyof typeof dataTypeMeta]?.color ?? 'var(--color-neutral-400)'
@@ -153,14 +166,11 @@ onUnmounted(() => {
     <!-- input handles (left): start/stop/reset + one per player -->
     <div class="handles-column handles-left">
       <div
-        v-for="inp in [
-          { id: 'start', type: 'trigger' },
-          { id: 'stop', type: 'trigger' },
-          { id: 'reset', type: 'trigger' },
-          ...Array.from({ length: maxPlayers }, (_, i) => ({ id: `controller${i}`, type: 'data' })),
-        ]"
+        v-for="inp in inputPorts"
         :key="inp.id"
         class="handle-slot"
+        @mouseenter="hoveredPort = inp.id"
+        @mouseleave="hoveredPort = null"
       >
         <Handle
           :id="inp.id"
@@ -169,6 +179,12 @@ onUnmounted(() => {
           :style="{ background: typeColor(inp.type) }"
           class="port-handle"
         />
+        <div
+          class="port-label port-label-left"
+          :class="{ visible: hoveredPort === inp.id || props.selected }"
+        >
+          {{ inp.label }}
+        </div>
       </div>
     </div>
 
@@ -178,6 +194,8 @@ onUnmounted(() => {
         v-for="out in outputs"
         :key="out.id"
         class="handle-slot"
+        @mouseenter="hoveredPort = `out-${out.id}`"
+        @mouseleave="hoveredPort = null"
       >
         <Handle
           :id="out.id"
@@ -186,6 +204,12 @@ onUnmounted(() => {
           :style="{ background: typeColor(out.type) }"
           class="port-handle"
         />
+        <div
+          class="port-label port-label-right"
+          :class="{ visible: hoveredPort === `out-${out.id}` || props.selected }"
+        >
+          {{ out.label }}
+        </div>
       </div>
     </div>
 
@@ -290,6 +314,27 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
 }
+.port-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+  background: var(--color-neutral-0);
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--color-neutral-200);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 1000;
+}
+.port-label.visible { opacity: 1; }
+.port-label-left { right: 14px; }
+.port-label-right { left: 14px; }
 .node-header {
   display: flex;
   align-items: center;

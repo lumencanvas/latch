@@ -157,7 +157,7 @@ function getAssetTypeFromMime(mimeType: string): AssetType {
   if (mimeType.startsWith('image/')) return 'image'
   if (mimeType.startsWith('video/')) return 'video'
   if (mimeType.startsWith('audio/')) return 'audio'
-  return 'image' // Default fallback
+  return 'rom' // non-media binary (e.g. game ROMs) — no thumbnail/dimensions
 }
 
 /**
