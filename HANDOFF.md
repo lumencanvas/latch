@@ -16,7 +16,7 @@ LATCH (Live Art Tool for Creative Humans) is a node-based creative flow programm
 
 ## Current Status
 
-**Version**: 1.0.1 (2026-06-16 — fixes macOS signing + the UI version string)
+**Version**: 1.1.0 (2026-06-16 — Gamepad, Visual Gamepad, and Emulator nodes)
 **Build**: Passing (`npm run build:web`, 24s)
 **Tests**: 1301 passed | 11 todo (1312 total)
 **Branch**: `modernization` fast-forwarded into `main` for the v1.0.0 release.
@@ -31,6 +31,13 @@ added a macOS keychain cert-import step to `release.yml`, and sourced the
 displayed version from `package.json` (`src/renderer/version.ts`). Tagged
 `v1.0.1` → release workflow building (signed/notarized desktop + web); Netlify
 auto-deploys `main`.
+
+**v1.1.0 release (2026-06-16).** Ships the Gamepad, Visual Gamepad, and Emulator
+nodes (see entries below). Tagged `v1.1.0` → release workflow (signed/notarized
+desktop + GitHub Release + web to Pages); Netlify auto-deploys `main`. The
+EmulatorJS *runtime* (boot/canvas/audio/in-game input) is browser-only and was not
+exercisable headless — shipped on the maintainer's explicit go-ahead after the
+surrounding code, mappings, UI, heal, and resize were verified green.
 
 **Controller + emulation nodes (2026-06-16).** Shipped three interoperating nodes
 around a shared unified `ControllerState` (`services/input/controllerState.ts`):
