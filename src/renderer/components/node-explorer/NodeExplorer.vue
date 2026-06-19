@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Search } from 'lucide-vue-next'
-import { useNodesStore, type NodeCategory } from '@/stores/nodes'
+import { useNodesStore, dataTypeMeta, type NodeCategory, type DataType } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
 import { flowSnippets } from '@/data/flow-snippets'
 import { fuzzySearch } from '@/utils/fuzzySearch'
@@ -97,6 +97,11 @@ function handleNavigateTo(nodeId: string) {
 function handleSelectCategory(category: NodeCategory | null) {
   explorerStore.selectCategory(category)
 }
+
+// Port colour key — the data-type colours used on node handles, which are
+// otherwise undocumented in the UI.
+const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video', 'texture', 'array', 'data', 'any'] as DataType[])
+  .map(type => ({ type, label: dataTypeMeta[type].label, color: dataTypeMeta[type].color }))
 </script>
 
 <template>
@@ -110,6 +115,24 @@ function handleSelectCategory(category: NodeCategory | null) {
         :selected-category="explorerStore.selectedCategory"
         @select="handleSelectCategory"
       />
+
+      <!-- Port colour key -->
+      <div class="port-legend">
+        <span class="legend-title">PORT TYPES</span>
+        <div class="legend-list">
+          <div
+            v-for="t in legendTypes"
+            :key="t.type"
+            class="legend-item"
+          >
+            <span
+              class="legend-swatch"
+              :style="{ background: t.color }"
+            />
+            <span class="legend-label">{{ t.label }}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Right: Content area -->
@@ -336,5 +359,51 @@ function handleSelectCategory(category: NodeCategory | null) {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-2);
+}
+
+/* Let the category list scroll so the port legend stays pinned to the bottom. */
+.explorer-sidebar :deep(.category-nav) {
+  flex: 1;
+  min-height: 0;
+}
+
+.port-legend {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-neutral-200);
+  padding: var(--space-3);
+}
+
+.legend-title {
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-neutral-500);
+}
+
+.legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: var(--space-2);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.legend-label {
+  font-size: 10px;
+  color: var(--color-neutral-600);
+  text-transform: capitalize;
 }
 </style>

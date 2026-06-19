@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { categoryMeta, type NodeCategory, useNodesStore } from '@/stores/nodes'
 import { categoryIcons } from '@/utils/categoryIcons'
 
@@ -12,7 +13,12 @@ const emit = defineEmits<{
 
 const nodesStore = useNodesStore()
 
-const categories = Object.entries(categoryMeta) as [NodeCategory, { label: string; icon: string; color: string }][]
+// Only show categories that actually have nodes — keeps empty buckets
+// (shaders, custom) out of the explorer.
+const categories = computed(() =>
+  (Object.entries(categoryMeta) as [NodeCategory, { label: string; icon: string; color: string }][])
+    .filter(([key]) => (nodesStore.byCategory.get(key)?.length ?? 0) > 0)
+)
 </script>
 
 <template>
