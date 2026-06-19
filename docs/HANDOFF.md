@@ -49,6 +49,18 @@ each item; this is the narrative summary.
   exhaustiveness, the explorer tag-filter store, Color Ramp preset↔palette sync, plus full
   coverage for Noise / Color Ramp / Euclidean.
 
+### Fixed (per-frame storms, carried from AUDIT_2026-06-16 — priority #2)
+- **imageLoader asset-fail storm** (`visual.ts`): a missing assetId re-fired `getAssetUrl`
+  every frame because the not-found/catch paths never latched `state.loadedUrl`. Fixed
+  (a Trigger still forces a retry).
+- **webcam-snapshot `getUserMedia` re-prompt loop** (`visual.ts`): after a denial it
+  retried every frame. Added a `failed` latch, cleared when the device/resolution changes.
+- A deep audit of the visual/texture subsystem confirmed all executor gc is wired and that
+  a **feedback-buffer node is feasible** following the `getOrCreateRenderTarget` pattern,
+  but it needs live GPU verification (not unit-testable) and the subsystem still has open
+  MED texture-ownership leaks (`createTextureFromWebGL`, `disposeObject` maps,
+  `TextureBridge.gc`) — see AUDIT_2026-06-16.
+
 ### State
 Node count **208** (was 205 pre-dedupe; 203 after the dedupe, +5 for Noise/Color
 Ramp/Euclidean/Easing/Spring). Verified green:

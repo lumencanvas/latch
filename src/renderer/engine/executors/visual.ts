@@ -1377,10 +1377,14 @@ export const imageLoaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
           } else {
             state!.error = 'Asset not found'
             state!.loading = false
+            // Latch the gate so a missing asset doesn't re-fire getAssetUrl every
+            // frame; a Trigger still forces a retry. (Matches the URL branch.)
+            state!.loadedUrl = assetUrlKey
           }
         } catch (error) {
           state!.error = error instanceof Error ? error.message : 'Failed to load asset'
           state!.loading = false
+          state!.loadedUrl = assetUrlKey
         } finally {
           pendingAssetLoads.delete(ctx.nodeId)
         }
@@ -1589,6 +1593,7 @@ const webcamSnapshotState = new Map<
     deviceId: string | null
     resolution: string
     initialized: boolean
+    failed: boolean
   }
 >()
 
@@ -1605,6 +1610,18 @@ async function initWebcamSnapshot(
   resolution: string
 ): Promise<void> {
   let state = webcamSnapshotState.get(nodeId)
+
+  // If a previous getUserMedia attempt failed for this exact request, don't retry
+  // every frame — that re-prompts the user / re-hits a denied device ~60×/s. Wait
+  // until the requested device or resolution changes.
+  if (
+    state &&
+    state.failed &&
+    (state.deviceId ?? '') === (deviceId ?? '') &&
+    state.resolution === resolution
+  ) {
+    return
+  }
 
   // Check if we need to reinitialize
   const needsReinit =
@@ -1634,6 +1651,7 @@ async function initWebcamSnapshot(
       deviceId: deviceId ?? null,
       resolution,
       initialized: false,
+      failed: false,
     }
     webcamSnapshotState.set(nodeId, state)
   }
@@ -1660,9 +1678,14 @@ async function initWebcamSnapshot(
     state.deviceId = deviceId ?? null
     state.resolution = resolution
     state.initialized = true
+    state.failed = false
   } catch (error) {
     console.error('[Webcam Snapshot] Failed to initialize:', error)
     state.initialized = false
+    // Latch the failure for this request so we don't re-prompt every frame.
+    state.deviceId = deviceId ?? null
+    state.resolution = resolution
+    state.failed = true
   }
 }
 
