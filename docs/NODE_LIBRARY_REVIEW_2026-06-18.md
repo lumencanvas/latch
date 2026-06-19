@@ -59,18 +59,19 @@ hardware hackers, IoT makers.
 >   violet — that's a separate type-colour axis, not a category colour; recolour only if
 >   you want strings off purple too.) Also removed the orphaned `.category-color` CSS the
 >   audit flagged.
-> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise landed first);
+> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise and Color Ramp landed);
 >   reconcile the Control Panel hardcoded allow-list with `exposedControls` (Part 4.2);
 >   finish tagging the last technical/custom-UI nodes. Typecheck + lint + unit tests +
 >   production build all green throughout.
 
 ## Snapshot
 
-- **204 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +1
-  for the new Noise node; no id collisions remain). Two `NodeCategory` union members are
-  **empty**: `shaders` (its nodes live under `visual`) and `custom` (runtime placeholder).
+- **205 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +2
+  for the new Noise and Color Ramp nodes; no id collisions remain). Two `NodeCategory`
+  union members are **empty**: `shaders` (its nodes live under `visual`) and `custom`
+  (runtime placeholder).
 - Category sizes are wildly uneven: `data` 34, `math` 20, `logic` 20, `ai` 19, `audio` 16,
-  `3d` 16, `string` 12, `inputs` 12, `visual` 11, `connectivity` 10, `clasp` 10, `timing` 8,
+  `3d` 16, `visual` 12, `string` 12, `inputs` 12, `connectivity` 10, `clasp` 10, `timing` 8,
   `code` 7, `debug` 5, `subflows` 2, `messaging` 2, `video` 1, `outputs` 1.
 - The `_`-prefixed *registry* dirs (`_knob`, `_synth`, …) are **live** — re-exported via
   proxy `.ts` files and registered in `components.ts`. The underscore is a naming holdover,
@@ -164,6 +165,7 @@ markets to. **New framing:** separate gaps that are *genuinely absent* from gaps
   simplex + fBm octaves, value/normalized outputs).
 - **Text → texture** — no way to put words/numbers/a clock on the output today.
 - **Color ramp / gradient / palette** — map a 0–1 signal to color (cheap, unlocks a lot).
+  ✅ **landed** as `visual/color-ramp` (7 colormaps + custom 2-stop, `[r,g,b,a]` output).
 - **Classic image FX as discrete nodes** — glitch, RGB-shift, scanlines, pixelate,
   posterize, dither, kaleidoscope, chroma-key, edge-detect, LUT. (Some exist *only* as
   buried Shader presets — promoting them to nodes also fixes discovery.)
@@ -380,7 +382,7 @@ string-length, string-contains, string-starts-ends, string-trim, string-pad,
 string-template, string-match.
 **inputs (12):** constant, slider, audio-input, trigger, xy-pad, textbox, knob, keyboard,
 gamepad, gamepad-visual, midi-input, webcam.
-**visual (11):** shader, webcam-snapshot, color, texture-display, blend, blur,
+**visual (12):** shader, webcam-snapshot, color, color-ramp, texture-display, blend, blur,
 color-correction, displacement, transform-2d, image-loader, video-player.
 **connectivity (10):** http-request, websocket, midi-output, mqtt, osc, serial, ble,
 ble-scanner, ble-device, ble-characteristic.

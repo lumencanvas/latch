@@ -18,6 +18,7 @@ import { websocketExecutor, disposeWebSocketNode, disposeAllWebSocketNodes, gcWe
 import { httpExecutor, disposeHttpNode, disposeAllHttpNodes, gcHttpState } from './http'
 import { codeExecutors } from './code'
 import { noiseExecutor } from './noise'
+import { colorRampExecutor } from './color-ramp'
 import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
 import { stringExecutors } from './string'
@@ -1557,6 +1558,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
 
   // Visual
   ...visualExecutors,
+  'color-ramp': colorRampExecutor,
 
   // AI
   ...aiExecutors,

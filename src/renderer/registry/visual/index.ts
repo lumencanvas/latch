@@ -1,6 +1,7 @@
 export { shaderNode } from './shader'
 export { webcamSnapshotNode } from './webcam-snapshot'
 export { colorNode } from './color'
+export { colorRampNode } from './color-ramp'
 export { textureDisplayNode } from './texture-display'
 export { blendNode } from './blend'
 export { blurNode } from './blur'
@@ -13,6 +14,7 @@ export { videoPlayerNode } from './video-player'
 import { shaderNode } from './shader'
 import { webcamSnapshotNode } from './webcam-snapshot'
 import { colorNode } from './color'
+import { colorRampNode } from './color-ramp'
 import { textureDisplayNode } from './texture-display'
 import { blendNode } from './blend'
 import { blurNode } from './blur'
@@ -27,6 +29,7 @@ export const visualNodes: NodeDefinition[] = [
   shaderNode,
   webcamSnapshotNode,
   colorNode,
+  colorRampNode,
   textureDisplayNode,
   blendNode,
   blurNode,
