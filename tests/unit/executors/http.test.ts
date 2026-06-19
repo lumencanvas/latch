@@ -514,4 +514,55 @@ describe('HTTP Executor', () => {
       expect(outputs.get('status')).toBe(0)
     })
   })
+
+  describe('Trigger gating (rising edge + in-flight)', () => {
+    // Regression: a held-true trigger used to fire a fresh fetch every frame
+    // (level-trigger, in-flight `loading` flag never read). Fetch must fire once
+    // per rising edge only.
+    function directCtx(trigger: unknown, nodeId = 'gate-node'): ExecutionContext {
+      return createMockContext({
+        nodeId,
+        controls: new Map<string, unknown>([
+          ['url', 'https://api.example.com/data'],
+          ['method', 'GET'],
+        ]),
+        inputs: new Map<string, unknown>([['trigger', trigger]]),
+      })
+    }
+
+    const okFetch = () =>
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: () => Promise.resolve({}),
+      })
+
+    it('fires once on the rising edge, not every frame while held', async () => {
+      const mockFetch = okFetch()
+      global.fetch = mockFetch
+      await httpExecutor(directCtx(true)) // rising edge → fetch
+      await httpExecutor(directCtx(true)) // held → no fetch
+      await httpExecutor(directCtx(true)) // held → no fetch
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('fires again on a new rising edge (release then re-press)', async () => {
+      const mockFetch = okFetch()
+      global.fetch = mockFetch
+      await httpExecutor(directCtx(true)) // edge 1
+      await httpExecutor(directCtx(false)) // release
+      await httpExecutor(directCtx(true)) // edge 2
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('tracks edge state per node', async () => {
+      const mockFetch = okFetch()
+      global.fetch = mockFetch
+      await httpExecutor(directCtx(true, 'a'))
+      await httpExecutor(directCtx(true, 'b'))
+      await httpExecutor(directCtx(true, 'a')) // 'a' held → no new fetch
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+  })
 })

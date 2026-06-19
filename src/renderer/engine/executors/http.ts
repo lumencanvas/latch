@@ -91,8 +91,14 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   const outputs = new Map<string, unknown>()
 
-  // Only fetch when triggered
-  const shouldFetch = trigger === true
+  // Fire on the RISING edge of `trigger` only, and never while a request for this
+  // node is already in flight (the `:loading` flag). Without this, holding `trigger`
+  // true fired a fresh fetch every frame and the responses interleaved.
+  const isTriggered = trigger === true
+  const lastTrigger = getCached<boolean>(`${ctx.nodeId}:lastTrigger`, false)
+  setCached(`${ctx.nodeId}:lastTrigger`, isTriggered)
+  const inFlight = getCached<boolean>(`${ctx.nodeId}:loading`, false)
+  const shouldFetch = isTriggered && !lastTrigger && !inFlight
 
   if (!shouldFetch) {
     outputs.set('response', getCached(`${ctx.nodeId}:response`, null))

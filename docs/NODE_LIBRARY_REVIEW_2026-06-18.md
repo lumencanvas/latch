@@ -64,12 +64,14 @@ hardware hackers, IoT makers.
 >   preset↔palette sync, and full coverage for the Noise / Color Ramp / Euclidean executors
 >   (suite now 1376 passing).
 > - ✅ **Per-frame storms (carried, priority #2):** fixed the imageLoader asset-fail storm
->   (latched `loadedUrl` on the not-found/catch paths) and the webcam-snapshot
->   `getUserMedia` re-prompt loop (added a `failed` latch cleared on device/resolution
->   change). A deep audit of the visual/texture subsystem confirmed every executor's gc is
->   wired; **still open there:** `createTextureFromWebGL`/`disposeObject`/`TextureBridge.gc`
->   texture-ownership leaks (MED) and the feedback-buffer node (feasible but needs live GPU
->   verification — not a blind ship).
+>   (latched `loadedUrl` on the not-found/catch paths), the webcam-snapshot `getUserMedia`
+>   re-prompt loop (a `failed` latch cleared on device/resolution change), and the
+>   **http-request flood** (rising-edge + in-flight gate; unit-tested). A connectivity audit
+>   precisely scoped the rest — **still open:** the mqtt/ws/http/BLE connect backoff (no
+>   per-attempt throttle), `ConnectionManager.disconnect` error-masking → wedged toggle, the
+>   shared-`autoReconnect` clasp mutation, the `BleAdapter` notification-listener leak, and
+>   the `createTextureFromWebGL`/`disposeObject`/`TextureBridge.gc` texture leaks (MED). The
+>   feedback-buffer node is feasible but needs live GPU verification (not a blind ship).
 > - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise, Color Ramp, Euclidean,
 >   Easing, and Spring landed — the latter is the first new gc-wired stateful executor,
 >   wiring verified complete across the engine);
@@ -152,9 +154,9 @@ this can't recur silently. (`toggle` is fine — single, in `code`.)
 
 **Carried from `AUDIT_2026-06-16.md` (still open, higher severity):** the `with(ctx)`
 non-sandbox in `code.ts`/`compiler.ts` (and the UI calling it "sandboxed"); unvalidated
-`importFlow`; open `setWindowOpenHandler`; per-frame storms — *imageLoader asset-fail and
-webcam `getUserMedia` re-prompt are now **fixed (2026-06-19)***; http-request in-flight gate
-+ connect backoff still open.
+`importFlow`; open `setWindowOpenHandler`; per-frame storms — *imageLoader asset-fail, webcam
+`getUserMedia` re-prompt, and the http-request flood are now **fixed (2026-06-19)***; the
+mqtt/ws/http/BLE connect backoff is still open.
 
 **Priority order:** security (carried) → per-frame storms (carried) → **dedupe the two
 colliding ids (§1.1)** → wire `subflow` cleanup (4 lines) → split the `index.ts` seam +
