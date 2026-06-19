@@ -1091,18 +1091,31 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 export const consoleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
   const logOnChange = (ctx.controls.get('logOnChange') as boolean) ?? true
+  const label = (ctx.controls.get('label') as string) ?? 'Log'
 
-  // Only log if we have a value and (not logOnChange OR value changed)
+  // Only log if we have a value and (not logOnChange OR value changed). Compare by
+  // a stringified key so objects (recreated each frame) don't log every frame.
   if (value !== undefined) {
-    const prevValue = consolePrevValues.get(ctx.nodeId)
-    const valueChanged = prevValue !== value
+    const key = typeof value === 'object' && value !== null ? safeStringify(value) : value
+    const prevKey = consolePrevValues.get(ctx.nodeId)
 
-    if (!logOnChange || valueChanged) {
-      consolePrevValues.set(ctx.nodeId, value)
+    if (!logOnChange || prevKey !== key) {
+      consolePrevValues.set(ctx.nodeId, key)
+      // The Console node's whole job is to print — this feeds the DevTools console
+      // AND the Debug panel (which captures console.log).
+      console.log(`[${label}]`, value)
     }
   }
 
   return new Map()
+}
+
+function safeStringify(value: unknown): unknown {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return value
+  }
 }
 
 // ============================================================================
