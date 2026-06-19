@@ -38,6 +38,19 @@ export function clearAllSubflowContexts(): void {
   subflowContexts.clear()
 }
 
+/**
+ * Garbage-collect contexts for subflow instances that no longer exist in the graph.
+ * Contexts are keyed by the subflow instance node id (see subflowExecutor), so any
+ * key not in the set of valid node ids belongs to a deleted node.
+ */
+export function gcSubflowState(validNodeIds: Set<string>): void {
+  for (const instanceId of subflowContexts.keys()) {
+    if (!validNodeIds.has(instanceId)) {
+      subflowContexts.delete(instanceId)
+    }
+  }
+}
+
 // ============================================================================
 // SubflowInput Node
 // ============================================================================

@@ -17,6 +17,7 @@ import {
   gcWebLLMState,
 } from './executors/index'
 import { disposeAllUtilityState, gcUtilityState } from './executors/utility'
+import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
 import {
   disposeAllMessagingState,
   gcMessagingState,
@@ -214,6 +215,7 @@ export class ExecutionEngine {
         gcWebSocketState(validNodeIds)
         gcHttpState(validNodeIds)
         gcUtilityState(validNodeIds)
+        gcSubflowState(validNodeIds)
         gcMessagingState(validNodeIds)
         gcGamepadState(validNodeIds)
         gcEmulationState(validNodeIds)
@@ -839,6 +841,7 @@ export class ExecutionEngine {
     disposeAllRAGState()
     disposeAllWebLLMState()
     disposeAllUtilityState()
+    clearAllSubflowContexts()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()
     disposeAllHttpNodes()
