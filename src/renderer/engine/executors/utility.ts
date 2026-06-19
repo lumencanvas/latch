@@ -594,7 +594,9 @@ export const utilityExecutors: Record<string, NodeExecutorFn> = {
   'latch': latchExecutor,
   // Flow control
   'router': routerExecutor,
-  'counter': counterExecutor,
+  // NOTE: 'counter' is intentionally served by code.ts's counterExecutor (richer
+  // outputs: normalized/atMin/atMax, edge-triggered). The utility counterExecutor
+  // below is kept only for its direct unit tests.
   'debounce': debounceExecutor,
   'throttle': throttleExecutor,
 }

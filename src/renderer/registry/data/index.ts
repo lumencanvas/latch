@@ -25,7 +25,6 @@ export { objectCreateNode } from './object-create'
 export { objectEntriesNode } from './object-entries'
 // Flow control
 export { routerNode } from './router'
-export { counterNode } from './counter'
 export { debounceNode } from './debounce'
 export { throttleNode } from './throttle'
 // Type conversion
@@ -64,7 +63,6 @@ import { objectCreateNode } from './object-create'
 import { objectEntriesNode } from './object-entries'
 // Flow control
 import { routerNode } from './router'
-import { counterNode } from './counter'
 import { debounceNode } from './debounce'
 import { throttleNode } from './throttle'
 // Type conversion
@@ -105,7 +103,6 @@ export const dataNodes: NodeDefinition[] = [
   objectEntriesNode,
   // Flow control
   routerNode,
-  counterNode,
   debounceNode,
   throttleNode,
   // Type conversion

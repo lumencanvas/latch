@@ -456,6 +456,8 @@ export const codeExecutors: Record<string, NodeExecutorFn> = {
   'template': templateExecutor,
   'counter': counterExecutor,
   'toggle': toggleExecutor,
-  'sample-hold': sampleHoldExecutor,
+  // NOTE: 'sample-hold' is intentionally served by utility.ts's sampleHoldExecutor
+  // (lives with its latch/changed siblings + wired gcUtilityState). The code
+  // sampleHoldExecutor above is retained only as a reference implementation.
   'value-delay': valueDelayExecutor,
 }

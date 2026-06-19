@@ -26,6 +26,7 @@ export const counterNode: NodeDefinition = {
     { id: 'step', type: 'number', label: 'Step', default: 1 },
     { id: 'wrap', type: 'toggle', label: 'Wrap Around', default: false },
   ],
+  tags: ['counter', 'count', 'increment', 'decrement'],
   info: {
     overview: 'Maintains an integer count that responds to increment, decrement, and reset triggers. The normalized output gives a 0-1 value based on the min/max range. Wrap mode makes the counter loop back to the opposite bound when it exceeds a limit.',
     tips: [

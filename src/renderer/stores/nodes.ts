@@ -178,6 +178,12 @@ export const useNodesStore = defineStore('nodes', {
 
   actions: {
     register(definition: NodeDefinition, component?: Component) {
+      if (import.meta.env.DEV && this.definitions.has(definition.id)) {
+        console.warn(
+          `[nodes] Duplicate node id "${definition.id}" — the later registration ` +
+          `overwrites the earlier one. Node ids must be unique across all categories.`
+        )
+      }
       this.definitions.set(definition.id, definition)
       if (component) {
         this.components.set(definition.id, component)
