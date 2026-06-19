@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 import { colorRampExecutor, sampleStops, PALETTES } from '@/engine/executors/color-ramp'
+import { colorRampNode } from '@/registry/visual/color-ramp'
 
 function createContext(
   inputs: Record<string, unknown> = {},
@@ -89,5 +90,16 @@ describe('colorRampExecutor', () => {
     const stops = PALETTES.rainbow
     expect(sampleStops(stops, 0)).toEqual(stops[0])
     expect(sampleStops(stops, 1)).toEqual(stops[stops.length - 1])
+  })
+
+  it('every preset option in the definition (except custom) exists in PALETTES', () => {
+    const preset = colorRampNode.controls.find(c => c.id === 'preset')
+    const options = (preset?.props as { options?: string[] } | undefined)?.options ?? []
+    expect(options.length).toBeGreaterThan(0)
+    for (const opt of options) {
+      if (opt !== 'custom') {
+        expect(PALETTES[opt], `palette "${opt}" missing`).toBeDefined()
+      }
+    }
   })
 })

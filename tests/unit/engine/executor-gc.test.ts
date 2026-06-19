@@ -16,6 +16,12 @@ import {
 } from '@/engine/executors'
 import { gcClaspState } from '@/engine/executors/clasp'
 import { changedExecutor, gcUtilityState, disposeAllUtilityState } from '@/engine/executors/utility'
+import {
+  subflowOutputExecutor,
+  gcSubflowState,
+  clearAllSubflowContexts,
+  subflowContextCount,
+} from '@/engine/executors/subflow'
 import { sendExecutor, gcMessagingState, disposeAllMessagingState } from '@/engine/executors/messaging'
 import { messageBus } from '@/services/messaging/MessageBus'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
@@ -136,6 +142,29 @@ describe('gcMessagingState', () => {
     send(1) // prev gone → sends again
     expect(sendSpy).toHaveBeenCalledTimes(2)
     sendSpy.mockRestore()
+  })
+})
+
+describe('gcSubflowState / clearAllSubflowContexts', () => {
+  beforeEach(() => clearAllSubflowContexts())
+
+  // A subflow instance's context is keyed by its node id; subflow-output writes
+  // into that context, creating it. gc must drop contexts for deleted instances.
+  it('drops contexts for removed subflow instances but keeps valid ones', () => {
+    subflowOutputExecutor(ctx('outA', { value: 1 }, { _subflowInstanceId: 'A', portId: 'p' }))
+    subflowOutputExecutor(ctx('outB', { value: 2 }, { _subflowInstanceId: 'B', portId: 'p' }))
+    expect(subflowContextCount()).toBe(2)
+
+    gcSubflowState(new Set(['A'])) // 'B' instance removed
+    expect(subflowContextCount()).toBe(1)
+
+    clearAllSubflowContexts() // stop() teardown
+    expect(subflowContextCount()).toBe(0)
+  })
+
+  it('is a no-op when nothing leaked', () => {
+    expect(() => gcSubflowState(new Set(['x']))).not.toThrow()
+    expect(subflowContextCount()).toBe(0)
   })
 })
 

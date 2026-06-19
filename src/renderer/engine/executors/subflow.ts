@@ -51,6 +51,11 @@ export function gcSubflowState(validNodeIds: Set<string>): void {
   }
 }
 
+/** Number of cached subflow contexts (diagnostic / tests). */
+export function subflowContextCount(): number {
+  return subflowContexts.size
+}
+
 // ============================================================================
 // SubflowInput Node
 // ============================================================================
