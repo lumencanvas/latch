@@ -5,6 +5,7 @@ export { divideNode } from './divide'
 export { clampNode } from './clamp'
 export { absNode } from './abs'
 export { randomNode } from './random'
+export { noiseNode } from './noise'
 export { mapRangeNode } from './map-range'
 export { smoothNode } from './smooth'
 export { trigNode } from './trig'
@@ -26,6 +27,7 @@ import { divideNode } from './divide'
 import { clampNode } from './clamp'
 import { absNode } from './abs'
 import { randomNode } from './random'
+import { noiseNode } from './noise'
 import { mapRangeNode } from './map-range'
 import { smoothNode } from './smooth'
 import { trigNode } from './trig'
@@ -49,6 +51,7 @@ export const mathNodes: NodeDefinition[] = [
   clampNode,
   absNode,
   randomNode,
+  noiseNode,
   mapRangeNode,
   smoothNode,
   trigNode,
