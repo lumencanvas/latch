@@ -73,6 +73,23 @@ each item; this is the narrative summary.
   but it needs live GPU verification (not unit-testable) and the subsystem still has open
   MED texture-ownership leaks (`createTextureFromWebGL`, `disposeObject` maps,
   `TextureBridge.gc`) — see AUDIT_2026-06-16.
+- **Emulator unusable after flow stop** (`engine/executors/emulation.ts`): the node
+  component registers once on mount (kept alive across views), but `disposeAllEmulationNodes()`
+  did `emulators.clear()` on every flow-stop — orphaning the registration so the node was dead
+  with no re-registration path. Fixed: tear down the running emulator + free its texture/audio
+  on stop, but **keep the registrations** (cleaned per-node by unmount/gc instead).
+
+### Open — emulator (needs live debugging; not statically resolvable / not headless-testable)
+- **Emulator → Main Output only updates one frame (on view switch); editor preview frozen at
+  first frame.** Traced the whole path — it looks correct: the executor runs every frame (not
+  in `PURE_NODE_TYPES`), calls `updateTexture` (sets `needsUpdate`, `texture.image` = the live
+  EmulatorJS canvas), and both Main Output surfaces (editor `MainOutputNode` `drawImage`; the
+  Control-tab widget `renderToCanvas`) run their own rAF loops. So the freeze is a runtime/
+  WebGL behavior, not the plumbing. Prime suspects to check live: (a) the EmulatorJS canvas not
+  compositing/advancing while the editor is `display:none` on the Control tab (WebGL-hidden
+  throttle); (b) whether the emulator's OWN node canvas in the editor is visibly live while
+  Play is running — if yes, the issue is texture capture timing; if no, EmulatorJS is paused.
+  `patchForCapture` already forces `preserveDrawingBuffer:true`.
 
 ### State
 Node count **208** (was 205 pre-dedupe; 203 after the dedupe, +5 for Noise/Color

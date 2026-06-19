@@ -173,6 +173,10 @@ export function gcEmulationState(validNodeIds: Set<string>): void {
 }
 
 export function disposeAllEmulationNodes(): void {
+  // Tear down the running emulator(s) + free their texture/audio on flow stop, but
+  // KEEP the registrations: the node components register once on mount and are kept
+  // alive across views, so clearing the map here orphaned them — after a stop the
+  // node had no entry and never recovered (it only re-registers on remount). The map
+  // is cleaned per-node by unregisterEmulator (unmount) and gcEmulationState (removal).
   for (const entry of emulators.values()) cleanupEntry(entry, true)
-  emulators.clear()
 }
