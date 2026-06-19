@@ -48,16 +48,22 @@ hardware hackers, IoT makers.
 > - ✅ **Tag filter-chips (§3.1#2):** the Node Explorer now shows the top tags for the
 >   current category as toggle chips (`selectedTags` in the explorer store); selecting chips
 >   narrows the grid (union match), composing with category + fuzzy search.
+> - ✅ **Explorer/empty-state polish (§3.2, Part 4):** hid the empty `shaders`/`custom`
+>   buckets from the explorer's CategoryNav, added a **port-type colour legend** to the
+>   explorer (Part 4.1 — the data-type colours were undocumented), and rewrote the Control
+>   Panel empty state to say controls appear there automatically.
 > - ⏳ **Remaining:** repoint stray **purple** (§3.2) — left for the maintainer as a
->   design-system call; finish tagging the last technical/custom-UI nodes if desired.
->   Typecheck + lint + **1340 unit tests** + production build all green.
+>   design-system call; build the **Tier-A missing nodes** (§2 — Noise landed first);
+>   reconcile the Control Panel hardcoded allow-list with `exposedControls` (Part 4.2);
+>   finish tagging the last technical/custom-UI nodes. Typecheck + lint + unit tests +
+>   production build all green throughout.
 
 ## Snapshot
 
-- **203 node definitions** across 18 categories (down from 205 after the §1.1 dedupe; no
-  id collisions remain). Two `NodeCategory` union members are **empty**: `shaders` (its
-  nodes live under `visual`) and `custom` (runtime placeholder).
-- Category sizes are wildly uneven: `data` 34, `logic` 20, `math` 19, `ai` 19, `audio` 16,
+- **204 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +1
+  for the new Noise node; no id collisions remain). Two `NodeCategory` union members are
+  **empty**: `shaders` (its nodes live under `visual`) and `custom` (runtime placeholder).
+- Category sizes are wildly uneven: `data` 34, `math` 20, `logic` 20, `ai` 19, `audio` 16,
   `3d` 16, `string` 12, `inputs` 12, `visual` 11, `connectivity` 10, `clasp` 10, `timing` 8,
   `code` 7, `debug` 5, `subflows` 2, `messaging` 2, `video` 1, `outputs` 1.
 - The `_`-prefixed *registry* dirs (`_knob`, `_synth`, …) are **live** — re-exported via
@@ -148,7 +154,8 @@ markets to. **New framing:** separate gaps that are *genuinely absent* from gaps
 - **Feedback / frame-buffer** (previous-frame texture) — the most-missed VJ primitive
   (trails, echo, infinite zoom). Nothing today, and unsearchable (§3). Highest value.
 - **Noise** (Perlin/Simplex, 1D/2D/3D) — there's `random` but no *coherent* noise; the
-  backbone of organic/generative motion.
+  backbone of organic/generative motion. ✅ **landed** as `math/noise` (stateless 3D
+  simplex + fBm octaves, value/normalized outputs).
 - **Text → texture** — no way to put words/numbers/a clock on the output today.
 - **Color ramp / gradient / palette** — map a 0–1 signal to color (cheap, unlocks a lot).
 - **Classic image FX as discrete nodes** — glitch, RGB-shift, scanlines, pixelate,
@@ -350,8 +357,8 @@ to-array, format-number.
 **logic (20):** compare, and, or, not, gate, switch, select, is-null, is-empty, pass-if,
 default-value, coalesce, equals, changed, type-of, in-range, sample-hold, latch,
 match-value, dispatch.
-**math (19):** add, subtract, multiply, divide, clamp, abs, random, map-range, smooth, trig,
-power, vector-math, modulo, lerp, step, smoothstep, remap, quantize, wrap.
+**math (20):** add, subtract, multiply, divide, clamp, abs, random, noise, map-range, smooth,
+trig, power, vector-math, modulo, lerp, step, smoothstep, remap, quantize, wrap.
 **ai (19):** text-generation, image-classification, sentiment-analysis, image-captioning,
 feature-extraction, object-detection, speech-recognition, text-transformation, retrieve,
 vector-memory, llm, vla, mediapipe-hand, mediapipe-face, mediapipe-pose, mediapipe-object,
