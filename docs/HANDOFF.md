@@ -41,13 +41,17 @@ each item; this is the narrative summary.
     E(5,8) cinquillo); stateless, driven by a `step` index; gate/value/pattern outputs.
   - **Easing** (`math/easing`) — shapes a 0–1 value through 20 easing curves (quad/cubic/
     sine/expo/back/elastic/bounce); stateless; composes with any 0–1 signal.
+  - **Spring** (`math/spring`) — damped-oscillator physics toward a target (tension/
+    friction/mass); value/velocity/atRest. First new *stateful* node this cycle —
+    gc/dispose wired into ExecutionEngine + a gc regression test. A pre-flight audit
+    confirmed every executor's cleanup is wired into the engine (no leaks).
 - **Testing pass.** Added tests for the subflow GC, the `register()` guard, `categoryIcons`
   exhaustiveness, the explorer tag-filter store, Color Ramp preset↔palette sync, plus full
   coverage for Noise / Color Ramp / Euclidean.
 
 ### State
-Node count **207** (was 205 pre-dedupe; 203 after the dedupe, +4 for Noise/Color
-Ramp/Euclidean/Easing). Verified green:
+Node count **208** (was 205 pre-dedupe; 203 after the dedupe, +5 for Noise/Color
+Ramp/Euclidean/Easing/Spring). Verified green:
 `typecheck`, `eslint`, full `test:unit`, and the production `build`. Working tree clean
 (only `.DS_Store`). Nothing pushed.
 

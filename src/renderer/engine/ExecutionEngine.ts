@@ -18,6 +18,7 @@ import {
 } from './executors/index'
 import { disposeAllUtilityState, gcUtilityState } from './executors/utility'
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
+import { disposeAllSpringState, gcSpringState } from './executors/spring'
 import {
   disposeAllMessagingState,
   gcMessagingState,
@@ -216,6 +217,7 @@ export class ExecutionEngine {
         gcHttpState(validNodeIds)
         gcUtilityState(validNodeIds)
         gcSubflowState(validNodeIds)
+        gcSpringState(validNodeIds)
         gcMessagingState(validNodeIds)
         gcGamepadState(validNodeIds)
         gcEmulationState(validNodeIds)
@@ -842,6 +844,7 @@ export class ExecutionEngine {
     disposeAllWebLLMState()
     disposeAllUtilityState()
     clearAllSubflowContexts()
+    disposeAllSpringState()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()
     disposeAllHttpNodes()

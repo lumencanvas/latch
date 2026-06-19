@@ -7,6 +7,7 @@ export { absNode } from './abs'
 export { randomNode } from './random'
 export { noiseNode } from './noise'
 export { easingNode } from './easing'
+export { springNode } from './spring'
 export { mapRangeNode } from './map-range'
 export { smoothNode } from './smooth'
 export { trigNode } from './trig'
@@ -30,6 +31,7 @@ import { absNode } from './abs'
 import { randomNode } from './random'
 import { noiseNode } from './noise'
 import { easingNode } from './easing'
+import { springNode } from './spring'
 import { mapRangeNode } from './map-range'
 import { smoothNode } from './smooth'
 import { trigNode } from './trig'
@@ -55,6 +57,7 @@ export const mathNodes: NodeDefinition[] = [
   randomNode,
   noiseNode,
   easingNode,
+  springNode,
   mapRangeNode,
   smoothNode,
   trigNode,

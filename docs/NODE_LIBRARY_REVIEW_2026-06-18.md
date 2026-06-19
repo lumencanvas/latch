@@ -64,18 +64,19 @@ hardware hackers, IoT makers.
 >   preset↔palette sync, and full coverage for the Noise / Color Ramp / Euclidean executors
 >   (suite now 1376 passing).
 > - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise, Color Ramp, Euclidean,
->   Easing landed);
+>   Easing, and Spring landed — the latter is the first new gc-wired stateful executor,
+>   wiring verified complete across the engine);
 >   reconcile the Control Panel hardcoded allow-list with `exposedControls` (Part 4.2);
 >   finish tagging the last technical/custom-UI nodes. Typecheck + lint + unit tests +
 >   production build all green throughout.
 
 ## Snapshot
 
-- **207 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +4
-  for the new Noise, Color Ramp, Euclidean Rhythm, and Easing nodes; no id collisions
-  remain). Two `NodeCategory` union members are **empty**: `shaders` (its nodes live under
-  `visual`) and `custom` (runtime placeholder).
-- Category sizes are wildly uneven: `data` 34, `math` 21, `logic` 20, `ai` 19, `audio` 16,
+- **208 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +5
+  for the new Noise, Color Ramp, Euclidean Rhythm, Easing, and Spring nodes; no id
+  collisions remain). Two `NodeCategory` union members are **empty**: `shaders` (its nodes
+  live under `visual`) and `custom` (runtime placeholder).
+- Category sizes are wildly uneven: `data` 34, `math` 22, `logic` 20, `ai` 19, `audio` 16,
   `3d` 16, `visual` 12, `string` 12, `inputs` 12, `connectivity` 10, `clasp` 10, `timing` 9,
   `code` 7, `debug` 5, `subflows` 2, `messaging` 2, `video` 1, `outputs` 1.
 - The `_`-prefixed *registry* dirs (`_knob`, `_synth`, …) are **live** — re-exported via
@@ -198,7 +199,8 @@ markets to. **New framing:** separate gaps that are *genuinely absent* from gaps
   (single Main Output today).
 
 ### Tier D — nice-to-have
-Spring/physics value, slew limiter, derivative/integral of a signal, musical-scale
+Spring/physics value ✅ **landed** as `math/spring` (damped oscillator; value/velocity/
+atRest), slew limiter, derivative/integral of a signal, musical-scale
 quantizer, CSV/table, screen capture, instanced/points 3D, post-FX (bloom/DOF) on the 3D
 render.
 
@@ -373,8 +375,8 @@ to-array, format-number.
 **logic (20):** compare, and, or, not, gate, switch, select, is-null, is-empty, pass-if,
 default-value, coalesce, equals, changed, type-of, in-range, sample-hold, latch,
 match-value, dispatch.
-**math (21):** add, subtract, multiply, divide, clamp, abs, random, noise, easing, map-range,
-smooth, trig, power, vector-math, modulo, lerp, step, smoothstep, remap, quantize, wrap.
+**math (22):** add, subtract, multiply, divide, clamp, abs, random, noise, easing, spring,
+map-range, smooth, trig, power, vector-math, modulo, lerp, step, smoothstep, remap, quantize, wrap.
 **ai (19):** text-generation, image-classification, sentiment-analysis, image-captioning,
 feature-extraction, object-detection, speech-recognition, text-transformation, retrieve,
 vector-memory, llm, vla, mediapipe-hand, mediapipe-face, mediapipe-pose, mediapipe-object,

@@ -22,6 +22,7 @@ import {
   clearAllSubflowContexts,
   subflowContextCount,
 } from '@/engine/executors/subflow'
+import { springExecutor, gcSpringState, disposeAllSpringState } from '@/engine/executors/spring'
 import { sendExecutor, gcMessagingState, disposeAllMessagingState } from '@/engine/executors/messaging'
 import { messageBus } from '@/services/messaging/MessageBus'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
@@ -165,6 +166,26 @@ describe('gcSubflowState / clearAllSubflowContexts', () => {
   it('is a no-op when nothing leaked', () => {
     expect(() => gcSubflowState(new Set(['x']))).not.toThrow()
     expect(subflowContextCount()).toBe(0)
+  })
+})
+
+describe('gcSpringState', () => {
+  beforeEach(() => disposeAllSpringState())
+
+  it('drops spring state for removed nodes but keeps valid ones', () => {
+    // Seed each spring at its target, then nudge so it holds non-trivial state.
+    springExecutor(ctx('keep', { target: 0 }))
+    springExecutor(ctx('drop', { target: 0 }))
+    springExecutor(ctx('keep', { target: 1 })) // 'keep' now mid-flight (pos > 0)
+    springExecutor(ctx('drop', { target: 1 }))
+
+    gcSpringState(new Set(['keep'])) // 'drop' removed
+
+    // 'drop' lost its state → re-initialises at the new target (no animation, value == target).
+    expect((springExecutor(ctx('drop', { target: 9 })) as Map<string, unknown>).get('value')).toBe(9)
+    // 'keep' retained state → still easing up from a small value toward 1, not snapped to 9.
+    const kept = (springExecutor(ctx('keep', { target: 9 })) as Map<string, unknown>).get('value') as number
+    expect(kept).toBeLessThan(1)
   })
 })
 
