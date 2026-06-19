@@ -184,7 +184,7 @@ function updateEQ(value: EQData) {
             :model-value="eqData"
             :width="220"
             :height="100"
-            accent-color="#a855f7"
+            accent-color="#06b6d4"
             @update:model-value="updateEQ"
           />
         </div>
@@ -329,7 +329,7 @@ function updateEQ(value: EQData) {
 }
 
 .header-icon {
-  color: #a855f7;
+  color: #06b6d4;
 }
 
 .node-title {

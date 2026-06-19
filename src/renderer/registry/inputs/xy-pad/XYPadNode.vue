@@ -545,7 +545,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   height: 1px;
-  background: rgba(107, 70, 193, 0.3);
+  background: rgba(236, 72, 153, 0.3);
 }
 
 .grid-line-v {
@@ -554,14 +554,14 @@ onUnmounted(() => {
   top: 0;
   bottom: 0;
   width: 1px;
-  background: rgba(107, 70, 193, 0.3);
+  background: rgba(236, 72, 153, 0.3);
 }
 
 .pad-point {
   position: absolute;
   width: 14px;
   height: 14px;
-  background: #7C3AED;
+  background: #EC4899;
   border: 2px solid white;
   border-radius: 50%;
   transform: translate(-50%, -50%);

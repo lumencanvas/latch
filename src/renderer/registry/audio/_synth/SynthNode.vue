@@ -688,7 +688,7 @@ onUnmounted(() => {
             :step="1"
             label="Detune"
             size="small"
-            accent-color="#8b5cf6"
+            accent-color="#3b82f6"
             :value-format="(v: number) => `${v}c`"
           />
 
@@ -701,7 +701,7 @@ onUnmounted(() => {
             :step="1"
             label="Voices"
             size="small"
-            accent-color="#8b5cf6"
+            accent-color="#3b82f6"
             :value-format="(v: number) => `${v}`"
           />
         </div>

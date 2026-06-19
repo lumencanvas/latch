@@ -212,7 +212,7 @@ export const useNodesStore = defineStore('nodes', {
 
 // Category metadata for UI
 export const categoryMeta: Record<NodeCategory, { label: string; icon: string; color: string }> = {
-  debug: { label: 'Debug', icon: 'bug', color: '#8B5CF6' },
+  debug: { label: 'Debug', icon: 'bug', color: '#64748B' },
   inputs: { label: 'Inputs', icon: 'download', color: '#22C55E' },
   outputs: { label: 'Outputs', icon: 'upload', color: '#3B82F6' },
   timing: { label: 'Timing', icon: 'clock', color: '#F97316' },
@@ -228,9 +228,9 @@ export const categoryMeta: Record<NodeCategory, { label: string; icon: string; c
   '3d': { label: '3D', icon: 'box', color: '#0EA5E9' },
   connectivity: { label: 'Connectivity', icon: 'plug', color: '#2AAB8A' },
   clasp: { label: 'CLASP', icon: 'radio', color: '#6366F1' },
-  subflows: { label: 'Subflows', icon: 'layers', color: '#7C3AED' },
+  subflows: { label: 'Subflows', icon: 'layers', color: '#84CC16' },
   string: { label: 'String', icon: 'text', color: '#10B981' },
-  messaging: { label: 'Messaging', icon: 'send', color: '#8B5CF6' },
+  messaging: { label: 'Messaging', icon: 'send', color: '#06B6D4' },
   custom: { label: 'Custom', icon: 'puzzle', color: '#6B7280' },
 }
 

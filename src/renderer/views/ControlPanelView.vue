@@ -56,14 +56,14 @@ const faderDrag = ref<{ nodeId: string; startY: number; startValue: number } | n
 const accentColors: Record<string, string> = {
   slider: '#00d4aa',
   knob: '#ff6b35',
-  'xy-pad': '#a855f7',
+  'xy-pad': '#ec4899',
   trigger: '#ef4444',
   monitor: '#22c55e',
   oscilloscope: '#3b82f6',
   constant: '#888888',
   lfo: '#f59e0b',
   'envelope-visual': '#ff6b35',
-  'parametric-eq': '#a855f7',
+  'parametric-eq': '#06b6d4',
   wavetable: '#22c55e',
   keyboard: '#22c55e',
   synth: '#f59e0b',
@@ -1355,12 +1355,12 @@ onUnmounted(() => {
   position: absolute;
   width: 12px;
   height: 12px;
-  background: var(--accent-color, #a855f7);
+  background: var(--accent-color, #ec4899);
   border: 2px solid #fff;
   border-radius: 50%;
   transform: translate(-50%, 50%);
   pointer-events: none;
-  box-shadow: 0 0 8px var(--accent-color, #a855f7);
+  box-shadow: 0 0 8px var(--accent-color, #ec4899);
 }
 
 .xy-values {

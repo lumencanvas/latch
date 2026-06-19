@@ -52,8 +52,14 @@ hardware hackers, IoT makers.
 >   buckets from the explorer's CategoryNav, added a **port-type colour legend** to the
 >   explorer (Part 4.1 — the data-type colours were undocumented), and rewrote the Control
 >   Panel empty state to say controls appear there automatically.
-> - ⏳ **Remaining:** repoint stray **purple** (§3.2) — left for the maintainer as a
->   design-system call; build the **Tier-A missing nodes** (§2 — Noise landed first);
+> - ✅ **Reserve purple for AI (§3.2):** repointed the stray category purples
+>   (`debug`→slate, `messaging`→cyan, `subflows`→lime) and the non-AI accent purples
+>   (parametric-eq/EQ→cyan, synth section→blue, xy-pad point→pink) so the vivid `#A855F7`
+>   now uniquely signals the AI sub-brand. (The `string` *data-type* port colour stays
+>   violet — that's a separate type-colour axis, not a category colour; recolour only if
+>   you want strings off purple too.) Also removed the orphaned `.category-color` CSS the
+>   audit flagged.
+> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise landed first);
 >   reconcile the Control Panel hardcoded allow-list with `exposedControls` (Part 4.2);
 >   finish tagging the last technical/custom-UI nodes. Typecheck + lint + unit tests +
 >   production build all green throughout.

@@ -19,7 +19,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   width: 240,
   height: 120,
-  accentColor: '#a855f7',
+  accentColor: '#06b6d4',
 })
 
 const emit = defineEmits<{
