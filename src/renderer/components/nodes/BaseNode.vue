@@ -5,30 +5,11 @@ import type { NodeProps } from '@vue-flow/core'
 import {
   ChevronDown,
   ChevronRight,
-  Bug,
-  Download,
-  Upload,
-  Clock,
-  Calculator,
-  GitBranch,
-  Music,
-  Video,
-  Tv2,
-  Palette,
-  Database,
-  Cpu,
-  Code,
-  Box,
-  Wifi,
-  Layers,
-  Puzzle,
   Loader2,
-  Type,
-  Send,
-  Radio,
   AlertTriangle,
 } from 'lucide-vue-next'
-import { categoryMeta, dataTypeMeta, type NodeDefinition, type NodeCategory, useNodesStore } from '@/stores/nodes'
+import { categoryMeta, dataTypeMeta, type NodeDefinition, useNodesStore } from '@/stores/nodes'
+import { categoryIcons, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
@@ -90,32 +71,9 @@ const nodeLabel = computed(() => {
   return props.data?.label ?? props.data?.nodeType ?? 'Node'
 })
 
-const categoryIcons: Record<NodeCategory, typeof Bug> = {
-  debug: Bug,
-  inputs: Download,
-  outputs: Upload,
-  timing: Clock,
-  math: Calculator,
-  logic: GitBranch,
-  audio: Music,
-  video: Video,
-  visual: Tv2,
-  shaders: Palette,
-  data: Database,
-  ai: Cpu,
-  code: Code,
-  '3d': Box,
-  connectivity: Wifi,
-  clasp: Radio,
-  subflows: Layers,
-  string: Type,
-  messaging: Send,
-  custom: Puzzle,
-}
-
 const categoryIcon = computed(() => {
-  if (!definition.value) return Code
-  return categoryIcons[definition.value.category] ?? Code
+  if (!definition.value) return fallbackCategoryIcon
+  return categoryIcons[definition.value.category] ?? fallbackCategoryIcon
 })
 
 const categoryColor = computed(() => {

@@ -3,6 +3,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeCategory, type NodeDefinition } from '@/stores/nodes'
 import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen, Plug } from 'lucide-vue-next'
+import { categoryIcons } from '@/utils/categoryIcons'
 import { aiInference } from '@/services/ai/AIInference'
 import AssetBrowser from '@/components/assets/AssetBrowser.vue'
 import ConnectionSidebar from '@/components/connections/ConnectionSidebar.vue'
@@ -315,9 +316,14 @@ function onSelectConnection(connectionId: string) {
                   </span>
                   <span
                     v-else
-                    class="category-color"
-                    :style="{ background: meta.color }"
-                  />
+                    class="category-icon"
+                    :style="{ color: meta.color }"
+                  >
+                    <component
+                      :is="categoryIcons[categoryId]"
+                      :size="12"
+                    />
+                  </span>
                   <span class="category-name">{{ meta.label }}</span>
                   <span class="category-count">{{ nodesByCategory.get(categoryId)?.length ?? 0 }}</span>
                 </button>

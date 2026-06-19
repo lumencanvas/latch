@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { categoryMeta, type NodeCategory, useNodesStore } from '@/stores/nodes'
+import { categoryIcons } from '@/utils/categoryIcons'
 
 defineProps<{
   selectedCategory: NodeCategory | null
@@ -36,9 +37,14 @@ const categories = Object.entries(categoryMeta) as [NodeCategory, { label: strin
       @click="emit('select', key)"
     >
       <span
-        class="cat-dot"
-        :style="{ background: meta.color }"
-      />
+        class="cat-icon"
+        :style="{ color: meta.color }"
+      >
+        <component
+          :is="categoryIcons[key]"
+          :size="13"
+        />
+      </span>
       <span class="cat-label">{{ meta.label }}</span>
       <span class="cat-count">{{ nodesStore.byCategory.get(key)?.length ?? 0 }}</span>
     </button>
@@ -81,6 +87,14 @@ const categories = Object.entries(categoryMeta) as [NodeCategory, { label: strin
 .cat-dot {
   width: 8px;
   height: 8px;
+  flex-shrink: 0;
+}
+
+.cat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
   flex-shrink: 0;
 }
 
