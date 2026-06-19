@@ -6,6 +6,7 @@ export { delayNode } from './delay'
 export { timerNode } from './timer'
 export { metronomeNode } from './metronome'
 export { stepSequencerNode } from './step-sequencer'
+export { euclideanNode } from './euclidean'
 
 import { timeNode } from './time'
 import { lfoNode } from './lfo'
@@ -15,6 +16,7 @@ import { delayNode } from './delay'
 import { timerNode } from './timer'
 import { metronomeNode } from './metronome'
 import { stepSequencerNode } from './step-sequencer'
+import { euclideanNode } from './euclidean'
 import type { NodeDefinition } from '../types'
 
 export const timingNodes: NodeDefinition[] = [
@@ -26,4 +28,5 @@ export const timingNodes: NodeDefinition[] = [
   timerNode,
   metronomeNode,
   stepSequencerNode,
+  euclideanNode,
 ]

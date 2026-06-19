@@ -59,19 +59,23 @@ hardware hackers, IoT makers.
 >   violet — that's a separate type-colour axis, not a category colour; recolour only if
 >   you want strings off purple too.) Also removed the orphaned `.category-color` CSS the
 >   audit flagged.
-> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise and Color Ramp landed);
+> - ✅ **Testing pass:** added unit tests for the subflow GC, the duplicate-id `register()`
+>   guard, `categoryIcons` exhaustiveness, the explorer tag-filter store, Color Ramp
+>   preset↔palette sync, and full coverage for the Noise / Color Ramp / Euclidean executors
+>   (suite now 1376 passing).
+> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise, Color Ramp, Euclidean landed);
 >   reconcile the Control Panel hardcoded allow-list with `exposedControls` (Part 4.2);
 >   finish tagging the last technical/custom-UI nodes. Typecheck + lint + unit tests +
 >   production build all green throughout.
 
 ## Snapshot
 
-- **205 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +2
-  for the new Noise and Color Ramp nodes; no id collisions remain). Two `NodeCategory`
-  union members are **empty**: `shaders` (its nodes live under `visual`) and `custom`
-  (runtime placeholder).
+- **206 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +3
+  for the new Noise, Color Ramp, and Euclidean Rhythm nodes; no id collisions remain). Two
+  `NodeCategory` union members are **empty**: `shaders` (its nodes live under `visual`) and
+  `custom` (runtime placeholder).
 - Category sizes are wildly uneven: `data` 34, `math` 20, `logic` 20, `ai` 19, `audio` 16,
-  `3d` 16, `visual` 12, `string` 12, `inputs` 12, `connectivity` 10, `clasp` 10, `timing` 8,
+  `3d` 16, `visual` 12, `string` 12, `inputs` 12, `connectivity` 10, `clasp` 10, `timing` 9,
   `code` 7, `debug` 5, `subflows` 2, `messaging` 2, `video` 1, `outputs` 1.
 - The `_`-prefixed *registry* dirs (`_knob`, `_synth`, …) are **live** — re-exported via
   proxy `.ts` files and registered in `components.ts`. The underscore is a naming holdover,
@@ -180,7 +184,8 @@ markets to. **New framing:** separate gaps that are *genuinely absent* from gaps
 
 ### Tier C — medium value
 - **Timeline / keyframe** animator; generic **ramp/tween-to-target with easing**.
-- **Ableton Link** tempo sync; **Euclidean rhythm**; **tap-tempo**.
+- **Ableton Link** tempo sync; **Euclidean rhythm** ✅ **landed** as `timing/euclidean`
+  (stateless Bjorklund pattern, step-indexed); **tap-tempo**.
 - **Physical input nodes:** computer **keyboard**, **mouse/pointer**,
   **device-motion/orientation** (today's `keyboard` node is a *virtual piano*, not keys).
 - **Audio dynamics** (compressor/limiter), **distortion/bitcrusher**, **granular/sampler**,
@@ -388,7 +393,7 @@ color-correction, displacement, transform-2d, image-loader, video-player.
 ble-scanner, ble-device, ble-characteristic.
 **clasp (10):** clasp-connection, clasp-subscribe, clasp-set, clasp-emit, clasp-get,
 clasp-stream, clasp-bundle, clasp-video-receive, clasp-video-send, clasp-gesture.
-**timing (8):** time, lfo, start, interval, delay, timer, metronome, step-sequencer.
+**timing (9):** time, lfo, start, interval, delay, timer, metronome, step-sequencer, euclidean.
 **code (6):** function, expression, template, counter, toggle, value-delay.
 **debug (5):** console, monitor, oscilloscope, graph, equalizer.
 **subflows (2):** subflow-input, subflow-output.
