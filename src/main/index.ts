@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
-import { join } from 'path'
+import { join, resolve, sep } from 'path'
 import { readdir, readFile, stat, writeFile, unlink, mkdir } from 'fs/promises'
 import { watch, type FSWatcher, existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -7,6 +7,23 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 let mainWindow: BrowserWindow | null = null
 let customNodesWatcher: FSWatcher | null = null
 let assetsBasePath: string | null = null
+
+/** Only allow opening external http(s) URLs (not file://, custom schemes, etc.). */
+function isHttpUrl(url: string): boolean {
+  return typeof url === 'string' && /^https?:\/\//i.test(url)
+}
+
+/**
+ * Resolve `userPath` under `base` and refuse anything that escapes it (path
+ * traversal via `..`). Returns the absolute path, or null if it would escape.
+ */
+function containedPath(base: string, userPath: string): string | null {
+  if (typeof userPath !== 'string') return null
+  const full = resolve(base, userPath)
+  const baseResolved = resolve(base)
+  if (full === baseResolved || full.startsWith(baseResolved + sep)) return full
+  return null
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -31,7 +48,8 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Only hand http(s) links to the OS; never file:// or custom schemes.
+    if (isHttpUrl(details.url)) shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
@@ -136,6 +154,7 @@ ipcMain.handle('window:isMaximized', () => {
 
 // Shell operations
 ipcMain.handle('shell:openExternal', (_, url: string) => {
+  if (!isHttpUrl(url)) return Promise.resolve()
   return shell.openExternal(url)
 })
 
@@ -193,7 +212,9 @@ ipcMain.handle('customNodes:readDefinition', async (_, packageName: string) => {
     ? join(process.cwd(), 'custom-nodes')
     : join(app.getPath('userData'), 'custom-nodes')
 
-  const defPath = join(customNodesPath, packageName, 'definition.json')
+  const pkgDir = containedPath(customNodesPath, packageName)
+  if (!pkgDir) return { success: false, error: 'Invalid package name' }
+  const defPath = join(pkgDir, 'definition.json')
 
   try {
     const content = await readFile(defPath, 'utf-8')
@@ -210,7 +231,9 @@ ipcMain.handle('customNodes:readExecutor', async (_, packageName: string) => {
     ? join(process.cwd(), 'custom-nodes')
     : join(app.getPath('userData'), 'custom-nodes')
 
-  const execPath = join(customNodesPath, packageName, 'executor.js')
+  const pkgDir = containedPath(customNodesPath, packageName)
+  if (!pkgDir) return { success: false, error: 'Invalid package name' }
+  const execPath = join(pkgDir, 'executor.js')
 
   try {
     const code = await readFile(execPath, 'utf-8')
@@ -306,7 +329,8 @@ ipcMain.handle('assets:setBasePath', async (_, path: string) => {
 ipcMain.handle('assets:saveFile', async (_, data: Uint8Array, filename: string) => {
   try {
     await ensureAssetsDir()
-    const filePath = join(getAssetsPath(), filename)
+    const filePath = containedPath(getAssetsPath(), filename)
+    if (!filePath) return { success: false, error: 'Invalid filename' }
     await writeFile(filePath, Buffer.from(data))
     return { success: true, path: filePath }
   } catch (error) {
@@ -317,7 +341,8 @@ ipcMain.handle('assets:saveFile', async (_, data: Uint8Array, filename: string) 
 // Read file from assets directory
 ipcMain.handle('assets:readFile', async (_, filename: string) => {
   try {
-    const filePath = join(getAssetsPath(), filename)
+    const filePath = containedPath(getAssetsPath(), filename)
+    if (!filePath) return { success: false, error: 'Invalid filename' }
     const data = await readFile(filePath)
     return { success: true, data: new Uint8Array(data) }
   } catch (error) {
@@ -328,7 +353,8 @@ ipcMain.handle('assets:readFile', async (_, filename: string) => {
 // Delete file from assets directory
 ipcMain.handle('assets:deleteFile', async (_, filename: string) => {
   try {
-    const filePath = join(getAssetsPath(), filename)
+    const filePath = containedPath(getAssetsPath(), filename)
+    if (!filePath) return { success: false, error: 'Invalid filename' }
     await unlink(filePath)
     return { success: true }
   } catch (error) {

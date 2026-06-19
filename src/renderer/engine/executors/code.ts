@@ -2,9 +2,15 @@
  * Code Node Executors
  *
  * These executors handle code execution and expressions:
- * - Function node (JavaScript sandbox)
+ * - Function node (restricted JavaScript — see SANDBOX_PREAMBLE)
  * - Expression node (inline math)
  * - Template node (string interpolation)
+ *
+ * NOTE: user code runs IN-PROCESS (it must operate on live textures/audio, so a
+ * Worker isn't viable). SANDBOX_PREAMBLE shadows the dangerous host globals as
+ * defense-in-depth — it is NOT an airtight sandbox (the Function-constructor
+ * escape remains). The real boundary for UNTRUSTED flows is the import
+ * trust-prompt (stores/flows.ts). Do not advertise this as "sandboxed".
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
@@ -13,6 +19,19 @@ import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 // eslint-disable-next-line @typescript-eslint/ban-types
 const compiledFunctions = new Map<string, Function>()
 const nodeState = new Map<string, unknown>()
+
+/**
+ * Prepended to user code: shadows host globals so casual/accidental access to the
+ * network, storage, DOM and Electron bridge fails. Defense-in-depth only.
+ */
+const SANDBOX_PREAMBLE =
+  'const window=undefined,self=undefined,globalThis=undefined,document=undefined,' +
+  'fetch=undefined,XMLHttpRequest=undefined,WebSocket=undefined,EventSource=undefined,' +
+  'localStorage=undefined,sessionStorage=undefined,indexedDB=undefined,caches=undefined,' +
+  'navigator=undefined,location=undefined,history=undefined,parent=undefined,top=undefined,' +
+  'opener=undefined,frames=undefined,electronAPI=undefined,importScripts=undefined,' +
+  'Worker=undefined,SharedWorker=undefined,require=undefined,process=undefined,' +
+  'module=undefined,exports=undefined,global=undefined;'
 
 /**
  * Helper to get cached value
@@ -30,7 +49,7 @@ function setCached(key: string, value: unknown): void {
 }
 
 // ============================================================================
-// Function Node (JavaScript Sandbox)
+// Function Node (restricted JavaScript — not an airtight sandbox)
 // ============================================================================
 
 export const functionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
@@ -90,7 +109,7 @@ export const functionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     if (!fn || lastHash !== codeHash) {
       // Compile the function
       // The function receives the context and should return an object with outputs
-      fn = new Function('ctx', `
+      fn = new Function('ctx', `${SANDBOX_PREAMBLE}
         with (ctx) {
           ${code}
         }
@@ -180,7 +199,7 @@ export const expressionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     const lastHash = getCached<string>(`${ctx.nodeId}:exprHash`, '')
 
     if (!fn || lastHash !== exprHash) {
-      fn = new Function('ctx', `with (ctx) { return (${expression}); }`)
+      fn = new Function('ctx', `${SANDBOX_PREAMBLE} with (ctx) { return (${expression}); }`)
       compiledFunctions.set(cacheKey, fn)
       setCached(`${ctx.nodeId}:exprHash`, exprHash)
     }
