@@ -58,11 +58,16 @@ each item; this is the narrative summary.
 - **http-request flood** (`http.ts`): a held-true `trigger` fired a fetch every frame
   (level-trigger, in-flight flag never read). Now fires on the rising edge only + gates on
   the in-flight `:loading` flag. **Unit-tested** (existing http suite extended to 20 tests).
+- **`BleAdapter` notification-listener leak** (HIGH): the handler added as
+  `characteristicvaluechanged` differed from the closure stored in `notificationHandlers`,
+  so it could never be removed and stacked (retaining `this`) on every reconnect. Now stores
+  and removes the same handler (via a `detachNotificationListeners` helper used by
+  unsubscribe/doDisconnect/dispose) and drops the prior listener on re-subscribe.
+  **Unit-tested** (`BleAdapter.test.ts`, 5 cases).
 - A connectivity audit precisely scoped the remaining async-robustness items (all still
   open, no GPU needed): the **mqtt/ws/http/BLE connect backoff** (no per-attempt throttle —
   ~60 connects/s while failing), **`ConnectionManager.disconnect` error-masking** → wedged
-  toggle, the shared-`autoReconnect` **clasp** mutation, and the **`BleAdapter`**
-  notification-listener leak. Good next targets.
+  toggle, and the shared-`autoReconnect` **clasp** mutation. Good next targets.
 - A deep audit of the visual/texture subsystem confirmed all executor gc is wired and that
   a **feedback-buffer node is feasible** following the `getOrCreateRenderTarget` pattern,
   but it needs live GPU verification (not unit-testable) and the subsystem still has open

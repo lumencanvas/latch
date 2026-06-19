@@ -103,7 +103,7 @@ export class BleAdapter extends BaseAdapter {
   private server: BluetoothRemoteGATTServer | null = null
   private services: Map<string, BluetoothRemoteGATTService> = new Map()
   private characteristics: Map<string, BluetoothRemoteGATTCharacteristic> = new Map()
-  private notificationHandlers: Map<string, (value: DataView) => void> = new Map()
+  private notificationHandlers: Map<string, (event: Event) => void> = new Map()
   private boundDisconnectHandler: (() => void) | null = null
 
   constructor(
@@ -242,7 +242,8 @@ export class BleAdapter extends BaseAdapter {
   }
 
   protected async doDisconnect(): Promise<void> {
-    // Stop all notifications
+    // Detach listeners, then stop all notifications.
+    this.detachNotificationListeners()
     for (const [uuid, characteristic] of this.characteristics) {
       try {
         if (this.notificationHandlers.has(uuid)) {
@@ -417,25 +418,45 @@ export class BleAdapter extends BaseAdapter {
       }
     }
 
-    this.notificationHandlers.set(uuid, (value: DataView) => {
-      const parsed = this.parseValue(value, format)
-      callback(parsed, value)
-    })
+    // If re-subscribing, detach the previous listener first so they don't stack
+    // (each closure retains `this`).
+    const previous = this.notificationHandlers.get(uuid)
+    if (previous) {
+      characteristic.removeEventListener('characteristicvaluechanged', previous)
+    }
 
+    // Store the SAME handler we attach, so unsubscribe / disconnect can remove it.
+    this.notificationHandlers.set(uuid, handler)
     characteristic.addEventListener('characteristicvaluechanged', handler)
     await characteristic.startNotifications()
   }
 
   async unsubscribeFromNotifications(uuid: string): Promise<void> {
     const characteristic = this.characteristics.get(uuid)
+    const handler = this.notificationHandlers.get(uuid)
 
-    if (characteristic && this.notificationHandlers.has(uuid)) {
+    if (characteristic && handler) {
+      characteristic.removeEventListener('characteristicvaluechanged', handler)
       try {
         await characteristic.stopNotifications()
       } catch {
         // Ignore
       }
       this.notificationHandlers.delete(uuid)
+    }
+  }
+
+  /**
+   * Detach all `characteristicvaluechanged` listeners. The handler closures retain
+   * `this`, so they must be removed (not merely dropped from the map) — otherwise
+   * they stack across reconnects and keep the adapter alive.
+   */
+  private detachNotificationListeners(): void {
+    for (const [uuid, characteristic] of this.characteristics) {
+      const handler = this.notificationHandlers.get(uuid)
+      if (handler) {
+        characteristic.removeEventListener('characteristicvaluechanged', handler)
+      }
     }
   }
 
@@ -571,6 +592,9 @@ export class BleAdapter extends BaseAdapter {
       this.device.removeEventListener('gattserverdisconnected', this.boundDisconnectHandler)
       this.boundDisconnectHandler = null
     }
+
+    // Detach notification listeners before dropping the characteristic refs.
+    this.detachNotificationListeners()
 
     super.dispose()
     this.device = null

@@ -67,10 +67,12 @@ hardware hackers, IoT makers.
 >   (latched `loadedUrl` on the not-found/catch paths), the webcam-snapshot `getUserMedia`
 >   re-prompt loop (a `failed` latch cleared on device/resolution change), and the
 >   **http-request flood** (rising-edge + in-flight gate; unit-tested). A connectivity audit
->   precisely scoped the rest — **still open:** the mqtt/ws/http/BLE connect backoff (no
->   per-attempt throttle), `ConnectionManager.disconnect` error-masking → wedged toggle, the
->   shared-`autoReconnect` clasp mutation, the `BleAdapter` notification-listener leak, and
->   the `createTextureFromWebGL`/`disposeObject`/`TextureBridge.gc` texture leaks (MED). The
+>   precisely scoped the rest. Also fixed the **`BleAdapter` notification-listener leak**
+>   (stored handler ≠ attached handler → stacked on reconnect; now removed via a shared
+>   `detachNotificationListeners` helper, unit-tested). **Still open:** the mqtt/ws/http/BLE
+>   connect backoff (no per-attempt throttle), `ConnectionManager.disconnect` error-masking →
+>   wedged toggle, the shared-`autoReconnect` clasp mutation, and the
+>   `createTextureFromWebGL`/`disposeObject`/`TextureBridge.gc` texture leaks (MED). The
 >   feedback-buffer node is feasible but needs live GPU verification (not a blind ship).
 > - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise, Color Ramp, Euclidean,
 >   Easing, and Spring landed — the latter is the first new gc-wired stateful executor,
