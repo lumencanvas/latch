@@ -1,10 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useFlowsStore } from '@/stores/flows'
+import { useHistoryStore } from '@/stores/history'
 
 describe('Flows Store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+  })
+
+  it('frees the deleted flow\'s undo/redo history (no memory leak)', () => {
+    const flows = useFlowsStore()
+    const history = useHistoryStore()
+    const flow = flows.createFlow('Doomed')
+    history.undoStacks.set(flow.id, [{} as never])
+    history.redoStacks.set(flow.id, [{} as never])
+
+    flows.deleteFlow(flow.id)
+
+    expect(history.undoStacks.has(flow.id)).toBe(false)
+    expect(history.redoStacks.has(flow.id)).toBe(false)
   })
 
   it('should create a new flow', () => {

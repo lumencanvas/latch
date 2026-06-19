@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { nanoid } from 'nanoid'
 import type { Node, Edge, XYPosition } from '@vue-flow/core'
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+import { useHistoryStore } from './history'
 
 /**
  * Resolve the Vue Flow node `type`: a node whose nodeType has a dedicated custom
@@ -127,6 +128,8 @@ export const useFlowsStore = defineStore('flows', {
         if (this.activeFlowId === flowId) {
           this.activeFlowId = this.flows[0]?.id ?? null
         }
+        // Free the deleted flow's undo/redo snapshots (can be several MB each).
+        useHistoryStore().clearHistory(flowId)
       }
     },
 
