@@ -20,6 +20,7 @@ export const sentimentAnalysisNode: NodeDefinition = {
     { id: 'loading', type: 'boolean', label: 'Loading' },
   ],
   controls: [],
+  tags: ['sentiment', 'sentiment analysis', 'emotion', 'positive', 'negative', 'tone', 'nlp', 'ai'],
   info: {
     overview: 'Analyzes text and classifies it as positive or negative, outputting both a label and numeric scores. Returns separate positive and negative confidence values. Useful for monitoring tone in chat messages, reviews, or transcribed speech.',
     tips: [

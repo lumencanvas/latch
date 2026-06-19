@@ -18,6 +18,7 @@ export const scene3dNode: NodeDefinition = {
     { id: 'backgroundColor', type: 'color', label: 'Background', default: '#000000' },
     { id: 'showGrid', type: 'toggle', label: 'Show Grid', default: false },
   ],
+  tags: ['scene', '3d', 'world', 'stage', 'container', 'root'],
   info: {
     overview: 'Acts as the root container that holds all 3D objects, lights, and groups. Every 3D pipeline starts here. Connect objects to the input and pass the scene output to Render 3D along with a camera.',
     tips: [

@@ -21,6 +21,7 @@ export const textGenerationNode: NodeDefinition = {
     { id: 'maxTokens', type: 'number', label: 'Max Tokens', default: 50, props: { min: 10, max: 200 } },
     { id: 'temperature', type: 'slider', label: 'Temperature', default: 0.7, props: { min: 0.1, max: 2, step: 0.1 } },
   ],
+  tags: ['text generation', 'llm', 'gpt', 'generate', 'language model', 'chat', 'ai'],
   info: {
     overview: 'Generates text using a local language model running in the browser. Takes a prompt and produces a completion with configurable length and temperature. Good for creative text, dialogue, or data augmentation tasks.',
     tips: [

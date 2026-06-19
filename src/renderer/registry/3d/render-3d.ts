@@ -21,6 +21,7 @@ export const render3dNode: NodeDefinition = {
     { id: 'height', type: 'number', label: 'Height', default: 512, props: { min: 64, max: 2048 } },
     { id: 'includeDepth', type: 'toggle', label: 'Include Depth', default: false },
   ],
+  tags: ['render', '3d', 'output', 'rasterize', 'draw', 'camera', 'scene'],
   info: {
     overview: 'Takes a scene and a camera and produces a rendered texture output. This is the final step in any 3D pipeline. It can also output a depth buffer for post-processing effects.',
     tips: [

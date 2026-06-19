@@ -24,6 +24,7 @@ export const transform2dNode: NodeDefinition = {
     { id: 'translateX', type: 'slider', label: 'Translate X', default: 0, props: { min: -1, max: 1, step: 0.01 } },
     { id: 'translateY', type: 'slider', label: 'Translate Y', default: 0, props: { min: -1, max: 1, step: 0.01 } },
   ],
+  tags: ['transform', 'transform 2d', 'scale', 'rotate', 'translate', 'move', 'position', 'pan', 'zoom', 'flip'],
   info: {
     overview: 'Applies scale, rotation, and translation transforms to a texture. All parameters accept external inputs so they can be animated. This is the standard way to reposition or resize a texture layer before blending or display.',
     tips: [

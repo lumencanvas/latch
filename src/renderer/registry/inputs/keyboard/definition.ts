@@ -50,6 +50,7 @@ export const keyboardNode: NodeDefinition = {
       default: true,
     },
   ],
+  tags: ['keyboard', 'piano', 'midi', 'notes', 'keys', 'music'],
   info: {
     overview: 'Provides an on-screen piano keyboard that outputs MIDI note numbers, velocity, note-on triggers, and a gate signal. You can configure the key range, starting octave, and whether black keys are visible. It works standalone or alongside a physical MIDI controller.',
     tips: [

@@ -28,6 +28,7 @@ export const pointLight3dNode: NodeDefinition = {
     { id: 'posZ', type: 'number', label: 'Position Z', default: 0 },
     { id: 'castShadow', type: 'toggle', label: 'Cast Shadow', default: false },
   ],
+  tags: ['point light', 'bulb', 'light', 'omni', '3d', 'lighting'],
   info: {
     overview: 'Emits light equally in all directions from a single point in space, similar to a bare light bulb. Intensity falls off with distance based on the decay setting. Works well for indoor scenes and localized highlights.',
     tips: [

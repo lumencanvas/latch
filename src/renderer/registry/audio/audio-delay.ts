@@ -18,6 +18,7 @@ export const audioDelayNode: NodeDefinition = {
     { id: 'feedback', type: 'number', label: 'Feedback', default: 0.5 },
     { id: 'wet', type: 'number', label: 'Wet', default: 0.5 },
   ],
+  tags: ['delay', 'echo', 'feedback', 'repeat', 'effect'],
   info: {
     overview: 'Adds a delay or echo effect to the audio signal. The feedback control determines how many times the delayed signal repeats, and the wet control blends between dry and delayed audio.',
     tips: [

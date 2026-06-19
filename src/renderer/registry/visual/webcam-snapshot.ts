@@ -44,6 +44,7 @@ export const webcamSnapshotNode: NodeDefinition = {
       default: false,
     },
   ],
+  tags: ['webcam snapshot', 'snapshot', 'still', 'capture', 'freeze', 'photo', 'camera'],
   info: {
     overview: 'Captures a single still frame from the webcam each time it receives a trigger. Unlike the continuous webcam node, this only updates on demand. Outputs the captured texture, raw image data, and dimensions.',
     tips: [

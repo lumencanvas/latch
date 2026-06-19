@@ -19,6 +19,7 @@ export const imageCaptioningNode: NodeDefinition = {
   controls: [
     { id: 'interval', type: 'number', label: 'Frame Interval', default: 60, props: { min: 1, max: 300 } },
   ],
+  tags: ['image captioning', 'caption', 'describe', 'vision', 'blip', 'ai'],
   info: {
     overview: 'Generates a natural language description of an image using a vision-language model. Takes image data as input and produces a text caption. The frame interval control limits how often captioning runs on video streams.',
     tips: [

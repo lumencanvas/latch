@@ -24,6 +24,7 @@ export const plane3dNode: NodeDefinition = {
     { id: 'height', type: 'number', label: 'Height', default: 1 },
     { id: 'color', type: 'color', label: 'Color', default: '#808080' },
   ],
+  tags: ['plane', 'quad', 'ground', 'floor', '3d', 'geometry', 'mesh', 'primitive'],
   info: {
     overview: 'Creates a flat rectangular surface. Planes are useful as ground floors, walls, backgrounds, or shadow-receiving surfaces beneath other objects.',
     tips: [

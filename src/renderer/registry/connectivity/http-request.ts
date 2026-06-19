@@ -60,6 +60,7 @@ export const httpRequestNode: NodeDefinition = {
       props: { min: 1000, max: 120000, step: 1000 },
     },
   ],
+  tags: ['http', 'request', 'rest', 'api', 'fetch', 'get', 'post', 'webhook', 'url'],
   info: {
     overview: 'Makes HTTP and REST API requests with support for all standard methods and optional request templates. You can use a shared connection for base URL and authentication, or specify a full URL directly. Responses are output as parsed data along with the status code.',
     tips: [

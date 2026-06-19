@@ -56,6 +56,7 @@ export const mediapipeSegmentationNode: NodeDefinition = {
       props: { min: 0, max: 1, step: 0.05 },
     },
   ],
+  tags: ['segmentation', 'mediapipe', 'selfie', 'background', 'mask', 'matte', 'ai'],
   info: {
     overview: 'Separates a person from the background in a video feed using MediaPipe Selfie Segmentation. Outputs a mask that can be used for cutout effects, background blur, or custom compositing. Runs in real time in the browser.',
     tips: [

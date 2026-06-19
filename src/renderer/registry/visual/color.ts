@@ -27,6 +27,7 @@ export const colorNode: NodeDefinition = {
     { id: 'b', type: 'slider', label: 'B', default: 1, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'a', type: 'slider', label: 'A', default: 1, props: { min: 0, max: 1, step: 0.01 } },
   ],
+  tags: ['color', 'colour', 'rgb', 'rgba', 'swatch', 'picker', 'fill', 'solid', 'tint'],
   info: {
     overview: 'Creates an RGBA color value from individual channel sliders or numeric inputs. Outputs both the combined color object and separate R, G, B, A channel values. Useful as a color source for shaders and visual effects.',
     tips: [

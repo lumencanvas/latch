@@ -31,6 +31,7 @@ export const material3dNode: NodeDefinition = {
     { id: 'emissive', type: 'color', label: 'Emissive', default: '#000000' },
     { id: 'emissiveIntensity', type: 'number', label: 'Emissive Int.', default: 0, props: { min: 0, max: 10 } },
   ],
+  tags: ['material', 'pbr', 'shader', 'surface', 'texture', '3d', 'metal', 'roughness'],
   info: {
     overview: 'Creates a PBR (physically based rendering) material that controls how surfaces look under lighting. Supports metalness, roughness, opacity, emissive glow, wireframe mode, and texture map inputs for detailed surfaces.',
     tips: [

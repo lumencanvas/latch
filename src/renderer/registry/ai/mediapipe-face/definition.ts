@@ -74,6 +74,7 @@ export const mediapipeFaceNode: NodeDefinition = {
       default: true,
     },
   ],
+  tags: ['face mesh', 'mediapipe', 'face', 'landmarks', 'blendshapes', 'ai'],
   info: {
     overview: 'Detects 468 face landmarks and blendshapes from a video feed using MediaPipe Face Mesh. Provides head rotation angles, individual expression values like mouth open and eye blink, and multiple visualization styles. Runs in real time in the browser.',
     tips: [

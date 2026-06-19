@@ -22,6 +22,7 @@ export const midiInputNode: NodeDefinition = {
     { id: 'enabled', type: 'toggle', label: 'Enabled', default: true },
     { id: 'channel', type: 'number', label: 'Channel (-1=all)', default: -1, props: { min: -1, max: 15 } },
   ],
+  tags: ['midi', 'input', 'controller', 'cc', 'notes', 'music', 'hardware'],
   info: {
     overview: 'Receives MIDI messages from connected hardware or virtual MIDI devices. Outputs include note number, velocity, note on/off state, and control change values. Set the channel to -1 to listen on all channels at once.',
     tips: [

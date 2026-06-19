@@ -75,6 +75,7 @@ export const mediapipeObjectNode: NodeDefinition = {
       default: true,
     },
   ],
+  tags: ['object detection', 'mediapipe', 'detect', 'realtime', 'vision', 'ai'],
   info: {
     overview: 'Detects objects in a video stream using the MediaPipe EfficientDet model. Returns bounding boxes, labels, and confidence scores for each detected object. Includes a label filter to focus on specific object categories.',
     tips: [

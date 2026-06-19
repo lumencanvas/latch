@@ -18,6 +18,7 @@ export const displacementNode: NodeDefinition = {
     { id: 'strength', type: 'slider', label: 'Strength', default: 0.1, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'channel', type: 'select', label: 'Channel', default: 'rg', props: { options: ['r', 'rg', 'rgb'] } },
   ],
+  tags: ['displacement', 'displace', 'warp', 'distortion', 'glitch', 'liquify', 'map', 'effect'],
   info: {
     overview: 'Warps the input texture by using a second texture as a displacement map. The brightness values of the displacement map shift pixel positions in the source. Strength controls how far pixels are moved, and channel selects which map channels drive the displacement axes.',
     tips: [

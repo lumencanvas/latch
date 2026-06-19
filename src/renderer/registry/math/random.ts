@@ -14,6 +14,7 @@ export const randomNode: NodeDefinition = {
     { id: 'min', type: 'number', label: 'Min', default: 0 },
     { id: 'max', type: 'number', label: 'Max', default: 1 },
   ],
+  tags: ['random', 'noise', 'rng', 'probabilistic', 'chance', 'generator', 'jitter', 'dice'],
   info: {
     overview: 'Generates a random number within a configurable minimum and maximum range. An optional seed input allows for reproducible random sequences. Each evaluation produces a new random value unless the seed is held constant.',
     tips: [

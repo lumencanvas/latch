@@ -46,6 +46,7 @@ export const vlaNode: NodeDefinition = {
     { id: 'maxTokens', type: 'number', label: 'Max Tokens', default: 64, props: { min: 8, max: 256 } },
     { id: 'interval', type: 'number', label: 'Frame Interval', default: 120, props: { min: 1, max: 600 } },
   ],
+  tags: ['vla', 'vision language', 'smolvlm', 'multimodal', 'vision', 'ai'],
   info: {
     overview:
       'Runs a vision-language model (SmolVLM) on an image plus a natural-language instruction and outputs the model’s response — an answer or a chosen action. This is the "VLM-as-policy" pattern: the model reasons over what it sees and the instruction, then emits a short action/command in text. Runs entirely in the browser (WebGPU or WASM); load the model from the AI Model Manager (Vision-Language). A true robotics VLA action head is not yet browser-runnable, so a vision-language model stands in.',

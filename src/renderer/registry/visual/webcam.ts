@@ -26,6 +26,7 @@ export const webcamNode: NodeDefinition = {
       props: { deviceType: 'video-input' },
     },
   ],
+  tags: ['webcam', 'camera', 'video', 'live', 'input', 'capture', 'source'],
   info: {
     overview: 'Streams live video from a camera and outputs it as a continuously updating texture. Also provides a raw video element and the current resolution. This is the primary node for getting real-time camera input into a visual flow.',
     tips: [

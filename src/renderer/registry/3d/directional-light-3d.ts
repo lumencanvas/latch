@@ -26,6 +26,7 @@ export const directionalLight3dNode: NodeDefinition = {
     { id: 'posZ', type: 'number', label: 'Position Z', default: 5 },
     { id: 'castShadow', type: 'toggle', label: 'Cast Shadow', default: true },
   ],
+  tags: ['directional light', 'sun', 'light', '3d', 'lighting'],
   info: {
     overview: 'Emits parallel light rays from a given direction, simulating a distant source like the sun. All objects receive the same angle of light regardless of their position. Supports shadow casting for grounded, realistic scenes.',
     tips: [

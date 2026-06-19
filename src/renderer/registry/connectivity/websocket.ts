@@ -27,6 +27,7 @@ export const websocketNode: NodeDefinition = {
       props: { protocol: 'websocket', placeholder: 'Select WebSocket connection...' },
     },
   ],
+  tags: ['websocket', 'ws', 'socket', 'realtime', 'network', 'stream'],
   info: {
     overview: 'Opens a persistent WebSocket connection for real-time bidirectional messaging. Uses a shared connection from the ConnectionManager so multiple nodes can share the same socket. Incoming messages appear on the Message output and you can send data through the Send input.',
     tips: [

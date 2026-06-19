@@ -24,6 +24,7 @@ export const colorCorrectionNode: NodeDefinition = {
     { id: 'hue', type: 'slider', label: 'Hue', default: 0, props: { min: -180, max: 180, step: 1 } },
     { id: 'gamma', type: 'slider', label: 'Gamma', default: 1, props: { min: 0.1, max: 3, step: 0.01 } },
   ],
+  tags: ['color correction', 'grade', 'grading', 'levels', 'lut', 'brightness', 'contrast', 'saturation', 'hue', 'gamma', 'adjust'],
   info: {
     overview: 'Adjusts brightness, contrast, saturation, hue, and gamma of an input texture. All parameters can be driven by external inputs, making it easy to animate color grading in real time.',
     tips: [

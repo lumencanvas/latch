@@ -91,6 +91,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Note: Additional controls for uniforms are dynamically generated
     // and stored in node.data._dynamicControls
   ],
+  tags: ['shader', 'glsl', 'fragment', 'generator', 'procedural', 'noise', 'plasma', 'glitch', 'kaleidoscope', 'voronoi', 'chromatic aberration', 'pixelate', 'effect', 'shadertoy'],
   info: {
     overview: 'Runs custom GLSL fragment shaders with automatic uniform detection. Declared uniforms become input ports so other nodes can feed values into the shader. Includes Shadertoy compatibility mode and a library of built-in presets for common effects and generators.',
     tips: [

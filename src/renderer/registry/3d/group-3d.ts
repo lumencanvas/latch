@@ -22,6 +22,7 @@ export const group3dNode: NodeDefinition = {
     { id: 'posY', type: 'number', label: 'Position Y', default: 0 },
     { id: 'posZ', type: 'number', label: 'Position Z', default: 0 },
   ],
+  tags: ['group', '3d', 'container', 'parent', 'combine', 'hierarchy'],
   info: {
     overview: 'Combines multiple 3D objects into a single group that can be positioned as one unit. Moving or transforming the group affects all children together, which simplifies scene organization.',
     tips: [

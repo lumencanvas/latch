@@ -24,6 +24,7 @@ export const sphere3dNode: NodeDefinition = {
     { id: 'heightSegments', type: 'number', label: 'Height Segs', default: 16, props: { min: 2, max: 32 } },
     { id: 'color', type: 'color', label: 'Color', default: '#808080' },
   ],
+  tags: ['sphere', 'ball', 'globe', '3d', 'geometry', 'mesh', 'primitive'],
   info: {
     overview: 'Creates a sphere mesh with configurable radius and segment counts. Higher segment values produce smoother surfaces. It is a good primitive for testing materials and lighting setups.',
     tips: [

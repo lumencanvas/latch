@@ -17,6 +17,7 @@ export const blurNode: NodeDefinition = {
     { id: 'radius', type: 'slider', label: 'Radius', default: 5, props: { min: 0, max: 50, step: 0.5 } },
     { id: 'passes', type: 'number', label: 'Passes', default: 2, props: { min: 1, max: 10 } },
   ],
+  tags: ['blur', 'gaussian', 'bloom', 'glow', 'soften', 'defocus', 'depth of field', 'effect'],
   info: {
     overview: 'Applies a Gaussian blur to the input texture. The radius controls how far the blur spreads, and the passes control determines quality. More passes produce a smoother result at the cost of performance.',
     tips: [

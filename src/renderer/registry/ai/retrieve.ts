@@ -18,6 +18,7 @@ export const retrieveNode: NodeDefinition = {
     { id: 'bestText', type: 'string', label: 'Best' },
   ],
   controls: [{ id: 'topK', type: 'number', label: 'Top K', default: 3 }],
+  tags: ['retrieve', 'rag', 'search', 'vector', 'similarity', 'memory', 'context', 'ai'],
   info: {
     overview:
       'Ranks a corpus of pre-embedded documents by cosine similarity to a query embedding and returns the top-K. This is the retrieval step of in-browser RAG: it lets a small, short-context LLM answer over far more text than fits in its window. Pure and offline — no model call here.',

@@ -32,6 +32,7 @@ export const camera3dNode: NodeDefinition = {
     { id: 'targetY', type: 'number', label: 'Target Y', default: 0 },
     { id: 'targetZ', type: 'number', label: 'Target Z', default: 0 },
   ],
+  tags: ['camera', '3d', 'view', 'perspective', 'orthographic', 'lens'],
   info: {
     overview: 'Defines the viewpoint used to render a 3D scene. Supports both perspective projection, which mimics human vision with foreshortening, and orthographic projection, which preserves parallel lines. Connect it to Render 3D alongside a scene to produce an image.',
     tips: [

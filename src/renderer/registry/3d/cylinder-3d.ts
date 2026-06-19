@@ -27,6 +27,7 @@ export const cylinder3dNode: NodeDefinition = {
     { id: 'radialSegments', type: 'number', label: 'Segments', default: 32, props: { min: 3, max: 64 } },
     { id: 'color', type: 'color', label: 'Color', default: '#808080' },
   ],
+  tags: ['cylinder', 'tube', 'pipe', '3d', 'geometry', 'mesh', 'primitive'],
   info: {
     overview: 'Generates a cylinder mesh with independent top and bottom radii. Setting one radius to zero produces a cone, making this node flexible for columns, pipes, and tapered shapes.',
     tips: [

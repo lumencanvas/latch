@@ -23,6 +23,7 @@ export const serialNode: NodeDefinition = {
     { id: 'baudRate', type: 'select', label: 'Baud Rate', default: 9600, props: { options: [9600, 19200, 38400, 57600, 115200] } },
     { id: 'connect', type: 'toggle', label: 'Connect', default: false },
   ],
+  tags: ['serial', 'usb', 'uart', 'arduino', 'port', 'hardware'],
   info: {
     overview: 'Communicates with hardware over a serial port using the Web Serial API. Received data is available as raw bytes, parsed lines, or a numeric value. Common uses include reading from Arduino boards, microcontrollers, and other serial peripherals.',
     tips: [

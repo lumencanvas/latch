@@ -26,6 +26,7 @@ export const torus3dNode: NodeDefinition = {
     { id: 'tubularSegments', type: 'number', label: 'Tubular Segs', default: 100, props: { min: 3, max: 200 } },
     { id: 'color', type: 'color', label: 'Color', default: '#808080' },
   ],
+  tags: ['torus', 'donut', 'ring', '3d', 'geometry', 'mesh', 'primitive'],
   info: {
     overview: 'Creates a torus (donut-shaped) mesh defined by an outer radius and a tube radius. Segment controls let you balance visual smoothness against performance.',
     tips: [

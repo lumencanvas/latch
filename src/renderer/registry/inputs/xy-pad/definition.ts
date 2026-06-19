@@ -23,6 +23,7 @@ export const xyPadNode: NodeDefinition = {
     { id: 'minY', type: 'number', label: 'Min Y', default: 0 },
     { id: 'maxY', type: 'number', label: 'Max Y', default: 1 },
   ],
+  tags: ['xy pad', 'xy', 'pad', '2d', 'joystick', 'position', 'vector', 'touch'],
   info: {
     overview: 'A two-dimensional pad that outputs X and Y positions in both raw and normalized forms. The raw outputs use the configured min/max ranges while the normalized outputs always produce 0-to-1 values. This is ideal for controlling two parameters simultaneously with a single gesture.',
     tips: [

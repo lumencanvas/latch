@@ -33,6 +33,7 @@ export const metronomeNode: NodeDefinition = {
     { id: 'swing', type: 'slider', label: 'Swing', default: 0, props: { min: 0, max: 100, step: 1 } },
     { id: 'running', type: 'toggle', label: 'Running', default: true },
   ],
+  tags: ['metronome', 'tempo', 'bpm', 'clock', 'beat', 'pulse', 'timing'],
   info: {
     overview: 'A musical clock that emits beat and bar triggers at a given BPM. It outputs the current beat number, bar number, and a phase value from 0 to 1 within each beat. Subdivision and swing controls let you dial in rhythmic feel.',
     tips: [

@@ -13,6 +13,7 @@ export const sliderNode: NodeDefinition = {
   controls: [
     { id: 'value', type: 'slider', label: 'Value', default: 0.5, exposable: true, props: { min: 0, max: 1, step: 0.01 } },
   ],
+  tags: ['slider', 'fader', 'value', 'range', 'control', 'input'],
   info: {
     overview: 'A horizontal slider that outputs a normalized 0-to-1 value. It provides fine-grained control with a step size of 0.01 by default. The value can be exposed on the node surface for quick access.',
     tips: [

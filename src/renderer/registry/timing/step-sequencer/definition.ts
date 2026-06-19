@@ -29,6 +29,7 @@ export const stepSequencerNode: NodeDefinition = {
     // Step values are stored as an array in the node data
     { id: 'stepValues', type: 'data', label: 'Step Values', default: [] },
   ],
+  tags: ['sequencer', 'step sequencer', 'pattern', 'steps', 'gate', 'rhythm', 'trigger'],
   info: {
     overview: 'A pattern sequencer that advances through a configurable number of steps on each incoming clock trigger. Each step holds a value and a gate state. Supports forward, backward, ping-pong, and random playback modes.',
     tips: [

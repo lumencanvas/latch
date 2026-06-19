@@ -81,6 +81,7 @@ export const mediapipePoseNode: NodeDefinition = {
       default: true,
     },
   ],
+  tags: ['pose estimation', 'mediapipe', 'pose', 'body', 'skeleton', 'landmarks', 'ai'],
   info: {
     overview: 'Detects 33 body pose landmarks from a video feed using MediaPipe Pose. Provides both normalized and world-space coordinates, per-landmark visibility scores, and convenient outputs for key body points like shoulders, elbows, and hips.',
     tips: [

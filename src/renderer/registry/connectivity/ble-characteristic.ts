@@ -73,6 +73,7 @@ export const bleCharacteristicNode: NodeDefinition = {
       default: false,
     },
   ],
+  tags: ['ble', 'bluetooth', 'characteristic', 'gatt', 'read', 'write', 'notify'],
   info: {
     overview: 'Reads, writes, and subscribes to individual BLE characteristic values on a connected device. You specify the service and characteristic UUIDs, pick a data format, and the node handles encoding and decoding automatically. Notifications push updated values as they arrive.',
     tips: [

@@ -16,6 +16,7 @@ export const textboxNode: NodeDefinition = {
     { id: 'text', type: 'text', label: 'Text', default: '' },
     { id: 'height', type: 'number', label: 'Height', default: 100 },
   ],
+  tags: ['textbox', 'text', 'string', 'input', 'label', 'type'],
   info: {
     overview: 'A resizable text input area that outputs its contents as a string. The optional trigger input lets you control when the text value updates downstream. The height control adjusts the visible editing area without affecting output.',
     tips: [

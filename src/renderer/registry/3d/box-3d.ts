@@ -26,6 +26,7 @@ export const box3dNode: NodeDefinition = {
     { id: 'depth', type: 'number', label: 'Depth', default: 1 },
     { id: 'color', type: 'color', label: 'Color', default: '#808080' },
   ],
+  tags: ['box', 'cube', 'block', '3d', 'geometry', 'mesh', 'primitive'],
   info: {
     overview: 'Creates a rectangular box mesh with configurable width, height, and depth. It is the most common primitive for building architectural elements, platforms, and placeholder geometry in a 3D scene.',
     tips: [

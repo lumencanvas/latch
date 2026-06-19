@@ -26,6 +26,7 @@ export const audioInputNode: NodeDefinition = {
       props: { deviceType: 'audio-input' },
     },
   ],
+  tags: ['audio input', 'microphone', 'mic', 'line in', 'capture', 'source'],
   info: {
     overview: 'Captures live audio from a microphone or other system input device. It provides a raw audio stream, a level envelope, and a beat trigger. The source selector lets you pick which input device to use when multiple are available.',
     tips: [

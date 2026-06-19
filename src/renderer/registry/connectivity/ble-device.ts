@@ -44,6 +44,7 @@ export const bleDeviceNode: NodeDefinition = {
       props: { placeholder: 'Filter to specific service' },
     },
   ],
+  tags: ['ble', 'bluetooth', 'device', 'gatt', 'connect', 'peripheral'],
   info: {
     overview: 'Connects to a specific Bluetooth LE device and enumerates its services and characteristics. Pass in a device reference from a BLE Scanner node, and this node manages the connection lifecycle including optional auto-reconnect.',
     tips: [

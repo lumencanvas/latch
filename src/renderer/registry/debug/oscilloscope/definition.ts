@@ -17,6 +17,7 @@ export const oscilloscopeNode: NodeDefinition = {
     { id: 'timeScale', type: 'slider', label: 'Time Scale', default: 1, props: { min: 0.25, max: 4, step: 0.25 } },
     { id: 'amplitude', type: 'slider', label: 'Amplitude', default: 1, props: { min: 0.1, max: 2, step: 0.1 } },
   ],
+  tags: ['oscilloscope', 'scope', 'waveform', 'signal', 'wave', 'monitor', 'debug'],
   info: {
     overview: 'Draws a scrolling waveform of a numeric signal or audio input over time. Use it to inspect the shape and timing of any continuous signal. Accepts both plain number values and audio connections.',
     tips: [

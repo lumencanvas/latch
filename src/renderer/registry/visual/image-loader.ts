@@ -35,6 +35,7 @@ export const imageLoaderNode: NodeDefinition = {
       props: { options: ['anonymous', 'use-credentials', 'none'] },
     },
   ],
+  tags: ['image', 'picture', 'photo', 'load', 'file', 'texture', 'source', 'still'],
   info: {
     overview: 'Loads a still image from a URL, local file, or the built-in asset library and outputs it as a texture. Also provides the image dimensions and a loading state. Supports reload via trigger input.',
     tips: [

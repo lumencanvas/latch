@@ -20,6 +20,7 @@ export const midiOutputNode: NodeDefinition = {
   controls: [
     { id: 'channel', type: 'number', label: 'Channel', default: 0, props: { min: 0, max: 15 } },
   ],
+  tags: ['midi', 'output', 'send', 'cc', 'notes', 'music', 'hardware'],
   info: {
     overview: 'Sends MIDI note messages to connected hardware or virtual MIDI devices. Provide a note number and velocity, then trigger the send. Useful for controlling synthesizers, lighting rigs, or any MIDI-compatible equipment from a flow.',
     tips: [

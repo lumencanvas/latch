@@ -19,6 +19,7 @@ export const vectorMemoryNode: NodeDefinition = {
     { id: 'count', type: 'number', label: 'Count' },
   ],
   controls: [{ id: 'maxSize', type: 'number', label: 'Max Size', default: 0 }],
+  tags: ['vector memory', 'rag', 'store', 'corpus', 'embedding', 'database', 'memory', 'ai'],
   info: {
     overview:
       'A stateful, incrementally-built RAG corpus. Pulse Add to store the current Vector + Text; pulse Clear to empty it. The accumulated Corpus output wires straight into the Retrieve node, so a small, short-context LLM can answer over text gathered across a whole session. Pure and offline — no model call here.',

@@ -35,6 +35,7 @@ export const transform3dNode: NodeDefinition = {
     { id: 'scaleY', type: 'number', label: 'Scale Y', default: 1 },
     { id: 'scaleZ', type: 'number', label: 'Scale Z', default: 1 },
   ],
+  tags: ['transform', '3d', 'position', 'rotation', 'scale', 'move', 'translate'],
   info: {
     overview: 'Applies position, rotation, and scale to any 3D object without modifying the original geometry. Chain multiple transforms or drive inputs with animated values for motion. The transform output can also be reused by other nodes.',
     tips: [

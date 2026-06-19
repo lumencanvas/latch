@@ -16,6 +16,7 @@ export const gainNode: NodeDefinition = {
   controls: [
     { id: 'gain', type: 'number', label: 'Gain', default: 1 },
   ],
+  tags: ['gain', 'volume', 'level', 'amplitude', 'amp', 'loudness'],
   info: {
     overview: 'Multiplies the audio signal amplitude by a gain factor. A value of 1 passes audio unchanged, values below 1 attenuate, and values above 1 amplify. This is the primary volume control node in any audio chain.',
     tips: [

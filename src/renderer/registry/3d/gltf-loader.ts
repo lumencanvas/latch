@@ -26,6 +26,7 @@ export const gltfLoaderNode: NodeDefinition = {
     { id: 'posZ', type: 'number', label: 'Position Z', default: 0 },
     { id: 'scale', type: 'number', label: 'Scale', default: 1, props: { min: 0.001, max: 100 } },
   ],
+  tags: ['gltf', 'glb', 'model', 'mesh', 'import', '3d', 'load', 'asset'],
   info: {
     overview: 'Loads external 3D models in GLTF or GLB format from a URL and outputs them as scene objects. This is the primary way to bring complex, pre-built assets into the scene. The loading output lets you show progress feedback.',
     tips: [

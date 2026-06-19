@@ -11,6 +11,7 @@ export const textureDisplayNode: NodeDefinition = {
   inputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   outputs: [],
   controls: [],
+  tags: ['texture display', 'preview', 'view', 'monitor', 'output', 'screen', 'display'],
   info: {
     overview: 'Renders an input texture directly onto a visible canvas in the node. This is the simplest way to preview any texture output without routing it to the main output. It has no controls and no outputs.',
     tips: [

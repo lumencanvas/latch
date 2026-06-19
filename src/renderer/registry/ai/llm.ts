@@ -77,6 +77,7 @@ export const llmNode: NodeDefinition = {
     { id: 'maxTokens', type: 'number', label: 'Max Tokens', default: 512, props: { min: 16, max: 4096 } },
     { id: 'temperature', type: 'slider', label: 'Temperature', default: 0.7, props: { min: 0, max: 2, step: 0.1 } },
   ],
+  tags: ['llm', 'language model', 'chat', 'webllm', 'gpt', 'generate', 'ai'],
   info: {
     overview:
       'Streams text from a full chat LLM running locally on your GPU via WebLLM (MLC). Pulse Generate to stream tokens into the Text output in real time. Requires WebGPU (Chrome/Edge desktop, or other WebGPU-capable browsers); without it the Supported output is false. Weights download once (~1–4 GB) and are cached.',

@@ -43,6 +43,7 @@ export const mqttNode: NodeDefinition = {
       props: { options: [0, 1, 2] },
     },
   ],
+  tags: ['mqtt', 'pub', 'sub', 'broker', 'iot', 'messaging', 'topic'],
   info: {
     overview: 'Publishes and subscribes to MQTT topics using a shared connection. Incoming messages appear on the Message output along with the topic they arrived on. Supports QoS levels 0, 1, and 2 for different delivery guarantees.',
     tips: [

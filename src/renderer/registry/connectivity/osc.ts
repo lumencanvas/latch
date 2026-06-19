@@ -27,6 +27,7 @@ export const oscNode: NodeDefinition = {
     { id: 'address', type: 'text', label: 'Address', default: '/clasp', props: { placeholder: '/path/to/param' } },
     { id: 'connect', type: 'toggle', label: 'Connect', default: true },
   ],
+  tags: ['osc', 'open sound control', 'udp', 'touchosc', 'network', 'control'],
   info: {
     overview: 'Sends and receives Open Sound Control messages over a WebSocket bridge. You specify a host, port, and OSC address pattern. Incoming messages are split into their address and argument components for easy downstream processing.',
     tips: [

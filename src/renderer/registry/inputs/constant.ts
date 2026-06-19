@@ -13,6 +13,7 @@ export const constantNode: NodeDefinition = {
   controls: [
     { id: 'value', type: 'number', label: 'Value', default: 0, exposable: true },
   ],
+  tags: ['constant', 'value', 'number', 'fixed', 'literal', 'source'],
   info: {
     overview: 'Outputs a single fixed numeric value that does not change over time. It is the simplest way to feed a known number into other nodes. The value control can be exposed for quick adjustment without opening the node.',
     tips: [

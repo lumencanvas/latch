@@ -22,6 +22,7 @@ export const oscillatorNode: NodeDefinition = {
     { id: 'waveform', type: 'select', label: 'Waveform', default: 'sine', props: { options: ['sine', 'square', 'triangle', 'sawtooth'] } },
     { id: 'volume', type: 'number', label: 'Volume (dB)', default: -6 },
   ],
+  tags: ['oscillator', 'osc', 'tone', 'sine', 'square', 'saw', 'triangle', 'synth', 'generator'],
   info: {
     overview: 'Generates a continuous audio waveform at a specified frequency. Supports sine, square, triangle, and sawtooth shapes. This is a fundamental building block for synthesis, test tones, and modulation sources.',
     tips: [

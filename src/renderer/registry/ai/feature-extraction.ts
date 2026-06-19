@@ -18,6 +18,7 @@ export const featureExtractionNode: NodeDefinition = {
     { id: 'loading', type: 'boolean', label: 'Loading' },
   ],
   controls: [],
+  tags: ['text embed', 'feature extraction', 'embedding', 'embed', 'vector', 'similarity', 'nlp', 'ai'],
   info: {
     overview: 'Converts text into a numeric embedding vector using a transformer model. The resulting high-dimensional vector captures semantic meaning, making it useful for similarity comparisons and clustering. Runs entirely in the browser.',
     tips: [
