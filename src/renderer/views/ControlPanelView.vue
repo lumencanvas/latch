@@ -995,11 +995,11 @@ onUnmounted(() => {
           class="empty-icon"
         />
         <h2>No Controls in Flow</h2>
-        <p>Add control nodes to your flow:</p>
+        <p>Control and monitor nodes appear here automatically. Add any of these in the editor:</p>
         <ul>
-          <li>Slider, Knob, Trigger, XY Pad</li>
-          <li>Constant, LFO</li>
-          <li>Monitor, Oscilloscope</li>
+          <li>Slider, Knob, Trigger, XY Pad, LFO</li>
+          <li>Keyboard, Synth, Wavetable, Envelope</li>
+          <li>Monitor, Oscilloscope, Main Output</li>
         </ul>
         <button
           class="back-btn"
