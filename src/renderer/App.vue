@@ -131,7 +131,13 @@ onUnmounted(() => {
         </button>
 
         <main class="app-main">
-          <router-view />
+          <!-- Keep the editor (and any running Emulator node) alive when switching
+               to Controls/Settings, so it isn't torn down and re-created. -->
+          <router-view v-slot="{ Component }">
+            <KeepAlive :include="['EditorView']">
+              <component :is="Component" />
+            </KeepAlive>
+          </router-view>
         </main>
 
         <!-- Reopen rail (right) — restores a collapsed properties panel -->

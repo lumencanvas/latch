@@ -10,6 +10,10 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 
+// Named so <KeepAlive :include="['EditorView']"> in App.vue caches this view —
+// keeps the graph (and a running Emulator node) alive when switching to Controls.
+defineOptions({ name: 'EditorView' })
+
 import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeCategory } from '@/stores/nodes'
