@@ -6,6 +6,36 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-19 — Audit fixes landed + re-audit (verification pass)
+
+Branch: `modernization`. Committed & pushed (no PR). All green: typecheck clean, eslint clean,
+**1420 unit tests pass (11 todo)**, build succeeds.
+
+### Landed this cycle (4 commits)
+- Tier 1 security: Electron IPC hardened (`setWindowOpenHandler` + `shell:openExternal` http(s)-only,
+  asset/custom-node file handlers `..`-contained), Function/Expression code global-shadowing preamble
+  + honest relabel (+ `code.test.ts`).
+- Tier 2 robustness: per-frame connect-storm throttle (mqtt/ws/http), `ConnectionManager.disconnect`
+  unwedge, `AIInference` worker-crash rejects pending, `deleteFlow` frees undo/redo history (+ tests).
+- Deliberately **not** done (would degrade core LAN/arbitrary-connection use): SSRF host-allowlist /
+  strict CSP.
+
+### Re-audit (5 parallel passes) — see `AUDIT_2026-06-19.md` "Re-audit / verification pass"
+- Verified the 6 fixes: #7/#8/#9 solid. **3 corrections** to "done" claims: `shell:openPath`/
+  `showItemInFolder` left unguarded (but unbridged → latent, not live); `customNodes/compiler.ts`
+  user-code path has no preamble (undocumented trust asymmetry); `lastConnectAttempt` keys never gc'd.
+- **New HIGH:** `exposeControl` never persists to localStorage (`ui.ts:457`); Oscilloscope/Equalizer
+  leak their Tone analyser node (only `disconnect`, never `dispose`); BLE legacy node double device-picker.
+- **New MED:** `controlPanelLayout` orphaned on node delete; clasp captureStream/`<video>` + sendClient
+  double-connect leaks; per-frame `DataTexture` alloc on raw-WebGLTexture→Shader path (#11 priority);
+  shadow-map + GLTF-map disposal gaps (shared-texture risk on material maps); RT-pool no eviction.
+- **Reassessed:** #14 MediaPipe stream = non-issue (webcam node stops its own stream); #15 STT
+  AudioBufferService already torn down via `disconnect()`.
+- Fix order for the follow-up pass is documented at the end of `AUDIT_2026-06-19.md`. **No code fixes
+  this pass — audit/doc/commit/push only.**
+
+---
+
 ## 2026-06-19 — Node-library review + discoverability/UX + first nodes
 
 Branch: `modernization`. All work committed (single-purpose commits, no AI attribution).
