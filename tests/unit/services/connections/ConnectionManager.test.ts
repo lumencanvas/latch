@@ -324,6 +324,23 @@ describe('ConnectionManager', () => {
       expect(status?.status).toBe('disconnected')
     })
 
+    it('does not leave status wedged at "connected" when disconnect throws', async () => {
+      const manager = getConnectionManager()
+      manager.addConnection({
+        id: 'test-conn', name: 'Test Connection', protocol: 'mock',
+        autoConnect: false, autoReconnect: false, reconnectDelay: 1000, maxReconnectAttempts: 0,
+      })
+      await manager.connect('test-conn')
+      expect(manager.getStatus('test-conn')?.status).toBe('connected')
+
+      const adapter = manager.getAdapter('test-conn')!
+      vi.spyOn(adapter, 'disconnect').mockRejectedValue(new Error('socket stuck'))
+
+      // Must not reject (callers don't expect it), but must update the cached status.
+      await expect(manager.disconnect('test-conn')).resolves.toBeUndefined()
+      expect(manager.getStatus('test-conn')?.status).toBe('error')
+    })
+
     it('should track connection status', async () => {
       const manager = getConnectionManager()
 

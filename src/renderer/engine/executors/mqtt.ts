@@ -42,6 +42,11 @@ function getMqttAdapter(connectionId: string): MqttAdapterImpl | null {
   return null
 }
 
+// Throttle auto-connect attempts per connection so a persistently-failing
+// connection isn't re-dialed every frame (~60×/s). Reset on success.
+const lastConnectAttempt = new Map<string, number>()
+const RECONNECT_THROTTLE_MS = 2000
+
 /**
  * Ensure connection is established
  */
@@ -50,13 +55,19 @@ async function ensureConnected(connectionId: string): Promise<MqttAdapterImpl | 
   if (!adapter) return null
 
   if (adapter.status !== 'connected') {
-    try {
-      const connectionsStore = useConnectionsStore()
-      await connectionsStore.connect(connectionId)
-    } catch (e) {
-      console.warn('[MQTT] Auto-connect failed:', e)
-      return null
+    const now = Date.now()
+    if (now - (lastConnectAttempt.get(connectionId) ?? 0) >= RECONNECT_THROTTLE_MS) {
+      lastConnectAttempt.set(connectionId, now)
+      try {
+        const connectionsStore = useConnectionsStore()
+        await connectionsStore.connect(connectionId)
+      } catch (e) {
+        console.warn('[MQTT] Auto-connect failed:', e)
+        return null
+      }
     }
+  } else {
+    lastConnectAttempt.delete(connectionId)
   }
 
   return adapter

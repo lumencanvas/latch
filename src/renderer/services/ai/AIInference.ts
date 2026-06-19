@@ -268,6 +268,13 @@ class AIInferenceService {
       this._worker.onmessage = this.handleWorkerMessage.bind(this)
       this._worker.onerror = (error) => {
         console.error('[AIInference] Worker error:', error)
+        // A worker crash would otherwise leave every in-flight request hanging until
+        // its 5-min timeout. Reject them all so callers fail fast.
+        for (const [, pending] of this._pendingRequests) {
+          if (pending.timeoutId) clearTimeout(pending.timeoutId)
+          pending.reject(new Error('AI worker crashed'))
+        }
+        this._pendingRequests.clear()
       }
 
       console.log('[AIInference] Web Worker initialized')

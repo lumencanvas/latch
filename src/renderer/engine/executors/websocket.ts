@@ -43,18 +43,29 @@ function getWebSocketAdapter(connectionId: string): WebSocketAdapterImpl | null 
 /**
  * Ensure connection is established
  */
+// Throttle auto-connect attempts per connection so a persistently-failing
+// connection isn't re-dialed every frame (~60×/s). Reset on success.
+const lastConnectAttempt = new Map<string, number>()
+const RECONNECT_THROTTLE_MS = 2000
+
 async function ensureConnected(connectionId: string): Promise<WebSocketAdapterImpl | null> {
   const adapter = getWebSocketAdapter(connectionId)
   if (!adapter) return null
 
   if (adapter.status !== 'connected') {
-    try {
-      const connectionsStore = useConnectionsStore()
-      await connectionsStore.connect(connectionId)
-    } catch (e) {
-      console.warn('[WebSocket] Auto-connect failed:', e)
-      return null
+    const now = Date.now()
+    if (now - (lastConnectAttempt.get(connectionId) ?? 0) >= RECONNECT_THROTTLE_MS) {
+      lastConnectAttempt.set(connectionId, now)
+      try {
+        const connectionsStore = useConnectionsStore()
+        await connectionsStore.connect(connectionId)
+      } catch (e) {
+        console.warn('[WebSocket] Auto-connect failed:', e)
+        return null
+      }
     }
+  } else {
+    lastConnectAttempt.delete(connectionId)
   }
 
   return adapter

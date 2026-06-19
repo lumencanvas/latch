@@ -245,7 +245,12 @@ class ConnectionManagerImpl implements IConnectionManager {
       this.statusCache.set(connectionId, { status: 'disconnected' })
       this.emit('status-change', { connectionId, status: { status: 'disconnected' } })
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
       console.error(`[ConnectionManager] Disconnect error for ${connectionId}:`, error)
+      // Don't leave statusCache stuck at 'connected' — reflect the failed attempt so
+      // the UI toggle isn't wedged. (Not re-thrown: callers don't expect a rejection.)
+      this.statusCache.set(connectionId, { status: 'error', error: errorMsg })
+      this.emit('status-change', { connectionId, status: { status: 'error', error: errorMsg } })
     }
   }
 
