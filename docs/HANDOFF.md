@@ -108,6 +108,12 @@ Ramp/Euclidean/Easing/Spring). Verified green:
 (only `.DS_Store`). Nothing pushed.
 
 ### Open / next
+- **`docs/AUDIT_2026-06-19.md`** — fresh whole-codebase audit (6 parallel passes). Headline:
+  the Tier-1 **security** cluster (user-code "sandbox" isn't one; flow-import → one-click RCE
+  on Play; `setWindowOpenHandler`/IPC path-traversal; no CSP/SSRF guard) — all carried/open.
+  Then the **per-frame connect storm** (mqtt/ws/http/BLE), `ConnectionManager.disconnect`
+  masking, `AIInference` worker `onerror` not rejecting pending, history/asset memory leaks,
+  and the GPU texture-ownership leaks. See that doc for the prioritized fix order.
 - **Tier-A WebGL nodes** (the signature visual gaps — need render-pipeline integration, not
   drop-in): **feedback buffer** (highest VJ value — trails/echo/zoom), text→texture, discrete
   image-FX, particles.
