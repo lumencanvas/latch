@@ -87,7 +87,7 @@ hardware hackers, IoT makers.
   for the new Noise, Color Ramp, Euclidean Rhythm, Easing, and Spring nodes; no id
   collisions remain). Two `NodeCategory` union members are **empty**: `shaders` (its nodes
   live under `visual`) and `custom` (runtime placeholder).
-- Category sizes are wildly uneven: `data` 34, `math` 22, `logic` 20, `ai` 19, `audio` 16,
+- Category sizes are wildly uneven: `data` 33, `math` 22, `logic` 20, `ai` 19, `audio` 16,
   `3d` 16, `visual` 12, `string` 12, `inputs` 12, `connectivity` 10, `clasp` 10, `timing` 9,
   `code` 7, `debug` 5, `subflows` 2, `messaging` 2, `video` 1, `outputs` 1.
 - The `_`-prefixed *registry* dirs (`_knob`, `_synth`, …) are **live** — re-exported via
@@ -269,7 +269,7 @@ precisely the VJ-facing ones. **This is the cheapest high-value fix in the whole
 ### 3.3 Category migration (optional, slower follow-on)
 
 Still worth doing eventually, but **down-ranked** below §3.1–3.2. The grain is inconsistent
-(`data` 34 vs `outputs`/`video` 1) and the classification axis is mixed (domain vs operation
+(`data` 33 vs `outputs`/`video` 1) and the classification axis is mixed (domain vs operation
 vs role). A ~12-category target organized on **one primary axis — the data/domain the node
 works on** (TouchDesigner's CHOP/TOP/SOP spirit) collapses the size anomalies:
 
