@@ -737,13 +737,6 @@ function onSelectConnection(connectionId: string) {
   color: var(--color-neutral-400);
 }
 
-.category-color {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
 .category-name {
   flex: 1;
   font-size: var(--font-size-sm);
