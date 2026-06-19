@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { computed, ref, nextTick, onMounted, onUnmounted, type Component } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import {
@@ -14,6 +14,25 @@ import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
+import ColorRampPreview from '@/components/preview/ColorRampPreview.vue'
+import EasingPreview from '@/components/preview/EasingPreview.vue'
+import EuclideanPreview from '@/components/preview/EuclideanPreview.vue'
+import NoisePreview from '@/components/preview/NoisePreview.vue'
+import SpringPreview from '@/components/preview/SpringPreview.vue'
+
+/**
+ * Node types that render a small live preview of their output in the node body
+ * (gradient swatch, easing curve, rhythm pattern, …). Treated like a texture
+ * output: forces the node non-compact so the body (and preview) render. These
+ * are plain BaseNode nodes — no custom component / components.ts entry needed.
+ */
+const NODE_PREVIEWS: Record<string, Component> = {
+  'color-ramp': ColorRampPreview,
+  easing: EasingPreview,
+  euclidean: EuclideanPreview,
+  noise: NoisePreview,
+  spring: SpringPreview,
+}
 import NodeConnectionStatus from '@/components/connections/NodeConnectionStatus.vue'
 import { useDeviceEnumeration, type DeviceType, type DeviceOption } from '@/composables/useDeviceEnumeration'
 
@@ -183,6 +202,12 @@ const hasTextureOutput = computed(() => {
   return definition.value.outputs.some(o => o.type === 'texture')
 })
 
+// Per-node-type body preview component (gradient/curve/pattern), if any.
+const nodePreview = computed<Component | null>(() => {
+  const nodeType = props.data?.nodeType as string | undefined
+  return (nodeType && NODE_PREVIEWS[nodeType]) || null
+})
+
 // Check if this node has inline controls
 const hasInlineControls = computed(() => {
   if (!definition.value) return false
@@ -210,7 +235,7 @@ const inlineControls = computed(() => {
 
 // Check if this is a simple node (no content to show in body)
 const isSimpleNode = computed(() => {
-  return !hasTextureOutput.value && !hasInlineControls.value
+  return !hasTextureOutput.value && !hasInlineControls.value && !nodePreview.value
 })
 
 // Node types that should always show inline controls (control-type nodes)
@@ -227,8 +252,9 @@ const isCompactNode = computed(() => {
   // Control nodes should never be compact
   if (controlNodeTypes.includes(nodeType)) return false
 
-  // Nodes with texture output need preview, not compact
+  // Nodes with texture output or a body preview need the body, not compact
   if (hasTextureOutput.value) return false
+  if (nodePreview.value) return false
 
   // If no controls, use simple node style instead
   if (!hasInlineControls.value) return false
@@ -367,7 +393,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       collapsed: isCollapsed,
       'simple-node': isSimpleNode && !isCollapsed,
       'compact-node': isCompactNode && !isCollapsed,
-      'has-preview': hasTextureOutput,
+      'has-preview': hasTextureOutput || !!nodePreview,
     }"
     :style="{
       '--port-count': maxPorts,
@@ -542,6 +568,18 @@ function onLabelKeydown(e: KeyboardEvent) {
             :width="120"
             :height="80"
             :show-placeholder="true"
+          />
+        </div>
+
+        <!-- Per-node-type body preview (gradient / curve / rhythm / …) -->
+        <div
+          v-if="nodePreview"
+          class="node-preview node-type-preview"
+          @mousedown.stop
+        >
+          <component
+            :is="nodePreview"
+            :data="props.data"
           />
         </div>
 
@@ -840,6 +878,12 @@ function onLabelKeydown(e: KeyboardEvent) {
   margin: 0 auto;
   border-radius: 2px;
   overflow: hidden;
+}
+
+/* Per-node-type previews (gradient/curve/rhythm) fill the body width. */
+.node-type-preview {
+  width: 100%;
+  margin-bottom: var(--space-2);
 }
 
 /* Controls */

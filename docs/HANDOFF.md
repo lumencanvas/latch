@@ -45,6 +45,16 @@ each item; this is the narrative summary.
     friction/mass); value/velocity/atRest. First new *stateful* node this cycle —
     gc/dispose wired into ExecutionEngine + a gc regression test. A pre-flight audit
     confirmed every executor's cleanup is wired into the engine (no leaks).
+- **Node body previews for the 5 new nodes** (`components/preview/{ColorRamp,Easing,
+  Euclidean,Noise,Spring}Preview.vue`): a real user picked a palette/curve/rhythm blind —
+  these draw a live gradient bar / easing curve / rhythm dots / noise wave / spring response
+  in the node body, reusing the *exact* executor logic (PALETTES/EASINGS/bjorklund/fbmNoise)
+  so the preview always matches output. Wired via a `NODE_PREVIEWS` map in BaseNode that
+  forces the node non-compact (like `hasTextureOutput`) — **no `components.ts` custom-node
+  entry needed** (these stay plain BaseNode nodes), which sidesteps the easy-to-miss
+  registration step. NB for future rich-UI nodes: a dedicated custom component DOES require
+  adding it to `registry/components.ts` `nodeTypes` (the single source `CUSTOM_NODE_TYPE_IDS`
+  the flows store reads) or it silently falls back to BaseNode.
 - **Testing pass.** Added tests for the subflow GC, the `register()` guard, `categoryIcons`
   exhaustiveness, the explorer tag-filter store, Color Ramp preset↔palette sync, plus full
   coverage for Noise / Color Ramp / Euclidean.
