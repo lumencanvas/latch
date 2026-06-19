@@ -20,6 +20,7 @@ import { codeExecutors } from './code'
 import { noiseExecutor } from './noise'
 import { colorRampExecutor } from './color-ramp'
 import { euclideanExecutor } from './euclidean'
+import { easingExecutor } from './easing'
 import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
 import { stringExecutors } from './string'
@@ -1527,6 +1528,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   smooth: smoothExecutor,
   random: randomExecutor,
   noise: noiseExecutor,
+  easing: easingExecutor,
   trig: trigExecutor,
   power: powerExecutor,
   'vector-math': vectorMathExecutor,

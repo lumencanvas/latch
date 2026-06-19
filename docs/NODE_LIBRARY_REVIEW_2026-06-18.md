@@ -63,18 +63,19 @@ hardware hackers, IoT makers.
 >   guard, `categoryIcons` exhaustiveness, the explorer tag-filter store, Color Ramp
 >   preset↔palette sync, and full coverage for the Noise / Color Ramp / Euclidean executors
 >   (suite now 1376 passing).
-> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise, Color Ramp, Euclidean landed);
+> - ⏳ **Remaining:** build more **Tier-A missing nodes** (§2 — Noise, Color Ramp, Euclidean,
+>   Easing landed);
 >   reconcile the Control Panel hardcoded allow-list with `exposedControls` (Part 4.2);
 >   finish tagging the last technical/custom-UI nodes. Typecheck + lint + unit tests +
 >   production build all green throughout.
 
 ## Snapshot
 
-- **206 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +3
-  for the new Noise, Color Ramp, and Euclidean Rhythm nodes; no id collisions remain). Two
-  `NodeCategory` union members are **empty**: `shaders` (its nodes live under `visual`) and
-  `custom` (runtime placeholder).
-- Category sizes are wildly uneven: `data` 34, `math` 20, `logic` 20, `ai` 19, `audio` 16,
+- **207 node definitions** across 18 categories (205 → 203 after the §1.1 dedupe, then +4
+  for the new Noise, Color Ramp, Euclidean Rhythm, and Easing nodes; no id collisions
+  remain). Two `NodeCategory` union members are **empty**: `shaders` (its nodes live under
+  `visual`) and `custom` (runtime placeholder).
+- Category sizes are wildly uneven: `data` 34, `math` 21, `logic` 20, `ai` 19, `audio` 16,
   `3d` 16, `visual` 12, `string` 12, `inputs` 12, `connectivity` 10, `clasp` 10, `timing` 9,
   `code` 7, `debug` 5, `subflows` 2, `messaging` 2, `video` 1, `outputs` 1.
 - The `_`-prefixed *registry* dirs (`_knob`, `_synth`, …) are **live** — re-exported via
@@ -183,7 +184,9 @@ markets to. **New framing:** separate gaps that are *genuinely absent* from gaps
 - **Firmata/Arduino**; **MIDI-learn / CC-mapper**.
 
 ### Tier C — medium value
-- **Timeline / keyframe** animator; generic **ramp/tween-to-target with easing**.
+- **Timeline / keyframe** animator; generic **ramp/tween-to-target with easing** (the
+  **easing-curve** half landed as `math/easing` — a 20-curve shaper; the stateful
+  tween-to-target is still open).
 - **Ableton Link** tempo sync; **Euclidean rhythm** ✅ **landed** as `timing/euclidean`
   (stateless Bjorklund pattern, step-indexed); **tap-tempo**.
 - **Physical input nodes:** computer **keyboard**, **mouse/pointer**,
@@ -370,8 +373,8 @@ to-array, format-number.
 **logic (20):** compare, and, or, not, gate, switch, select, is-null, is-empty, pass-if,
 default-value, coalesce, equals, changed, type-of, in-range, sample-hold, latch,
 match-value, dispatch.
-**math (20):** add, subtract, multiply, divide, clamp, abs, random, noise, map-range, smooth,
-trig, power, vector-math, modulo, lerp, step, smoothstep, remap, quantize, wrap.
+**math (21):** add, subtract, multiply, divide, clamp, abs, random, noise, easing, map-range,
+smooth, trig, power, vector-math, modulo, lerp, step, smoothstep, remap, quantize, wrap.
 **ai (19):** text-generation, image-classification, sentiment-analysis, image-captioning,
 feature-extraction, object-detection, speech-recognition, text-transformation, retrieve,
 vector-memory, llm, vla, mediapipe-hand, mediapipe-face, mediapipe-pose, mediapipe-object,

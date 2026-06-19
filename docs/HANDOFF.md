@@ -39,13 +39,15 @@ each item; this is the narrative summary.
     `[r,g,b,a]` output matching the Color node.
   - **Euclidean Rhythm** (`timing/euclidean`) — Bjorklund pattern (E(3,8) tresillo,
     E(5,8) cinquillo); stateless, driven by a `step` index; gate/value/pattern outputs.
+  - **Easing** (`math/easing`) — shapes a 0–1 value through 20 easing curves (quad/cubic/
+    sine/expo/back/elastic/bounce); stateless; composes with any 0–1 signal.
 - **Testing pass.** Added tests for the subflow GC, the `register()` guard, `categoryIcons`
   exhaustiveness, the explorer tag-filter store, Color Ramp preset↔palette sync, plus full
   coverage for Noise / Color Ramp / Euclidean.
 
 ### State
-Node count **206** (was 205 pre-dedupe; 203 after the dedupe, +3 for Noise/Color
-Ramp/Euclidean). Verified green:
+Node count **207** (was 205 pre-dedupe; 203 after the dedupe, +4 for Noise/Color
+Ramp/Euclidean/Easing). Verified green:
 `typecheck`, `eslint`, full `test:unit`, and the production `build`. Working tree clean
 (only `.DS_Store`). Nothing pushed.
 
