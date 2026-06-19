@@ -6,6 +6,7 @@ export const useNodeExplorerStore = defineStore('nodeExplorer', {
     selectedNodeId: null as string | null,
     selectedCategory: null as NodeCategory | null,
     searchQuery: '',
+    selectedTags: [] as string[],
     viewMode: 'grid' as 'grid' | 'detail',
   }),
 
@@ -23,6 +24,9 @@ export const useNodeExplorerStore = defineStore('nodeExplorer', {
     selectCategory(category: NodeCategory | null) {
       this.selectedCategory = category
       this.selectedNodeId = null
+      // Available tags depend on the category, so a stale selection could filter
+      // to nothing — clear it when the category changes.
+      this.selectedTags = []
       this.viewMode = 'grid'
     },
 
@@ -34,10 +38,26 @@ export const useNodeExplorerStore = defineStore('nodeExplorer', {
       }
     },
 
+    toggleTag(tag: string) {
+      const i = this.selectedTags.indexOf(tag)
+      if (i === -1) {
+        this.selectedTags.push(tag)
+      } else {
+        this.selectedTags.splice(i, 1)
+      }
+      this.selectedNodeId = null
+      this.viewMode = 'grid'
+    },
+
+    clearTags() {
+      this.selectedTags = []
+    },
+
     reset() {
       this.selectedNodeId = null
       this.selectedCategory = null
       this.searchQuery = ''
+      this.selectedTags = []
       this.viewMode = 'grid'
     },
   },

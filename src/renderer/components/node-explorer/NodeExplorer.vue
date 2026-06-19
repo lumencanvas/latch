@@ -19,12 +19,34 @@ const emit = defineEmits<{
 const nodesStore = useNodesStore()
 const explorerStore = useNodeExplorerStore()
 
-const filteredNodes = computed(() => {
-  let nodes = nodesStore.allDefinitions
+// Nodes in the selected category (before tag/search narrowing) — drives the
+// tag-chip set so chips stay stable while you type or toggle them.
+const categoryNodes = computed(() => {
+  if (!explorerStore.selectedCategory) return nodesStore.allDefinitions
+  return nodesStore.allDefinitions.filter(n => n.category === explorerStore.selectedCategory)
+})
 
-  // Filter by category
-  if (explorerStore.selectedCategory) {
-    nodes = nodes.filter(n => n.category === explorerStore.selectedCategory)
+// The most common tags in the current category, capped so "All" doesn't explode.
+const availableTags = computed(() => {
+  const freq = new Map<string, number>()
+  for (const node of categoryNodes.value) {
+    for (const tag of node.tags ?? []) {
+      freq.set(tag, (freq.get(tag) ?? 0) + 1)
+    }
+  }
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 30)
+    .map(([tag]) => tag)
+})
+
+const filteredNodes = computed(() => {
+  let nodes = categoryNodes.value
+
+  // Filter by selected tags (a node matches if it carries any selected tag)
+  if (explorerStore.selectedTags.length) {
+    const selected = new Set(explorerStore.selectedTags)
+    nodes = nodes.filter(n => (n.tags ?? []).some(t => selected.has(t)))
   }
 
   // Filter by search
@@ -117,6 +139,29 @@ function handleSelectCategory(category: NodeCategory | null) {
             :value="explorerStore.searchQuery"
             @input="explorerStore.setSearchQuery(($event.target as HTMLInputElement).value)"
           >
+        </div>
+
+        <!-- Tag filter chips -->
+        <div
+          v-if="availableTags.length > 0"
+          class="tag-filter"
+        >
+          <button
+            v-for="tag in availableTags"
+            :key="tag"
+            class="tag-chip"
+            :class="{ active: explorerStore.selectedTags.includes(tag) }"
+            @click="explorerStore.toggleTag(tag)"
+          >
+            {{ tag }}
+          </button>
+          <button
+            v-if="explorerStore.selectedTags.length > 0"
+            class="tag-chip tag-clear"
+            @click="explorerStore.clearTags()"
+          >
+            clear ✕
+          </button>
         </div>
 
         <!-- Node grid -->
@@ -220,6 +265,43 @@ function handleSelectCategory(category: NodeCategory | null) {
 
 .search-input::placeholder {
   color: var(--color-neutral-400);
+}
+
+.tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.tag-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: lowercase;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-neutral-300);
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.tag-chip:hover {
+  border-color: var(--color-primary-400);
+  color: var(--color-neutral-800);
+}
+
+.tag-chip.active {
+  background: var(--color-primary-400);
+  border-color: var(--color-primary-400);
+  color: #fff;
+}
+
+.tag-clear {
+  border-style: dashed;
+  color: var(--color-neutral-500);
 }
 
 .node-grid {
