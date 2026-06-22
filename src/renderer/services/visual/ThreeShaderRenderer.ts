@@ -465,6 +465,23 @@ export class ThreeShaderRenderer {
       }
     }
 
+    // Canvas/video-backed sampler inputs must be re-uploaded every frame. Three
+    // only re-uploads a texture whose `version` changed since its last upload in
+    // THIS renderer; a producer (e.g. the emulator/webcam) bumps `needsUpdate`
+    // just once per frame, and another consumer (a preview, Main Output) can
+    // consume that version first — leaving the effect sampling a stale/blank GPU
+    // copy. Re-assert needsUpdate here so the effect always gets the live frame.
+    // (Render-target and blank textures have a null `.image`, so they're skipped.)
+    for (const key in uniforms) {
+      const v = uniforms[key]?.value
+      if (
+        v instanceof THREE.Texture &&
+        (v.image instanceof HTMLCanvasElement || v.image instanceof HTMLVideoElement)
+      ) {
+        v.needsUpdate = true
+      }
+    }
+
     // Set the shader material on the quad
     this.quad.material = shader.material
 
