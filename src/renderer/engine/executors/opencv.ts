@@ -31,6 +31,8 @@ interface OpenCVState {
   prevGray?: OpenCVModule
   /** Last computed mean motion magnitude (optical flow), re-served when throttled. */
   lastMotion?: number
+  /** Last computed corner count, re-served when throttled. */
+  lastCount?: number
 }
 
 const opencvState = new Map<string, OpenCVState>()
@@ -263,12 +265,14 @@ export const cvThresholdExecutor: NodeExecutorFn = (ctx) => {
 
 export const cvBlurExecutor: NodeExecutorFn = (ctx) => {
   const mode = (ctx.controls.get('mode') as string) ?? 'gaussian'
-  const kernel = oddKernel((ctx.controls.get('kernel') as number) ?? 5, 1)
+  const rawKernel = (ctx.controls.get('kernel') as number) ?? 5
   return runFilter(ctx, (cv, src, dst) => {
     if (mode === 'median') {
-      cv.medianBlur(src, dst, kernel)
+      // medianBlur asserts ksize > 1, so floor the kernel at 3 (odd).
+      cv.medianBlur(src, dst, oddKernel(rawKernel, 3))
     } else {
-      cv.GaussianBlur(src, dst, new cv.Size(kernel, kernel), 0, 0, cv.BORDER_DEFAULT)
+      const k = oddKernel(rawKernel, 1)
+      cv.GaussianBlur(src, dst, new cv.Size(k, k), 0, 0, cv.BORDER_DEFAULT)
     }
   })
 }
@@ -384,6 +388,89 @@ export const cvContoursExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   outputs.set('texture', state.texture)
   outputs.set('contours', found)
   outputs.set('count', found.length)
+  outputs.set('loading', false)
+  return outputs
+}
+
+// ============================================================================
+// Corner / feature detection (Shi-Tomasi goodFeaturesToTrack)
+// ============================================================================
+
+export const cvCornersExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const source = ctx.inputs.get('source')
+  const interval = (ctx.controls.get('interval') as number) ?? 2
+  const maxCorners = Math.max(1, Math.round((ctx.controls.get('maxCorners') as number) ?? 100))
+  const quality = Math.min(1, Math.max(0.001, (ctx.controls.get('quality') as number) ?? 0.01))
+  const minDistance = Math.max(1, (ctx.controls.get('minDistance') as number) ?? 10)
+  const radius = Math.max(1, Math.round((ctx.controls.get('radius') as number) ?? 4))
+  const color = (ctx.controls.get('color') as string) || '#ff3030'
+  const state = getState(ctx.nodeId)
+
+  if (!openCVService.isReady()) {
+    void openCVService.load().catch((err) => console.error('[OpenCV]', err))
+    outputs.set('texture', state.texture)
+    outputs.set('count', 0)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  const imageData = sourceToImageData(source)
+  if (!imageData) {
+    outputs.set('texture', state.texture)
+    outputs.set('count', state.lastCount ?? 0)
+    outputs.set('loading', false)
+    if (source) outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
+    return outputs
+  }
+
+  const currentFrame = ctx.frameCount
+  const due = state.lastFrame < 0 || currentFrame - state.lastFrame >= interval
+  if (!due) {
+    outputs.set('texture', state.texture)
+    outputs.set('count', state.lastCount ?? 0)
+    outputs.set('loading', false)
+    return outputs
+  }
+  state.lastFrame = currentFrame
+
+  const cv = openCVService.getCV()!
+  const src = cv.matFromImageData(imageData)
+  const gray = new cv.Mat()
+  const corners = new cv.Mat()
+  const mask = new cv.Mat()
+  let count = 0
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+    cv.goodFeaturesToTrack(gray, corners, maxCorners, quality, minDistance, mask, 3, false, 0.04)
+    const drawColor = hexToScalar(cv, color)
+    count = corners.rows
+    const pts = corners.data32F as Float32Array
+    for (let i = 0; i < count; i++) {
+      const x = Math.round(pts[i * 2])
+      const y = Math.round(pts[i * 2 + 1])
+      cv.circle(src, new cv.Point(x, y), radius, drawColor, 2, cv.LINE_AA, 0)
+    }
+    cv.imshow(state.canvas, src)
+  } catch (err) {
+    console.error('[OpenCV] corners op failed:', err)
+  } finally {
+    src.delete()
+    gray.delete()
+    corners.delete()
+    mask.delete()
+  }
+
+  const renderer = getThreeShaderRenderer()
+  if (state.texture) {
+    renderer.updateTexture(state.texture, state.canvas)
+  } else {
+    state.texture = renderer.createTexture(state.canvas)
+  }
+
+  state.lastCount = count
+  outputs.set('texture', state.texture)
+  outputs.set('count', count)
   outputs.set('loading', false)
   return outputs
 }
@@ -527,5 +614,6 @@ export const opencvExecutors: Record<string, NodeExecutorFn> = {
   'cv-blur': cvBlurExecutor,
   'cv-morphology': cvMorphologyExecutor,
   'cv-contours': cvContoursExecutor,
+  'cv-corners': cvCornersExecutor,
   'cv-optical-flow': cvOpticalFlowExecutor,
 }
