@@ -6,6 +6,49 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-22 (late) — Emulator + effects fully working; persistence data-loss fixed; vision nodes planned
+
+User-confirmed: **"it all finally works."** Everything below shipped to `main` and is live
+(GitHub Pages + Netlify). Gates green each deploy (typecheck, lint, 1458 unit tests, build).
+
+### Emulator + texture pipeline — RESOLVED (closes the saga in the entry below)
+- **Effect nodes were throwing on missing built-in uniforms (`fae1e2d`).** `render()`/`renderToScreen`
+  in `ThreeShaderRenderer` set `uniforms.iTime.value`/`iResolution`/`iChannel0…` unconditionally, but
+  `compileEffectShader` only creates the uniforms an effect declares (`u_texture`, …). `undefined.value`
+  threw a TypeError every frame (swallowed by the engine) → **every effect node** (color-correction,
+  blur, blend, displacement) rendered blank for **every** input. This — not the cross-context theory —
+  was the real cause of "emulator texture won't work in other nodes." Fixed by guarding each built-in
+  uniform. (Two prior misfires on this: a `needsUpdate` fix that sat *after* the throw, and the
+  cross-context analysis. Reading it to the actual TypeError cracked it.)
+- **Effect resolution preserved (`5b802d4`).** `render()` now defaults its output size to the input
+  texture's resolution (from `u_texture.image`, which also carries size for render-target inputs) so a
+  non-square source (emulator 958×684) isn't squished into 512². Generative shaders keep 512².
+- **Emulator capture (`4096012`) + texture realloc on resize (`9629507`).** Blit the WebGL canvas
+  through an intermediate 2D canvas (a WebGL canvas is an unreliable cross-context texture source);
+  recreate the THREE texture when the frame size changes (killed the `glCopySubTexture` flood).
+- **Control-tab freeze (`fd89420`).** KeepAlive deactivates the editor on the Control tab → detaches the
+  emulator canvas → EmulatorJS stops painting. EmulatorNode now renders into a managed host that parks
+  off-screen-but-attached to `<body>` on deactivate (keeps painting) and docks back on activate, pinning
+  the host+canvas size so it can't resize. User-confirmed working.
+
+### Persistence — silent data-loss fixed (`b2c73f1`, `bfa80cc`)
+Imported flows now persist to IndexedDB; the Save button writes to the DB (was: clear dirty + download
+only, which also suppressed autosave); a `beforeunload` guard warns on web (no-op in Electron so it
+can't block quit); node-drag marks dirty; `markFlowSaved(flowId)` clears the saved flow not the active
+one; `saveAllFlows` preserves each non-active flow's stored connections. See AUDIT_2026-06-19.md pass 2.
+
+### Next up — new vision node families (planned this session)
+User wants: (1) a **generic snapshot node** (capture a still from any video/texture feed on trigger),
+(2) **AI-on-live-video** (object detection — YOLOS/DETR via Transformers.js, optional YOLOv8-ONNX),
+(3) **OpenCV.js** image-processing nodes. Full plan + a ready-to-paste kickoff prompt in
+**`docs/plans/VISION_NODES_PLAN_2026-06-22.md`**. Key facts grounding it: there's already a
+webcam-specific `webcam-snapshot` (no generic equivalent), a Transformers.js `object-detection` node
+(YOLOS already a registered model) and a MediaPipe `mediapipe-object` node (both output data only, no
+annotated texture), `onnxruntime-web` is present transitively via transformers, OpenCV is net-new
+(CDN lazy-load like MediaPipe; Mats MUST be `.delete()`d via the gc/dispose path).
+
+---
+
 ## 2026-06-22 — Wire-preservation, public-readiness, emulator texture saga; all shipped to main
 
 Branch `modernization`, fast-forwarded to `main` and **deployed** (GitHub Pages + Netlify) several
