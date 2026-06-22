@@ -27,6 +27,10 @@ interface OpenCVState {
   texture: THREE.Texture | null
   lastFrame: number
   lastContours?: Array<{ area: number; x: number; y: number; width: number; height: number }>
+  /** Persistent previous-frame grayscale Mat for optical flow. MUST be deleted on cleanup. */
+  prevGray?: OpenCVModule
+  /** Last computed mean motion magnitude (optical flow), re-served when throttled. */
+  lastMotion?: number
 }
 
 const opencvState = new Map<string, OpenCVState>()
@@ -40,11 +44,16 @@ function getState(nodeId: string): OpenCVState {
   return state
 }
 
-/** Dispose a single OpenCV node's held canvas + texture. */
+/** Dispose a single OpenCV node's held canvas + texture (and any retained Mat). */
 export function disposeOpenCVNode(nodeId: string): void {
   const state = opencvState.get(nodeId)
   if (state) {
     if (state.texture) state.texture.dispose()
+    // Free the persistent optical-flow Mat from the WASM heap.
+    if (state.prevGray && !state.prevGray.isDeleted?.()) {
+      state.prevGray.delete()
+    }
+    state.prevGray = undefined
     state.canvas.width = 0
     state.canvas.height = 0
     opencvState.delete(nodeId)
@@ -55,6 +64,11 @@ export function disposeOpenCVNode(nodeId: string): void {
 export function disposeAllOpenCVNodes(): void {
   for (const nodeId of opencvState.keys()) {
     disposeOpenCVNode(nodeId)
+  }
+  if (scratchCanvas) {
+    scratchCanvas.width = 0
+    scratchCanvas.height = 0
+    scratchCanvas = null
   }
 }
 
@@ -71,6 +85,18 @@ export function gcOpenCVState(validNodeIds: Set<string>): void {
 // Shared helpers
 // ============================================================================
 
+// Shared scratch canvas for texture/video readback. Reused across all cv nodes
+// (executors run sequentially in topo order, and each readback's ImageData is
+// copied out immediately) so we avoid allocating a canvas every frame.
+let scratchCanvas: HTMLCanvasElement | null = null
+function getScratch(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  if (!scratchCanvas) scratchCanvas = document.createElement('canvas')
+  scratchCanvas.width = width
+  scratchCanvas.height = height
+  const ctx = scratchCanvas.getContext('2d')
+  return ctx ? { canvas: scratchCanvas, ctx } : null
+}
+
 /** Normalize a texture/video/canvas/ImageData source to ImageData. */
 function sourceToImageData(source: unknown): ImageData | null {
   if (!source) return null
@@ -85,25 +111,20 @@ function sourceToImageData(source: unknown): ImageData | null {
   if (source instanceof HTMLVideoElement) {
     const w = source.videoWidth || source.width || 640
     const h = source.videoHeight || source.height || 480
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-    ctx.drawImage(source, 0, 0, w, h)
-    return ctx.getImageData(0, 0, w, h)
+    const scratch = getScratch(w, h)
+    if (!scratch) return null
+    scratch.ctx.drawImage(source, 0, 0, w, h)
+    return scratch.ctx.getImageData(0, 0, w, h)
   }
 
   if (source instanceof THREE.Texture) {
     const image = source.image as { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined
     const w = image?.width || image?.videoWidth || 512
     const h = image?.height || image?.videoHeight || 512
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    getThreeShaderRenderer().renderToCanvas(source, canvas)
-    const ctx = canvas.getContext('2d')
-    return ctx ? ctx.getImageData(0, 0, w, h) : null
+    const scratch = getScratch(w, h)
+    if (!scratch) return null
+    getThreeShaderRenderer().renderToCanvas(source, scratch.canvas)
+    return scratch.ctx.getImageData(0, 0, w, h)
   }
 
   return null
@@ -368,6 +389,134 @@ export const cvContoursExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
+// Dense optical flow (Farneback) — retains a previous-frame Mat across frames
+// ============================================================================
+
+export const cvOpticalFlowExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const source = ctx.inputs.get('source')
+  const interval = (ctx.controls.get('interval') as number) ?? 2
+  const winSize = Math.max(3, Math.round((ctx.controls.get('winSize') as number) ?? 15))
+  const levels = Math.max(1, Math.round((ctx.controls.get('levels') as number) ?? 3))
+  const state = getState(ctx.nodeId)
+
+  if (!openCVService.isReady()) {
+    void openCVService.load().catch((err) => console.error('[OpenCV]', err))
+    outputs.set('texture', state.texture)
+    outputs.set('motion', 0)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  const imageData = sourceToImageData(source)
+  if (!imageData) {
+    outputs.set('texture', state.texture)
+    outputs.set('motion', 0)
+    outputs.set('loading', false)
+    if (source) outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
+    return outputs
+  }
+
+  const currentFrame = ctx.frameCount
+  const due = state.lastFrame < 0 || currentFrame - state.lastFrame >= interval
+  if (!due) {
+    outputs.set('texture', state.texture)
+    outputs.set('motion', state.lastMotion ?? 0)
+    outputs.set('loading', false)
+    return outputs
+  }
+  state.lastFrame = currentFrame
+
+  const cv = openCVService.getCV()!
+  const src = cv.matFromImageData(imageData)
+  const gray = new cv.Mat()
+  // Transient Mats deleted in finally; `gray` is retained as the next prevGray.
+  const trash: OpenCVModule[] = []
+  let motion = 0
+  let retainGray = false
+  try {
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
+
+    if (!state.prevGray || state.prevGray.isDeleted?.()) {
+      // First frame: nothing to compare against yet — seed prevGray.
+      state.prevGray = gray
+      retainGray = true
+    } else {
+      const flow = new cv.Mat()
+      trash.push(flow)
+      cv.calcOpticalFlowFarneback(state.prevGray, gray, flow, 0.5, levels, winSize, 3, 5, 1.2, 0)
+
+      // Split flow into x/y, convert to magnitude + angle.
+      const channels = new cv.MatVector()
+      trash.push(channels)
+      cv.split(flow, channels)
+      const fx = channels.get(0)
+      const fy = channels.get(1)
+      trash.push(fx, fy)
+      const mag = new cv.Mat()
+      const ang = new cv.Mat()
+      trash.push(mag, ang)
+      cv.cartToPolar(fx, fy, mag, ang)
+
+      // Mean magnitude = overall motion amount (pre-normalization, physical).
+      motion = cv.mean(mag)[0]
+
+      // Build an HSV image: hue = direction, value = magnitude, sat = full.
+      cv.normalize(mag, mag, 0, 255, cv.NORM_MINMAX)
+      const h = new cv.Mat()
+      const v = new cv.Mat()
+      trash.push(h, v)
+      ang.convertTo(h, cv.CV_8U, 180 / (2 * Math.PI))
+      mag.convertTo(v, cv.CV_8U)
+      const s = new cv.Mat(gray.rows, gray.cols, cv.CV_8UC1, new cv.Scalar(255))
+      trash.push(s)
+
+      const hsvChannels = new cv.MatVector()
+      trash.push(hsvChannels)
+      hsvChannels.push_back(h)
+      hsvChannels.push_back(s)
+      hsvChannels.push_back(v)
+      const hsv = new cv.Mat()
+      const rgb = new cv.Mat()
+      const rgba = new cv.Mat()
+      trash.push(hsv, rgb, rgba)
+      cv.merge(hsvChannels, hsv)
+      cv.cvtColor(hsv, rgb, cv.COLOR_HSV2RGB)
+      cv.cvtColor(rgb, rgba, cv.COLOR_RGB2RGBA)
+      cv.imshow(state.canvas, rgba)
+
+      // Swap prevGray to the current frame for the next comparison.
+      const oldPrev = state.prevGray
+      state.prevGray = gray
+      retainGray = true
+      if (oldPrev && !oldPrev.isDeleted?.()) oldPrev.delete()
+    }
+  } catch (err) {
+    console.error('[OpenCV] optical flow op failed:', err)
+  } finally {
+    src.delete()
+    for (const mat of trash) {
+      if (mat && !mat.isDeleted?.()) mat.delete()
+    }
+    if (!retainGray && !gray.isDeleted?.()) gray.delete()
+  }
+
+  state.lastMotion = motion
+
+  const renderer = getThreeShaderRenderer()
+  if (state.texture) {
+    renderer.updateTexture(state.texture, state.canvas)
+  } else {
+    state.texture = renderer.createTexture(state.canvas)
+  }
+
+  outputs.set('texture', state.texture)
+  outputs.set('motion', motion)
+  outputs.set('loading', false)
+  return outputs
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
@@ -378,4 +527,5 @@ export const opencvExecutors: Record<string, NodeExecutorFn> = {
   'cv-blur': cvBlurExecutor,
   'cv-morphology': cvMorphologyExecutor,
   'cv-contours': cvContoursExecutor,
+  'cv-optical-flow': cvOpticalFlowExecutor,
 }
