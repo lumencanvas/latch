@@ -34,6 +34,9 @@ interface EmulatorEntry {
   prevInputs: Map<number, Map<number, number>>
   prevTrigger: { start: boolean; stop: boolean; reset: boolean }
   texture?: THREE.Texture
+  /** Allocated size of `texture` — when the frame resizes we must recreate it. */
+  texW?: number
+  texH?: number
   /** Intermediate 2D canvas the WebGL frame is blitted into before texturing (see below). */
   captureCanvas?: HTMLCanvasElement
   captureCtx?: CanvasRenderingContext2D
@@ -52,6 +55,8 @@ export function registerEmulatorNode(nodeId: string, controls: EmulatorControls)
     prevInputs: new Map(),
     prevTrigger: { start: false, stop: false, reset: false },
     texture: existing?.controls.loader === controls.loader ? existing.texture : undefined,
+    texW: existing?.controls.loader === controls.loader ? existing.texW : undefined,
+    texH: existing?.controls.loader === controls.loader ? existing.texH : undefined,
     captureCanvas: existing?.controls.loader === controls.loader ? existing.captureCanvas : undefined,
     captureCtx: existing?.controls.loader === controls.loader ? existing.captureCtx : undefined,
     audioSource: existing?.controls.loader === controls.loader ? existing.audioSource : undefined,
@@ -155,8 +160,20 @@ export const emulatorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     const renderer = getThreeShaderRenderer()
     const frame = blitToCaptureCanvas(entry, canvas)
     if (frame) {
-      if (!entry.texture) entry.texture = renderer.createTexture(frame)
-      else renderer.updateTexture(entry.texture, frame)
+      // Recreate the texture whenever the frame size changes (boot, a core
+      // resolution switch, a node resize). Reusing a texture across a resize makes
+      // Three upload a larger canvas into smaller GPU storage — the
+      // "glCopySubTextureCHROMIUM: Offset overflows texture dimensions" flood, which
+      // corrupts the texture for EVERY consumer (Main Output, shaders, 3D). A fresh
+      // texture forces a full reallocation at the new size.
+      if (!entry.texture || entry.texW !== frame.width || entry.texH !== frame.height) {
+        if (entry.texture) { try { entry.texture.dispose() } catch { /* ignore */ } }
+        entry.texture = renderer.createTexture(frame)
+        entry.texW = frame.width
+        entry.texH = frame.height
+      } else {
+        renderer.updateTexture(entry.texture, frame)
+      }
     }
     outputs.set('texture', entry.texture ?? null)
   } else {
@@ -190,6 +207,8 @@ function cleanupEntry(entry: EmulatorEntry, teardownLoader: boolean): void {
     try { entry.texture.dispose() } catch { /* ignore */ }
     entry.texture = undefined
   }
+  entry.texW = undefined
+  entry.texH = undefined
   entry.captureCanvas = undefined
   entry.captureCtx = undefined
   if (entry.audioGain) {
