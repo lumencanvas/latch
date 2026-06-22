@@ -30,6 +30,7 @@ import { utilityExecutors, disposeUtilityNode, disposeAllUtilityState } from './
 import { dataExecutors } from './data'
 import { gamepadExecutor, gamepadVisualExecutor, gcGamepadState, disposeAllGamepadState } from './gamepad'
 import { emulatorExecutor, gcEmulationState, disposeAllEmulationNodes } from './emulation'
+import { opencvExecutors } from './opencv'
 
 // Re-export CLASP utilities for external use
 export { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus }
@@ -1603,4 +1604,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
 
   // Data (arrays, objects, type conversion)
   ...dataExecutors,
+
+  // OpenCV.js (CPU image processing)
+  ...opencvExecutors,
 }
