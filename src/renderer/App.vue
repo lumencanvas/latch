@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PanelLeft, PanelRight } from 'lucide-vue-next'
 import { useUIStore } from './stores/ui'
+import { useFlowsStore } from './stores/flows'
 import AppHeader from './components/layout/AppHeader.vue'
 import FlowTabs from './components/layout/FlowTabs.vue'
 import AppSidebar from './components/layout/AppSidebar.vue'
@@ -21,7 +22,19 @@ import { aiInference } from './services/ai/AIInference'
 const route = useRoute()
 const router = useRouter()
 const uiStore = useUIStore()
-const { initialize, isLoading } = usePersistence()
+const flowsStore = useFlowsStore()
+const { initialize, isLoading, saveActiveFlow } = usePersistence()
+
+// Guard against losing unsaved edits on reload/close/crash. Autosave is debounced
+// 2s, so recent edits may not have reached IndexedDB yet. Fire a best-effort flush
+// (async — may not finish) and prompt the user; the prompt is the real protection.
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (flowsStore.hasUnsavedChanges) {
+    void saveActiveFlow()
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
 
 // Initialize execution engine at app level so controls are available to all components
 const executionEngine = useExecutionEngine()
@@ -71,6 +84,8 @@ onMounted(async () => {
     breakpointMql.addEventListener('change', onBreakpointChange)
   }
 
+  window.addEventListener('beforeunload', handleBeforeUnload)
+
   // Wait for router to be ready before rendering route-dependent content
   await router.isReady()
   isRouterReady.value = true
@@ -96,6 +111,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   breakpointMql?.removeEventListener('change', onBreakpointChange)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 </script>
 

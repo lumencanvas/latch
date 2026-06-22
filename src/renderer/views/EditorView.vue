@@ -149,6 +149,9 @@ onNodeDragStart(() => {
 // Handle node drag stop - update position and record history
 onNodeDragStop(({ node }) => {
   flowsStore.updateNodePosition(node.id, node.position)
+  // updateNodePosition skips dirty (it fires per-frame during drag); mark dirty
+  // once here on drag stop so the new layout actually autosaves/persists.
+  flowsStore.markDirty()
 
   // Record history for the position change
   if (dragStartSnapshot.value) {

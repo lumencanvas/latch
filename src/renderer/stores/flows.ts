@@ -476,6 +476,29 @@ export const useFlowsStore = defineStore('flows', {
       }
     },
 
+    /**
+     * Clear the dirty flag on a SPECIFIC flow. The persistence layer saves
+     * asynchronously, so clearing the *active* flow (markSaved) could clear the
+     * wrong flow's dirty if the user switched flows mid-save — losing the new
+     * flow's edits. Clear the flow that was actually persisted instead.
+     */
+    markFlowSaved(flowId: string) {
+      const flow = this.flows.find((f) => f.id === flowId)
+      if (flow) flow.dirty = false
+    },
+
+    /**
+     * Mark the active flow dirty. Used where a mutation otherwise skips dirty —
+     * notably node dragging (`updateNodePosition` intentionally skips it to avoid
+     * per-frame churn), which must still trigger autosave on drag stop.
+     */
+    markDirty() {
+      if (this.activeFlow) {
+        this.activeFlow.dirty = true
+        this.activeFlow.updatedAt = new Date()
+      }
+    },
+
     // Serialization
     exportFlow(flowId?: string): string {
       const flow = flowId ? this.flows.find((f) => f.id === flowId) : this.activeFlow

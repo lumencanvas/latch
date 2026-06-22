@@ -165,11 +165,42 @@ export function usePersistence() {
 
     try {
       await flowStorage.save(toPersistedFlow(flow))
-      flowsStore.markSaved()
+      flowsStore.markFlowSaved(flowId)
       lastSaveTime.value = new Date()
     } catch (error) {
       saveError.value = error instanceof Error ? error.message : 'Failed to save flow'
       console.error('Failed to save flow:', error)
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  /**
+   * Persist EVERY flow to the database. The autosave watcher only covers the
+   * active flow's dirty transitions, so imported flows and inactive edits never
+   * reach IndexedDB on their own — this is what the explicit Save and post-import
+   * persist call. Connections are stored per-flow, so only the active flow writes
+   * the live connections; other flows keep their previously-stored connections to
+   * avoid clobbering them with the active flow's.
+   */
+  async function saveAllFlows(): Promise<void> {
+    const activeId = flowsStore.activeFlowId
+    isSaving.value = true
+    saveError.value = null
+    try {
+      for (const flow of flowsStore.flows) {
+        const persisted = toPersistedFlow(flow)
+        if (flow.id !== activeId) {
+          const existing = await flowStorage.getById(flow.id)
+          persisted.connections = existing?.connections ?? []
+        }
+        await flowStorage.save(persisted)
+        flowsStore.markFlowSaved(flow.id)
+      }
+      lastSaveTime.value = new Date()
+    } catch (error) {
+      saveError.value = error instanceof Error ? error.message : 'Failed to save flows'
+      console.error('Failed to save flows:', error)
     } finally {
       isSaving.value = false
     }
@@ -298,6 +329,7 @@ export function usePersistence() {
     loadFlows,
     saveFlow,
     saveActiveFlow,
+    saveAllFlows,
     deleteFlow,
     saveSettings,
     loadSettings,

@@ -30,6 +30,7 @@ import LatchLogo from '@/components/branding/LatchLogo.vue'
 import { aiInference } from '@/services/ai/AIInference'
 import { useConnectionsStore } from '@/stores/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
+import { usePersistence } from '@/composables/usePersistence'
 
 const route = useRoute()
 const router = useRouter()
@@ -37,6 +38,7 @@ const flowsStore = useFlowsStore()
 const runtimeStore = useRuntimeStore()
 const uiStore = useUIStore()
 const connectionsStore = useConnectionsStore()
+const { saveAllFlows } = usePersistence()
 
 // History for undo/redo
 const { canUndo, canRedo, undo, redo, undoDescription, redoDescription } = useFlowHistory()
@@ -122,6 +124,9 @@ function exportProject() {
 async function importProject() {
   const result = await flowsStore.promptImport({ replace: false })
   if (result.success) {
+    // Imported flows live only in the store until written; the autosave watcher
+    // covers only the active flow, so persist them all now or they vanish on reload.
+    await saveAllFlows()
     console.log(result.message)
   } else if (result.message !== 'Import cancelled') {
     console.error(result.message)
@@ -129,13 +134,11 @@ async function importProject() {
   }
 }
 
-function saveProject() {
-  // Mark current flow as saved
-  if (flowsStore.activeFlow) {
-    flowsStore.activeFlow.dirty = false
-    flowsStore.activeFlow.updatedAt = new Date()
-  }
-  // Also trigger export for persistent save
+async function saveProject() {
+  // Persist every flow to the database (the in-app save that survives reload),
+  // then also download a backup file. Previously this only cleared dirty + exported
+  // a file, so the IndexedDB copy stayed stale and the user lost work on reload.
+  await saveAllFlows()
   flowsStore.exportAllFlows()
 }
 

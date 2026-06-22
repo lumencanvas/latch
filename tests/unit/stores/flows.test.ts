@@ -294,6 +294,28 @@ describe('Flows Store', () => {
       store.markSaved()
       expect(store.hasUnsavedChanges).toBe(false)
     })
+
+    it('markDirty flags the active flow (e.g. after a node drag)', () => {
+      const store = useFlowsStore()
+      const flow = store.createFlow('Drag')
+      store.markSaved()
+      expect(store.hasUnsavedChanges).toBe(false)
+      store.markDirty()
+      expect(store.flows.find(f => f.id === flow.id)!.dirty).toBe(true)
+    })
+
+    it('markFlowSaved clears dirty on the SPECIFIC flow, not the active one', () => {
+      const store = useFlowsStore()
+      const a = store.createFlow('A')
+      const b = store.createFlow('B') // B is now active
+      store.flows.forEach(f => { f.dirty = true })
+
+      // Persist A while B is active — must clear A, leave the active flow B dirty.
+      store.markFlowSaved(a.id)
+
+      expect(store.flows.find(f => f.id === a.id)!.dirty).toBe(false)
+      expect(store.flows.find(f => f.id === b.id)!.dirty).toBe(true)
+    })
   })
 
   describe('duplicateFlow / healNodeTypes / exportFlow', () => {
