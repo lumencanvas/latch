@@ -34,6 +34,9 @@ interface EmulatorEntry {
   prevInputs: Map<number, Map<number, number>>
   prevTrigger: { start: boolean; stop: boolean; reset: boolean }
   texture?: THREE.Texture
+  /** Intermediate 2D canvas the WebGL frame is blitted into before texturing (see below). */
+  captureCanvas?: HTMLCanvasElement
+  captureCtx?: CanvasRenderingContext2D
   audioSource?: MediaStreamAudioSourceNode
   audioGain?: Tone.Gain
 }
@@ -49,6 +52,8 @@ export function registerEmulatorNode(nodeId: string, controls: EmulatorControls)
     prevInputs: new Map(),
     prevTrigger: { start: false, stop: false, reset: false },
     texture: existing?.controls.loader === controls.loader ? existing.texture : undefined,
+    captureCanvas: existing?.controls.loader === controls.loader ? existing.captureCanvas : undefined,
+    captureCtx: existing?.controls.loader === controls.loader ? existing.captureCtx : undefined,
     audioSource: existing?.controls.loader === controls.loader ? existing.audioSource : undefined,
     audioGain: existing?.controls.loader === controls.loader ? existing.audioGain : undefined,
   })
@@ -64,6 +69,30 @@ export function unregisterEmulator(nodeId: string): void {
 
 function isTrigger(v: unknown): boolean {
   return v === true || v === 1 || (typeof v === 'number' && v > 0)
+}
+
+/**
+ * Copy the emulator's WebGL canvas into a per-node 2D canvas so it can be textured
+ * reliably (a WebGL canvas is not a dependable cross-context texture source). Returns
+ * the 2D canvas, or null if it can't be drawn this frame.
+ */
+function blitToCaptureCanvas(entry: EmulatorEntry, source: HTMLCanvasElement): HTMLCanvasElement | null {
+  let cap = entry.captureCanvas
+  if (!cap) {
+    cap = document.createElement('canvas')
+    entry.captureCanvas = cap
+    entry.captureCtx = cap.getContext('2d') ?? undefined
+  }
+  const ctx = entry.captureCtx
+  if (!ctx) return null
+  if (cap.width !== source.width) cap.width = source.width
+  if (cap.height !== source.height) cap.height = source.height
+  try {
+    ctx.drawImage(source, 0, 0)
+  } catch {
+    return null // source not yet readable (e.g. mid-teardown)
+  }
+  return cap
 }
 
 export const emulatorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
@@ -113,12 +142,23 @@ export const emulatorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   // Texture output from the emulator canvas.
+  //
+  // EmulatorJS renders to a WebGL canvas. Handing another context's WebGL canvas
+  // straight to Three as a texture source is unreliable — its drawing buffer does
+  // not dependably re-upload across WebGL contexts, so a wired Main Output froze on
+  // the first frame even while the emulator's own on-screen canvas kept animating.
+  // Blitting the frame through an intermediate 2D canvas first fixes it: drawImage
+  // reads the live (preserveDrawingBuffer) content each frame, and a 2D-canvas
+  // texture source re-uploads reliably on needsUpdate.
   const canvas = ready ? loader.getCanvas() : null
-  if (canvas) {
+  if (canvas && canvas.width > 0 && canvas.height > 0) {
     const renderer = getThreeShaderRenderer()
-    if (!entry.texture) entry.texture = renderer.createTexture(canvas)
-    else renderer.updateTexture(entry.texture, canvas)
-    outputs.set('texture', entry.texture)
+    const frame = blitToCaptureCanvas(entry, canvas)
+    if (frame) {
+      if (!entry.texture) entry.texture = renderer.createTexture(frame)
+      else renderer.updateTexture(entry.texture, frame)
+    }
+    outputs.set('texture', entry.texture ?? null)
   } else {
     outputs.set('texture', entry.texture ?? null)
   }
@@ -150,6 +190,8 @@ function cleanupEntry(entry: EmulatorEntry, teardownLoader: boolean): void {
     try { entry.texture.dispose() } catch { /* ignore */ }
     entry.texture = undefined
   }
+  entry.captureCanvas = undefined
+  entry.captureCtx = undefined
   if (entry.audioGain) {
     try { entry.audioGain.dispose() } catch { /* ignore */ }
     entry.audioGain = undefined
