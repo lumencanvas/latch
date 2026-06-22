@@ -12,6 +12,7 @@ import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
 import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
 import { getThreeShaderRenderer } from './visual'
+import { drawBoundingBox } from '@/registry/ai/utils/mediapipe-drawing'
 
 // Cache for node state and results
 const nodeCache = new Map<string, unknown>()
@@ -21,6 +22,24 @@ const pendingOperations = new Map<string, Promise<void>>()
 
 // Track disposed nodes to prevent async callbacks from updating stale state
 const disposedNodes = new Set<string>()
+
+// Per-node held canvas + texture for the live object-detection node. Kept in a
+// dedicated map (not nodeCache) so the THREE.Texture can be disposed on cleanup.
+interface LiveDetectState {
+  canvas: HTMLCanvasElement
+  texture: THREE.Texture | null
+}
+const liveDetectState = new Map<string, LiveDetectState>()
+
+function disposeLiveDetectNode(nodeId: string): void {
+  const state = liveDetectState.get(nodeId)
+  if (state) {
+    if (state.texture) state.texture.dispose()
+    state.canvas.width = 0
+    state.canvas.height = 0
+    liveDetectState.delete(nodeId)
+  }
+}
 
 // Check if a node has been disposed (for use in async callbacks)
 export function isNodeDisposed(nodeId: string): boolean {
@@ -1131,6 +1150,125 @@ export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
 }
 
 // ============================================================================
+// Live Object Detection Node (annotated texture output)
+// ============================================================================
+
+type Detection = { label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }
+
+export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const source = ctx.inputs.get('source')
+  const trigger = ctx.inputs.get('trigger')
+
+  const modelId = (ctx.controls.get('model') as string) || 'Xenova/yolos-tiny'
+  const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
+  const interval = (ctx.controls.get('interval') as number) ?? 20
+  const showBoxes = (ctx.controls.get('showBoxes') as boolean) ?? true
+  const showLabels = (ctx.controls.get('showLabels') as boolean) ?? true
+  const boxColor = (ctx.controls.get('boxColor') as string) || '#00ff00'
+  const lineWidth = (ctx.controls.get('lineWidth') as number) ?? 2
+
+  const cachedDetections = getCached<Detection[]>(`${ctx.nodeId}:detections`, [])
+  const loading = pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false)
+
+  // Normalize any texture/video/canvas source to ImageData (reuses the shared helper).
+  const imageData = convertToImageData(source)
+
+  // Reuse the held state so the texture persists between frames.
+  let state = liveDetectState.get(ctx.nodeId)
+  if (!state) {
+    state = { canvas: document.createElement('canvas'), texture: null }
+    liveDetectState.set(ctx.nodeId, state)
+  }
+
+  if (!imageData) {
+    // No usable input this frame — keep emitting the last held texture/detections.
+    outputs.set('detections', cachedDetections)
+    outputs.set('count', cachedDetections.length)
+    outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
+    outputs.set('texture', state.texture)
+    outputs.set('loading', loading)
+    if (source) {
+      outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
+    }
+    return outputs
+  }
+
+  const width = imageData.width
+  const height = imageData.height
+
+  // Throttle detection by frame interval (or run immediately on trigger).
+  const hasTrigger = hasTriggerValue(trigger)
+  const currentFrame = ctx.frameCount
+  const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
+  const due = hasTrigger || !lastFrame || currentFrame - lastFrame >= interval
+
+  if (due && !pendingOperations.has(ctx.nodeId)) {
+    setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+    setCached(`${ctx.nodeId}:loading`, true)
+    const operation = (async () => {
+      try {
+        const detections = (await aiInference.detectObjects(imageData, threshold, modelId)) as Detection[]
+        if (isNodeDisposed(ctx.nodeId)) return
+        setCached(`${ctx.nodeId}:detections`, detections)
+        const top = detections.reduce<Detection | null>((best, d) => (!best || d.score > best.score ? d : best), null)
+        setCached(`${ctx.nodeId}:topLabel`, top?.label ?? '')
+        setCached(`${ctx.nodeId}:loading`, false)
+      } catch (error) {
+        console.error('[AI] Live object detection error:', error)
+        setCached(`${ctx.nodeId}:loading`, false)
+      } finally {
+        pendingOperations.delete(ctx.nodeId)
+      }
+    })()
+    pendingOperations.set(ctx.nodeId, operation)
+  }
+
+  // Draw the current frame + last-known detections into the held canvas every
+  // frame so the passthrough stays live and the overlay smooth between runs.
+  state.canvas.width = width
+  state.canvas.height = height
+  const c2d = state.canvas.getContext('2d')
+  if (c2d) {
+    c2d.putImageData(imageData, 0, 0)
+
+    if (showBoxes) {
+      for (const det of cachedDetections) {
+        const { xmin, ymin, xmax, ymax } = det.box
+        drawBoundingBox(
+          c2d,
+          {
+            originX: xmin / width,
+            originY: ymin / height,
+            width: (xmax - xmin) / width,
+            height: (ymax - ymin) / height,
+          },
+          width,
+          height,
+          showLabels ? det.label : undefined,
+          showLabels ? det.score : undefined,
+          { color: boxColor, lineWidth }
+        )
+      }
+    }
+
+    const renderer = getThreeShaderRenderer()
+    if (state.texture) {
+      renderer.updateTexture(state.texture, state.canvas)
+    } else {
+      state.texture = renderer.createTexture(state.canvas)
+    }
+  }
+
+  outputs.set('detections', cachedDetections)
+  outputs.set('count', cachedDetections.length)
+  outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
+  outputs.set('texture', state.texture)
+  outputs.set('loading', loading)
+  return outputs
+}
+
+// ============================================================================
 // MediaPipe Hand Tracking Node
 // ============================================================================
 
@@ -2064,6 +2202,11 @@ export function disposeAllAINodes(): void {
     }
   }
 
+  // Dispose live-detection textures before clearing
+  for (const nodeId of liveDetectState.keys()) {
+    disposeLiveDetectNode(nodeId)
+  }
+
   nodeCache.clear()
   pendingOperations.clear()
   sttState.clear()
@@ -2085,6 +2228,13 @@ export function gcAIState(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(nodeId)) {
       disposedNodes.add(nodeId)
       pendingOperations.delete(nodeId)
+    }
+  }
+
+  // Clean live-detection held canvas/texture (dispose the THREE.Texture)
+  for (const nodeId of liveDetectState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      disposeLiveDetectNode(nodeId)
     }
   }
 
@@ -2133,6 +2283,7 @@ export const aiExecutors: Record<string, NodeExecutorFn> = {
   'vla': vlaExecutor,
   'feature-extraction': featureExtractionExecutor,
   'object-detection': objectDetectionExecutor,
+  'object-detection-live': objectDetectionLiveExecutor,
   'speech-recognition': speechRecognitionExecutor,
   'text-transformation': textTransformationExecutor,
   'mediapipe-hand': mediapipeHandExecutor,
