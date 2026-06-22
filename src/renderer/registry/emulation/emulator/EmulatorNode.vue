@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import { Gamepad2, Play, Square, RotateCcw } from 'lucide-vue-next'
@@ -15,6 +15,15 @@ const flowsStore = useFlowsStore()
 const assetsStore = useAssetsStore()
 
 const container = ref<HTMLDivElement | null>(null)
+// EmulatorJS renders into this manually-managed host. The editor view is
+// KeepAlive-cached, so switching to the Control tab DEACTIVATES it and detaches
+// its DOM — which stops EmulatorJS painting, freezing the captured texture on the
+// last editor frame. We keep the host attached to the rendered document across
+// view switches by parking it off-screen in <body> on deactivate (pinning its size
+// so the canvas never resizes — a resize is what caused the earlier glCopySubTexture
+// flood) and docking it back into the node on activate. Reparenting preserves the
+// WebGL context, audio, and input.
+let host: HTMLDivElement | null = null
 let loader: EmulatorJSLoader | null = null
 let loadWatchdog: number | null = null
 let currentRomUrl: string | null = null
@@ -142,9 +151,40 @@ function startResize(event: MouseEvent) {
   window.addEventListener('mouseup', onUp)
 }
 
+/** Dock the host inside the node (editor active): fill the screen, let scoped CSS size the canvas. */
+function dockHostInNode() {
+  if (!host || !container.value) return
+  host.style.cssText = 'width:100%;height:100%;'
+  const c = host.querySelector('canvas') as HTMLCanvasElement | null
+  if (c) { c.style.width = ''; c.style.height = '' }
+  if (host.parentNode !== container.value) container.value.appendChild(host)
+}
+
+/**
+ * Park the host off-screen but still attached to <body>, so EmulatorJS keeps
+ * painting while the editor view is deactivated. Pin the host AND canvas to their
+ * current pixel size first so leaving the node's scoped CSS doesn't resize the
+ * canvas backing (the resize is what triggered the prior glCopySubTexture flood).
+ */
+function parkHostOffscreen() {
+  if (!host) return
+  const w = host.offsetWidth || 280
+  const h = host.offsetHeight || 240
+  const c = host.querySelector('canvas') as HTMLCanvasElement | null
+  if (c) {
+    c.style.width = `${c.clientWidth || w}px`
+    c.style.height = `${c.clientHeight || h}px`
+  }
+  host.style.cssText = `position:fixed;left:-100000px;top:0;width:${w}px;height:${h}px;pointer-events:none;`
+  document.body.appendChild(host)
+}
+
 onMounted(() => {
   if (!container.value) return
-  loader = new EmulatorJSLoader(container.value)
+  host = document.createElement('div')
+  host.style.cssText = 'width:100%;height:100%;'
+  container.value.appendChild(host)
+  loader = new EmulatorJSLoader(host)
   // Register on mount (not after Load) so the start/stop/reset trigger inlets can
   // drive the emulator from the graph, and the executor can inject + capture.
   registerEmulatorNode(props.id, {
@@ -156,10 +196,16 @@ onMounted(() => {
   })
 })
 
+// KeepAlive lifecycle: keep the emulator canvas in the rendered DOM across views.
+onActivated(dockHostInNode)
+onDeactivated(parkHostOffscreen)
+
 onUnmounted(() => {
   if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
   unregisterEmulator(props.id)
   loader = null
+  if (host?.parentNode) host.parentNode.removeChild(host)
+  host = null
   if (currentRomUrl) {
     URL.revokeObjectURL(currentRomUrl)
     currentRomUrl = null
