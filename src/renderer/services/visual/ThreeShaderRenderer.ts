@@ -396,22 +396,28 @@ export class ThreeShaderRenderer {
     const uniforms = shader.uniforms
     if (!uniforms) return null
 
-    uniforms.iTime.value = this._time
-    uniforms.iResolution.value.set(width, height)
-    uniforms.iMouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
-    uniforms.iFrame.value = this._frame
+    // These built-in uniforms exist on shader-NODE materials but NOT on effect
+    // shaders — compileEffectShader only creates the uniforms its source declares,
+    // and effects (color-correction/blur/blend/displacement) declare just their own
+    // (u_texture, u_brightness, …). Accessing `.value` on an absent uniform threw a
+    // TypeError every frame, which the engine swallowed → effect nodes rendered
+    // nothing. Guard each so render() works for both shader-node and effect shaders.
+    if (uniforms.iTime) uniforms.iTime.value = this._time
+    if (uniforms.iResolution) uniforms.iResolution.value.set(width, height)
+    if (uniforms.iMouse) uniforms.iMouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
+    if (uniforms.iFrame) uniforms.iFrame.value = this._frame
 
     // Update raw aliases
-    uniforms.u_time.value = this._time
-    uniforms.u_resolution.value.set(width, height)
-    uniforms.u_mouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
-    uniforms.u_frame.value = this._frame
+    if (uniforms.u_time) uniforms.u_time.value = this._time
+    if (uniforms.u_resolution) uniforms.u_resolution.value.set(width, height)
+    if (uniforms.u_mouse) uniforms.u_mouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
+    if (uniforms.u_frame) uniforms.u_frame.value = this._frame
 
     // Reset channels to blank texture
-    uniforms.iChannel0.value = this.blankTexture
-    uniforms.iChannel1.value = this.blankTexture
-    uniforms.iChannel2.value = this.blankTexture
-    uniforms.iChannel3.value = this.blankTexture
+    if (uniforms.iChannel0) uniforms.iChannel0.value = this.blankTexture
+    if (uniforms.iChannel1) uniforms.iChannel1.value = this.blankTexture
+    if (uniforms.iChannel2) uniforms.iChannel2.value = this.blankTexture
+    if (uniforms.iChannel3) uniforms.iChannel3.value = this.blankTexture
 
     // Apply user uniforms
     for (const uniform of userUniforms) {
@@ -513,20 +519,21 @@ export class ThreeShaderRenderer {
     const uniforms = shader.uniforms
     if (!uniforms) return
 
-    uniforms.iTime.value = this._time
-    uniforms.iResolution.value.set(width, height)
-    uniforms.iMouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
-    uniforms.iFrame.value = this._frame
-    uniforms.u_time.value = this._time
-    uniforms.u_resolution.value.set(width, height)
-    uniforms.u_mouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
-    uniforms.u_frame.value = this._frame
+    // Guard built-in uniforms (absent on effect shaders) — see render().
+    if (uniforms.iTime) uniforms.iTime.value = this._time
+    if (uniforms.iResolution) uniforms.iResolution.value.set(width, height)
+    if (uniforms.iMouse) uniforms.iMouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
+    if (uniforms.iFrame) uniforms.iFrame.value = this._frame
+    if (uniforms.u_time) uniforms.u_time.value = this._time
+    if (uniforms.u_resolution) uniforms.u_resolution.value.set(width, height)
+    if (uniforms.u_mouse) uniforms.u_mouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
+    if (uniforms.u_frame) uniforms.u_frame.value = this._frame
 
     // Reset channels
-    uniforms.iChannel0.value = this.blankTexture
-    uniforms.iChannel1.value = this.blankTexture
-    uniforms.iChannel2.value = this.blankTexture
-    uniforms.iChannel3.value = this.blankTexture
+    if (uniforms.iChannel0) uniforms.iChannel0.value = this.blankTexture
+    if (uniforms.iChannel1) uniforms.iChannel1.value = this.blankTexture
+    if (uniforms.iChannel2) uniforms.iChannel2.value = this.blankTexture
+    if (uniforms.iChannel3) uniforms.iChannel3.value = this.blankTexture
 
     // Apply user uniforms
     for (const uniform of userUniforms) {
