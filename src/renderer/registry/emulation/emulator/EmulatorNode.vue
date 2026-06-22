@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import { Gamepad2, Play, Square, RotateCcw } from 'lucide-vue-next'
@@ -15,6 +15,13 @@ const flowsStore = useFlowsStore()
 const assetsStore = useAssetsStore()
 
 const container = ref<HTMLDivElement | null>(null)
+// EmulatorJS renders into this manually-managed host (not the Vue-managed container
+// directly). The editor view is KeepAlive-cached, so switching to the Control tab
+// DEACTIVATES it and detaches its DOM — which stops EmulatorJS painting and made the
+// wired Main Output go blank on Control. We keep the host attached to the rendered
+// document across view switches by parking it off-screen in <body> on deactivate and
+// docking it back into the node on activate. Reparenting preserves the WebGL context.
+let host: HTMLDivElement | null = null
 let loader: EmulatorJSLoader | null = null
 let loadWatchdog: number | null = null
 let currentRomUrl: string | null = null
@@ -142,9 +149,32 @@ function startResize(event: MouseEvent) {
   window.addEventListener('mouseup', onUp)
 }
 
+/** Dock the emulator host inside the node (editor view active). */
+function dockHostInNode() {
+  if (!host || !container.value) return
+  host.style.cssText = 'width:100%;height:100%;'
+  if (host.parentNode !== container.value) container.value.appendChild(host)
+}
+
+/**
+ * Park the host off-screen but still attached to the rendered document, so
+ * EmulatorJS keeps painting while the editor view is deactivated. Detaching
+ * (the default KeepAlive behaviour) halts rendering — off-screen-but-attached
+ * does not. Capture uses the canvas drawing-buffer size, so the off-screen
+ * CSS size is irrelevant to the texture output.
+ */
+function parkHostOffscreen() {
+  if (!host) return
+  host.style.cssText = `position:fixed;left:-100000px;top:0;width:${nodeWidth.value}px;height:${screenHeight.value}px;pointer-events:none;`
+  document.body.appendChild(host)
+}
+
 onMounted(() => {
   if (!container.value) return
-  loader = new EmulatorJSLoader(container.value)
+  host = document.createElement('div')
+  host.style.cssText = 'width:100%;height:100%;'
+  container.value.appendChild(host)
+  loader = new EmulatorJSLoader(host)
   // Register on mount (not after Load) so the start/stop/reset trigger inlets can
   // drive the emulator from the graph, and the executor can inject + capture.
   registerEmulatorNode(props.id, {
@@ -156,10 +186,16 @@ onMounted(() => {
   })
 })
 
+// KeepAlive lifecycle: keep the emulator canvas in the rendered DOM across view switches.
+onActivated(dockHostInNode)
+onDeactivated(parkHostOffscreen)
+
 onUnmounted(() => {
   if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
   unregisterEmulator(props.id)
   loader = null
+  if (host?.parentNode) host.parentNode.removeChild(host)
+  host = null
   if (currentRomUrl) {
     URL.revokeObjectURL(currentRomUrl)
     currentRomUrl = null
