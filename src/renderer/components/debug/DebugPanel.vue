@@ -258,8 +258,11 @@ const warnCount = computed(() => {
           class="console-message"
           :class="msg.type"
         >
-          <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
-          <span class="msg-text">{{ msg.message }}</span>
+          <div class="msg-header">
+            <span class="msg-type">{{ msg.type }}</span>
+            <span class="msg-time">{{ formatTime(msg.timestamp) }}</span>
+          </div>
+          <pre class="msg-text">{{ msg.message }}</pre>
         </div>
       </div>
     </div>
@@ -439,46 +442,81 @@ const warnCount = computed(() => {
 .console-content {
   flex: 1;
   overflow-y: auto;
-  max-height: 200px;
+  max-height: 320px;
   background: var(--color-neutral-900);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
+/* Each log renders as its own card so entries never blur together. */
 .console-message {
   display: flex;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
   font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
-  border-bottom: 1px solid var(--color-neutral-800);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-neutral-800);
+  border-left: 3px solid var(--color-neutral-600);
+  border-radius: var(--radius-sm);
 }
 
 .console-message.log {
   color: var(--color-neutral-300);
+  border-left-color: var(--color-neutral-500);
 }
 
 .console-message.info {
   color: #7dd3fc;
+  border-left-color: #7dd3fc;
 }
 
 .console-message.warn {
   color: #fbbf24;
+  border-left-color: #fbbf24;
   background: rgba(251, 191, 36, 0.1);
 }
 
 .console-message.error {
   color: #f87171;
+  border-left-color: #f87171;
   background: rgba(248, 113, 113, 0.1);
+}
+
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.msg-type {
+  text-transform: uppercase;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
 }
 
 .msg-time {
   color: var(--color-neutral-500);
+  font-size: 10px;
   flex-shrink: 0;
 }
 
 .msg-text {
+  margin: 0;
   word-break: break-word;
   white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* Errors */
