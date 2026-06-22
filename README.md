@@ -220,7 +220,7 @@ npm install
 npm run dev
 
 # Start development server (Electron)
-npm run electron:dev
+npm run dev:electron
 ```
 
 ### Building

@@ -28,7 +28,7 @@ LATCH uses a node-based system where each node represents a discrete operation o
 | [Outputs](#outputs) | 1 | Final output destinations | [outputs.md](./outputs.md) |
 | [Emulation](./emulation.md) | 3 | Game controllers + in-browser retro emulator | [emulation.md](./emulation.md) |
 
-**Total: 196 nodes**
+**Total: 208 nodes** (per-category counts in the table above are being refreshed)
 
 ---
 

@@ -18,7 +18,7 @@
 
 Node-based creative flow programming environment ("Live Art Tool for Creative
 Humans"). Vue 3 + TypeScript + Vite, packaged for web and desktop (Electron
-Forge). 133+ nodes across 18 categories. Targets creative coders, VJs,
+Forge). 208 nodes across 18 categories. Targets creative coders, VJs,
 installation artists, hardware hackers, IoT makers.
 
 Key libraries: Vue Flow (node editor), Pinia (state), Three.js (3D/shaders),
