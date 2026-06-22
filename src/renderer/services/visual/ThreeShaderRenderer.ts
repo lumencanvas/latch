@@ -384,17 +384,34 @@ export class ThreeShaderRenderer {
     shader: CompiledShaderMaterial,
     userUniforms: ThreeShaderUniform[] = [],
     nodeId: string,
-    width: number = this.defaultSize.width,
-    height: number = this.defaultSize.height
+    width?: number,
+    height?: number
   ): THREE.Texture | null {
     if (this._contextLost) return null
 
-    // Get or create render target for this node
-    const target = this.getOrCreateRenderTarget(nodeId, width, height)
-
-    // Update built-in uniforms
     const uniforms = shader.uniforms
     if (!uniforms) return null
+
+    // Default the output size to the input texture's resolution so effects preserve
+    // the source aspect ratio instead of squishing it into the 512² default. Only
+    // u_texture (an effect's input) drives this — generative shader nodes have no
+    // u_texture and keep the default size. Render-target inputs carry their size on
+    // `image`, so chained effects stay correct too.
+    let outWidth = width ?? this.defaultSize.width
+    let outHeight = height ?? this.defaultSize.height
+    if (width === undefined || height === undefined) {
+      const img = (uniforms.u_texture?.value as THREE.Texture | undefined)?.image as
+        { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined
+      const sw = img?.videoWidth || img?.width
+      const sh = img?.videoHeight || img?.height
+      if (sw && sh) {
+        outWidth = width ?? sw
+        outHeight = height ?? sh
+      }
+    }
+
+    // Get or create render target for this node
+    const target = this.getOrCreateRenderTarget(nodeId, outWidth, outHeight)
 
     // These built-in uniforms exist on shader-NODE materials but NOT on effect
     // shaders — compileEffectShader only creates the uniforms its source declares,
@@ -403,13 +420,13 @@ export class ThreeShaderRenderer {
     // TypeError every frame, which the engine swallowed → effect nodes rendered
     // nothing. Guard each so render() works for both shader-node and effect shaders.
     if (uniforms.iTime) uniforms.iTime.value = this._time
-    if (uniforms.iResolution) uniforms.iResolution.value.set(width, height)
+    if (uniforms.iResolution) uniforms.iResolution.value.set(outWidth, outHeight)
     if (uniforms.iMouse) uniforms.iMouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
     if (uniforms.iFrame) uniforms.iFrame.value = this._frame
 
     // Update raw aliases
     if (uniforms.u_time) uniforms.u_time.value = this._time
-    if (uniforms.u_resolution) uniforms.u_resolution.value.set(width, height)
+    if (uniforms.u_resolution) uniforms.u_resolution.value.set(outWidth, outHeight)
     if (uniforms.u_mouse) uniforms.u_mouse.value.set(this._mouseX, this._mouseY, this._mouseDown ? 1 : 0, 0)
     if (uniforms.u_frame) uniforms.u_frame.value = this._frame
 
