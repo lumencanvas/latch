@@ -6,6 +6,59 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-22 — Wire-preservation, public-readiness, emulator texture saga; all shipped to main
+
+Branch `modernization`, fast-forwarded to `main` and **deployed** (GitHub Pages + Netlify) several
+times this session. All green each deploy: typecheck, lint, **1456 unit tests**, build.
+
+### Shipped (on `main`)
+- **Copy/paste/duplicate/snippet now preserve wires.** New tested flows-store actions
+  `serializeSelection` (capture a selection + only its internal edges) + `insertSubgraph` (clone
+  with fresh ids, remap internal edges). Fixes the headline "wires lost on paste/snippet" bug.
+- **Public-readiness:** added `LICENSE` (MIT) + `CONTRIBUTING.md`, refreshed stale docs (node count
+  133+/196 → 208, `dev:electron` command, test counts), untracked `.DS_Store`, moved the stray
+  design-system mockup into `docs/`.
+- **Test hardening:** strengthened `insertSubgraph`/subflow/heal/duplicate assertions, added the
+  connect-throttle test + Electron-bridge global checks in `code.test.ts`; added `@vitest/coverage-v8`
+  (the `test:coverage` script had no provider). flows.ts coverage 38%→81%. Mutation-tested the new
+  guards (both caught).
+- **Debug console** now renders each log as its own card (type badge + timestamp + body), not a flat
+  stream.
+- **Emulator → texture** (multi-step saga, see below).
+
+### Emulator saga (resolved for the editor; two items still open)
+1. **Capture fix (shipped):** the executor blits the emulator's WebGL canvas into an intermediate 2D
+   canvas, then textures from that — a WebGL canvas is an unreliable cross-context texture source.
+   Fixed the editor freeze.
+2. **Control-tab reparenting attempt (shipped then REVERTED):** parking the emulator host off-screen
+   on view switch resized the canvas and caused a `glCopySubTextureCHROMIUM: Offset overflows texture
+   dimensions` flood that corrupted the texture for *all* consumers. Reverted.
+3. **Texture-size fix (shipped, current):** recreate the THREE texture whenever the frame size changes
+   (`emulation.ts`) instead of uploading a larger canvas into stale storage. Killed the flood.
+
+**Still OPEN (post-audit 2026-06-22):**
+- **Cross-context texture (HIGH, NEW):** there are THREE live WebGL contexts — `ThreeShaderRenderer`
+  (shaders + previews + emulator), `ThreeRenderer` (all 3D nodes), `UnifiedRenderer` (unused). A
+  `THREE.Texture` uploaded in one context can't be sampled in another, so the emulator's texture (and
+  any canvas/video THREE.Texture) is blank when fed to **3D nodes**. This is the real cause of "not
+  working as texture in other nodes." Fix: in `3d.ts:convertToThreeTexture`, rebuild a
+  Canvas/VideoTexture in the 3D context from `inputTexture.image` instead of returning the foreign
+  texture (same pattern its raw-element branches already use). Same-context consumers (shaders, Main
+  Output) work fine once the size flood is gone.
+- **Control tab blank:** KeepAlive keeps `EditorView` mounted but *deactivates* it (detaches DOM), so
+  the emulator canvas stops painting on the Control tab. The reparenting fix was wrong; the sound
+  approach (app-root host, or only-on-the-canvas keep-rendered) needs local testing before deploy.
+
+### Other NEW audit findings (2026-06-22) — see AUDIT_2026-06-19.md re-audit section
+- **`multiple: true` input ports drop all but the last edge** (HIGH, `ExecutionEngine.ts` `getNodeInputs`):
+  Scene-3D / Group-3D expect an array but get one value, so only one wired object/light renders.
+- MED/LOW: per-frame metrics serialization + reactivity bump; `renderToCanvas` per-frame canvas/array
+  allocations on the scaled-readback path; FPS counter can latch to Infinity on a 0-delta frame.
+- Correction: audit #10 (asset blob URL revoke) is already mitigated in `AssetStorage.deleteAsset`;
+  only the orphan-node-ref half stands.
+
+---
+
 ## 2026-06-19 — Audit fixes landed + re-audit (verification pass)
 
 Branch: `modernization`. Committed & pushed (no PR). All green: typecheck clean, eslint clean,
