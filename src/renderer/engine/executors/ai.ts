@@ -1264,7 +1264,8 @@ export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContex
   outputs.set('count', cachedDetections.length)
   outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
   outputs.set('texture', state.texture)
-  outputs.set('loading', loading)
+  // Recompute after the possible kickoff above so it reflects the live state.
+  outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
   return outputs
 }
 
