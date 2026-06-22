@@ -49,6 +49,18 @@ times this session. All green each deploy: typecheck, lint, **1456 unit tests**,
   the emulator canvas stops painting on the Control tab. The reparenting fix was wrong; the sound
   approach (app-root host, or only-on-the-canvas keep-rendered) needs local testing before deploy.
 
+### TOP PRIORITY — persistence / silent data loss (2026-06-22 pass 2, see AUDIT re-audit pass 2)
+The most severe open items: users can silently lose saved work on the public build.
+- **Imported flows are never written to IndexedDB** → gone on reload (`importFlows` mutates store only;
+  autosave watches only the active flow's dirty).
+- **The "Save" button doesn't persist to the DB** (`AppHeader.saveProject` clears dirty + downloads a
+  file, never calls `saveFlow`; clearing dirty also suppresses autosave).
+- **No `beforeunload` guard** + 2s debounced autosave → recent edits lost on reload/crash.
+- **Node drag never marks dirty** → layout reverts on reload.
+- Plus: full `NodeDefinition` baked into every persisted node (bloat), no schema migration, no quota/
+  eviction handling (can evict ALL saved flows), autosave can clear dirty on the wrong flow.
+These rank ABOVE the texture bugs below — they lose real user work today.
+
 ### Other NEW audit findings (2026-06-22) — see AUDIT_2026-06-19.md re-audit section
 - **`multiple: true` input ports drop all but the last edge** (HIGH, `ExecutionEngine.ts` `getNodeInputs`):
   Scene-3D / Group-3D expect an array but get one value, so only one wired object/light renders.
