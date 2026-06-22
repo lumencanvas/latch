@@ -34,7 +34,8 @@ let connectionErrorTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Clipboard for copy/paste
 interface ClipboardData {
-  nodes: Array<{ nodeType: string; position: { x: number; y: number }; data: Record<string, unknown> }>
+  nodes: Array<{ id: string; nodeType: string; position: { x: number; y: number }; data: Record<string, unknown> }>
+  edges: Array<{ source: string; sourceHandle?: string | null; target: string; targetHandle?: string | null }>
   copyOffset: { x: number; y: number }
 }
 const clipboard = ref<ClipboardData | null>(null)
@@ -427,25 +428,21 @@ function deleteSelected() {
  * Copy selected nodes to clipboard
  */
 function copySelectedNodes() {
-  const selectedNodes = flowsStore.activeNodes.filter(n =>
-    uiStore.selectedNodes.includes(n.id)
-  )
+  // serializeSelection captures the selected nodes AND the wires between them
+  // (boundary-crossing edges excluded). Tested in the flows store.
+  const { nodes, edges } = flowsStore.serializeSelection(uiStore.selectedNodes)
+  if (nodes.length === 0) return
 
-  if (selectedNodes.length === 0) return
-
-  // Calculate bounding box for offset calculation
-  const minX = Math.min(...selectedNodes.map(n => n.position.x))
-  const minY = Math.min(...selectedNodes.map(n => n.position.y))
+  // Normalize positions to the selection's bounding box so paste can re-anchor.
+  const minX = Math.min(...nodes.map(n => n.position.x))
+  const minY = Math.min(...nodes.map(n => n.position.y))
 
   clipboard.value = {
-    nodes: selectedNodes.map(n => ({
-      nodeType: n.data?.nodeType as string,
-      position: {
-        x: n.position.x - minX,
-        y: n.position.y - minY,
-      },
-      data: { ...n.data },
+    nodes: nodes.map(n => ({
+      ...n,
+      position: { x: n.position.x - minX, y: n.position.y - minY },
     })),
+    edges,
     copyOffset: { x: 20, y: 20 }, // Offset for pasted nodes
   }
 }
@@ -474,33 +471,37 @@ function pasteNodes() {
   if (!clipboard.value || clipboard.value.nodes.length === 0) return
 
   const before = startBatch()
-  const newNodeIds: string[] = []
 
   // Get paste position (center of viewport or offset from original)
   const viewport = getViewport()
   const baseX = -viewport.x / viewport.zoom + 100
   const baseY = -viewport.y / viewport.zoom + 100
 
-  for (const nodeData of clipboard.value.nodes) {
-    const definition = nodesStore.getDefinition(nodeData.nodeType)
-    if (!definition) continue
-
-    const position = {
-      x: baseX + nodeData.position.x + clipboard.value.copyOffset.x,
-      y: baseY + nodeData.position.y + clipboard.value.copyOffset.y,
-    }
-
-    const node = flowsStore.addNode(nodeData.nodeType, position, {
-      ...nodeData.data,
-      label: definition.name,
-      nodeType: nodeData.nodeType,
-      definition: definition,
+  // Build the clone payload, attaching label/definition like every other
+  // add-node path. Unknown node types are skipped; insertSubgraph drops any
+  // edge whose endpoint was skipped.
+  const nodes = clipboard.value.nodes
+    .map(nodeData => {
+      const definition = nodesStore.getDefinition(nodeData.nodeType)
+      if (!definition) return null
+      return {
+        id: nodeData.id,
+        nodeType: nodeData.nodeType,
+        position: nodeData.position,
+        data: {
+          ...nodeData.data,
+          label: definition.name,
+          nodeType: nodeData.nodeType,
+          definition,
+        },
+      }
     })
+    .filter((n): n is NonNullable<typeof n> => n !== null)
 
-    if (node) {
-      newNodeIds.push(node.id)
-    }
-  }
+  const { nodeIds: newNodeIds } = flowsStore.insertSubgraph(nodes, clipboard.value.edges, {
+    x: baseX + clipboard.value.copyOffset.x,
+    y: baseY + clipboard.value.copyOffset.y,
+  })
 
   // Increase offset for next paste
   clipboard.value.copyOffset.x += 20
@@ -519,36 +520,32 @@ function pasteNodes() {
  * Duplicate selected nodes in place
  */
 function duplicateSelectedNodes() {
-  const selectedNodes = flowsStore.activeNodes.filter(n =>
-    uiStore.selectedNodes.includes(n.id)
-  )
-
-  if (selectedNodes.length === 0) return
+  // Capture the selection + the wires between its nodes (tested in the store),
+  // then re-attach a fresh label/definition before cloning.
+  const { nodes: selNodes, edges } = flowsStore.serializeSelection(uiStore.selectedNodes)
+  if (selNodes.length === 0) return
 
   const before = startBatch()
-  const newNodeIds: string[] = []
 
-  for (const sourceNode of selectedNodes) {
-    const nodeType = sourceNode.data?.nodeType as string
-    const definition = nodesStore.getDefinition(nodeType)
-    if (!definition) continue
-
-    const position = {
-      x: sourceNode.position.x + 20,
-      y: sourceNode.position.y + 20,
-    }
-
-    const node = flowsStore.addNode(nodeType, position, {
-      ...sourceNode.data,
-      label: definition.name,
-      nodeType: nodeType,
-      definition: definition,
+  const nodes = selNodes
+    .map(n => {
+      const definition = nodesStore.getDefinition(n.nodeType)
+      if (!definition) return null
+      return {
+        id: n.id,
+        nodeType: n.nodeType,
+        position: n.position,
+        data: {
+          ...n.data,
+          label: definition.name,
+          nodeType: n.nodeType,
+          definition,
+        },
+      }
     })
+    .filter((n): n is NonNullable<typeof n> => n !== null)
 
-    if (node) {
-      newNodeIds.push(node.id)
-    }
-  }
+  const { nodeIds: newNodeIds } = flowsStore.insertSubgraph(nodes, edges, { x: 20, y: 20 })
 
   // Select duplicated nodes
   uiStore.selectNodes(newNodeIds)

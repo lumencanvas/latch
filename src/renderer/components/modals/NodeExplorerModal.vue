@@ -3,13 +3,14 @@ import { watch } from 'vue'
 import { X, GraduationCap } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
+import { useNodesStore } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
 import { flowSnippets } from '@/data/flow-snippets'
-import { nanoid } from 'nanoid'
 import NodeExplorer from '@/components/node-explorer/NodeExplorer.vue'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
+const nodesStore = useNodesStore()
 const explorerStore = useNodeExplorerStore()
 
 // Reset explorer state when opening
@@ -33,22 +34,24 @@ function handleInsertSnippet(snippetId: string) {
   const snippet = flowSnippets.find(s => s.id === snippetId)
   if (!snippet || !flowsStore.activeFlow) return
 
-  // Clone snippet nodes with new IDs
-  const idMap = new Map<string, string>()
-  const baseX = 400
-  const baseY = 300
+  // Clone the snippet's nodes AND the wires between them. insertSubgraph
+  // remaps the snippet's internal ids to the freshly-created node ids.
+  const nodes = snippet.nodes.map(node => {
+    const definition = nodesStore.getDefinition(node.type)
+    return {
+      id: node.id,
+      nodeType: node.type,
+      position: node.position,
+      data: {
+        ...node.data,
+        nodeType: node.type,
+        ...(definition ? { label: definition.name, definition } : {}),
+      },
+    }
+  })
 
-  for (const node of snippet.nodes) {
-    const newId = nanoid()
-    idMap.set(node.id, newId)
-    flowsStore.addNode(node.type, {
-      x: baseX + node.position.x,
-      y: baseY + node.position.y,
-    })
-  }
-
-  // Note: edges between snippet nodes would need the new IDs.
-  // For simplicity, we just add the nodes. Users can wire them up.
+  const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, { x: 400, y: 300 })
+  if (nodeIds.length > 0) uiStore.selectNodes(nodeIds)
   close()
 }
 

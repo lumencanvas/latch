@@ -372,6 +372,92 @@ export const useFlowsStore = defineStore('flows', {
       this.activeFlow.dirty = true
     },
 
+    /**
+     * Clone a set of nodes plus the edges *between* them into the active flow
+     * with fresh ids, preserving the internal wiring. Used by copy/paste,
+     * duplicate, and snippet insertion — all of which previously dropped edges.
+     *
+     * Each node's `data` should already carry whatever the caller wants on the
+     * clone (label/definition/nodeType/control values). Only edges whose BOTH
+     * endpoints are in `nodes` are recreated; edges crossing the selection
+     * boundary are intentionally dropped. `offset` is added to every position.
+     * Returns the new node/edge ids (node ids in input order).
+     */
+    insertSubgraph(
+      nodes: Array<{ id: string; nodeType: string; position: XYPosition; data?: Record<string, unknown> }>,
+      edges: Array<{ source: string; sourceHandle?: string | null; target: string; targetHandle?: string | null }>,
+      offset: XYPosition = { x: 0, y: 0 }
+    ): { nodeIds: string[]; edgeIds: string[] } {
+      if (!this.activeFlow) return { nodeIds: [], edgeIds: [] }
+
+      const idMap = new Map<string, string>() // original id -> freshly created id
+      const nodeIds: string[] = []
+      for (const n of nodes) {
+        const created = this.addNode(
+          n.nodeType,
+          { x: n.position.x + offset.x, y: n.position.y + offset.y },
+          { ...(n.data ?? {}) }
+        )
+        if (created) {
+          idMap.set(n.id, created.id)
+          nodeIds.push(created.id)
+        }
+      }
+
+      const edgeIds: string[] = []
+      for (const e of edges) {
+        const newSource = idMap.get(e.source)
+        const newTarget = idMap.get(e.target)
+        // Only re-wire edges whose endpoints both made it into the clone.
+        if (!newSource || !newTarget) continue
+        const created = this.addEdge(
+          newSource,
+          e.sourceHandle ?? '',
+          newTarget,
+          e.targetHandle ?? ''
+        )
+        if (created) edgeIds.push(created.id)
+      }
+
+      return { nodeIds, edgeIds }
+    },
+
+    /**
+     * Capture a set of the active flow's nodes plus the edges *between* them as
+     * a portable payload (for copy/paste and duplicate). Edges that cross the
+     * selection boundary are excluded — only fully-internal wiring travels with
+     * the selection. Positions are absolute; the caller applies any offset.
+     *
+     * This is the capture half of the copy/paste/duplicate flow; pairing it with
+     * `insertSubgraph` round-trips a selection while preserving its wires.
+     */
+    serializeSelection(nodeIds: string[]): {
+      nodes: Array<{ id: string; nodeType: string; position: XYPosition; data: Record<string, unknown> }>
+      edges: Array<{ source: string; sourceHandle?: string | null; target: string; targetHandle?: string | null }>
+    } {
+      if (!this.activeFlow) return { nodes: [], edges: [] }
+
+      const idSet = new Set(nodeIds)
+      const nodes = this.activeFlow.nodes
+        .filter((n) => idSet.has(n.id))
+        .map((n) => ({
+          id: n.id,
+          nodeType: n.data?.nodeType as string,
+          position: { x: n.position.x, y: n.position.y },
+          data: { ...n.data },
+        }))
+      const edges = this.activeFlow.edges
+        .filter((e) => idSet.has(e.source) && idSet.has(e.target))
+        .map((e) => ({
+          source: e.source,
+          sourceHandle: e.sourceHandle,
+          target: e.target,
+          targetHandle: e.targetHandle,
+        }))
+
+      return { nodes, edges }
+    },
+
     // Sync with Vue Flow
     setNodes(nodes: Node[]) {
       if (!this.activeFlow) return

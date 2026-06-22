@@ -49,7 +49,14 @@ describe('functionExecutor — legitimate code still works', () => {
 })
 
 describe('functionExecutor — host globals are shadowed (defense-in-depth)', () => {
-  for (const g of ['window', 'document', 'fetch', 'localStorage', 'XMLHttpRequest', 'WebSocket', 'electronAPI', 'globalThis', 'navigator', 'indexedDB']) {
+  // Includes the Electron-bridge escape vectors (require/process/module/Worker/
+  // importScripts/global) — the whole reason the preamble exists — not just DOM.
+  for (const g of [
+    'window', 'document', 'fetch', 'localStorage', 'sessionStorage', 'XMLHttpRequest',
+    'WebSocket', 'EventSource', 'electronAPI', 'globalThis', 'self', 'navigator',
+    'indexedDB', 'caches', 'location', 'require', 'process', 'module', 'exports',
+    'global', 'Worker', 'SharedWorker', 'importScripts',
+  ]) {
     it(`\`${g}\` is undefined inside node code`, () => {
       expect(run(`return typeof ${g}`).get('result')).toBe('undefined')
     })
@@ -76,5 +83,11 @@ describe('expressionExecutor', () => {
     // a blocked global makes the expression non-numeric → coerced to 0, error set
     const out = expr('(typeof fetch === "undefined") ? 42 : 0')
     expect(out.get('result')).toBe(42)
+  })
+
+  it('coerces a non-numeric/erroring expression to 0 and reports the error', () => {
+    const out = expr('a +', { a: 1 }) // syntax error
+    expect(out.get('result')).toBe(0)
+    expect(typeof out.get('error')).toBe('string')
   })
 })
