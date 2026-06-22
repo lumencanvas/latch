@@ -128,6 +128,9 @@ export function disposeVisualNode(nodeId: string): void {
     canvasTextureCache.delete(canvasKey)
   }
 
+  // Clean up snapshot held-frame state
+  disposeSnapshotNode(nodeId)
+
   // Clean up framebuffers (legacy renderer) - only if it was initialized
   if (hasShaderRenderer()) {
     const legacyRenderer = getShaderRenderer()
@@ -187,6 +190,16 @@ export function disposeAllVisualNodes(): void {
   // Clean up all webcam snapshot states
   for (const nodeId of webcamSnapshotState.keys()) {
     disposeWebcamSnapshotNode(nodeId)
+  }
+
+  // Clean up all snapshot held-frame states
+  for (const nodeId of snapshotState.keys()) {
+    disposeSnapshotNode(nodeId)
+  }
+  if (snapshotScratchCanvas) {
+    snapshotScratchCanvas.width = 0
+    snapshotScratchCanvas.height = 0
+    snapshotScratchCanvas = null
   }
 
   // Clear pending asset loads
@@ -304,6 +317,13 @@ export function gcVisualState(validNodeIds: Set<string>): void {
   for (const nodeId of webcamSnapshotState.keys()) {
     if (!validNodeIds.has(nodeId)) {
       disposeWebcamSnapshotNode(nodeId)
+    }
+  }
+
+  // Clean snapshot held-frame state
+  for (const nodeId of snapshotState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      disposeSnapshotNode(nodeId)
     }
   }
 
@@ -1786,10 +1806,129 @@ export function disposeWebcamSnapshotNode(nodeId: string): void {
 }
 
 // ============================================================================
+// Snapshot Node
+// ============================================================================
+
+// Per-node held-frame state. The held canvas + texture persist between captures
+// so the node keeps emitting the last latched frame until the next trigger.
+interface SnapshotState {
+  canvas: HTMLCanvasElement
+  texture: THREE.Texture | null
+  imageData: ImageData | null
+  width: number
+  height: number
+  prevTrigger: boolean
+}
+
+const snapshotState = new Map<string, SnapshotState>()
+// Shared scratch canvas used to render the source texture before (optionally)
+// mirroring it into each node's held canvas.
+let snapshotScratchCanvas: HTMLCanvasElement | null = null
+
+export const snapshotExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const source = ctx.inputs.get('source') as THREE.Texture | null
+  const trigger = ctx.inputs.get('trigger')
+  const continuous = (ctx.controls.get('continuous') as boolean) ?? false
+  const mirror = (ctx.controls.get('mirror') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+
+  let state = snapshotState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      canvas: document.createElement('canvas'),
+      texture: null,
+      imageData: null,
+      width: 0,
+      height: 0,
+      prevTrigger: false,
+    }
+    snapshotState.set(ctx.nodeId, state)
+  }
+
+  // Rising-edge trigger detection so a held trigger only fires one capture.
+  const triggerActive =
+    trigger === true ||
+    trigger === 1 ||
+    (typeof trigger === 'number' && trigger > 0) ||
+    (typeof trigger === 'string' && trigger.length > 0)
+  const risingEdge = triggerActive && !state.prevTrigger
+  state.prevTrigger = triggerActive
+
+  let capturedThisFrame = false
+
+  if (source && (continuous || risingEdge)) {
+    // Determine source dimensions (covers image/canvas + video-backed textures).
+    const image = source.image as
+      | { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
+      | undefined
+    const width = image?.width || image?.videoWidth || 512
+    const height = image?.height || image?.videoHeight || 512
+
+    const renderer = getThreeShaderRenderer()
+
+    // Render the source texture into the shared scratch canvas first.
+    if (!snapshotScratchCanvas) {
+      snapshotScratchCanvas = document.createElement('canvas')
+    }
+    snapshotScratchCanvas.width = width
+    snapshotScratchCanvas.height = height
+    renderer.renderToCanvas(source, snapshotScratchCanvas)
+
+    // Latch into the per-node held canvas, applying mirror if requested.
+    state.canvas.width = width
+    state.canvas.height = height
+    const ctx2d = state.canvas.getContext('2d')
+    if (ctx2d) {
+      if (mirror) {
+        ctx2d.save()
+        ctx2d.scale(-1, 1)
+        ctx2d.drawImage(snapshotScratchCanvas, -width, 0)
+        ctx2d.restore()
+      } else {
+        ctx2d.drawImage(snapshotScratchCanvas, 0, 0)
+      }
+
+      state.imageData = ctx2d.getImageData(0, 0, width, height)
+      state.width = width
+      state.height = height
+
+      // Keep the output texture on the ThreeShaderRenderer context.
+      if (state.texture) {
+        renderer.updateTexture(state.texture, state.canvas)
+      } else {
+        state.texture = renderer.createTexture(state.canvas)
+      }
+
+      capturedThisFrame = true
+    }
+  }
+
+  outputs.set('texture', state.texture)
+  outputs.set('imageData', state.imageData)
+  outputs.set('width', state.width)
+  outputs.set('height', state.height)
+  outputs.set('captured', capturedThisFrame)
+  return outputs
+}
+
+// Cleanup for a single snapshot node.
+export function disposeSnapshotNode(nodeId: string): void {
+  const state = snapshotState.get(nodeId)
+  if (state) {
+    if (state.texture) state.texture.dispose()
+    state.canvas.width = 0
+    state.canvas.height = 0
+    snapshotState.delete(nodeId)
+  }
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
 export const visualExecutors: Record<string, NodeExecutorFn> = {
+  snapshot: snapshotExecutor,
   shader: shaderExecutor,
   webcam: webcamExecutor,
   'webcam-snapshot': webcamSnapshotExecutor,

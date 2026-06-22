@@ -1,4 +1,5 @@
 export { shaderNode } from './shader'
+export { snapshotNode } from './snapshot'
 export { webcamSnapshotNode } from './webcam-snapshot'
 export { colorNode } from './color'
 export { colorRampNode } from './color-ramp'
@@ -12,6 +13,7 @@ export { imageLoaderNode } from './image-loader'
 export { videoPlayerNode } from './video-player'
 
 import { shaderNode } from './shader'
+import { snapshotNode } from './snapshot'
 import { webcamSnapshotNode } from './webcam-snapshot'
 import { colorNode } from './color'
 import { colorRampNode } from './color-ramp'
@@ -27,6 +29,7 @@ import type { NodeDefinition } from '../types'
 
 export const visualNodes: NodeDefinition[] = [
   shaderNode,
+  snapshotNode,
   webcamSnapshotNode,
   colorNode,
   colorRampNode,
