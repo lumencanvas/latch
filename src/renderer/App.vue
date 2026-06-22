@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { PanelLeft, PanelRight } from 'lucide-vue-next'
 import { useUIStore } from './stores/ui'
 import { useFlowsStore } from './stores/flows'
+import { isElectron } from './utils/platform'
 import AppHeader from './components/layout/AppHeader.vue'
 import FlowTabs from './components/layout/FlowTabs.vue'
 import AppSidebar from './components/layout/AppSidebar.vue'
@@ -29,11 +30,13 @@ const { initialize, isLoading, saveActiveFlow } = usePersistence()
 // 2s, so recent edits may not have reached IndexedDB yet. Fire a best-effort flush
 // (async — may not finish) and prompt the user; the prompt is the real protection.
 function handleBeforeUnload(e: BeforeUnloadEvent) {
-  if (flowsStore.hasUnsavedChanges) {
-    void saveActiveFlow()
-    e.preventDefault()
-    e.returnValue = ''
-  }
+  // Web only: in Electron, cancelling unload can prevent the window from ever
+  // closing (there are almost always unsaved changes). Desktop relies on autosave
+  // + the explicit Save instead.
+  if (isElectron() || !flowsStore.hasUnsavedChanges) return
+  void saveActiveFlow()
+  e.preventDefault()
+  e.returnValue = ''
 }
 
 // Initialize execution engine at app level so controls are available to all components

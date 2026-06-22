@@ -187,8 +187,10 @@ export function usePersistence() {
     const activeId = flowsStore.activeFlowId
     isSaving.value = true
     saveError.value = null
-    try {
-      for (const flow of flowsStore.flows) {
+    // Per-flow try/catch: one flow failing to persist must not skip the others
+    // (especially the active flow the user is working on).
+    for (const flow of flowsStore.flows) {
+      try {
         const persisted = toPersistedFlow(flow)
         if (flow.id !== activeId) {
           const existing = await flowStorage.getById(flow.id)
@@ -196,14 +198,13 @@ export function usePersistence() {
         }
         await flowStorage.save(persisted)
         flowsStore.markFlowSaved(flow.id)
+      } catch (error) {
+        saveError.value = error instanceof Error ? error.message : 'Failed to save flow'
+        console.error('Failed to save flow:', flow.id, error)
       }
-      lastSaveTime.value = new Date()
-    } catch (error) {
-      saveError.value = error instanceof Error ? error.message : 'Failed to save flows'
-      console.error('Failed to save flows:', error)
-    } finally {
-      isSaving.value = false
     }
+    lastSaveTime.value = new Date()
+    isSaving.value = false
   }
 
   /**
