@@ -133,7 +133,7 @@ function sourceToImageData(source: unknown): ImageData | null {
 }
 
 /** Force a kernel/block size to an odd integer >= min. */
-function oddKernel(value: number, min = 1): number {
+export function oddKernel(value: number, min = 1): number {
   let k = Math.max(min, Math.round(value))
   if (k % 2 === 0) k += 1
   return k
