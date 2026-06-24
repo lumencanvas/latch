@@ -6,6 +6,82 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-23 — Vision node families shipped (snapshot, live detection, OpenCV.js)
+
+Implemented the three families planned in the entry below, per
+`docs/plans/VISION_NODES_PLAN_2026-06-22.md`. **10 new nodes + one new service.** Gates green
+throughout (typecheck, eslint 0-error, `test:unit`, production `build`); 8 new unit tests.
+Branch `modernization`, **not pushed**.
+
+### Shipped
+- **`snapshot`** (visual, `b495ada`) — latch/hold a still from any texture feed on rising-edge
+  `trigger` or `continuous`; `mirror`; outputs held texture + imageData + dims + `captured`
+  pulse. gc via the existing `gcVisualState`/`disposeAllVisualNodes`.
+- **`object-detection-live`** (ai, `e98ac6f`) — continuous YOLOS/DETR detection on a live feed
+  with an **annotated-texture** output (boxes/labels drawn over the frame via
+  `mediapipe-drawing.drawBoundingBox`). Reuses `convertToImageData` + `aiInference.detectObjects`;
+  frame-skip throttle + `pendingOperations` guard + `getCached`. Dedicated `liveDetectState` map so
+  the THREE.Texture is disposed in `gcAIState`/`disposeAllAINodes` (the generic nodeCache GC would
+  drop the key without disposing the texture).
+- **OpenCV.js** (`0e5d35e`, `ed223da`, `5651c8c`) — new `services/visual/OpenCVService.ts` (lazy CDN
+  load, `load()/isReady()/isLoading()/getCV()`), new `engine/executors/opencv.ts`, new
+  `registry/opencv/`. **8 nodes:** `cv-grayscale`, `cv-canny`, `cv-threshold` (fixed/Otsu/adaptive),
+  `cv-blur` (gaussian/median), `cv-morphology`, `cv-contours` (+contour data), `cv-corners`
+  (Shi-Tomasi), `cv-optical-flow` (Farneback, HSV viz, +mean-motion). New category wired into
+  `builtinExecutors`, `allNodes`, and `ExecutionEngine` gc + teardown. Filed under category `visual`
+  (left the `NodeCategory` union untouched). **Every `cv.Mat` `.delete()`d** in the op `finally` and
+  in `disposeOpenCVNode`/`gcOpenCVState` — including the persistent optical-flow `prevGray`.
+
+### Bugs found & fixed (build + 5 adversarial audit passes)
+- **median-blur kernel throw** (`5651c8c`): `cv.medianBlur` asserts `ksize > 1`; a kernel of 1 from
+  the slider threw → silent blank. Floored median at 3 (Gaussian is valid at 1). **Unit-tested.**
+- **live-detection stale `loading`** (`023de06`): computed before the async kickoff → reported
+  `false` on the triggering frame. Recompute at output time.
+- **opencv.js thenable stray error** (`594fe61`): the docs.opencv.org `cv` global is an Emscripten
+  thenable whose `.then()` isn't chainable, so `cvObj.then(...).catch(...)` threw an uncaught error
+  on the happy path. Wrap with `Promise.resolve`. **Found by the real-browser test below.**
+- **optical-flow resize wedge** (`71f5b9c`): Farneback needs both frames the same size; a mid-stream
+  resolution change threw every frame and (since `prevGray` only updates on success) stayed blank
+  forever. Now reseeds `prevGray` on size mismatch. **Unit-tested.**
+
+### Verified
+- **Real-browser proof** (Chrome via Playwright, page served with the app's `COOP:same-origin` +
+  `COEP:credentialless`): `crossOriginIsolated` true, the cross-origin no-cors `opencv.js` `<script>`
+  loads under it, WASM instantiates, and `cvtColor(RGBA→GRAY)` of pure red → **76** (=0.299×255).
+  Confirms the novel CDN→WASM→Mat pipeline end-to-end. (One-off; not committed — hits a live CDN.)
+- **Rendering path code-confirmed:** every new node outputs `createTexture(canvas)` → a THREE.Texture
+  wrapping a real-pixel 2D canvas; `mainOutputExecutor` passes it through as `_input_texture` to the
+  PixiJS display — **byte-identical to the shipping `webcam-snapshot`**. Outputs stay on the
+  ThreeShaderRenderer context (display in Main Output/shaders; blank in 3D nodes — the documented
+  3-context gotcha).
+- **8 unit tests** (`tests/unit/executors/opencv.test.ts`, real invocation, cv + renderer mocked):
+  median floor, transient-Mat frees, optical-flow `prevGray` retain→free-on-dispose, resize reseed,
+  frame throttle.
+
+### CDN decision (documented inline in OpenCVService)
+`https://docs.opencv.org/4.x/opencv.js` — the **moving `4.x` alias is intentional**: docs.opencv.org
+keeps only the newest 4.x build (4.10/4.11/4.12 all 404), so pinning a version is a time-bomb. Mirrors
+the app's `@mediapipe/tasks-vision@latest` convention. Single-file build with the WASM embedded base64
+(no sibling `opencv_js.wasm` — it 404s), so only the no-cors `<script>` is cross-origin → loads fine
+under credentialless COEP. Don't "fix" it to a pinned version.
+
+### Open / not done (by choice)
+- **Live full-graph paint** (color/shader → cv/snapshot → main-output actually painting): not run.
+  Path is code-confirmed identical to the shipping `webcam-snapshot` and the OpenCV half is
+  browser-proven, so residual risk is low; a full e2e rig (dev store-hook + headless WebGL + PixiJS
+  readback) wasn't judged worth it. Easy to add later — `flows` store exposes `addNode`/`addEdge`.
+- **Tier B (YOLOv8-ONNX)** — deferred per the plan's gate ("only if YOLOS/DETR insufficient"; no
+  evidence it is). Needs onnxruntime-web direct + letterbox + NMS + a hosted `.onnx`.
+- **`object-detection-live`** not exercised against a live model (transformers.js download); logic
+  mirrors the shipping `object-detection` node.
+
+### State
+Node count **+10 → 218** (prior entry: 208). Working tree clean, **nothing pushed**. Gates green:
+typecheck, eslint (0 errors), `test:unit` (1466 pass), production `build`. Commits `b495ada`,
+`e98ac6f`, `0e5d35e`, `023de06`, `ed223da`, `5651c8c`, `00b25aa`, `594fe61`, `71f5b9c`.
+
+---
+
 ## 2026-06-22 (late) — Emulator + effects fully working; persistence data-loss fixed; vision nodes planned
 
 User-confirmed: **"it all finally works."** Everything below shipped to `main` and is live
