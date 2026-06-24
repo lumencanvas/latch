@@ -14,8 +14,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // --- Fake cv runtime -------------------------------------------------------
 // A Mat is just an object with a `delete` spy; constructors/ops are spies so we
 // can assert call args and that every Mat is freed.
-function makeMat() {
-  return { delete: vi.fn(), isDeleted: () => false, rows: 0, data32F: new Float32Array(0) }
+function makeMat(rows = 0, cols = 0) {
+  return {
+    delete: vi.fn(),
+    isDeleted: () => false,
+    rows,
+    cols,
+    channels: () => 1,
+    data32F: new Float32Array(0),
+  }
 }
 
 const cv = {
@@ -26,8 +33,13 @@ const cv = {
     this.width = w
     this.height = h
   }),
-  matFromImageData: vi.fn(() => makeMat()),
-  cvtColor: vi.fn(),
+  matFromImageData: vi.fn((img: { width: number; height: number }) => makeMat(img.height, img.width)),
+  // Copy source dims onto the destination so size-dependent logic is exercised.
+  cvtColor: vi.fn((src: { rows: number; cols: number }, dst: { rows: number; cols: number }) => {
+    dst.rows = src.rows
+    dst.cols = src.cols
+  }),
+  calcOpticalFlowFarneback: vi.fn(),
   medianBlur: vi.fn(),
   GaussianBlur: vi.fn(),
   imshow: vi.fn(),
@@ -157,5 +169,17 @@ describe('OpenCV executors', () => {
     disposeAllOpenCVNodes()
     // The persistent WASM-heap Mat must be freed on teardown.
     expect(gray.delete).toHaveBeenCalledTimes(1)
+  })
+
+  it('reseeds optical-flow prevGray on a source-resolution change (no Farneback throw)', () => {
+    cvOpticalFlowExecutor(ctx('of2', { interval: 1 }, 0, new ImageData(8, 8))) // seed 8x8
+    const gray1 = cv.Mat.mock.results[0].value
+    expect(gray1.delete).not.toHaveBeenCalled()
+
+    // Different-sized frame: Farneback would throw on mismatched sizes, so the
+    // node must reseed (free the old prevGray) and skip flow this frame.
+    cvOpticalFlowExecutor(ctx('of2', { interval: 1 }, 1, new ImageData(4, 4)))
+    expect(cv.calcOpticalFlowFarneback).not.toHaveBeenCalled()
+    expect(gray1.delete).toHaveBeenCalledTimes(1)
   })
 })

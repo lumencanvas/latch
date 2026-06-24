@@ -524,8 +524,16 @@ export const cvOpticalFlowExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
 
-    if (!state.prevGray || state.prevGray.isDeleted?.()) {
-      // First frame: nothing to compare against yet — seed prevGray.
+    const sizeChanged =
+      !!state.prevGray &&
+      !state.prevGray.isDeleted?.() &&
+      (state.prevGray.rows !== gray.rows || state.prevGray.cols !== gray.cols)
+
+    if (!state.prevGray || state.prevGray.isDeleted?.() || sizeChanged) {
+      // First frame (or the source resolution changed): Farneback needs both
+      // frames the same size, so (re)seed prevGray and skip flow this frame —
+      // otherwise it would throw every frame and stay blank forever.
+      if (state.prevGray && !state.prevGray.isDeleted?.()) state.prevGray.delete()
       state.prevGray = gray
       retainGray = true
     } else {
