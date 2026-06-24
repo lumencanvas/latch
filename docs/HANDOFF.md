@@ -6,6 +6,50 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-23 (Tier B) — YOLOv8/v9 ONNX detection node (onnxruntime-web)
+
+Built the Tier B node the entry below deferred. Raw YOLO detection via
+**onnxruntime-web in the worker**, browser-proven end-to-end. Gates green
+(typecheck, eslint 0-error, `test:unit` 1476, build); **+10 unit tests**.
+Branch `modernization`, **not pushed**. Commit `446b19a`.
+
+### Shipped — `object-detection-yolo` (ai)
+- **`services/ai/yolo.ts`** — pure, layout-robust post-processing: `parseYoloOutput`
+  (decodes `[1,84,8400]` *or* transposed `[1,8400,84]`; cxcywh→xyxy; undoes letterbox
+  scale/pad → original coords; per-class conf filter), `nms` (per-class greedy, agnostic=
+  false), `iou`, `COCO_LABELS`. **10 unit tests** (`tests/unit/services/yolo.test.ts`).
+- **`ai.worker.ts`** — `import * as ort from 'onnxruntime-web'` (the same singleton
+  transformers already configures at import, so wasm just works); lazy `InferenceSession`
+  per model URL (cached, failed loads not cached); `OffscreenCanvas` letterbox → CHW
+  float32 `[1,3,640,640]`; runs, then `parseYoloOutput`+`nms` with `numClasses=80`.
+  Branches in `handleInfer` on `method==='detectYolo'` before the pipeline lookup.
+- **`AIInference.detectYolo(image, modelUrl, threshold, iou)`** — same return shape as
+  `detectObjects`; 5-min worker timeout (first call downloads the model).
+- **Node + executor** — `object-detection-yolo` reuses the live-overlay loop, which I
+  **refactored into a shared `runLiveDetection(ctx, detect, opts)`** so Tier A
+  (`object-detection-live`) and Tier B share one code path (the only diff is the `detect`
+  fn + controls). Default model **gelan-c** (`Xenova/yolov9-onnx`, ~102 MB, CORS-ok);
+  `modelUrl` is an editable select so users can point at a lighter `yolov8n.onnx`.
+
+### Verified
+- **Real-browser inference proof** (Chrome via Playwright, standalone page, stable ort
+  1.20.1 from jsdelivr): created a session from the actual `gelan-c.onnx` (102 MB
+  downloaded), ran inference on a 640² input → input `images`, output `output0`, **dims
+  `[1, 84, 8400]`** (= 4 box + 80 COCO classes × 8400 anchors), dataLen 705600. This is
+  **exactly** what `parseYoloOutput` decodes, and used the identical ort API the worker
+  uses (`InferenceSession.create`/`Tensor`/`run`/`inputNames`/`outputNames`/`dims`).
+- **Build bundles ort into the worker** (webworker chunk) — no Vite/worker errors.
+- Why YOLOv9/GELAN not YOLOv8: the clean COCO `yolov8n` ONNX repos are gone (401);
+  `Xenova/yolov9-onnx` is public + CORS + the model behind Xenova's in-browser demo, and
+  YOLOv9's detection head output is byte-format-identical to YOLOv8 — same pre/post.
+
+### Open / not done
+- Not exercised against a **real object image** in-app (the synthetic-input smoke validated
+  format + that inference runs; correct box decode is unit-tested for that exact format).
+  gelan-c is ~102 MB — heavy first load; surfaced in the node's Loading output + info.
+
+---
+
 ## 2026-06-23 — Vision node families shipped (snapshot, live detection, OpenCV.js)
 
 Implemented the three families planned in the entry below, per

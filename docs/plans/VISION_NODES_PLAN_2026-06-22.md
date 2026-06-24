@@ -1,9 +1,9 @@
 # Vision Nodes Plan — Snapshot, Live-Video AI, OpenCV.js (2026-06-22)
 
-> **STATUS (2026-06-23): Phases 1–3 shipped** on `modernization` (snapshot, `object-detection-live`,
-> OpenCV.js service + 8 nodes). Tier B (YOLOv8-ONNX) deliberately deferred per its gate below. See the
-> 2026-06-23 HANDOFF.md entry for commits, the 4 bugs fixed, and verification (incl. the real-browser
-> OpenCV/COEP proof).
+> **STATUS (2026-06-23): all phases shipped** on `modernization` — snapshot, `object-detection-live`,
+> OpenCV.js service + 8 nodes, **and Tier B `object-detection-yolo`** (YOLOv9/GELAN ONNX via
+> onnxruntime-web; real-browser inference proven, output `[1,84,8400]`). See the two 2026-06-23
+> HANDOFF.md entries for commits, the 4 bugs fixed, and verification (OpenCV/COEP + YOLO inference proofs).
 
 Three new node families requested:
 1. **Snapshot** — capture a still frame from any video/texture feed on trigger, pass it along.
