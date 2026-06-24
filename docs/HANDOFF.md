@@ -26,6 +26,13 @@ Persistent `BackgroundSubtractorMOG2` per node → foreground-mask texture + for
 ratio. The subtractor lives in the WASM heap and is `.delete()`d in
 `disposeOpenCVNode`/`gcOpenCVState` — **unit-tested** (mirrors the optical-flow `prevGray`
 discipline). OpenCV node count: 8 → **9**.
+- **Audit fix:** the subtractor was created once, so the `history`/`varThreshold`/
+  `detectShadows` controls were dead after frame 1. Now rebuilds (freeing the old) when the
+  params change — **unit-tested**.
+- **Caveat:** MOG2 itself isn't runtime-verified (the opencv.js CDN throttled every smoke
+  attempt today). It uses the documented opencv.js API (`new cv.BackgroundSubtractorMOG2`),
+  lives in the same `video` module as the proven optical-flow path, and degrades gracefully
+  (try/catch → blank mask) if absent.
 
 ### Fixed — `runLiveDetection` throttle startup eagerness (`43e1ef7`)
 The shared loop read `lastFrame` with a `0` default and gated on `!lastFrame`, so a stored
@@ -35,7 +42,8 @@ pile-up by `pendingOperations`, but wasteful). Now uses a `-1` sentinel. Found b
 
 ### State
 Vision total: **12 nodes** (snapshot, object-detection-live, object-detection-yolo, 9× cv-*).
-**22 vision unit tests** (9 opencv + 10 yolo + 3 live-detection). Working tree clean.
+**23 vision unit tests** (10 opencv + 10 yolo + 3 live-detection). Bumped to **v1.2.0**;
+merged to `main` (PR #2) and released the Electron build.
 
 ---
 
