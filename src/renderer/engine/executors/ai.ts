@@ -1212,10 +1212,11 @@ function runLiveDetection(
   const height = imageData.height
 
   // Throttle detection by frame interval (or run immediately on trigger).
+  // -1 sentinel = never run (a stored 0 is a real frame, not "never").
   const hasTrigger = hasTriggerValue(trigger)
   const currentFrame = ctx.frameCount
-  const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
-  const due = hasTrigger || !lastFrame || currentFrame - lastFrame >= interval
+  const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, -1)
+  const due = hasTrigger || lastFrame < 0 || currentFrame - lastFrame >= interval
 
   if (due && !pendingOperations.has(ctx.nodeId)) {
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
