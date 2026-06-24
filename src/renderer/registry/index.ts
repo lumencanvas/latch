@@ -26,6 +26,7 @@ import { outputNodes } from './outputs'
 import { stringNodes } from './string'
 import { messagingNodes } from './messaging'
 import { emulationNodes } from './emulation'
+import { opencvNodes } from './opencv'
 
 // Combine all nodes into a single array
 export const allNodes = [
@@ -47,6 +48,7 @@ export const allNodes = [
   ...stringNodes,
   ...messagingNodes,
   ...emulationNodes,
+  ...opencvNodes,
 ]
 
 /**

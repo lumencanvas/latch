@@ -12,7 +12,9 @@ import {
   AutoModelForVision2Seq,
   RawImage,
 } from '@huggingface/transformers'
+import * as ort from 'onnxruntime-web'
 import { isChatModel } from './textGenFormat'
+import { parseYoloOutput, nms, COCO_LABELS } from './yolo'
 
 // Configure Transformers.js for browser usage
 env.allowLocalModels = false
@@ -229,8 +231,108 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
   }
 }
 
+// ===========================================================================
+// YOLO (v8/v9/GELAN) ONNX — raw onnxruntime-web session (not a transformers
+// pipeline). Reuses the ort instance transformers already configured at import.
+// ===========================================================================
+
+const YOLO_SIZE = 640
+// One InferenceSession per model URL, lazily created and shared across calls.
+const yoloSessions = new Map<string, Promise<ort.InferenceSession>>()
+
+function getYoloSession(url: string): Promise<ort.InferenceSession> {
+  let p = yoloSessions.get(url)
+  if (!p) {
+    p = ort.InferenceSession.create(url, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    }).catch((e) => {
+      yoloSessions.delete(url) // don't cache a failed load — allow retry
+      throw e
+    })
+    yoloSessions.set(url, p)
+  }
+  return p
+}
+
+// Letterbox an ImageData to 640×640 (aspect-preserving, gray pad) and pack into
+// a CHW float32 [1,3,640,640] tensor (RGB, /255). Returns the scale/pad so the
+// detections can be mapped back to original-image coordinates.
+function letterboxToTensor(img: ImageData): {
+  tensor: Float32Array
+  scale: number
+  padX: number
+  padY: number
+} {
+  const scale = Math.min(YOLO_SIZE / img.width, YOLO_SIZE / img.height)
+  const nw = Math.round(img.width * scale)
+  const nh = Math.round(img.height * scale)
+  const padX = (YOLO_SIZE - nw) / 2
+  const padY = (YOLO_SIZE - nh) / 2
+
+  const src = new OffscreenCanvas(img.width, img.height)
+  src.getContext('2d')!.putImageData(img, 0, 0)
+  const dst = new OffscreenCanvas(YOLO_SIZE, YOLO_SIZE)
+  const c = dst.getContext('2d')!
+  c.fillStyle = 'rgb(114,114,114)'
+  c.fillRect(0, 0, YOLO_SIZE, YOLO_SIZE)
+  c.drawImage(src, padX, padY, nw, nh)
+
+  const d = c.getImageData(0, 0, YOLO_SIZE, YOLO_SIZE).data
+  const area = YOLO_SIZE * YOLO_SIZE
+  const tensor = new Float32Array(3 * area)
+  for (let i = 0; i < area; i++) {
+    tensor[i] = d[i * 4] / 255 // R plane
+    tensor[area + i] = d[i * 4 + 1] / 255 // G plane
+    tensor[2 * area + i] = d[i * 4 + 2] / 255 // B plane
+  }
+  return { tensor, scale, padX, padY }
+}
+
+async function handleYoloInfer(msg: InferenceMessage): Promise<void> {
+  try {
+    const [serialized, options] = msg.args as [
+      { width: number; height: number; data: Uint8ClampedArray | number[] },
+      { threshold?: number; iou?: number }?,
+    ]
+    // msg.model carries the model URL.
+    const session = await getYoloSession(msg.model)
+    const img = new ImageData(toPixels(serialized.data), serialized.width, serialized.height)
+    const { tensor, scale, padX, padY } = letterboxToTensor(img)
+
+    const inputName = session.inputNames[0]
+    const feeds: Record<string, ort.Tensor> = {
+      [inputName]: new ort.Tensor('float32', tensor, [1, 3, YOLO_SIZE, YOLO_SIZE]),
+    }
+    const result = await session.run(feeds)
+    const output = result[session.outputNames[0]]
+
+    const boxes = nms(
+      parseYoloOutput(output.data as Float32Array, Array.from(output.dims), {
+        confThreshold: options?.threshold ?? 0.25,
+        scale,
+        padX,
+        padY,
+        numClasses: COCO_LABELS.length,
+      }),
+      options?.iou ?? 0.45
+    )
+    respond({ type: 'result', id: msg.id, success: true, data: boxes })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('[AI Worker] YOLO inference failed:', message)
+    respond({ type: 'result', id: msg.id, success: false, error: message })
+  }
+}
+
 // Handle inference
 async function handleInfer(msg: InferenceMessage): Promise<void> {
+  // YOLO ONNX runs a raw InferenceSession, not a transformers pipeline.
+  if (msg.method === 'detectYolo') {
+    await handleYoloInfer(msg)
+    return
+  }
+
   const key = getCacheKey(msg.task, msg.model)
   const pipe = pipelines.get(key)
 

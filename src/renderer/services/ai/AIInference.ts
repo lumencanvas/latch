@@ -872,6 +872,33 @@ class AIInferenceService {
     })
   }
 
+  /**
+   * Detect objects with a raw YOLO (v8/v9/GELAN) `.onnx` model via onnxruntime-web
+   * in the worker. `modelUrl` is the full weights URL (lazy-loaded + cached worker
+   * side). Returns the same shape as detectObjects. The first call downloads the
+   * model (tens–hundreds of MB), hence the long timeout.
+   */
+  async detectYolo(
+    image: ImageData | HTMLCanvasElement | HTMLImageElement | string,
+    modelUrl: string,
+    threshold = 0.25,
+    iou = 0.45
+  ): Promise<Array<{ label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }>> {
+    const imageData = this.imageToSerializable(image)
+
+    return this.sendToWorker<Array<{ label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }>>(
+      {
+        type: 'infer',
+        task: 'yolo',
+        model: modelUrl,
+        method: 'detectYolo',
+        args: [imageData, { threshold, iou }],
+      },
+      undefined,
+      300000 // first call downloads the model — allow up to 5 min
+    )
+  }
+
   async transcribe(
     audio: Float32Array | Blob | string,
     modelId?: string

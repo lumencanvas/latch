@@ -37,6 +37,7 @@ import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocke
 import { disposeAllHttpNodes, gcHttpState } from './executors/http'
 import { disposeAllGamepadState, gcGamepadState } from './executors/gamepad'
 import { disposeAllEmulationNodes, gcEmulationState } from './executors/emulation'
+import { disposeAllOpenCVNodes, gcOpenCVState } from './executors/opencv'
 
 /**
  * Largest delta (seconds) a single frame may report. Caps the time spike that
@@ -221,6 +222,7 @@ export class ExecutionEngine {
         gcMessagingState(validNodeIds)
         gcGamepadState(validNodeIds)
         gcEmulationState(validNodeIds)
+        gcOpenCVState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
         // Drop dirty-mode / async tracking for removed nodes
@@ -850,6 +852,7 @@ export class ExecutionEngine {
     disposeAllHttpNodes()
     disposeAllGamepadState()
     disposeAllEmulationNodes()
+    disposeAllOpenCVNodes()
   }
 
   /**
