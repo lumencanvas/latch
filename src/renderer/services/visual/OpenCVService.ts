@@ -70,13 +70,16 @@ class OpenCVService {
           reject(new Error('OpenCV.js loaded but `cv` global is undefined'))
           return
         }
-        // Some builds expose `cv` as a Promise (MODULARIZE).
+        // Some builds expose `cv` as a thenable (Emscripten MODULARIZE). The
+        // docs.opencv.org build's `.then()` does NOT return a chainable promise,
+        // so wrap with Promise.resolve to adopt it safely (chaining `.catch`
+        // directly on the raw thenable throws an uncaught error).
         if (typeof cvObj.then === 'function') {
-          cvObj
+          Promise.resolve(cvObj)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .then((mod: any) => {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (window as any).cv = mod
+              (window as any).cv = mod ?? (window as any).cv
               finalize()
             })
             .catch((err: unknown) => {
