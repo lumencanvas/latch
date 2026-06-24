@@ -32,21 +32,25 @@ Branch `modernization`, **not pushed**. Commit `446b19a`.
   `modelUrl` is an editable select so users can point at a lighter `yolov8n.onnx`.
 
 ### Verified
-- **Real-browser inference proof** (Chrome via Playwright, standalone page, stable ort
-  1.20.1 from jsdelivr): created a session from the actual `gelan-c.onnx` (102 MB
-  downloaded), ran inference on a 640² input → input `images`, output `output0`, **dims
-  `[1, 84, 8400]`** (= 4 box + 80 COCO classes × 8400 anchors), dataLen 705600. This is
-  **exactly** what `parseYoloOutput` decodes, and used the identical ort API the worker
-  uses (`InferenceSession.create`/`Tensor`/`run`/`inputNames`/`outputNames`/`dims`).
+- **Definitive real-image proof** (Chrome via Playwright, stable ort 1.20.1 from jsdelivr):
+  ran the actual `gelan-c.onnx` on the classic `bus.jpg` (810×1080) with yolo.ts's exact
+  parse+NMS inlined → **`{ bus: 1, person: 4 }`**, the exact ground truth, scores 0.81–0.95,
+  boxes landing on the subjects in image-pixel coords. This empirically settles the three
+  things the format-only smoke left open: **scores are sigmoid'd (0–1, not logits)**,
+  **output dtype is Float32Array**, and **letterbox + `(coord−pad)/scale` decode is correct**.
+  Output confirmed `[1,84,8400]` (input `images`, output `output0`); used the identical ort
+  API the worker uses (`InferenceSession.create`/`Tensor`/`run`/`inputNames`/`outputNames`/`dims`).
 - **Build bundles ort into the worker** (webworker chunk) — no Vite/worker errors.
 - Why YOLOv9/GELAN not YOLOv8: the clean COCO `yolov8n` ONNX repos are gone (401);
   `Xenova/yolov9-onnx` is public + CORS + the model behind Xenova's in-browser demo, and
   YOLOv9's detection head output is byte-format-identical to YOLOv8 — same pre/post.
 
 ### Open / not done
-- Not exercised against a **real object image** in-app (the synthetic-input smoke validated
-  format + that inference runs; correct box decode is unit-tested for that exact format).
-  gelan-c is ~102 MB — heavy first load; surfaced in the node's Loading output + info.
+- The shared **`runLiveDetection`** loop (refactored out of the Tier A executor; now used by
+  both detection nodes) has no direct unit test — it's a faithful extraction (typecheck +
+  build + 1476 tests green, and the YOLO detect path is real-image-proven through it), but a
+  throttle/cache test would lock the shared infra. Low risk; good next target.
+- gelan-c is ~102 MB — heavy first load; surfaced in the node's Loading output + info.
 
 ---
 
