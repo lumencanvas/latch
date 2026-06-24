@@ -1155,18 +1155,32 @@ export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
 
 type Detection = { label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }
 
-export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+/** Default YOLOv9/GELAN COCO weights (Xenova mirror; ~102 MB, CORS-enabled). */
+const DEFAULT_YOLO_URL = 'https://huggingface.co/Xenova/yolov9-onnx/resolve/main/gelan-c.onnx'
+
+interface LiveOverlayOptions {
+  interval: number
+  showBoxes: boolean
+  showLabels: boolean
+  boxColor: string
+  lineWidth: number
+}
+
+/**
+ * Shared live-detection loop: normalize source → ImageData, throttle the async
+ * detect by frame interval (or trigger), cache results, and redraw the frame +
+ * last-known boxes into a held texture every frame. `detect` swaps the backend
+ * (transformers pipeline vs raw YOLO ONNX); everything else is identical.
+ */
+function runLiveDetection(
+  ctx: ExecutionContext,
+  detect: (imageData: ImageData) => Promise<Detection[]>,
+  opts: LiveOverlayOptions
+): Map<string, unknown> {
   const outputs = new Map<string, unknown>()
   const source = ctx.inputs.get('source')
   const trigger = ctx.inputs.get('trigger')
-
-  const modelId = (ctx.controls.get('model') as string) || 'Xenova/yolos-tiny'
-  const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
-  const interval = (ctx.controls.get('interval') as number) ?? 20
-  const showBoxes = (ctx.controls.get('showBoxes') as boolean) ?? true
-  const showLabels = (ctx.controls.get('showLabels') as boolean) ?? true
-  const boxColor = (ctx.controls.get('boxColor') as string) || '#00ff00'
-  const lineWidth = (ctx.controls.get('lineWidth') as number) ?? 2
+  const { interval, showBoxes, showLabels, boxColor, lineWidth } = opts
 
   const cachedDetections = getCached<Detection[]>(`${ctx.nodeId}:detections`, [])
   const loading = pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false)
@@ -1208,14 +1222,14 @@ export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContex
     setCached(`${ctx.nodeId}:loading`, true)
     const operation = (async () => {
       try {
-        const detections = (await aiInference.detectObjects(imageData, threshold, modelId)) as Detection[]
+        const detections = await detect(imageData)
         if (isNodeDisposed(ctx.nodeId)) return
         setCached(`${ctx.nodeId}:detections`, detections)
         const top = detections.reduce<Detection | null>((best, d) => (!best || d.score > best.score ? d : best), null)
         setCached(`${ctx.nodeId}:topLabel`, top?.label ?? '')
         setCached(`${ctx.nodeId}:loading`, false)
       } catch (error) {
-        console.error('[AI] Live object detection error:', error)
+        console.error('[AI] Live detection error:', error)
         setCached(`${ctx.nodeId}:loading`, false)
       } finally {
         pendingOperations.delete(ctx.nodeId)
@@ -1267,6 +1281,39 @@ export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContex
   // Recompute after the possible kickoff above so it reflects the live state.
   outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
   return outputs
+}
+
+function overlayOptions(ctx: ExecutionContext, defaultInterval: number): LiveOverlayOptions {
+  return {
+    interval: (ctx.controls.get('interval') as number) ?? defaultInterval,
+    showBoxes: (ctx.controls.get('showBoxes') as boolean) ?? true,
+    showLabels: (ctx.controls.get('showLabels') as boolean) ?? true,
+    boxColor: (ctx.controls.get('boxColor') as string) || '#00ff00',
+    lineWidth: (ctx.controls.get('lineWidth') as number) ?? 2,
+  }
+}
+
+// Tier A — transformers.js YOLOS/DETR, annotated-texture output.
+export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const modelId = (ctx.controls.get('model') as string) || 'Xenova/yolos-tiny'
+  const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
+  return runLiveDetection(
+    ctx,
+    (img) => aiInference.detectObjects(img, threshold, modelId) as Promise<Detection[]>,
+    overlayOptions(ctx, 20)
+  )
+}
+
+// Tier B — raw YOLOv8/v9 ONNX via onnxruntime-web, annotated-texture output.
+export const objectDetectionYoloExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const modelUrl = (ctx.controls.get('modelUrl') as string) || DEFAULT_YOLO_URL
+  const threshold = (ctx.controls.get('threshold') as number) ?? 0.25
+  const iou = (ctx.controls.get('iou') as number) ?? 0.45
+  return runLiveDetection(
+    ctx,
+    (img) => aiInference.detectYolo(img, modelUrl, threshold, iou) as Promise<Detection[]>,
+    overlayOptions(ctx, 30)
+  )
 }
 
 // ============================================================================
@@ -2285,6 +2332,7 @@ export const aiExecutors: Record<string, NodeExecutorFn> = {
   'feature-extraction': featureExtractionExecutor,
   'object-detection': objectDetectionExecutor,
   'object-detection-live': objectDetectionLiveExecutor,
+  'object-detection-yolo': objectDetectionYoloExecutor,
   'speech-recognition': speechRecognitionExecutor,
   'text-transformation': textTransformationExecutor,
   'mediapipe-hand': mediapipeHandExecutor,

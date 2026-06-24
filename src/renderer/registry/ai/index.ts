@@ -5,6 +5,7 @@ export { imageCaptioningNode } from './image-captioning'
 export { featureExtractionNode } from './feature-extraction'
 export { objectDetectionNode } from './object-detection'
 export { objectDetectionLiveNode } from './object-detection-live'
+export { objectDetectionYoloNode } from './object-detection-yolo'
 export { speechRecognitionNode } from './speech-recognition'
 export { textTransformationNode } from './text-transformation'
 export { retrieveNode } from './retrieve'
@@ -28,6 +29,7 @@ import { imageCaptioningNode } from './image-captioning'
 import { featureExtractionNode } from './feature-extraction'
 import { objectDetectionNode } from './object-detection'
 import { objectDetectionLiveNode } from './object-detection-live'
+import { objectDetectionYoloNode } from './object-detection-yolo'
 import { speechRecognitionNode } from './speech-recognition'
 import { textTransformationNode } from './text-transformation'
 import { retrieveNode } from './retrieve'
@@ -51,6 +53,7 @@ export const aiNodes: NodeDefinition[] = [
   featureExtractionNode,
   objectDetectionNode,
   objectDetectionLiveNode,
+  objectDetectionYoloNode,
   speechRecognitionNode,
   textTransformationNode,
   retrieveNode,
