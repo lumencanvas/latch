@@ -6,6 +6,39 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-23 (verify + extend) — in-app paint proof, MOG2 node, throttle fix
+
+Closed the last verification gap, extended the OpenCV set, and hardened the shared
+detection loop. **12 vision nodes** now; gates green (typecheck, eslint 0-error,
+`test:unit` 1480, build). Branch `modernization`. Commits `6cb4a3c`, `43e1ef7`.
+
+### In-app full-graph paint — PROVEN (the last end-to-end gap)
+Drove `shader(plasma) → snapshot(continuous) → main-output` in the running dev server via
+a temporary dev-only `window.__latch` hook (reverted after — not committed): real engine,
+146 frames, **snapshot output = 512×512 texture with real plasma pixels** (centerRGB
+`[89,252,42]`, ~all samples non-zero) and **main-output received it** (`_input_texture`
+set). Confirms the createTexture(canvas)→THREE.Texture→mainOutput→PixiJS path empirically
+for every texture-output node (all share it). (cv-grayscale-in-app hit the opencv CDN
+throttle — environmental; opencv load + cvtColor were already standalone-proven.)
+
+### Extended — `cv-background-subtraction` (MOG2)
+Persistent `BackgroundSubtractorMOG2` per node → foreground-mask texture + foreground pixel
+ratio. The subtractor lives in the WASM heap and is `.delete()`d in
+`disposeOpenCVNode`/`gcOpenCVState` — **unit-tested** (mirrors the optical-flow `prevGray`
+discipline). OpenCV node count: 8 → **9**.
+
+### Fixed — `runLiveDetection` throttle startup eagerness (`43e1ef7`)
+The shared loop read `lastFrame` with a `0` default and gated on `!lastFrame`, so a stored
+frame 0 read as "never ran" and re-fired detection every frame at startup (guarded from
+pile-up by `pendingOperations`, but wasteful). Now uses a `-1` sentinel. Found by the new
+**runLiveDetection tests** (throttle + cache + topLabel) covering both Tier A and Tier B.
+
+### State
+Vision total: **12 nodes** (snapshot, object-detection-live, object-detection-yolo, 9× cv-*).
+**22 vision unit tests** (9 opencv + 10 yolo + 3 live-detection). Working tree clean.
+
+---
+
 ## 2026-06-23 (Tier B) — YOLOv8/v9 ONNX detection node (onnxruntime-web)
 
 Built the Tier B node the entry below deferred. Raw YOLO detection via
