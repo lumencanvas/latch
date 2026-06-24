@@ -6,6 +6,7 @@ export { cvMorphologyNode } from './cv-morphology'
 export { cvContoursNode } from './cv-contours'
 export { cvCornersNode } from './cv-corners'
 export { cvOpticalFlowNode } from './cv-optical-flow'
+export { cvBackgroundSubtractionNode } from './cv-background-subtraction'
 
 import { cvGrayscaleNode } from './cv-grayscale'
 import { cvCannyNode } from './cv-canny'
@@ -15,6 +16,7 @@ import { cvMorphologyNode } from './cv-morphology'
 import { cvContoursNode } from './cv-contours'
 import { cvCornersNode } from './cv-corners'
 import { cvOpticalFlowNode } from './cv-optical-flow'
+import { cvBackgroundSubtractionNode } from './cv-background-subtraction'
 import type { NodeDefinition } from '../types'
 
 export const opencvNodes: NodeDefinition[] = [
@@ -26,4 +28,5 @@ export const opencvNodes: NodeDefinition[] = [
   cvContoursNode,
   cvCornersNode,
   cvOpticalFlowNode,
+  cvBackgroundSubtractionNode,
 ]

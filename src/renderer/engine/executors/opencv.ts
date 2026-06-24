@@ -33,6 +33,10 @@ interface OpenCVState {
   lastMotion?: number
   /** Last computed corner count, re-served when throttled. */
   lastCount?: number
+  /** Persistent MOG2 background subtractor. MUST be deleted on cleanup. */
+  subtractor?: OpenCVModule
+  /** Last computed foreground ratio (background subtraction), re-served when throttled. */
+  lastRatio?: number
 }
 
 const opencvState = new Map<string, OpenCVState>()
@@ -56,6 +60,11 @@ export function disposeOpenCVNode(nodeId: string): void {
       state.prevGray.delete()
     }
     state.prevGray = undefined
+    // Free the persistent MOG2 subtractor from the WASM heap.
+    if (state.subtractor && !state.subtractor.isDeleted?.()) {
+      state.subtractor.delete()
+    }
+    state.subtractor = undefined
     state.canvas.width = 0
     state.canvas.height = 0
     opencvState.delete(nodeId)
@@ -612,6 +621,80 @@ export const cvOpticalFlowExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
 }
 
 // ============================================================================
+// Background subtraction (MOG2) — retains a persistent subtractor across frames
+// ============================================================================
+
+export const cvBackgroundSubtractionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const source = ctx.inputs.get('source')
+  const interval = (ctx.controls.get('interval') as number) ?? 2
+  const history = Math.max(1, Math.round((ctx.controls.get('history') as number) ?? 500))
+  const varThreshold = (ctx.controls.get('varThreshold') as number) ?? 16
+  const detectShadows = (ctx.controls.get('detectShadows') as boolean) ?? true
+  const state = getState(ctx.nodeId)
+
+  if (!openCVService.isReady()) {
+    void openCVService.load().catch((err) => console.error('[OpenCV]', err))
+    outputs.set('texture', state.texture)
+    outputs.set('foreground', 0)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  const imageData = sourceToImageData(source)
+  if (!imageData) {
+    outputs.set('texture', state.texture)
+    outputs.set('foreground', state.lastRatio ?? 0)
+    outputs.set('loading', false)
+    if (source) outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
+    return outputs
+  }
+
+  const currentFrame = ctx.frameCount
+  const due = state.lastFrame < 0 || currentFrame - state.lastFrame >= interval
+  if (!due) {
+    outputs.set('texture', state.texture)
+    outputs.set('foreground', state.lastRatio ?? 0)
+    outputs.set('loading', false)
+    return outputs
+  }
+  state.lastFrame = currentFrame
+
+  const cv = openCVService.getCV()!
+  // Persistent across frames — the subtractor learns the background over time.
+  if (!state.subtractor || state.subtractor.isDeleted?.()) {
+    state.subtractor = new cv.BackgroundSubtractorMOG2(history, varThreshold, detectShadows)
+  }
+  const src = cv.matFromImageData(imageData)
+  const rgb = new cv.Mat()
+  const fg = new cv.Mat()
+  let ratio = 0
+  try {
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB) // MOG2 wants a 3-channel image
+    state.subtractor.apply(rgb, fg)
+    const total = fg.rows * fg.cols
+    ratio = total > 0 ? cv.countNonZero(fg) / total : 0
+    cv.imshow(state.canvas, fg)
+  } catch (err) {
+    console.error('[OpenCV] background subtraction failed:', err)
+  } finally {
+    src.delete()
+    rgb.delete()
+    fg.delete()
+  }
+
+  const renderer = getThreeShaderRenderer()
+  if (state.texture) renderer.updateTexture(state.texture, state.canvas)
+  else state.texture = renderer.createTexture(state.canvas)
+
+  state.lastRatio = ratio
+  outputs.set('texture', state.texture)
+  outputs.set('foreground', ratio)
+  outputs.set('loading', false)
+  return outputs
+}
+
+// ============================================================================
 // Registry
 // ============================================================================
 
@@ -624,4 +707,5 @@ export const opencvExecutors: Record<string, NodeExecutorFn> = {
   'cv-contours': cvContoursExecutor,
   'cv-corners': cvCornersExecutor,
   'cv-optical-flow': cvOpticalFlowExecutor,
+  'cv-background-subtraction': cvBackgroundSubtractionExecutor,
 }

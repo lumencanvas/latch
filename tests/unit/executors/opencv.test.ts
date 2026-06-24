@@ -27,6 +27,7 @@ function makeMat(rows = 0, cols = 0) {
 
 const cv = {
   COLOR_RGBA2GRAY: 7,
+  COLOR_RGBA2RGB: 8,
   BORDER_DEFAULT: 4,
   Mat: vi.fn(() => makeMat()),
   Size: vi.fn(function (this: Record<string, number>, w: number, h: number) {
@@ -40,6 +41,8 @@ const cv = {
     dst.cols = src.cols
   }),
   calcOpticalFlowFarneback: vi.fn(),
+  countNonZero: vi.fn(() => 0),
+  BackgroundSubtractorMOG2: vi.fn(() => ({ apply: vi.fn(), delete: vi.fn(), isDeleted: () => false })),
   medianBlur: vi.fn(),
   GaussianBlur: vi.fn(),
   imshow: vi.fn(),
@@ -68,6 +71,7 @@ import {
   cvGrayscaleExecutor,
   cvBlurExecutor,
   cvOpticalFlowExecutor,
+  cvBackgroundSubtractionExecutor,
   disposeAllOpenCVNodes,
   oddKernel,
 } from '@/engine/executors/opencv'
@@ -181,5 +185,16 @@ describe('OpenCV executors', () => {
     cvOpticalFlowExecutor(ctx('of2', { interval: 1 }, 1, new ImageData(4, 4)))
     expect(cv.calcOpticalFlowFarneback).not.toHaveBeenCalled()
     expect(gray1.delete).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains the MOG2 background subtractor and frees it on dispose', () => {
+    cvBackgroundSubtractionExecutor(ctx('bg1', { interval: 1 }))
+    const sub = cv.BackgroundSubtractorMOG2.mock.results[0].value
+    expect(sub.apply).toHaveBeenCalledTimes(1)
+    expect(sub.delete).not.toHaveBeenCalled()
+
+    disposeAllOpenCVNodes()
+    // The persistent WASM-heap subtractor must be freed on teardown.
+    expect(sub.delete).toHaveBeenCalledTimes(1)
   })
 })
