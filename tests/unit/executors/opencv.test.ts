@@ -197,4 +197,13 @@ describe('OpenCV executors', () => {
     // The persistent WASM-heap subtractor must be freed on teardown.
     expect(sub.delete).toHaveBeenCalledTimes(1)
   })
+
+  it('rebuilds the MOG2 subtractor when params change, freeing the old one', () => {
+    cvBackgroundSubtractionExecutor(ctx('bg2', { interval: 1, varThreshold: 16 }, 0))
+    const sub1 = cv.BackgroundSubtractorMOG2.mock.results[0].value
+    // Changing a param on a later (due) frame must rebuild — else the control is dead.
+    cvBackgroundSubtractionExecutor(ctx('bg2', { interval: 1, varThreshold: 50 }, 1))
+    expect(cv.BackgroundSubtractorMOG2).toHaveBeenCalledTimes(2)
+    expect(sub1.delete).toHaveBeenCalledTimes(1)
+  })
 })

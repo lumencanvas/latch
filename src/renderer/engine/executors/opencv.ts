@@ -35,6 +35,8 @@ interface OpenCVState {
   lastCount?: number
   /** Persistent MOG2 background subtractor. MUST be deleted on cleanup. */
   subtractor?: OpenCVModule
+  /** Params the current subtractor was built with — recreate when they change. */
+  subtractorSig?: string
   /** Last computed foreground ratio (background subtraction), re-served when throttled. */
   lastRatio?: number
 }
@@ -662,8 +664,13 @@ export const cvBackgroundSubtractionExecutor: NodeExecutorFn = (ctx: ExecutionCo
 
   const cv = openCVService.getCV()!
   // Persistent across frames — the subtractor learns the background over time.
-  if (!state.subtractor || state.subtractor.isDeleted?.()) {
+  // Rebuild it when the params change (otherwise the controls would be dead after
+  // the first frame); freeing the old one so the WASM heap doesn't leak.
+  const sig = `${history}:${varThreshold}:${detectShadows}`
+  if (!state.subtractor || state.subtractor.isDeleted?.() || state.subtractorSig !== sig) {
+    if (state.subtractor && !state.subtractor.isDeleted?.()) state.subtractor.delete()
     state.subtractor = new cv.BackgroundSubtractorMOG2(history, varThreshold, detectShadows)
+    state.subtractorSig = sig
   }
   const src = cv.matFromImageData(imageData)
   const rgb = new cv.Mat()
