@@ -21,6 +21,11 @@ export { smoothstepNode } from './smoothstep'
 export { remapNode } from './remap'
 export { quantizeNode } from './quantize'
 export { wrapNode } from './wrap'
+// Signal-processing math nodes
+export { slewLimiterNode } from './slew-limiter'
+export { derivativeNode } from './derivative'
+export { integralNode } from './integral'
+export { tweenToTargetNode } from './tween-to-target'
 
 import { addNode } from './add'
 import { subtractNode } from './subtract'
@@ -45,6 +50,10 @@ import { smoothstepNode } from './smoothstep'
 import { remapNode } from './remap'
 import { quantizeNode } from './quantize'
 import { wrapNode } from './wrap'
+import { slewLimiterNode } from './slew-limiter'
+import { derivativeNode } from './derivative'
+import { integralNode } from './integral'
+import { tweenToTargetNode } from './tween-to-target'
 import type { NodeDefinition } from '../types'
 
 export const mathNodes: NodeDefinition[] = [
@@ -71,4 +80,8 @@ export const mathNodes: NodeDefinition[] = [
   remapNode,
   quantizeNode,
   wrapNode,
+  slewLimiterNode,
+  derivativeNode,
+  integralNode,
+  tweenToTargetNode,
 ]
