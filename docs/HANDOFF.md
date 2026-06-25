@@ -6,6 +6,63 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-25 — v1.2.1 + v1.2.2 SHIPPED to prod (YOLOv10 + detection HUD)
+
+**Supersedes the "UNCOMMITTED" note in the 2026-06-24 entry — that work is now committed,
+version-bumped to 1.2.1, and DEPLOYED.**
+
+### v1.2.1 — DEPLOYED to production ✓
+Committed the 2026-06-24 vision fixes in 4 clean commits, removed the temp `__latch` debug
+hook, bumped `package.json` to **1.2.1**, merged to `main` (`8c77a71`), pushed. CI green
+(lint/test 1482/build + Deploy Web); gh-pages at 8c77a71; **latch.design and
+latch-flow.netlify.app both 200**. No git tag pushed (a `v*` tag triggers the Electron
+desktop Release workflow — not wanted). Live now: the renderToCanvas video fix (vision nodes
+no longer black), MOG2 hardening, detection aspect-ratio fix, YOLO ONNX wasmPaths fix, and
+D-FINE-S / RT-DETRv2 model options on the live detection node.
+
+### `detection-upgrades` — DEPLOYED as v1.2.2 ✓
+Maintainer verified the YOLO node + HUD on localhost:5173; merged `detection-upgrades` → `main`
+(`--no-ff`), bumped `package.json` to **1.2.2**, pushed (CI/Netlify auto-deploy). No git tag
+(a `v*` tag triggers the Electron desktop Release — not wanted). All gates green at deploy
+(typecheck, lint 0-err, test:unit 1486, build).
+- **YOLOv10 (NMS-free) for the YOLO node** (`1ac7dd4`): YOLOv10's one-to-one head outputs
+  `[1,300,6]` = `[x1,y1,x2,y2,score,classId]` (xyxy in letterboxed 640-space, score 0–1,
+  class explicit) → decode is threshold + un-letterbox, no NMS. `handleYoloInfer` branches on
+  output shape (`isYolov10Output` → `parseYolov10Output`, else the v8/v9 argmax+NMS path).
+  **Format confirmed empirically** — ran `onnx-community/yolov10s` on bus.jpg → exact ground
+  truth `{bus:1, person:4}`. **Default model changed to YOLOv10-S (~29 MB)** from GELAN-C
+  (~102 MB); YOLOv10-M + YOLOv9 kept. +4 unit tests (14 yolo tests).
+- **Detection HUD + per-class colors** (`879bce8`): a status bar (count · top label · last
+  inference latency ms) burned into the annotated frame (shows on the node preview AND the
+  main output); per-class box colors seeded by the Box Color control; HUD gated on Show
+  Labels. This is the "annotate on the preview screen" ask.
+
+### #3 GitHub Pages — RESOLVED: do NOT enable
+Enabling it would publish a **broken site**: the build uses absolute root paths (`/assets/…`,
+`/coi-serviceworker.min.js`) with no CNAME, so on a `github.io/latch/` project page everything
+404s (white screen; the COI service worker the app needs for `crossOriginIsolated` wouldn't
+load either). Netlify serves at root, which is why it works. Leave Pages off — Netlify
+(latch.design) is canonical. (Would need a `base:'/latch/'` build or its own custom domain.)
+
+### Verification status
+- **Verified:** renderToCanvas video fix (user-confirmed + repro); YOLOv10 format (empirical,
+  ground-truth); all decode logic (unit tests); gates.
+- **NOT yet confirmed in a real browser by the maintainer:** the YOLO node end-to-end
+  (wasmPaths + YOLOv10 + worker), the HUD/per-class colors visually, and the D-FINE-S /
+  RT-DETRv2 transformers.js models. The YOLOv10 harness used the same ort version + CDN
+  wasmPaths + model + letterbox the app uses, so confidence is high.
+
+### Next / backlog
+- Test `detection-upgrades` on localhost (YOLO node + HUD), then deploy it (branch → main →
+  CI/Netlify), same flow as v1.2.1.
+- **WebGPU EP: deliberately deferred** — research found it ~2× SLOWER than WASM for detection
+  in onnxruntime-web (GPU↔CPU readback overhead, ORT #18584). Revisit only with a real
+  in-app benchmark.
+- `ai.worker.ts` `ort.env.wasm.wasmPaths` pins the nightly `onnxruntime-web@1.26.0-dev…`
+  version string — keep in sync with package.json on any dep bump.
+
+---
+
 ## 2026-06-24 — Vision display fix (the headline bug), detection upgrades, v1.2.0 signed release
 
 Long session. Shipped the **signed/notarized macOS v1.2.0 release** (open item #1, was blocked on

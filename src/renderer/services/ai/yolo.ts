@@ -115,6 +115,48 @@ export function parseYoloOutput(
   return out
 }
 
+/** True if a tensor shape is YOLOv10's NMS-free `[1, N, 6]` layout. */
+export function isYolov10Output(dims: number[]): boolean {
+  return dims[dims.length - 1] === 6
+}
+
+/**
+ * Decode a YOLOv10 output tensor. YOLOv10 is NMS-free (one-to-one head): output
+ * is `[1, N, 6]` (N=300) where each row is `[x1, y1, x2, y2, score, classId]` —
+ * xyxy already, in letterboxed 640-space, score already 0–1, class explicit. So
+ * decode is just threshold + undo letterbox: no sigmoid, no argmax, no NMS.
+ * Empirically confirmed on `onnx-community/yolov10s` (bus.jpg → {bus:1, person:4},
+ * rows sorted by score). Coords map back to original-image pixels.
+ */
+export function parseYolov10Output(
+  data: Float32Array | number[],
+  dims: number[],
+  opts: Omit<ParseOptions, 'numClasses'>
+): YoloBox[] {
+  const { confThreshold, scale, padX, padY } = opts
+  const labels = opts.labels ?? COCO_LABELS
+  const stride = dims[dims.length - 1] // 6
+  const rows = dims[dims.length - 2]
+  const out: YoloBox[] = []
+  for (let i = 0; i < rows; i++) {
+    const b = i * stride
+    const score = data[b + 4]
+    if (score < confThreshold) continue
+    const cls = Math.round(data[b + 5])
+    out.push({
+      label: labels[cls] ?? String(cls),
+      score,
+      box: {
+        xmin: (data[b] - padX) / scale,
+        ymin: (data[b + 1] - padY) / scale,
+        xmax: (data[b + 2] - padX) / scale,
+        ymax: (data[b + 3] - padY) / scale,
+      },
+    })
+  }
+  return out
+}
+
 /** Intersection-over-union of two xyxy boxes. */
 export function iou(a: YoloBox['box'], b: YoloBox['box']): number {
   const ix1 = Math.max(a.xmin, b.xmin)
