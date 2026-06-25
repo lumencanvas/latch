@@ -14,7 +14,7 @@ import {
 } from '@huggingface/transformers'
 import * as ort from 'onnxruntime-web'
 import { isChatModel } from './textGenFormat'
-import { parseYoloOutput, nms, COCO_LABELS } from './yolo'
+import { parseYoloOutput, parseYolov10Output, isYolov10Output, nms, COCO_LABELS } from './yolo'
 
 // Configure Transformers.js for browser usage
 env.allowLocalModels = false
@@ -317,17 +317,24 @@ async function handleYoloInfer(msg: InferenceMessage): Promise<void> {
     }
     const result = await session.run(feeds)
     const output = result[session.outputNames[0]]
+    const dims = Array.from(output.dims)
+    const data = output.data as Float32Array
+    const confThreshold = options?.threshold ?? 0.25
 
-    const boxes = nms(
-      parseYoloOutput(output.data as Float32Array, Array.from(output.dims), {
-        confThreshold: options?.threshold ?? 0.25,
-        scale,
-        padX,
-        padY,
-        numClasses: COCO_LABELS.length,
-      }),
-      options?.iou ?? 0.45
-    )
+    // YOLOv10 is NMS-free (`[1,300,6]` xyxy+score+class) — threshold + un-letterbox
+    // only. v8/v9/GELAN (`[1,84,8400]`) need argmax over classes + per-class NMS.
+    const boxes = isYolov10Output(dims)
+      ? parseYolov10Output(data, dims, { confThreshold, scale, padX, padY })
+      : nms(
+          parseYoloOutput(data, dims, {
+            confThreshold,
+            scale,
+            padX,
+            padY,
+            numClasses: COCO_LABELS.length,
+          }),
+          options?.iou ?? 0.45
+        )
     respond({ type: 'result', id: msg.id, success: true, data: boxes })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

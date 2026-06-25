@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { parseYoloOutput, nms, iou, COCO_LABELS, type YoloBox } from '@/services/ai/yolo'
+import {
+  parseYoloOutput,
+  parseYolov10Output,
+  isYolov10Output,
+  nms,
+  iou,
+  COCO_LABELS,
+  type YoloBox,
+} from '@/services/ai/yolo'
 
 const LABELS = ['A', 'B']
 
@@ -115,5 +123,48 @@ describe('nms', () => {
       { label: 'B', score: 0.95, box: box(50, 50, 60, 60) },
     ]
     expect(nms(boxes, 0.45).map((b) => b.score)).toEqual([0.95, 0.5])
+  })
+})
+
+describe('isYolov10Output', () => {
+  it('recognizes the NMS-free [1,N,6] layout, not the v8/v9 head', () => {
+    expect(isYolov10Output([1, 300, 6])).toBe(true)
+    expect(isYolov10Output([1, 84, 8400])).toBe(false)
+    expect(isYolov10Output([1, 8400, 84])).toBe(false)
+  })
+})
+
+describe('parseYolov10Output', () => {
+  // Rows are [x1, y1, x2, y2, score, classId] in letterboxed 640-space, score 0–1.
+  // Layout matches onnx-community/yolov10s (empirically confirmed).
+  function rows(r: number[][]): { data: Float32Array; dims: number[] } {
+    return { data: new Float32Array(r.flat()), dims: [1, r.length, 6] }
+  }
+
+  it('thresholds on score and decodes xyxy without NMS', () => {
+    const { data, dims } = rows([
+      [100, 100, 200, 200, 0.9, 5],
+      [10, 10, 20, 20, 0.1, 0], // below threshold
+    ])
+    const out = parseYolov10Output(data, dims, { confThreshold: 0.5, scale: 1, padX: 0, padY: 0 })
+    expect(out).toHaveLength(1)
+    expect(out[0].label).toBe('bus')
+    expect(out[0].score).toBeCloseTo(0.9)
+    expect(out[0].box).toEqual({ xmin: 100, ymin: 100, xmax: 200, ymax: 200 })
+  })
+
+  it('undoes letterbox scale + padding back to original coords', () => {
+    const { data, dims } = rows([[120, 100, 220, 200, 0.8, 0]])
+    // scale 0.5, padX 20, padY 0 → (x - pad) / scale
+    const out = parseYolov10Output(data, dims, { confThreshold: 0.3, scale: 0.5, padX: 20, padY: 0 })
+    expect(out[0].box).toEqual({ xmin: 200, ymin: 200, xmax: 400, ymax: 400 })
+    expect(out[0].label).toBe('person')
+  })
+
+  it('rounds a float class id and defaults to COCO labels', () => {
+    const { data, dims } = rows([[0, 0, 10, 10, 0.7, 5.0]])
+    expect(parseYolov10Output(data, dims, { confThreshold: 0.5, scale: 1, padX: 0, padY: 0 })[0].label).toBe(
+      COCO_LABELS[5]
+    )
   })
 })
