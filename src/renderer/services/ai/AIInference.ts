@@ -899,6 +899,37 @@ class AIInferenceService {
     )
   }
 
+  /**
+   * Monocular depth estimation. Returns the depth map as a normalized 0–255
+   * grayscale buffer (`channels` is usually 1). The first call downloads the
+   * model (tens of MB), hence the long timeout.
+   */
+  async estimateDepth(
+    image: ImageData | HTMLCanvasElement | HTMLImageElement | string,
+    modelId?: string
+  ): Promise<{ width: number; height: number; channels: number; data: number[] }> {
+    const model = modelId || 'Xenova/depth-anything-small-hf'
+    const key = `depth-estimation:${model}`
+
+    if (!this._loadedModels.has(key)) {
+      await this.loadModel('depth-estimation', model)
+    }
+
+    const imageData = this.imageToSerializable(image)
+
+    return this.sendToWorker<{ width: number; height: number; channels: number; data: number[] }>(
+      {
+        type: 'infer',
+        task: 'depth-estimation',
+        model,
+        method: 'estimateDepth',
+        args: [imageData],
+      },
+      undefined,
+      300000 // first call downloads the model — allow up to 5 min
+    )
+  }
+
   async transcribe(
     audio: Float32Array | Blob | string,
     modelId?: string

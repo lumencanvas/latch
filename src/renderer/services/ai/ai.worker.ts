@@ -471,6 +471,34 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
         break
       }
 
+      case 'estimateDepth': {
+        const [imageData] = msg.args as [{ width: number; height: number; data: Uint8ClampedArray | number[] }]
+        const reconstructed = new ImageData(
+          toPixels(imageData.data),
+          imageData.width,
+          imageData.height
+        )
+        const canvas = new OffscreenCanvas(reconstructed.width, reconstructed.height)
+        const ctx = canvas.getContext('2d')!
+        ctx.putImageData(reconstructed, 0, 0)
+        // Depth pipeline returns { predicted_depth: Tensor, depth: RawImage } — the
+        // RawImage is a normalized 0–255 depth map. Ship its raw bytes back.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const output = await pipe(canvas) as { depth?: { data: Uint8Array | number[]; width: number; height: number; channels: number } }
+        const depth = output?.depth
+        if (!depth) {
+          result = { width: 0, height: 0, data: [], channels: 1 }
+        } else {
+          result = {
+            width: depth.width,
+            height: depth.height,
+            channels: depth.channels,
+            data: Array.from(depth.data),
+          }
+        }
+        break
+      }
+
       case 'analyzeSentiment': {
         const [text] = msg.args as [string]
         const output = await pipe(text)
