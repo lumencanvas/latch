@@ -1178,6 +1178,47 @@ interface LiveOverlayOptions {
  * last-known boxes into a held texture every frame. `detect` swaps the backend
  * (transformers pipeline vs raw YOLO ONNX); everything else is identical.
  */
+
+// Distinct, readable box colors cycled per class so a multi-class scene is legible.
+// The user's Box Color seeds index 0, so a single-class feed still honors it.
+const DETECTION_PALETTE = [
+  '#4ecdc4', '#ffd93d', '#6c5ce7', '#fd79a8', '#00b894', '#e17055', '#0984e3', '#a29bfe', '#ff6b6b',
+]
+function colorForLabel(label: string, base: string): string {
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash)
+  const colors = [base, ...DETECTION_PALETTE]
+  return colors[Math.abs(hash) % colors.length]
+}
+
+// A compact status bar burned into the annotated frame (so it shows on the node
+// preview and the main output alike): object count, top label, and last inference
+// latency — the "annotate on the preview" overlay.
+function drawDetectionHud(
+  ctx: CanvasRenderingContext2D,
+  height: number,
+  info: { count: number; topLabel: string; detectMs: number; loading: boolean }
+): void {
+  const fontPx = Math.max(11, Math.round(height * 0.04))
+  const pad = Math.round(fontPx * 0.45)
+  const parts: string[] = []
+  if (info.loading) parts.push('loading…')
+  parts.push(`${info.count} object${info.count === 1 ? '' : 's'}`)
+  if (info.topLabel) parts.push(info.topLabel)
+  if (info.detectMs > 0) parts.push(`${Math.round(info.detectMs)}ms`)
+  const text = parts.join('  ·  ')
+
+  ctx.save()
+  ctx.font = `bold ${fontPx}px monospace`
+  ctx.textBaseline = 'middle'
+  const barH = fontPx + pad * 2
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
+  ctx.fillRect(0, 0, ctx.measureText(text).width + pad * 2, barH)
+  ctx.fillStyle = info.loading ? '#ffd93d' : '#ffffff'
+  ctx.fillText(text, pad, barH / 2)
+  ctx.restore()
+}
+
 function runLiveDetection(
   ctx: ExecutionContext,
   detect: (imageData: ImageData) => Promise<Detection[]>,
@@ -1228,12 +1269,16 @@ function runLiveDetection(
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
     setCached(`${ctx.nodeId}:loading`, true)
     const operation = (async () => {
+      const startedAt = performance.now()
       try {
         const detections = await detect(imageData)
         if (isNodeDisposed(ctx.nodeId)) return
         setCached(`${ctx.nodeId}:detections`, detections)
         const top = detections.reduce<Detection | null>((best, d) => (!best || d.score > best.score ? d : best), null)
         setCached(`${ctx.nodeId}:topLabel`, top?.label ?? '')
+        // Last inference latency (ms) for the HUD. First call includes the model
+        // download, so it reads high until the model is cached.
+        setCached(`${ctx.nodeId}:detectMs`, performance.now() - startedAt)
         setCached(`${ctx.nodeId}:loading`, false)
       } catch (error) {
         console.error('[AI] Live detection error:', error)
@@ -1268,9 +1313,19 @@ function runLiveDetection(
           height,
           showLabels ? det.label : undefined,
           showLabels ? det.score : undefined,
-          { color: boxColor, lineWidth }
+          { color: colorForLabel(det.label, boxColor), lineWidth }
         )
       }
+    }
+
+    // Status HUD (gated on Show Labels so a clean passthrough stays clean).
+    if (showLabels) {
+      drawDetectionHud(c2d, height, {
+        count: cachedDetections.length,
+        topLabel: getCached(`${ctx.nodeId}:topLabel`, ''),
+        detectMs: getCached(`${ctx.nodeId}:detectMs`, 0),
+        loading: pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false),
+      })
     }
 
     const renderer = getThreeShaderRenderer()
