@@ -6,7 +6,7 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
-## 2026-06-25 — v1.2.1 SHIPPED to prod; YOLOv10 + detection HUD built (not yet deployed)
+## 2026-06-25 — v1.2.1 + v1.2.2 SHIPPED to prod (YOLOv10 + detection HUD)
 
 **Supersedes the "UNCOMMITTED" note in the 2026-06-24 entry — that work is now committed,
 version-bumped to 1.2.1, and DEPLOYED.**
@@ -20,9 +20,11 @@ desktop Release workflow — not wanted). Live now: the renderToCanvas video fix
 no longer black), MOG2 hardening, detection aspect-ratio fix, YOLO ONNX wasmPaths fix, and
 D-FINE-S / RT-DETRv2 model options on the live detection node.
 
-### `detection-upgrades` branch — BUILT, gates green, NOT deployed (awaiting test)
-Branch `detection-upgrades` (off main, 2 commits, **not merged/pushed**). Dev server on
-localhost:5173 for the maintainer to verify before shipping. All gates green (test:unit 1486).
+### `detection-upgrades` — DEPLOYED as v1.2.2 ✓
+Maintainer verified the YOLO node + HUD on localhost:5173; merged `detection-upgrades` → `main`
+(`--no-ff`), bumped `package.json` to **1.2.2**, pushed (CI/Netlify auto-deploy). No git tag
+(a `v*` tag triggers the Electron desktop Release — not wanted). All gates green at deploy
+(typecheck, lint 0-err, test:unit 1486, build).
 - **YOLOv10 (NMS-free) for the YOLO node** (`1ac7dd4`): YOLOv10's one-to-one head outputs
   `[1,300,6]` = `[x1,y1,x2,y2,score,classId]` (xyxy in letterboxed 640-space, score 0–1,
   class explicit) → decode is threshold + un-letterbox, no NMS. `handleYoloInfer` branches on
