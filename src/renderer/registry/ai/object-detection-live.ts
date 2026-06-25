@@ -27,7 +27,9 @@ export const objectDetectionLiveNode: NodeDefinition = {
       default: 'Xenova/yolos-tiny',
       props: {
         options: [
-          { value: 'Xenova/yolos-tiny', label: 'YOLOS Tiny (~27 MB)' },
+          { value: 'Xenova/yolos-tiny', label: 'YOLOS Tiny (~27 MB, fastest)' },
+          { value: 'onnx-community/dfine_s_coco-ONNX', label: 'D-FINE-S (~41 MB, NMS-free)' },
+          { value: 'onnx-community/rtdetr_v2_r18vd-ONNX', label: 'RT-DETRv2 R18 (~81 MB, accurate)' },
           { value: 'Xenova/detr-resnet-50', label: 'DETR ResNet-50 (~160 MB)' },
         ],
       },
@@ -45,7 +47,7 @@ export const objectDetectionLiveNode: NodeDefinition = {
       'Runs object detection continuously on a live texture or video feed and outputs an annotated texture with bounding boxes drawn over the source frame. Detection is throttled by Frame Interval while the overlay redraws every frame so the passthrough stays smooth. Also outputs the raw detection list, count, and the highest-confidence label.',
     tips: [
       'Wire a webcam or video texture into Source; raise Frame Interval if playback stutters.',
-      'YOLOS Tiny is the fastest model; switch to DETR ResNet-50 for higher accuracy at a larger download.',
+      'YOLOS Tiny is the fastest; D-FINE-S and RT-DETRv2 are newer NMS-free transformer detectors with higher accuracy; DETR ResNet-50 is the heaviest.',
       'The model downloads on first run — watch the Loading output until the first detections appear.',
     ],
     pairsWith: ['webcam', 'snapshot', 'object-detection', 'main-output', 'gate'],

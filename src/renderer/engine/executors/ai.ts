@@ -155,10 +155,16 @@ function threeTextureToImageData(texture: THREE.Texture): ImageData | null {
   try {
     const renderer = getThreeShaderRenderer()
 
-    // Get texture dimensions (texture.image is typed `{}` in @types/three 0.184)
-    const image = texture.image as { width?: number; height?: number } | undefined
-    const width = image?.width || 512
-    const height = image?.height || 512
+    // Get texture dimensions (texture.image is typed `{}` in @types/three 0.184).
+    // Prefer the source's real size — a video element reports 0 for width/height but
+    // exposes videoWidth/videoHeight. Falling back to a square 512 squished non-square
+    // feeds (e.g. a 640×480 webcam), distorting both the detection input and the
+    // annotated overlay; honoring the true aspect keeps boxes aligned.
+    const image = texture.image as
+      | { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
+      | undefined
+    const width = image?.width || image?.videoWidth || 512
+    const height = image?.height || image?.videoHeight || 512
 
     // Create a temporary canvas to render the texture
     const tempCanvas = document.createElement('canvas')

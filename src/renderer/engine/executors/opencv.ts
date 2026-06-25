@@ -669,8 +669,21 @@ export const cvBackgroundSubtractionExecutor: NodeExecutorFn = (ctx: ExecutionCo
   const sig = `${history}:${varThreshold}:${detectShadows}`
   if (!state.subtractor || state.subtractor.isDeleted?.() || state.subtractorSig !== sig) {
     if (state.subtractor && !state.subtractor.isDeleted?.()) state.subtractor.delete()
-    state.subtractor = new cv.BackgroundSubtractorMOG2(history, varThreshold, detectShadows)
-    state.subtractorSig = sig
+    // MOG2 lives in opencv.js's `video` module. Construct inside the guard so a
+    // build that lacks it degrades to a blank mask + error instead of throwing
+    // the whole executor (the constructor itself can throw, not just .apply()).
+    try {
+      state.subtractor = new cv.BackgroundSubtractorMOG2(history, varThreshold, detectShadows)
+      state.subtractorSig = sig
+    } catch (err) {
+      console.error('[OpenCV] BackgroundSubtractorMOG2 unavailable:', err)
+      state.subtractor = undefined
+      outputs.set('texture', state.texture)
+      outputs.set('foreground', state.lastRatio ?? 0)
+      outputs.set('loading', false)
+      outputs.set('_error', 'Background subtraction (MOG2) is unavailable in this OpenCV build.')
+      return outputs
+    }
   }
   const src = cv.matFromImageData(imageData)
   const rgb = new cv.Mat()

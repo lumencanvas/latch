@@ -6,6 +6,87 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-24 — Vision display fix (the headline bug), detection upgrades, v1.2.0 signed release
+
+Long session. Shipped the **signed/notarized macOS v1.2.0 release** (open item #1, was blocked on
+Apple), then chased and **fixed the real reason the vision nodes rendered black**, plus several
+detection-node improvements. **All v1.2.1 code changes are UNCOMMITTED on branch
+`v1.2.1-mog2-hardening`.** Gates green: typecheck, lint (0 err), `test:unit` (1482), build.
+
+### #1 macOS signed release — DONE ✓
+Maintainer settled the Apple agreement; re-ran the failed v1.2.0 Release workflow
+(`gh run rerun 28075087766`). Both macOS jobs cleared notarize this time (proof: `✔ Finalizing
+package` took 3.5–5 min each = the Apple round-trip; the step that 403'd before). Result: **9 clean
+CI-named signed assets**, the **5 stale manually-uploaded unsigned assets deleted**, and the
+**release body rewritten** (dropped the "unsigned/right-click→Open" caveat, added macOS Intel, fixed
+asset names). Published, Latest, not draft.
+
+### THE BUG: vision nodes render black — ROOT CAUSE FOUND & FIXED ✓ (user-confirmed)
+Symptom: webcam→output painted, but webcam→**any canvas node** (snapshot / OpenCV / detection)→output
+was **black**, with a `glTexStorage2D(0×0)` + `glCopySubTextureCHROMIUM: destination level must be
+defined` + `glGenerateMipmap` console flood. This path was NEVER pixel-verified before v1.2.0 (only
+executor wiring was — the "in-app paint proof" used a shader source, not a webcam).
+- **Root cause (reproduced with the REAL renderer code via Playwright + fake webcam):**
+  `ThreeShaderRenderer.renderToCanvas()` returns **fully black for a video-backed THREE.Texture** —
+  Three can't upload an `HTMLVideoElement` source through this offscreen renderer (canvas sources
+  work, video doesn't; `videoTexCenter` read `[0,0,0]` vs a `drawImage(video)` control `[74,255,20]`).
+  snapshot/detection/OpenCV all read the webcam *as a texture* via `renderToCanvas` /
+  `threeTextureToImageData` → black frame → black output. webcam→output only worked because the Main
+  Output / TexturePreview components `drawImage(video)` directly.
+- **Fix** (`ThreeShaderRenderer.ts`): `renderToCanvas` now draws video sources straight to the 2D
+  target. Reproduced black → green. **User confirmed it works.**
+- **Debugging note for next time:** I first shipped a *different* (real but secondary) resize-corruption
+  fix and it did NOT help — `glCopySubTextureCHROMIUM: Offset overflows` (resize) ≠ the user's
+  `destination level must be defined` (0×0) case. The video-texture-black is the confirmed root cause.
+  Isolated repros are in the session scratchpad (`videotex.mjs`, `repro.mjs`).
+
+### Other fixes (all on the branch, gates green)
+- **MOG2 hardening (orig. item #2):** moved `new cv.BackgroundSubtractorMOG2(...)` inside the
+  try/catch so a build lacking the `video` module degrades to a blank mask + `_error` instead of
+  throwing the executor. **+1 unit test** (11 opencv tests). MOG2 still not runtime-confirmed (opencv
+  CDN throttle persists — re-attempted, WASM didn't init in headless within 90s; environmental).
+- **`updateTexture` resize hardening** (`ThreeShaderRenderer.ts`): tracks uploaded dims on
+  `texture.userData`, disposes+reallocs on a size change (the emulator's documented `Offset overflows`
+  flood). Verified by repro. **Separate from the headline bug** — candidate for its own commit.
+- **Aspect-ratio fix** (`ai.ts` `threeTextureToImageData`): was squishing every source to a square
+  512×512 (distorting a 640×480 webcam, misaligning boxes). Now honors `videoWidth`/`videoHeight`.
+  ⚠️ typechecks, low-risk, NOT runtime-verified.
+- **YOLO node WASM 404 fix** (`ai.worker.ts`): the raw `import 'onnxruntime-web'` is a SEPARATE ORT
+  instance from the one transformers.js bundles (old comment claimed otherwise), so its `wasmPaths`
+  were unset → it fetched `.wasm` and got the HTML index page (`<!DO…` = the "magic word
+  3c 21 44 4f" abort). Set `ort.env.wasm.wasmPaths` to the version-matched jsdelivr build (CDN
+  verified serving 200; loads under credentialless COEP). ⚠️ **applied, NOT yet user-confirmed.**
+  ⚠️ Version string pinned to nightly `onnxruntime-web@1.26.0-dev...` — KEEP IN SYNC with package.json.
+- **Larger detection models** (`object-detection-live.ts`): added **D-FINE-S**
+  (`onnx-community/dfine_s_coco-ONNX`, ~41 MB) and **RT-DETRv2 R18** (`onnx-community/rtdetr_v2_r18vd-ONNX`,
+  ~81 MB) — both NMS-free transformer detectors that run through the existing generic transformers.js
+  `detectObjects` pipeline (no new post-processing). ⚠️ NOT verified in-app.
+
+### Model research (delegated, verified) — for the "bigger realtime models" ask
+- **WebGPU is NOT a free win for detection** — a DETR ran ~14s WebGPU vs ~8s WASM (ORT #18584;
+  post-processing forces GPU↔CPU readbacks). Did NOT switch backends.
+- **Top YOLO-node upgrade: `onnx-community/yolov10s`** — 29 MB (fp16 14.6, int8 7.6), **NMS-free**
+  `[1,300,6]` output that's *simpler* to decode than the current NMS path. Needs a small new decode
+  branch in `yolo.ts`/worker. Not yet implemented — proposed next step A.
+- int8 = WASM size lever; fp16 = WebGPU speed lever (different levers).
+
+### Open / next (await user)
+- **A)** Implement YOLOv10s (NMS-free `[1,300,6]`) for the YOLO node.
+- **B)** Dedicated detection HUD preview (count/FPS/top-label, per-class colors) — the "annotate on
+  the preview screen" ask. NOTE: the detection node already burns boxes into its output texture and
+  the node preview shows it, so this is polish, not a gap.
+- **Commit** the v1.2.1 branch once the user confirms the YOLO/model/aspect changes in-browser.
+- **#3 GitHub Pages:** deploy works (CI pushes gh-pages on every main push, confirmed); 404s only
+  because **Pages is not enabled in repo settings** (`gh api .../pages` → 404). Netlify (latch.design)
+  is canonical. Enabling is a one-time settings toggle — maintainer's call.
+- **#5:** merged `modernization` branch deleted (local + origin).
+
+### ⚠️ PRE-COMMIT TODO
+- **Remove the TEMP `window.__latch` debug hook in `main.ts`** (DEV-only block, added to drive the
+  headless repro). Must be stripped before committing.
+
+---
+
 ## 2026-06-23 (verify + extend) — in-app paint proof, MOG2 node, throttle fix
 
 Closed the last verification gap, extended the OpenCV set, and hardened the shared

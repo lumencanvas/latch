@@ -21,6 +21,17 @@ env.allowLocalModels = false
 // Browser cache setting - can be toggled at runtime
 env.useBrowserCache = true
 
+// onnxruntime-web (the raw ORT backing the YOLO sessions — a SEPARATE package from
+// the ORT that transformers.js bundles, so it is NOT configured by the lines above)
+// ships its WASM backend as sibling files (ort-wasm-simd-threaded.{wasm,mjs}). Vite
+// doesn't emit those next to the worker chunk, so ORT's default relative wasmPaths
+// resolve to index.html and WebAssembly.instantiate aborts with "expected magic word
+// 00 61 73 6d, found 3c 21 44 4f" (the leading "<!DO" of the HTML 404 page). Point ORT
+// at the matching build on jsdelivr (CORS-enabled → loads under the app's
+// credentialless COEP). Keep the version in sync with onnxruntime-web in package.json.
+ort.env.wasm.wasmPaths =
+  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/'
+
 // Pipeline cache
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pipelines = new Map<string, any>()

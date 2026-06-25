@@ -206,4 +206,21 @@ describe('OpenCV executors', () => {
     expect(cv.BackgroundSubtractorMOG2).toHaveBeenCalledTimes(2)
     expect(sub1.delete).toHaveBeenCalledTimes(1)
   })
+
+  it('degrades gracefully when the MOG2 constructor is unavailable', () => {
+    // opencv.js builds that drop the `video` module make `new
+    // BackgroundSubtractorMOG2(...)` throw. The executor must not propagate that
+    // — it should emit an error output and re-serve the last (blank) mask.
+    cv.BackgroundSubtractorMOG2.mockImplementationOnce(() => {
+      throw new Error('BackgroundSubtractorMOG2 is not a constructor')
+    })
+    let out: Map<string, unknown> | undefined
+    expect(() => {
+      out = cvBackgroundSubtractionExecutor(ctx('bg3', { interval: 1 }))
+    }).not.toThrow()
+    expect(out?.get('_error')).toMatch(/unavailable/i)
+    expect(out?.get('loading')).toBe(false)
+    // It bailed before processing, so no frame work happened.
+    expect(cv.matFromImageData).not.toHaveBeenCalled()
+  })
 })
