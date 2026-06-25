@@ -19,6 +19,7 @@ import {
 import { disposeAllUtilityState, gcUtilityState } from './executors/utility'
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
 import { disposeAllSpringState, gcSpringState } from './executors/spring'
+import { disposeAllSignalState, gcSignalState } from './executors/signal'
 import {
   disposeAllMessagingState,
   gcMessagingState,
@@ -219,6 +220,7 @@ export class ExecutionEngine {
         gcUtilityState(validNodeIds)
         gcSubflowState(validNodeIds)
         gcSpringState(validNodeIds)
+        gcSignalState(validNodeIds)
         gcMessagingState(validNodeIds)
         gcGamepadState(validNodeIds)
         gcEmulationState(validNodeIds)
@@ -847,6 +849,7 @@ export class ExecutionEngine {
     disposeAllUtilityState()
     clearAllSubflowContexts()
     disposeAllSpringState()
+    disposeAllSignalState()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()
     disposeAllHttpNodes()

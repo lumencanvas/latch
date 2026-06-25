@@ -613,6 +613,119 @@ export const shaderExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
+// Image FX nodes — discrete one-effect shader nodes (glitch, rgb-shift, …).
+//
+// Each wraps a fixed ShaderPreset: source texture -> iChannel0 -> effect ->
+// texture output. The compiled material is cached under the nodeId (same map as
+// the Shader node), so the existing disposeVisualNode/gcVisualState/
+// disposeAllVisualNodes paths free it and its render target — no new gc needed.
+// ============================================================================
+
+/** Coerce any texture-ish input to a THREE.Texture + its source dimensions. */
+function coerceInputToTexture(
+  renderer: ReturnType<typeof getThreeShaderRenderer>,
+  input: unknown
+): { tex: THREE.Texture; w: number; h: number } | null {
+  let tex: THREE.Texture | null = null
+  if (input instanceof THREE.Texture) tex = input
+  else if (input instanceof WebGLTexture) tex = renderer.createTextureFromWebGL(input, 512, 512)
+  else if (input instanceof HTMLCanvasElement || input instanceof HTMLVideoElement) {
+    tex = renderer.createTexture(input)
+  }
+  if (!tex) return null
+  const img = tex.image as
+    { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined
+  const w = img?.videoWidth || img?.width || 512
+  const h = img?.videoHeight || img?.height || 512
+  return { tex, w, h }
+}
+
+function hexToVec3(hex: string): number[] {
+  const h = hex.replace('#', '')
+  return [
+    parseInt(h.substring(0, 2), 16) / 255,
+    parseInt(h.substring(2, 4), 16) / 255,
+    parseInt(h.substring(4, 6), 16) / 255,
+  ]
+}
+
+/** Run a fixed effect preset on the node's `source` texture. */
+function runImageFx(ctx: ExecutionContext, presetId: string): Map<string, unknown> {
+  const outputs = new Map<string, unknown>()
+  const renderer = getThreeShaderRenderer()
+  const preset = getPresetById(presetId)
+  if (!preset) {
+    outputs.set('texture', null)
+    outputs.set('_error', `Unknown effect: ${presetId}`)
+    return outputs
+  }
+
+  const coerced = coerceInputToTexture(renderer, ctx.inputs.get('source'))
+  if (!coerced) {
+    outputs.set('texture', null)
+    if (ctx.inputs.get('source')) {
+      outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
+    }
+    return outputs
+  }
+
+  // Effect GLSL is constant per node, so compile once and cache under the nodeId
+  // (visual gc/dispose frees this map entry + the render target on teardown).
+  let material = compiledShaderMaterials.get(ctx.nodeId)
+  if (!material) {
+    const code = injectUniformDeclarations(preset.fragmentCode, preset.uniforms)
+    const result = renderer.compileShader(code, undefined, true, preset.uniforms)
+    if ('error' in result) {
+      outputs.set('texture', null)
+      outputs.set('_error', result.error)
+      return outputs
+    }
+    material = result
+    compiledShaderMaterials.set(ctx.nodeId, material)
+  }
+
+  renderer.setTime(ctx.totalTime)
+
+  // Build uniforms from controls (control id === uniform name). Presets here use
+  // only float and a single vec3 color, so the marshaling stays small.
+  const uniforms: ThreeShaderUniform[] = []
+  for (const def of preset.uniforms) {
+    const raw = ctx.controls.get(def.name) ?? def.default
+    if (def.type === 'vec3') {
+      let value: number[]
+      if (typeof raw === 'string' && raw.startsWith('#')) value = hexToVec3(raw)
+      else if (Array.isArray(raw)) value = [Number(raw[0]) || 0, Number(raw[1]) || 0, Number(raw[2]) || 0]
+      else value = def.default as number[]
+      uniforms.push({ name: def.name, type: 'vec3', value })
+    } else {
+      uniforms.push({ name: def.name, type: 'float', value: Number(raw) || 0 })
+    }
+  }
+  uniforms.push({ name: 'iChannel0', type: 'sampler2D', value: coerced.tex })
+
+  try {
+    const texture = renderer.render(material, uniforms, ctx.nodeId, coerced.w, coerced.h)
+    outputs.set('texture', texture)
+    outputs.set('_error', null)
+  } catch (error) {
+    outputs.set('texture', null)
+    outputs.set('_error', error instanceof Error ? error.message : 'Render failed')
+  }
+  return outputs
+}
+
+const makeImageFxExecutor = (presetId: string): NodeExecutorFn => (ctx) => runImageFx(ctx, presetId)
+
+export const imageFxGlitchExecutor = makeImageFxExecutor('glitch')
+export const imageFxRgbShiftExecutor = makeImageFxExecutor('chromatic-aberration')
+export const imageFxPixelateExecutor = makeImageFxExecutor('pixelate')
+export const imageFxKaleidoscopeExecutor = makeImageFxExecutor('kaleidoscope')
+export const imageFxScanlinesExecutor = makeImageFxExecutor('scanlines')
+export const imageFxPosterizeExecutor = makeImageFxExecutor('posterize')
+export const imageFxDitherExecutor = makeImageFxExecutor('dither')
+export const imageFxChromaKeyExecutor = makeImageFxExecutor('chroma-key')
+
+// ============================================================================
 // Webcam Input Node
 // ============================================================================
 
@@ -1930,6 +2043,14 @@ export function disposeSnapshotNode(nodeId: string): void {
 export const visualExecutors: Record<string, NodeExecutorFn> = {
   snapshot: snapshotExecutor,
   shader: shaderExecutor,
+  'image-fx-glitch': imageFxGlitchExecutor,
+  'image-fx-rgb-shift': imageFxRgbShiftExecutor,
+  'image-fx-pixelate': imageFxPixelateExecutor,
+  'image-fx-kaleidoscope': imageFxKaleidoscopeExecutor,
+  'image-fx-scanlines': imageFxScanlinesExecutor,
+  'image-fx-posterize': imageFxPosterizeExecutor,
+  'image-fx-dither': imageFxDitherExecutor,
+  'image-fx-chroma-key': imageFxChromaKeyExecutor,
   webcam: webcamExecutor,
   'webcam-snapshot': webcamSnapshotExecutor,
   color: colorExecutor,

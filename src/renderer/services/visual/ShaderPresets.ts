@@ -402,6 +402,108 @@ const kaleidoscopeShader: ShaderPreset = {
 }`,
 }
 
+const scanlinesShader: ShaderPreset = {
+  id: 'scanlines',
+  name: 'Scanlines',
+  category: 'effect',
+  description: 'CRT-style horizontal scanlines',
+  uniforms: [
+    { name: 'u_count', type: 'float', label: 'Lines', default: 240, min: 20, max: 800, step: 1 },
+    { name: 'u_intensity', type: 'float', label: 'Intensity', default: 0.4, min: 0, max: 1, step: 0.01 },
+    { name: 'u_speed', type: 'float', label: 'Scroll', default: 0, min: -5, max: 5, step: 0.1 },
+  ],
+  fragmentCode: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = fragCoord / iResolution.xy;
+  vec4 col = texture(iChannel0, uv);
+  float line = sin((uv.y + iTime * u_speed * 0.05) * u_count * 3.14159);
+  float scan = 1.0 - u_intensity * (0.5 - 0.5 * line);
+  fragColor = vec4(col.rgb * scan, col.a);
+}`,
+}
+
+const posterizeShader: ShaderPreset = {
+  id: 'posterize',
+  name: 'Posterize',
+  category: 'effect',
+  description: 'Quantize colors into discrete bands',
+  uniforms: [
+    { name: 'u_levels', type: 'float', label: 'Levels', default: 4, min: 2, max: 16, step: 1 },
+  ],
+  fragmentCode: `void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = fragCoord / iResolution.xy;
+  vec4 col = texture(iChannel0, uv);
+  float levels = max(2.0, u_levels);
+  vec3 q = floor(col.rgb * levels + 0.5) / levels;
+  fragColor = vec4(q, col.a);
+}`,
+}
+
+const ditherShader: ShaderPreset = {
+  id: 'dither',
+  name: 'Dither',
+  category: 'effect',
+  description: 'Ordered (Bayer) dithering with color quantization',
+  uniforms: [
+    { name: 'u_levels', type: 'float', label: 'Levels', default: 3, min: 2, max: 8, step: 1 },
+    { name: 'u_scale', type: 'float', label: 'Pixel Scale', default: 1, min: 1, max: 8, step: 1 },
+  ],
+  fragmentCode: `float bayer4(vec2 p) {
+  // 4x4 ordered-dithering matrix, normalized to 0..1 (loop avoids dynamic indexing).
+  int x = int(mod(p.x, 4.0));
+  int y = int(mod(p.y, 4.0));
+  int idx = x + y * 4;
+  float m[16];
+  m[0]=0.0;  m[1]=8.0;  m[2]=2.0;  m[3]=10.0;
+  m[4]=12.0; m[5]=4.0;  m[6]=14.0; m[7]=6.0;
+  m[8]=3.0;  m[9]=11.0; m[10]=1.0; m[11]=9.0;
+  m[12]=15.0;m[13]=7.0; m[14]=13.0;m[15]=5.0;
+  float v = 0.0;
+  for (int i = 0; i < 16; i++) { if (i == idx) v = m[i]; }
+  return (v + 0.5) / 16.0;
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = fragCoord / iResolution.xy;
+  vec4 col = texture(iChannel0, uv);
+  float levels = max(2.0, u_levels);
+  float t = bayer4(floor(fragCoord / max(1.0, u_scale)));
+  vec3 c = col.rgb + (t - 0.5) / levels;
+  vec3 q = floor(c * (levels - 1.0) + 0.5) / (levels - 1.0);
+  fragColor = vec4(q, col.a);
+}`,
+}
+
+const chromaKeyShader: ShaderPreset = {
+  id: 'chroma-key',
+  name: 'Chroma Key',
+  category: 'effect',
+  description: 'Green-screen keying: makes a key color transparent',
+  uniforms: [
+    { name: 'u_key_color', type: 'vec3', label: 'Key Color', default: [0.0, 1.0, 0.0] },
+    { name: 'u_similarity', type: 'float', label: 'Similarity', default: 0.4, min: 0, max: 1, step: 0.01 },
+    { name: 'u_smoothness', type: 'float', label: 'Smoothness', default: 0.1, min: 0, max: 0.5, step: 0.01 },
+    { name: 'u_spill', type: 'float', label: 'Spill Removal', default: 0.1, min: 0, max: 1, step: 0.01 },
+  ],
+  fragmentCode: `// RGB -> chroma (UV) for distance-based keying.
+vec2 rgb2uv(vec3 c) {
+  float u = -0.169 * c.r - 0.331 * c.g + 0.5 * c.b;
+  float v =  0.5   * c.r - 0.419 * c.g - 0.081 * c.b;
+  return vec2(u, v);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = fragCoord / iResolution.xy;
+  vec4 col = texture(iChannel0, uv);
+  vec2 keyUV = rgb2uv(u_key_color);
+  float dist = distance(rgb2uv(col.rgb), keyUV);
+  float alpha = smoothstep(u_similarity, u_similarity + u_smoothness + 0.001, dist);
+  // Spill suppression: pull near-key pixels toward their luma (kills green fringe).
+  float luma = dot(col.rgb, vec3(0.299, 0.587, 0.114));
+  vec3 despill = mix(col.rgb, vec3(luma), (1.0 - alpha) * u_spill);
+  fragColor = vec4(despill, col.a * alpha);
+}`,
+}
+
 // ============================================================================
 // Utility Shaders
 // ============================================================================
@@ -539,6 +641,10 @@ export const SHADER_PRESETS: ShaderPreset[] = [
   glitchShader,
   edgeDetectShader,
   kaleidoscopeShader,
+  scanlinesShader,
+  posterizeShader,
+  ditherShader,
+  chromaKeyShader,
 
   // Utility
   solidColorShader,

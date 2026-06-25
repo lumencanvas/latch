@@ -22,6 +22,13 @@ import { colorRampExecutor } from './color-ramp'
 import { euclideanExecutor } from './euclidean'
 import { easingExecutor } from './easing'
 import { springExecutor } from './spring'
+import {
+  slewLimiterExecutor,
+  derivativeExecutor,
+  integralExecutor,
+  tweenToTargetExecutor,
+  tapTempoExecutor,
+} from './signal'
 import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
 import { stringExecutors } from './string'
@@ -1532,6 +1539,11 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   noise: noiseExecutor,
   easing: easingExecutor,
   spring: springExecutor,
+  'slew-limiter': slewLimiterExecutor,
+  derivative: derivativeExecutor,
+  integral: integralExecutor,
+  'tween-to-target': tweenToTargetExecutor,
+  'tap-tempo': tapTempoExecutor,
   trig: trigExecutor,
   power: powerExecutor,
   'vector-math': vectorMathExecutor,

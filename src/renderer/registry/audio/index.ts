@@ -10,6 +10,9 @@ export { envelopeNode } from './envelope'
 export { reverbNode } from './reverb'
 export { svfFilterNode } from './svf-filter'
 export { pitchDetectNode } from './pitch-detect'
+export { audioCompressorNode } from './audio-compressor'
+export { audioDistortionNode } from './audio-distortion'
+export { audioBitcrusherNode } from './audio-bitcrusher'
 
 // Custom UI audio nodes
 export { envelopeVisualNode, EnvelopeVisualNode } from './envelope-visual'
@@ -29,6 +32,9 @@ import { envelopeNode } from './envelope'
 import { reverbNode } from './reverb'
 import { svfFilterNode } from './svf-filter'
 import { pitchDetectNode } from './pitch-detect'
+import { audioCompressorNode } from './audio-compressor'
+import { audioDistortionNode } from './audio-distortion'
+import { audioBitcrusherNode } from './audio-bitcrusher'
 import { envelopeVisualNode } from './envelope-visual'
 import { parametricEqNode } from './parametric-eq'
 import { wavetableNode } from './wavetable'
@@ -48,6 +54,9 @@ export const audioNodes: NodeDefinition[] = [
   reverbNode,
   svfFilterNode,
   pitchDetectNode,
+  audioCompressorNode,
+  audioDistortionNode,
+  audioBitcrusherNode,
   envelopeVisualNode,
   parametricEqNode,
   wavetableNode,
