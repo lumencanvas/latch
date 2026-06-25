@@ -6,10 +6,20 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
-## 2026-06-25 — v1.2.1 + v1.2.2 SHIPPED to prod (YOLOv10 + detection HUD)
+## 2026-06-25 — v1.2.1 + v1.2.2 + v1.2.3 SHIPPED to prod (YOLOv10 + HUD + leak fix)
 
 **Supersedes the "UNCOMMITTED" note in the 2026-06-24 entry — that work is now committed,
 version-bumped to 1.2.1, and DEPLOYED.**
+
+### `yolo-session-cleanup` — DEPLOYED as v1.2.3 ✓
+Post-deploy audit of the detection-upgrades code found a WASM-heap leak: the worker's
+`yoloSessions` map (one onnxruntime-web `InferenceSession` per model URL, ~29–102 MB each) was
+never `.release()`d — `handleDispose`/`handleUnload`/`handleClearCache` only cleared the
+transformers `pipelines` map (pre-existing since v1.2.1's `887d843`). Now released on dispose,
+clearCache, and unload (keyed by model URL). Also corrected the `wasmPaths` comment:
+onnxruntime-web is a **transitive** dep via `@huggingface/transformers` (not pinned in
+package.json) — re-sync the pinned version with `npm ls onnxruntime-web` after a transformers
+bump. Audit otherwise clean: YOLOv10 decode, HUD, and the wasmPaths pin all verified correct.
 
 ### v1.2.1 — DEPLOYED to production ✓
 Committed the 2026-06-24 vision fixes in 4 clean commits, removed the temp `__latch` debug
