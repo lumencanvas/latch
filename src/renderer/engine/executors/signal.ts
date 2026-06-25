@@ -115,14 +115,68 @@ export const tweenToTargetExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
   ])
 }
 
+/** Tap tempo: derive BPM from the spacing of trigger taps. */
+interface TapState {
+  taps: number[]
+  lastHigh: boolean
+  bpm: number
+}
+const tapState = new Map<string, TapState>()
+const TAP_TIMEOUT = 2 // s — a gap longer than this restarts the tempo
+const MAX_TAPS = 6
+
+export const tapTempoExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const tap = ctx.inputs.get('tap')
+  const now = ctx.totalTime
+
+  let st = tapState.get(ctx.nodeId)
+  if (!st) {
+    st = { taps: [], lastHigh: false, bpm: 0 }
+    tapState.set(ctx.nodeId, st)
+  }
+
+  if (isReset(ctx.inputs.get('reset'))) {
+    st.taps = []
+    st.bpm = 0
+  }
+
+  const high = tap === true || tap === 1 || (typeof tap === 'number' && tap > 0)
+  const rising = high && !st.lastHigh
+  st.lastHigh = high
+
+  if (rising) {
+    const last = st.taps[st.taps.length - 1]
+    if (last !== undefined && now - last > TAP_TIMEOUT) st.taps = [] // stale → restart
+    st.taps.push(now)
+    if (st.taps.length > MAX_TAPS) st.taps.shift()
+    if (st.taps.length >= 2) {
+      let sum = 0
+      for (let i = 1; i < st.taps.length; i++) sum += st.taps[i] - st.taps[i - 1]
+      const avg = sum / (st.taps.length - 1)
+      st.bpm = avg > 0 ? 60 / avg : 0
+    }
+  }
+
+  const period = st.bpm > 0 ? 60 / st.bpm : 0
+  return new Map<string, unknown>([
+    ['bpm', st.bpm],
+    ['period', period],
+    ['taps', st.taps.length],
+  ])
+}
+
 /** Drop signal state for nodes that no longer exist (per-node GC). */
 export function gcSignalState(validNodeIds: Set<string>): void {
   for (const id of signalState.keys()) {
     if (!validNodeIds.has(id)) signalState.delete(id)
+  }
+  for (const id of tapState.keys()) {
+    if (!validNodeIds.has(id)) tapState.delete(id)
   }
 }
 
 /** Clear all signal state (engine stop / teardown). */
 export function disposeAllSignalState(): void {
   signalState.clear()
+  tapState.clear()
 }

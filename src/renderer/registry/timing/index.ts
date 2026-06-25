@@ -7,6 +7,7 @@ export { timerNode } from './timer'
 export { metronomeNode } from './metronome'
 export { stepSequencerNode } from './step-sequencer'
 export { euclideanNode } from './euclidean'
+export { tapTempoNode } from './tap-tempo'
 
 import { timeNode } from './time'
 import { lfoNode } from './lfo'
@@ -17,6 +18,7 @@ import { timerNode } from './timer'
 import { metronomeNode } from './metronome'
 import { stepSequencerNode } from './step-sequencer'
 import { euclideanNode } from './euclidean'
+import { tapTempoNode } from './tap-tempo'
 import type { NodeDefinition } from '../types'
 
 export const timingNodes: NodeDefinition[] = [
@@ -29,4 +31,5 @@ export const timingNodes: NodeDefinition[] = [
   metronomeNode,
   stepSequencerNode,
   euclideanNode,
+  tapTempoNode,
 ]

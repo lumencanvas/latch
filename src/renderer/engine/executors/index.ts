@@ -27,6 +27,7 @@ import {
   derivativeExecutor,
   integralExecutor,
   tweenToTargetExecutor,
+  tapTempoExecutor,
 } from './signal'
 import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
@@ -1542,6 +1543,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   derivative: derivativeExecutor,
   integral: integralExecutor,
   'tween-to-target': tweenToTargetExecutor,
+  'tap-tempo': tapTempoExecutor,
   trig: trigExecutor,
   power: powerExecutor,
   'vector-math': vectorMathExecutor,
