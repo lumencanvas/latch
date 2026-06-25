@@ -1573,6 +1573,101 @@ export function disposeSynth(nodeId: string): void {
 // Registry
 // ============================================================================
 
+// ============================================================================
+// Dynamics / distortion effects (compressor, distortion, bitcrusher)
+//
+// Pure Tone effects following the gain/filter template: cached in the generic
+// audioNodes map, so disposeAudioNode/disposeAllAudioNodes free them — no new
+// cleanup path. Each taps the upstream node via the `${nodeId}_input` link.
+// ============================================================================
+
+/** Shared input-connect helper for inline audio effects. */
+function connectEffectInput(nodeId: string, audio: Tone.ToneAudioNode, effect: Tone.ToneAudioNode): void {
+  const prevInput = audioNodes.get(`${nodeId}_input`)
+  if (prevInput !== audio) {
+    if (prevInput) prevInput.disconnect(effect)
+    audio.connect(effect)
+    audioNodes.set(`${nodeId}_input`, audio)
+  }
+}
+
+export const compressorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const threshold = (ctx.inputs.get('threshold') as number) ?? (ctx.controls.get('threshold') as number) ?? -24
+  const ratio = (ctx.controls.get('ratio') as number) ?? 4
+  const attack = (ctx.controls.get('attack') as number) ?? 0.003
+  const release = (ctx.controls.get('release') as number) ?? 0.25
+  const knee = (ctx.controls.get('knee') as number) ?? 30
+
+  const outputs = new Map<string, unknown>()
+  if (!audio) {
+    outputs.set('audio', null)
+    outputs.set('reduction', 0)
+    return outputs
+  }
+
+  const comp = getOrCreateNode(
+    ctx.nodeId,
+    () => new Tone.Compressor({ threshold, ratio, attack, release, knee })
+  ) as Tone.Compressor
+  comp.threshold.value = threshold
+  comp.ratio.value = ratio
+  comp.attack.value = attack
+  comp.release.value = release
+  comp.knee.value = knee
+  connectEffectInput(ctx.nodeId, audio, comp)
+
+  outputs.set('audio', comp)
+  outputs.set('reduction', comp.reduction)
+  return outputs
+}
+
+export const distortionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const amount = (ctx.inputs.get('amount') as number) ?? (ctx.controls.get('amount') as number) ?? 0.4
+  const wet = (ctx.controls.get('wet') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+  if (!audio) {
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  const dist = getOrCreateNode(
+    ctx.nodeId,
+    () => new Tone.Distortion({ distortion: amount, wet })
+  ) as Tone.Distortion
+  dist.distortion = amount
+  dist.wet.value = wet
+  connectEffectInput(ctx.nodeId, audio, dist)
+
+  outputs.set('audio', dist)
+  return outputs
+}
+
+export const bitcrusherExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const bits = (ctx.inputs.get('bits') as number) ?? (ctx.controls.get('bits') as number) ?? 4
+  const wet = (ctx.controls.get('wet') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+  if (!audio) {
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  const crusher = getOrCreateNode(
+    ctx.nodeId,
+    () => new Tone.BitCrusher({ bits })
+  ) as Tone.BitCrusher
+  crusher.bits.value = bits
+  crusher.wet.value = wet
+  connectEffectInput(ctx.nodeId, audio, crusher)
+
+  outputs.set('audio', crusher)
+  return outputs
+}
+
 export const audioExecutors: Record<string, NodeExecutorFn> = {
   oscillator: oscillatorExecutor,
   'audio-input': audioInputExecutor,
@@ -1591,4 +1686,7 @@ export const audioExecutors: Record<string, NodeExecutorFn> = {
   'parametric-eq': parametricEqExecutor,
   wavetable: wavetableExecutor,
   synth: synthExecutor,
+  'audio-compressor': compressorExecutor,
+  'audio-distortion': distortionExecutor,
+  'audio-bitcrusher': bitcrusherExecutor,
 }
