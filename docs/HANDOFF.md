@@ -6,6 +6,49 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-25 — v1.2.4: 18 new nodes from the NODE_LIBRARY_REVIEW backlog
+
+Built out the highest-value web-testable nodes from `docs/NODE_LIBRARY_REVIEW_2026-06-18.md`
+(the curated 53-node backlog; the old MASTER/MODERNIZATION "deferred" lists are essentially
+done). Node count **220 → 238**. Branch `nodes-visual-fx`, 6 single-purpose commits, all gates
+green (typecheck, lint, test:unit **1493**, build), merged to `main` and shipped as **v1.2.4**.
+
+- **Visual VJ FX (8):** `image-fx-{glitch,rgb-shift,pixelate,kaleidoscope,scanlines,posterize,
+  dither,chroma-key}` — discrete one-effect shader nodes wrapping `ShaderPresets` via a shared
+  `runImageFx` (visual.ts). Compiled material is cached under the nodeId, so the existing
+  visual gc/dispose frees it (no new cleanup). 4 reuse existing presets; scanlines/posterize/
+  dither/chroma-key are new GLSL presets (also added to the Shader-node dropdown).
+- **AI (2):** `text-to-speech` (Web Speech API, main-thread, offline) and `depth-estimation`
+  (Depth-Anything via a new `estimateDepth` worker task + AIInference facade; depth-texture
+  output, grayscale or colorized).
+- **Audio (3):** `audio-compressor` (with reduction meter), `audio-distortion`, `audio-bitcrusher`
+  — Tone.js effects on the gain/filter template (generic audioNodes map = auto-cleanup).
+- **Signal/timing (5):** `slew-limiter`, `derivative`, `integral`, `tween-to-target` (new
+  `signal.ts`, gc wired into ExecutionEngine like spring) + `tap-tempo`. **+7 unit tests.**
+
+### Custom-UI audit (requested) — CLEAN
+All 26 existing custom node-UI components are imported into `registry/components.ts` AND mapped
+to a key that matches a real node id (verified all 26); `CUSTOM_NODE_TYPE_IDS` derives from the
+same map, so the flows store can't drift. All 18 new nodes correctly use `BaseNode` (texture/
+number/audio outputs — no bespoke UI). `components/nodes/_archived/` holds 8 stale duplicate
+UIs that are not imported anywhere (dead code; safe to delete).
+
+### Verification (Playwright + headless WebGL against the dev server)
+- ✓ All 8 image-fx shaders **compile + render** in real WebGL (the 4 new GLSL included).
+- ✓ All 18 nodes register in the running app (238 total); **0 boot console errors**.
+- ✓ Signal/timing covered by unit tests.
+- ⚠️ `depth-estimation` is wired correctly (reached the worker, no error) but the model didn't
+  finish downloading within the headless 5-min budget (fresh context = cold cache) — same
+  download-on-first-use behavior as the other transformers.js models. **Verify live.**
+
+### Deferred (harder tail of the selected families — NOT built)
+`audio-granular` (buffer/grain player), `audio-recorder` (MediaRecorder + Blob/URL lifecycle),
+`mouse-pointer` + `device-motion` (need a DOM/sensor input service with listener cleanup),
+`timeline-keyframe` (keyframe data model + custom timeline UI). Plus the rest of the
+NODE_LIBRARY_REVIEW Tier B/C/D (DMX/Art-Net/NDI/Spout/Syphon installation outputs, etc.).
+
+---
+
 ## 2026-06-25 — v1.2.1 + v1.2.2 + v1.2.3 SHIPPED to prod (YOLOv10 + HUD + leak fix)
 
 **Supersedes the "UNCOMMITTED" note in the 2026-06-24 entry — that work is now committed,
