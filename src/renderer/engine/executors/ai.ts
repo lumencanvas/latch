@@ -10,6 +10,7 @@ import * as Tone from 'tone'
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
+import { textToSpeechService } from '@/services/ai/TextToSpeechService'
 import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
 import { getThreeShaderRenderer } from './visual'
 import { drawBoundingBox } from '@/registry/ai/utils/mediapipe-drawing'
@@ -2256,6 +2257,86 @@ export function disposeAudioClassifierNode(nodeId: string): void {
 }
 
 // ============================================================================
+// Text-to-Speech (Web Speech API, main thread — no model download)
+// ============================================================================
+
+interface TTSState {
+  lastText: string
+  lastTriggerHigh: boolean
+  speaking: boolean
+  utterance: SpeechSynthesisUtterance | null
+}
+const ttsState = new Map<string, TTSState>()
+
+/** Stop this node's speech and drop its state (dispose/gc). */
+function disposeTTSNode(nodeId: string): void {
+  const state = ttsState.get(nodeId)
+  if (state) {
+    if (state.speaking) textToSpeechService.cancel()
+    if (state.utterance) {
+      state.utterance.onend = null
+      state.utterance.onerror = null
+    }
+    ttsState.delete(nodeId)
+  }
+}
+
+export const textToSpeechExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const text = String(ctx.inputs.get('text') ?? ctx.controls.get('text') ?? '')
+  const trigger = ctx.inputs.get('trigger')
+  const autoSpeak = (ctx.controls.get('autoSpeak') as boolean) ?? false
+  const rate = (ctx.controls.get('rate') as number) ?? 1
+  const pitch = (ctx.controls.get('pitch') as number) ?? 1
+  const volume = (ctx.controls.get('volume') as number) ?? 1
+  const voiceName = (ctx.controls.get('voice') as string) ?? ''
+
+  let state = ttsState.get(ctx.nodeId)
+  if (!state) {
+    state = { lastText: '', lastTriggerHigh: false, speaking: false, utterance: null }
+    ttsState.set(ctx.nodeId, state)
+  }
+
+  if (!textToSpeechService.isSupported()) {
+    outputs.set('speaking', false)
+    outputs.set('_error', 'Text-to-speech is not supported in this browser.')
+    return outputs
+  }
+
+  // Speak on a rising-edge trigger, or (when Auto Speak) whenever text changes.
+  const triggerHigh = hasTriggerValue(trigger)
+  const risingTrigger = triggerHigh && !state.lastTriggerHigh
+  state.lastTriggerHigh = triggerHigh
+  const shouldSpeak =
+    text.trim().length > 0 && (risingTrigger || (autoSpeak && text !== state.lastText))
+
+  if (shouldSpeak) {
+    textToSpeechService.cancel() // interrupt any in-progress utterance first
+    const nodeId = ctx.nodeId
+    const clearSpeaking = () => {
+      const s = ttsState.get(nodeId)
+      if (s && !isNodeDisposed(nodeId)) s.speaking = false
+    }
+    const utterance = textToSpeechService.speak(text, {
+      rate,
+      pitch,
+      volume,
+      voiceName,
+      onend: clearSpeaking,
+      onerror: clearSpeaking,
+    })
+    if (utterance) {
+      state.speaking = true
+      state.utterance = utterance
+    }
+  }
+  state.lastText = text
+
+  outputs.set('speaking', state.speaking)
+  return outputs
+}
+
+// ============================================================================
 // Cleanup helpers
 // ============================================================================
 
@@ -2280,6 +2361,9 @@ export function disposeAINode(nodeId: string): void {
     audioClassifier.audioBufferService.disconnect()
   }
   audioClassifierState.delete(nodeId)
+
+  // Stop any text-to-speech this node started.
+  disposeTTSNode(nodeId)
 }
 
 export function disposeAllAINodes(): void {
@@ -2317,6 +2401,11 @@ export function disposeAllAINodes(): void {
     disposeLiveDetectNode(nodeId)
   }
 
+  // Stop all in-progress text-to-speech
+  for (const nodeId of ttsState.keys()) {
+    disposeTTSNode(nodeId)
+  }
+
   nodeCache.clear()
   pendingOperations.clear()
   sttState.clear()
@@ -2345,6 +2434,13 @@ export function gcAIState(validNodeIds: Set<string>): void {
   for (const nodeId of liveDetectState.keys()) {
     if (!validNodeIds.has(nodeId)) {
       disposeLiveDetectNode(nodeId)
+    }
+  }
+
+  // Stop text-to-speech for removed nodes
+  for (const nodeId of ttsState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      disposeTTSNode(nodeId)
     }
   }
 
@@ -2396,6 +2492,7 @@ export const aiExecutors: Record<string, NodeExecutorFn> = {
   'object-detection-live': objectDetectionLiveExecutor,
   'object-detection-yolo': objectDetectionYoloExecutor,
   'speech-recognition': speechRecognitionExecutor,
+  'text-to-speech': textToSpeechExecutor,
   'text-transformation': textTransformationExecutor,
   'mediapipe-hand': mediapipeHandExecutor,
   'mediapipe-face': mediapipeFaceExecutor,

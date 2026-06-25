@@ -7,6 +7,7 @@ export { objectDetectionNode } from './object-detection'
 export { objectDetectionLiveNode } from './object-detection-live'
 export { objectDetectionYoloNode } from './object-detection-yolo'
 export { speechRecognitionNode } from './speech-recognition'
+export { textToSpeechNode } from './text-to-speech'
 export { textTransformationNode } from './text-transformation'
 export { retrieveNode } from './retrieve'
 export { vectorMemoryNode } from './vector-memory'
@@ -31,6 +32,7 @@ import { objectDetectionNode } from './object-detection'
 import { objectDetectionLiveNode } from './object-detection-live'
 import { objectDetectionYoloNode } from './object-detection-yolo'
 import { speechRecognitionNode } from './speech-recognition'
+import { textToSpeechNode } from './text-to-speech'
 import { textTransformationNode } from './text-transformation'
 import { retrieveNode } from './retrieve'
 import { vectorMemoryNode } from './vector-memory'
@@ -55,6 +57,7 @@ export const aiNodes: NodeDefinition[] = [
   objectDetectionLiveNode,
   objectDetectionYoloNode,
   speechRecognitionNode,
+  textToSpeechNode,
   textTransformationNode,
   retrieveNode,
   vectorMemoryNode,
