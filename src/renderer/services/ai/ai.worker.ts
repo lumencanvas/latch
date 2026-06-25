@@ -28,7 +28,9 @@ env.useBrowserCache = true
 // resolve to index.html and WebAssembly.instantiate aborts with "expected magic word
 // 00 61 73 6d, found 3c 21 44 4f" (the leading "<!DO" of the HTML 404 page). Point ORT
 // at the matching build on jsdelivr (CORS-enabled → loads under the app's
-// credentialless COEP). Keep the version in sync with onnxruntime-web in package.json.
+// credentialless COEP). onnxruntime-web is a TRANSITIVE dep (via @huggingface/
+// transformers), so it is NOT pinned in package.json — after any transformers bump,
+// re-sync this version string with the output of `npm ls onnxruntime-web`.
 ort.env.wasm.wasmPaths =
   'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/'
 
@@ -264,6 +266,23 @@ function getYoloSession(url: string): Promise<ort.InferenceSession> {
     yoloSessions.set(url, p)
   }
   return p
+}
+
+// Release a YOLO InferenceSession's WASM heap. The map stores the in-flight
+// create() promise, so await it (swallowing a failed load) before release().
+async function releaseYoloSession(p: Promise<ort.InferenceSession>): Promise<void> {
+  try {
+    await (await p).release()
+  } catch {
+    // load failed or already released — nothing to free
+  }
+}
+
+// Release every cached YOLO session (worker dispose / cache clear). These hold
+// WASM memory (~29–102 MB per model) that the pipelines map cleanup doesn't touch.
+function releaseAllYoloSessions(): void {
+  for (const p of yoloSessions.values()) void releaseYoloSession(p)
+  yoloSessions.clear()
 }
 
 // Letterbox an ImageData to 640×640 (aspect-preserving, gray pad) and pack into
@@ -571,6 +590,14 @@ function handleUnload(msg: UnloadModelMessage): void {
     pipelines.delete(key)
   }
 
+  // YOLO sessions are keyed by model URL (msg.model carries it), not the
+  // task:model pair, so release them on the side.
+  const yolo = yoloSessions.get(msg.model)
+  if (yolo) {
+    void releaseYoloSession(yolo)
+    yoloSessions.delete(msg.model)
+  }
+
   respond({ type: 'result', id: msg.id, success: true })
 }
 
@@ -587,6 +614,7 @@ function handleDispose(msg: DisposeMessage): void {
     disposePipe(pipe)
   }
   pipelines.clear()
+  releaseAllYoloSessions()
   respond({ type: 'result', id: msg.id, success: true })
 }
 
@@ -602,6 +630,7 @@ async function handleClearCache(msg: ClearCacheMessage): Promise<void> {
     disposePipe(pipe)
   }
   pipelines.clear()
+  releaseAllYoloSessions()
 
   // Try to clear the cache using transformers.js cache API if available
   try {
