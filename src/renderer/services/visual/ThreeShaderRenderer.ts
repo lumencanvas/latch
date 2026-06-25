@@ -10,6 +10,16 @@
 
 import * as THREE from 'three'
 
+/** Pixel dimensions of a texture source, covering canvas/image (width/height) and video (videoWidth/Height). */
+function sourceDimensions(
+  source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement
+): [number, number] {
+  const v = source as HTMLVideoElement
+  const w = (source as HTMLCanvasElement).width || v.videoWidth || 0
+  const h = (source as HTMLCanvasElement).height || v.videoHeight || 0
+  return [w, h]
+}
+
 export interface CompiledShaderMaterial {
   material: THREE.ShaderMaterial
   uniforms: THREE.ShaderMaterialParameters['uniforms']
@@ -677,6 +687,18 @@ export class ThreeShaderRenderer {
     const width = targetCanvas.width
     const height = targetCanvas.height
 
+    // A video-backed THREE.Texture does NOT upload through this offscreen Three
+    // renderer — the readback comes out fully black (canvas/image sources work, but
+    // HTMLVideoElement does not). Any node that reads a webcam/video feed via this
+    // path (snapshot, OpenCV, live detection → convertToImageData) therefore saw a
+    // black frame. Draw the video element straight to the 2D target instead, exactly
+    // as the Main Output / TexturePreview components already do for live display.
+    const src = texture.image
+    if (src instanceof HTMLVideoElement) {
+      if (src.readyState >= 2 && src.videoWidth > 0) ctx.drawImage(src, 0, 0, width, height)
+      return
+    }
+
     // Check if this is a render target texture (has no image source but has dimensions)
     // Render target textures need to be read back from GPU via their render target
     const isRenderTargetTexture = texture.source?.data === null || texture.image === null
@@ -786,13 +808,33 @@ export class ThreeShaderRenderer {
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
     texture.needsUpdate = true
+    const [w, h] = sourceDimensions(source)
+    texture.userData.__uploadW = w
+    texture.userData.__uploadH = h
     return texture
   }
 
   /**
-   * Update an existing texture with new content
+   * Update an existing texture with new content.
+   *
+   * If the source's dimensions changed since the last upload, the texture's GPU
+   * storage must be reallocated: otherwise Three texSubImage's a larger image into
+   * smaller storage — the "glCopySubTextureCHROMIUM: Offset overflows texture
+   * dimensions" flood that corrupts the texture for EVERY consumer (Main Output,
+   * shaders, 3D), leaving it black. Disposing frees the old GPU texture so the next
+   * render does a full texImage2D at the new size. (We can't detect this from
+   * `texture.image` alone — callers often reuse the same canvas object and resize it
+   * in place, so we track the uploaded size on the texture itself.)
    */
   updateTexture(texture: THREE.Texture, source: HTMLVideoElement | HTMLCanvasElement): void {
+    const [w, h] = sourceDimensions(source)
+    const prevW = texture.userData.__uploadW
+    const prevH = texture.userData.__uploadH
+    if ((prevW !== undefined && prevW !== w) || (prevH !== undefined && prevH !== h)) {
+      texture.dispose()
+    }
+    texture.userData.__uploadW = w
+    texture.userData.__uploadH = h
     texture.image = source
     texture.needsUpdate = true
   }
