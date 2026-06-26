@@ -38,7 +38,7 @@ import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocke
 import { disposeAllHttpNodes, gcHttpState } from './executors/http'
 import { disposeAllGamepadState, gcGamepadState } from './executors/gamepad'
 import { disposeAllEmulationNodes, gcEmulationState } from './executors/emulation'
-import { disposeAllOpenCVNodes, gcOpenCVState } from './executors/opencv'
+import { disposeAllOpenCVNodes, gcOpenCVState, resetOpenCVNodeDisposal } from './executors/opencv'
 
 /**
  * Largest delta (seconds) a single frame may report. Caps the time spike that
@@ -715,6 +715,9 @@ export class ExecutionEngine {
     // Un-flag AI nodes that were marked disposed on the previous stop() — otherwise
     // their detect/transcribe/depth results are dropped until a page refresh.
     resetAINodeDisposal()
+    // Same stop→restart guard for OpenCV nodes: un-flag any node marked disposed
+    // on the previous stop() so its worker results aren't dropped after restart.
+    resetOpenCVNodeDisposal()
     this.runtimeStore.start()
 
     this.addVisibilityListener()

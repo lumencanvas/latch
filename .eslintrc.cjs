@@ -33,5 +33,32 @@ module.exports = {
     'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
     'no-debugger': process.env.NODE_ENV === 'production' ? 'error' : 'off',
   },
+  overrides: [
+    {
+      // opencv.worker.ts is a CLASSIC worker: it relies on `importScripts()` to
+      // load opencv.js. A single ES `import`/`export` makes Vite emit it as a
+      // MODULE worker, which silently drops `importScripts` and breaks it at
+      // runtime. Forbid module syntax here so that footgun can't be pulled.
+      files: ['**/opencv.worker.ts'],
+      rules: {
+        'no-restricted-syntax': [
+          'error',
+          {
+            selector: 'ImportDeclaration',
+            message:
+              'opencv.worker.ts is a classic worker — no ES imports (would break importScripts). Inline the code instead.',
+          },
+          {
+            selector: 'ExportNamedDeclaration',
+            message: 'opencv.worker.ts is a classic worker — no ES exports (would make it a module worker).',
+          },
+          {
+            selector: 'ExportDefaultDeclaration',
+            message: 'opencv.worker.ts is a classic worker — no ES exports (would make it a module worker).',
+          },
+        ],
+      },
+    },
+  ],
   ignorePatterns: ['dist', 'dist-electron', 'out', 'node_modules', '*.config.ts'],
 }
