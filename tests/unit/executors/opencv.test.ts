@@ -1,63 +1,41 @@
 /**
  * OpenCV Executor Tests
  *
- * Real-invocation tests (cv runtime + Three renderer mocked) that lock the two
- * things most likely to regress and hurt:
- *  1. the median-blur kernel floor (ksize must be > 1, else medianBlur throws),
- *  2. the cv.Mat cleanup discipline — every transient Mat deleted each frame,
- *     and the persistent optical-flow `prevGray` Mat freed on dispose (the WASM
- *     heap-leak class CLAUDE.md warns about).
+ * opencv.js now runs in a Web Worker; the executors are thin fire-and-cache
+ * shells around `openCVService.process()`. These tests mock that worker facade
+ * and lock the executor-side contract that's most likely to regress:
+ *  1. control → op/params mapping (esp. the median-blur kernel floor: ksize must
+ *     be > 1 or medianBlur throws worker-side),
+ *  2. the frame-interval throttle,
+ *  3. deferred caching — the last worker result's scalar outputs are re-served
+ *     each frame,
+ *  4. the MOG2-unavailable `_error` passthrough,
+ *  5. dispose wiring — teardown frees the worker's per-node Mats.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// --- Fake cv runtime -------------------------------------------------------
-// A Mat is just an object with a `delete` spy; constructors/ops are spies so we
-// can assert call args and that every Mat is freed.
-function makeMat(rows = 0, cols = 0) {
-  return {
-    delete: vi.fn(),
-    isDeleted: () => false,
-    rows,
-    cols,
-    channels: () => 1,
-    data32F: new Float32Array(0),
-  }
-}
-
-const cv = {
-  COLOR_RGBA2GRAY: 7,
-  COLOR_RGBA2RGB: 8,
-  BORDER_DEFAULT: 4,
-  Mat: vi.fn(() => makeMat()),
-  Size: vi.fn(function (this: Record<string, number>, w: number, h: number) {
-    this.width = w
-    this.height = h
-  }),
-  matFromImageData: vi.fn((img: { width: number; height: number }) => makeMat(img.height, img.width)),
-  // Copy source dims onto the destination so size-dependent logic is exercised.
-  cvtColor: vi.fn((src: { rows: number; cols: number }, dst: { rows: number; cols: number }) => {
-    dst.rows = src.rows
-    dst.cols = src.cols
-  }),
-  calcOpticalFlowFarneback: vi.fn(),
-  countNonZero: vi.fn(() => 0),
-  BackgroundSubtractorMOG2: vi.fn(() => ({ apply: vi.fn(), delete: vi.fn(), isDeleted: () => false })),
-  medianBlur: vi.fn(),
-  GaussianBlur: vi.fn(),
-  imshow: vi.fn(),
-}
+// Worker facade spies (hoisted so the vi.mock factory can close over them).
+const { processMock, disposeMock, disposeAllMock, facade } = vi.hoisted(() => ({
+  processMock: vi.fn(),
+  disposeMock: vi.fn(),
+  disposeAllMock: vi.fn(),
+  facade: { ready: true },
+}))
 
 vi.mock('@/services/visual/OpenCVService', () => ({
   openCVService: {
-    isReady: () => true,
+    isReady: () => facade.ready,
     isLoading: () => false,
     load: () => Promise.resolve(),
-    getCV: () => cv,
+    process: processMock,
+    dispose: disposeMock,
+    disposeAll: disposeAllMock,
   },
 }))
 
-// The Three renderer is irrelevant to the logic under test — stub it.
+// The Three renderer is irrelevant to the logic under test — stub it so the
+// executor module's import resolves.
 vi.mock('@/engine/executors/visual', () => ({
   getThreeShaderRenderer: () => ({
     createTexture: () => ({ dispose: vi.fn() }),
@@ -72,14 +50,15 @@ import {
   cvBlurExecutor,
   cvOpticalFlowExecutor,
   cvBackgroundSubtractionExecutor,
+  disposeOpenCVNode,
   disposeAllOpenCVNodes,
+  gcOpenCVState,
   oddKernel,
 } from '@/engine/executors/opencv'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 // happy-dom has no ImageData; the executor's `source instanceof ImageData`
-// branch needs the global to exist. A minimal stand-in is enough — the cv
-// runtime that reads it is mocked.
+// branch needs the global to exist. A minimal stand-in is enough.
 class FakeImageData {
   width: number
   height: number
@@ -91,6 +70,9 @@ class FakeImageData {
   }
 }
 (globalThis as unknown as { ImageData: unknown }).ImageData = FakeImageData
+
+// Flush microtasks + the macrotask queue so an awaited worker result settles.
+const flush = () => new Promise((r) => setTimeout(r, 0))
 
 function ctx(
   nodeId: string,
@@ -125,102 +107,103 @@ describe('OpenCV executors', () => {
   beforeEach(() => {
     disposeAllOpenCVNodes()
     vi.clearAllMocks()
+    facade.ready = true
+    processMock.mockResolvedValue({ imageData: undefined, extra: {} })
   })
 
-  it('grayscale converts RGBA->GRAY and frees both transient Mats', () => {
+  it('serves a loading passthrough (no worker op) until opencv.js is ready', () => {
+    facade.ready = false
+    const out = cvGrayscaleExecutor(ctx('l1', { interval: 1 }))
+    expect(out.get('loading')).toBe(true)
+    expect(processMock).not.toHaveBeenCalled()
+  })
+
+  it('posts the grayscale op to the worker when due', () => {
     cvGrayscaleExecutor(ctx('g1', { interval: 1 }))
-
-    expect(cv.cvtColor).toHaveBeenCalledTimes(1)
-    expect(cv.cvtColor.mock.calls[0][2]).toBe(cv.COLOR_RGBA2GRAY)
-
-    const src = cv.matFromImageData.mock.results[0].value
-    const dst = cv.Mat.mock.results[0].value
-    expect(src.delete).toHaveBeenCalledTimes(1)
-    expect(dst.delete).toHaveBeenCalledTimes(1)
+    expect(processMock).toHaveBeenCalledTimes(1)
+    expect(processMock).toHaveBeenCalledWith('g1', 'grayscale', {}, expect.anything())
   })
 
   it('floors the median-blur kernel at 3 (medianBlur asserts ksize > 1)', () => {
     cvBlurExecutor(ctx('b1', { mode: 'median', kernel: 1, interval: 1 }))
-    expect(cv.medianBlur).toHaveBeenCalledTimes(1)
-    expect(cv.medianBlur.mock.calls[0][2]).toBe(3)
+    expect(processMock).toHaveBeenCalledWith(
+      'b1',
+      'blur',
+      expect.objectContaining({ mode: 'median', kernel: 3 }),
+      expect.anything()
+    )
   })
 
   it('allows a 1px Gaussian kernel (valid) without forcing the floor', () => {
     cvBlurExecutor(ctx('b2', { mode: 'gaussian', kernel: 1, interval: 1 }))
-    expect(cv.GaussianBlur).toHaveBeenCalledTimes(1)
-    expect(cv.medianBlur).not.toHaveBeenCalled()
-    // Size built with the 1px odd kernel
-    expect(cv.Size).toHaveBeenCalledWith(1, 1)
+    expect(processMock).toHaveBeenCalledWith(
+      'b2',
+      'blur',
+      expect.objectContaining({ mode: 'gaussian', kernel: 1 }),
+      expect.anything()
+    )
   })
 
-  it('throttles by frame interval (no re-run before the interval elapses)', () => {
+  it('throttles by frame interval (no re-run before the interval elapses)', async () => {
     cvGrayscaleExecutor(ctx('t1', { interval: 5 }, 0)) // first frame: runs
+    await flush()
     cvGrayscaleExecutor(ctx('t1', { interval: 5 }, 1)) // 1 < 5: skipped
-    expect(cv.cvtColor).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(processMock).toHaveBeenCalledTimes(1)
     cvGrayscaleExecutor(ctx('t1', { interval: 5 }, 6)) // 6 - 0 >= 5: runs
-    expect(cv.cvtColor).toHaveBeenCalledTimes(2)
+    await flush()
+    expect(processMock).toHaveBeenCalledTimes(2)
   })
 
-  it('retains the optical-flow prevGray Mat across frames and frees it on dispose', () => {
-    cvOpticalFlowExecutor(ctx('of1', { interval: 1 }, 0)) // first frame: seeds prevGray
-
-    const src = cv.matFromImageData.mock.results[0].value
-    const gray = cv.Mat.mock.results[0].value
-    // src is freed in the finally; gray is retained as prevGray (NOT freed yet).
-    expect(src.delete).toHaveBeenCalledTimes(1)
-    expect(gray.delete).not.toHaveBeenCalled()
-
-    disposeAllOpenCVNodes()
-    // The persistent WASM-heap Mat must be freed on teardown.
-    expect(gray.delete).toHaveBeenCalledTimes(1)
+  it('does not post a new op while one is already pending', () => {
+    // process never resolves here → the node stays pending.
+    processMock.mockReturnValue(new Promise(() => {}))
+    cvGrayscaleExecutor(ctx('p1', { interval: 1 }, 0))
+    cvGrayscaleExecutor(ctx('p1', { interval: 1 }, 10))
+    expect(processMock).toHaveBeenCalledTimes(1)
   })
 
-  it('reseeds optical-flow prevGray on a source-resolution change (no Farneback throw)', () => {
-    cvOpticalFlowExecutor(ctx('of2', { interval: 1 }, 0, new ImageData(8, 8))) // seed 8x8
-    const gray1 = cv.Mat.mock.results[0].value
-    expect(gray1.delete).not.toHaveBeenCalled()
-
-    // Different-sized frame: Farneback would throw on mismatched sizes, so the
-    // node must reseed (free the old prevGray) and skip flow this frame.
-    cvOpticalFlowExecutor(ctx('of2', { interval: 1 }, 1, new ImageData(4, 4)))
-    expect(cv.calcOpticalFlowFarneback).not.toHaveBeenCalled()
-    expect(gray1.delete).toHaveBeenCalledTimes(1)
+  it('caches and re-serves the worker result scalar outputs each frame', async () => {
+    processMock.mockResolvedValue({ imageData: undefined, extra: { motion: 0.42 } })
+    cvOpticalFlowExecutor(ctx('of1', { interval: 1 }, 0)) // kicks the worker op
+    await flush()
+    // Same frame again → not due → serves the cached motion from the result.
+    const out = cvOpticalFlowExecutor(ctx('of1', { interval: 1 }, 0))
+    expect(out.get('motion')).toBe(0.42)
+    expect(processMock).toHaveBeenCalledWith('of1', 'optical-flow', expect.anything(), expect.anything())
   })
 
-  it('retains the MOG2 background subtractor and frees it on dispose', () => {
-    cvBackgroundSubtractionExecutor(ctx('bg1', { interval: 1 }))
-    const sub = cv.BackgroundSubtractorMOG2.mock.results[0].value
-    expect(sub.apply).toHaveBeenCalledTimes(1)
-    expect(sub.delete).not.toHaveBeenCalled()
-
-    disposeAllOpenCVNodes()
-    // The persistent WASM-heap subtractor must be freed on teardown.
-    expect(sub.delete).toHaveBeenCalledTimes(1)
-  })
-
-  it('rebuilds the MOG2 subtractor when params change, freeing the old one', () => {
-    cvBackgroundSubtractionExecutor(ctx('bg2', { interval: 1, varThreshold: 16 }, 0))
-    const sub1 = cv.BackgroundSubtractorMOG2.mock.results[0].value
-    // Changing a param on a later (due) frame must rebuild — else the control is dead.
-    cvBackgroundSubtractionExecutor(ctx('bg2', { interval: 1, varThreshold: 50 }, 1))
-    expect(cv.BackgroundSubtractorMOG2).toHaveBeenCalledTimes(2)
-    expect(sub1.delete).toHaveBeenCalledTimes(1)
-  })
-
-  it('degrades gracefully when the MOG2 constructor is unavailable', () => {
-    // opencv.js builds that drop the `video` module make `new
-    // BackgroundSubtractorMOG2(...)` throw. The executor must not propagate that
-    // — it should emit an error output and re-serve the last (blank) mask.
-    cv.BackgroundSubtractorMOG2.mockImplementationOnce(() => {
-      throw new Error('BackgroundSubtractorMOG2 is not a constructor')
+  it('passes the MOG2 _error through from the worker result', async () => {
+    processMock.mockResolvedValue({
+      imageData: undefined,
+      extra: { foreground: 0, _error: 'Background subtraction (MOG2) is unavailable in this OpenCV build.' },
     })
-    let out: Map<string, unknown> | undefined
-    expect(() => {
-      out = cvBackgroundSubtractionExecutor(ctx('bg3', { interval: 1 }))
-    }).not.toThrow()
-    expect(out?.get('_error')).toMatch(/unavailable/i)
-    expect(out?.get('loading')).toBe(false)
-    // It bailed before processing, so no frame work happened.
-    expect(cv.matFromImageData).not.toHaveBeenCalled()
+    cvBackgroundSubtractionExecutor(ctx('bg1', { interval: 1 }, 0))
+    await flush()
+    const out = cvBackgroundSubtractionExecutor(ctx('bg1', { interval: 1 }, 0))
+    expect(out.get('_error')).toMatch(/unavailable/i)
+    expect(out.get('loading')).toBe(false)
+  })
+
+  it('frees the worker-side Mats for a removed node (gc) and on teardown', () => {
+    cvOpticalFlowExecutor(ctx('d1', { interval: 1 }))
+    gcOpenCVState(new Set()) // d1 no longer in graph
+    expect(disposeMock).toHaveBeenCalledWith('d1')
+
+    cvBackgroundSubtractionExecutor(ctx('d2', { interval: 1 }))
+    disposeAllOpenCVNodes()
+    expect(disposeAllMock).toHaveBeenCalled()
+  })
+
+  it('drops a worker result that lands after the node was disposed', async () => {
+    let resolveProcess: (v: unknown) => void = () => {}
+    processMock.mockReturnValue(new Promise((res) => { resolveProcess = res }))
+    cvOpticalFlowExecutor(ctx('z1', { interval: 1 }, 0)) // kicks the op, now pending
+    disposeOpenCVNode('z1') // node torn down before the result lands
+    resolveProcess({ imageData: undefined, extra: { motion: 99 } })
+    await flush()
+    // The stale result must not resurrect state: a fresh frame serves the default.
+    const out = cvOpticalFlowExecutor(ctx('z1', { interval: 1 }, 0))
+    expect(out.get('motion')).toBe(0)
   })
 })

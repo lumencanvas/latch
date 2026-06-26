@@ -1,141 +1,156 @@
 /**
- * OpenCV.js Service
+ * OpenCV.js Service — Web Worker facade
  *
- * Lazily loads OpenCV.js (WASM) from a CDN on first use, mirroring the
- * load/isReady/isLoading shape of MediaPipeService. The docs.opencv.org build
- * is a single self-contained script with the WASM embedded as base64, so no
- * separate cross-origin .wasm fetch is needed (works under credentialless
- * COOP/COEP).
+ * opencv.js (~10 MB WASM) is loaded AND run in a CLASSIC Web Worker
+ * (`opencv.worker.ts`), off the main thread. Loading/initializing it on the main
+ * thread froze the UI for any OpenCV node — the bug this facade fixes. The main
+ * thread keeps only the texture I/O (it needs WebGL/DOM); every `cv.*` call runs
+ * in the worker.
  *
- * The global `cv` runtime is untyped here (no @types for opencv.js); callers
- * receive it as `OpenCVModule` (alias for the runtime object) and use it
- * directly. Every cv.Mat allocated lives in the WASM heap and MUST be
- * `.delete()`d by the caller.
+ * The request/response plumbing (promise-per-request, pending map, timeouts,
+ * transferables, crash handling) lives in the shared `WorkerFacade` base; this
+ * subclass only owns the opencv message protocol + `isReady/isLoading/load` so
+ * the executors can show a "loading" passthrough while opencv.js downloads.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type OpenCVModule = any
+import { WorkerFacade } from '@/services/worker/WorkerFacade'
 
-// docs.opencv.org ships a single self-contained opencv.js with the WASM embedded
-// (no sibling .wasm fetch), loaded no-cors via this <script> under credentialless COEP.
-//
-// PINNED on purpose (was the floating `4.x`): the `4.x` alias 301-redirects to
-// whatever the newest build is, which silently jumped to 4.13.0 (~11 MB) and froze
-// the page — any OpenCV node hung the main thread immediately while that build
-// loaded/initialized. Pin to a known-good prior build so the OpenCV runtime can't
-// change underneath us. 4.9.0 is the newest version docs.opencv.org still retains
-// below 4.13.0 (4.10–4.12 now 404). If this URL ever 404s, bump to the next
-// retained version (and consider moving OpenCV off the main thread into a worker).
-const OPENCV_CDN_URL = 'https://docs.opencv.org/4.9.0/opencv.js'
+/** Scalar/array outputs a worker op surfaces (motion, count, contours, …). */
+export type OpenCVExtra = Record<string, unknown>
 
-class OpenCVService {
+/** Result of a worker op: the processed RGBA frame (if any) + scalar outputs. */
+export interface OpenCVResult {
+  /** Processed frame as ImageData, or undefined when the op produced no new pixels. */
+  imageData?: ImageData
+  extra: OpenCVExtra
+}
+
+interface WorkerResult {
+  type: 'result'
+  id: number
+  ok: boolean
+  width?: number
+  height?: number
+  data?: Uint8ClampedArray
+  extra?: OpenCVExtra
+  error?: string
+}
+
+interface WorkerReady {
+  type: 'ready'
+  id: number
+  ok: boolean
+  error?: string
+}
+
+// A single cv op should be near-instant once opencv.js is loaded; if one never
+// reports back (a hung/looping worker), time it out so the node self-recovers on
+// the next due frame instead of staying stuck "pending" forever. `load` has no
+// timeout — the first one downloads ~10 MB and can legitimately take a while.
+const OPENCV_OP_TIMEOUT = 30_000
+
+class OpenCVService extends WorkerFacade {
   private ready = false
   private loadingFlag = false
   private loadPromise: Promise<void> | null = null
 
-  /** True once the WASM runtime is initialized and `cv.Mat` is callable. */
+  protected get label(): string {
+    return 'OpenCV'
+  }
+
+  // CLASSIC worker (no `{ type: 'module' }`) so the worker can `importScripts()`
+  // the opencv.js build.
+  protected createWorker(): Worker {
+    return new Worker(new URL('./opencv.worker.ts', import.meta.url))
+  }
+
+  protected handleMessage(data: unknown): void {
+    const msg = data as WorkerResult | WorkerReady
+    if (msg.type === 'ready') {
+      this.loadingFlag = false
+      if (msg.ok) {
+        this.ready = true
+        this.settle(msg.id, undefined)
+      } else {
+        this.loadPromise = null
+        this.fail(msg.id, new Error(msg.error || 'Failed to load OpenCV.js in worker'))
+      }
+      return
+    }
+
+    // type === 'result'
+    if (!msg.ok) {
+      this.fail(msg.id, new Error(msg.error || 'OpenCV op failed'))
+      return
+    }
+    const imageData =
+      msg.data && msg.width && msg.height
+        ? // Transferred buffers are always ArrayBuffer-backed — sound cast for ImageData.
+          new ImageData(msg.data as Uint8ClampedArray<ArrayBuffer>, msg.width, msg.height)
+        : undefined
+    this.settle(msg.id, { imageData, extra: msg.extra ?? {} } satisfies OpenCVResult)
+  }
+
+  protected onWorkerError(error: unknown): void {
+    super.onWorkerError(error) // log + reject all in-flight
+    this.ready = false
+    this.loadingFlag = false
+    this.loadPromise = null
+  }
+
+  /** True once opencv.js is initialized in the worker and ops can run. */
   isReady(): boolean {
     return this.ready
   }
 
-  /** True while the script/WASM is downloading and initializing. */
+  /** True while opencv.js is downloading/initializing in the worker. */
   isLoading(): boolean {
     return this.loadingFlag
   }
 
-  /** Returns the global cv runtime, or null if not ready yet. */
-  getCV(): OpenCVModule | null {
-    if (!this.ready) return null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (window as any).cv ?? null
-  }
-
   /**
-   * Inject the OpenCV.js script (once) and resolve when the WASM runtime is
-   * initialized. Idempotent: concurrent/duplicate calls share one promise.
+   * Trigger the worker to download + initialize opencv.js. Idempotent:
+   * concurrent/duplicate calls share one promise. Resolves once the runtime is
+   * ready; rejects if the load fails.
    */
   load(): Promise<void> {
     if (this.ready) return Promise.resolve()
     if (this.loadPromise) return this.loadPromise
-
     this.loadingFlag = true
-    this.loadPromise = new Promise<void>((resolve, reject) => {
-      const finalize = () => {
-        this.ready = true
-        this.loadingFlag = false
-        resolve()
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const waitForRuntime = (cvObj: any) => {
-        if (!cvObj) {
-          this.loadingFlag = false
-          reject(new Error('OpenCV.js loaded but `cv` global is undefined'))
-          return
-        }
-        // Some builds expose `cv` as a thenable (Emscripten MODULARIZE). The
-        // docs.opencv.org build's `.then()` does NOT return a chainable promise,
-        // so wrap with Promise.resolve to adopt it safely (chaining `.catch`
-        // directly on the raw thenable throws an uncaught error).
-        if (typeof cvObj.then === 'function') {
-          Promise.resolve(cvObj)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .then((mod: any) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (window as any).cv = mod ?? (window as any).cv
-              finalize()
-            })
-            .catch((err: unknown) => {
-              this.loadingFlag = false
-              reject(err instanceof Error ? err : new Error(String(err)))
-            })
-          return
-        }
-        // Runtime already initialized.
-        if (typeof cvObj.Mat === 'function') {
-          finalize()
-          return
-        }
-        // Otherwise wait for the runtime-initialized callback.
-        cvObj.onRuntimeInitialized = () => finalize()
-      }
-
-      // Reuse an already-present global (e.g. another node loaded it first).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const existing = (window as any).cv
-      if (existing) {
-        waitForRuntime(existing)
-        return
-      }
-
-      const existingScript = document.querySelector<HTMLScriptElement>(
-        'script[data-opencv-loader]'
-      )
-      if (existingScript) {
-        existingScript.addEventListener('load', () => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          waitForRuntime((window as any).cv)
-        })
-        return
-      }
-
-      const script = document.createElement('script')
-      script.src = OPENCV_CDN_URL
-      script.async = true
-      script.setAttribute('data-opencv-loader', 'true')
-      script.onload = () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        waitForRuntime((window as any).cv)
-      }
-      script.onerror = () => {
-        this.loadingFlag = false
-        this.loadPromise = null
-        reject(new Error('Failed to load OpenCV.js from CDN'))
-      }
-      document.head.appendChild(script)
+    // If the worker fails to even spawn, `request` rejects with no `ready` message
+    // ever arriving to reset state — null out loadPromise on any rejection so a
+    // later load() can retry instead of returning the same rejected promise forever.
+    this.loadPromise = this.request<void>({ type: 'load' }).catch((err) => {
+      this.loadingFlag = false
+      this.loadPromise = null
+      throw err
     })
-
     return this.loadPromise
+  }
+
+  /**
+   * Run an op in the worker. `imageData` pixels are copied into a fresh
+   * transferable buffer (so the caller's/upstream's ImageData is never detached),
+   * then transferred zero-copy. Resolves with the processed frame + scalar outputs.
+   */
+  process(nodeId: string, op: string, params: Record<string, unknown>, imageData: ImageData): Promise<OpenCVResult> {
+    // Copy the pixels: sourceToImageData may hand back an upstream-owned buffer,
+    // which must not be detached by the transfer.
+    const data = new Uint8ClampedArray(imageData.data)
+    return this.request<OpenCVResult>(
+      { type: 'process', nodeId, op, params, width: imageData.width, height: imageData.height, data },
+      { transfer: [data.buffer], timeout: OPENCV_OP_TIMEOUT }
+    )
+  }
+
+  /** Free a single node's persistent worker-side Mats (optical-flow / MOG2). */
+  dispose(nodeId: string): void {
+    this.notify({ type: 'dispose', nodeId })
+  }
+
+  /** Free all persistent worker-side Mats (engine teardown). */
+  disposeAll(): void {
+    this.notify({ type: 'disposeAll' })
   }
 }
 

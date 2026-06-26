@@ -12,6 +12,7 @@
 
 import { collectTransferables, type SerializedImage } from './imageTransfer'
 import { requestPersistentStorage } from './modelStorage'
+import { WorkerFacade } from '@/services/worker/WorkerFacade'
 
 // Model load states
 export type ModelLoadState = 'idle' | 'loading' | 'ready' | 'error'
@@ -225,171 +226,89 @@ export const AI_MODELS: ModelDefinition[] = [
 // Progress callback type
 type ProgressCallback = (progress: number) => void
 
-// Pending request tracking
-interface PendingRequest {
-  resolve: (value: unknown) => void
-  reject: (error: Error) => void
-  onProgress?: ProgressCallback
-  timeoutId?: ReturnType<typeof setTimeout>
-}
-
 // Default timeout for worker requests (5 minutes for model loading)
 const DEFAULT_REQUEST_TIMEOUT = 5 * 60 * 1000
 
-class AIInferenceService {
+class AIInferenceService extends WorkerFacade {
   private _initialized = false
-  private _worker: Worker | null = null
   private _modelInfo = new Map<string, ModelInfo>()
   private _listeners = new Set<() => void>()
   private _webgpuAvailable = false
   private _useWebGPU = false
   private _useBrowserCache = true
   private _defaultDType: DType = 'q4'
-  private _pendingRequests = new Map<string, PendingRequest>()
-  private _requestIdCounter = 0
   private _loadedModels = new Set<string>()
   private _autoLoadModels: string[] = []
   private _selectedModels: Record<string, string> = {}
   private _settingsLoaded = false
 
   constructor() {
-    this.initWorker()
+    super({ defaultTimeout: DEFAULT_REQUEST_TIMEOUT })
+    // Spawn eagerly so the worker is warm before the first inference.
+    this.ensureWorker()
     this.checkWebGPU()
   }
 
-  // Initialize Web Worker
-  private initWorker(): void {
-    try {
-      // Create worker using Vite's import syntax for web workers
-      this._worker = new Worker(new URL('./ai.worker.ts', import.meta.url), {
-        type: 'module',
-      })
-
-      this._worker.onmessage = this.handleWorkerMessage.bind(this)
-      this._worker.onerror = (error) => {
-        console.error('[AIInference] Worker error:', error)
-        // A worker crash would otherwise leave every in-flight request hanging until
-        // its 5-min timeout. Reject them all so callers fail fast.
-        for (const [, pending] of this._pendingRequests) {
-          if (pending.timeoutId) clearTimeout(pending.timeoutId)
-          pending.reject(new Error('AI worker crashed'))
-        }
-        this._pendingRequests.clear()
-      }
-
-      console.log('[AIInference] Web Worker initialized')
-    } catch (error) {
-      console.error('[AIInference] Failed to initialize Web Worker:', error)
-      // Fall back to main thread if worker fails
-      this._worker = null
-    }
+  protected get label(): string {
+    return 'AIInference'
   }
 
-  // Handle messages from worker
-  private handleWorkerMessage(event: MessageEvent): void {
-    const msg = event.data
+  // Module worker (Transformers.js / onnxruntime-web need ES `import`).
+  protected createWorker(): Worker {
+    return new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'module' })
+  }
+
+  // Route worker messages to the shared facade's pending-request bookkeeping.
+  protected handleMessage(data: unknown): void {
+    const msg = data as {
+      type: string
+      id: number
+      progress?: number
+      success?: boolean
+      data?: unknown
+      loaded?: boolean
+      error?: string
+    }
 
     switch (msg.type) {
       case 'progress': {
-        const pending = this._pendingRequests.get(msg.id)
-        if (pending?.onProgress) {
-          pending.onProgress(msg.progress)
-        }
-        // Also update model info for UI
-        const loadingModels = Array.from(this._modelInfo.entries())
-          .filter(([, info]) => info.state === 'loading')
+        this.reportProgress(msg.id, msg.progress ?? 0)
+        // Also update model info for the UI (not tied to a single request id).
+        const loadingModels = Array.from(this._modelInfo.entries()).filter(
+          ([, info]) => info.state === 'loading'
+        )
         for (const [key] of loadingModels) {
           this.updateModelInfo(key, { progress: msg.progress })
         }
         break
       }
-
-      case 'loaded': {
-        const pending = this.clearPendingRequest(msg.id)
-        if (pending) {
-          if (msg.success) {
-            pending.resolve(true)
-          } else {
-            pending.reject(new Error(msg.error || 'Failed to load model'))
-          }
-        }
+      case 'loaded':
+        if (msg.success) this.settle(msg.id, true)
+        else this.fail(msg.id, new Error(msg.error || 'Failed to load model'))
         break
-      }
-
-      case 'result': {
-        const pending = this.clearPendingRequest(msg.id)
-        if (pending) {
-          if (msg.success) {
-            pending.resolve(msg.data)
-          } else {
-            pending.reject(new Error(msg.error || 'Inference failed'))
-          }
-        }
+      case 'result':
+        if (msg.success) this.settle(msg.id, msg.data)
+        else this.fail(msg.id, new Error(msg.error || 'Inference failed'))
         break
-      }
-
-      case 'checkResult': {
-        const pending = this.clearPendingRequest(msg.id)
-        if (pending) {
-          pending.resolve(msg.loaded)
-        }
+      case 'checkResult':
+        this.settle(msg.id, msg.loaded)
         break
-      }
     }
   }
 
-  // Generate unique request ID
-  private nextRequestId(): string {
-    return `req_${++this._requestIdCounter}`
-  }
-
-  // Send message to worker and await response
+  // Send a request to the worker and await its response. Transfers image pixel
+  // buffers zero-copy (non-image messages produce an empty transfer list); the
+  // pending-promise + timeout bookkeeping lives in WorkerFacade.
   private sendToWorker<T>(
     message: Record<string, unknown>,
     onProgress?: ProgressCallback,
     timeout: number = DEFAULT_REQUEST_TIMEOUT
   ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      if (!this._worker) {
-        reject(new Error('Web Worker not available'))
-        return
-      }
-
-      const id = this.nextRequestId()
-
-      // Set up timeout to prevent leaked requests
-      const timeoutId = setTimeout(() => {
-        const pending = this._pendingRequests.get(id)
-        if (pending) {
-          this._pendingRequests.delete(id)
-          reject(new Error(`Worker request timed out after ${timeout}ms`))
-        }
-      }, timeout)
-
-      this._pendingRequests.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
-        onProgress,
-        timeoutId,
-      })
-
-      // Transfer image pixel buffers (zero-copy) instead of structured-cloning a
-      // large array; non-image messages produce an empty transfer list.
-      const transfer = collectTransferables(message.args as readonly unknown[] | undefined)
-      this._worker.postMessage({ ...message, id }, transfer)
+    return this.request<T>(message, {
+      transfer: collectTransferables(message.args as readonly unknown[] | undefined),
+      onProgress,
+      timeout,
     })
-  }
-
-  // Clear timeout and remove pending request
-  private clearPendingRequest(id: string): PendingRequest | undefined {
-    const pending = this._pendingRequests.get(id)
-    if (pending) {
-      if (pending.timeoutId) {
-        clearTimeout(pending.timeoutId)
-      }
-      this._pendingRequests.delete(id)
-    }
-    return pending
   }
 
   // Check WebGPU availability
@@ -510,10 +429,8 @@ class AIInferenceService {
   // Set browser cache preference
   setUseBrowserCache(use: boolean): void {
     this._useBrowserCache = use
-    // Notify worker of the change
-    if (this._worker) {
-      this._worker.postMessage({ type: 'setCache', enabled: use })
-    }
+    // Notify worker of the change (no-op if the worker isn't spawned).
+    this.notify({ type: 'setCache', enabled: use })
     this.notifyListeners()
   }
 
@@ -585,9 +502,7 @@ class AIInferenceService {
         }
         if (settings.aiUseBrowserCache !== undefined) {
           this._useBrowserCache = settings.aiUseBrowserCache
-          if (this._worker) {
-            this._worker.postMessage({ type: 'setCache', enabled: this._useBrowserCache })
-          }
+          this.notify({ type: 'setCache', enabled: this._useBrowserCache })
         }
       }
 
@@ -651,7 +566,7 @@ class AIInferenceService {
   // Clear cached models from IndexedDB
   async clearModelCache(): Promise<void> {
     // Clear from worker (this disposes all pipelines)
-    if (this._worker) {
+    if (this.worker) {
       await this.sendToWorker({ type: 'clearCache' }, undefined, 30000)
     }
 
@@ -755,24 +670,15 @@ class AIInferenceService {
 
   // Dispose all models
   async dispose(): Promise<void> {
-    // Clear all pending requests with their timeouts
-    for (const [, pending] of this._pendingRequests) {
-      if (pending.timeoutId) {
-        clearTimeout(pending.timeoutId)
-      }
-      pending.reject(new Error('Service disposed'))
-    }
-    this._pendingRequests.clear()
-
-    if (this._worker) {
+    if (this.worker) {
       try {
         await this.sendToWorker({ type: 'dispose' }, undefined, 5000) // Short timeout for dispose
       } catch {
         // Ignore timeout on dispose
       }
-      this._worker.terminate()
-      this._worker = null
     }
+    // Terminate the worker and reject any still-in-flight requests.
+    this.terminate('Service disposed')
     this._loadedModels.clear()
     this._modelInfo.clear()
     this._initialized = false
