@@ -29,7 +29,7 @@ import { gcCodeState, disposeAllCodeNodes } from './executors/code'
 import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
 import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
-import { disposeAllAINodes, gcAIState } from './executors/ai'
+import { disposeAllAINodes, gcAIState, resetAINodeDisposal } from './executors/ai'
 // mqtt/websocket/http executors override the legacy connectivity ones for those
 // node types, so their per-node state (live WebSockets, fetch caches) needs its
 // own GC + teardown — gcConnectivityState only covers OSC/Serial/MIDI/BLE.
@@ -712,6 +712,9 @@ export class ExecutionEngine {
     this.inFlightAsync.clear()
     this.pendingAsyncChange.clear()
     this.acceptAsyncResults = true
+    // Un-flag AI nodes that were marked disposed on the previous stop() — otherwise
+    // their detect/transcribe/depth results are dropped until a page refresh.
+    resetAINodeDisposal()
     this.runtimeStore.start()
 
     this.addVisibilityListener()

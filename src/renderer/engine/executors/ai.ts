@@ -2582,6 +2582,21 @@ export function disposeAllAINodes(): void {
   audioClassifierState.clear()
 }
 
+/**
+ * Clear the disposed-node guard so AI nodes work again after a stop→restart.
+ *
+ * disposeAllAINodes() (run on stop) marks every node disposed so that in-flight
+ * detect/transcribe promises don't write into the just-cleared cache. On restart
+ * the same nodes are live again — but gcAIState (the only place that clears the
+ * set) runs ONLY when nodes are removed from the graph, not on a plain restart.
+ * Without this reset, detection/STT/depth nodes stay flagged disposed and their
+ * async results are silently dropped until a full page refresh. Called from
+ * ExecutionEngine.start().
+ */
+export function resetAINodeDisposal(): void {
+  disposedNodes.clear()
+}
+
 export function gcAIState(validNodeIds: Set<string>): void {
   // Clean nodeCache - keys formatted as "nodeId:suffix"
   for (const key of nodeCache.keys()) {
