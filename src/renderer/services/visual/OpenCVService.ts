@@ -16,14 +16,17 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type OpenCVModule = any
 
-// docs.opencv.org ships a single self-contained opencv.js with the WASM
-// embedded as base64 (verified: there is no sibling opencv_js.wasm — it 404s),
-// so the only cross-origin resource is this <script>, which loads no-cors and
-// is allowed under the app's `credentialless` COEP. Keep the `4.x` (latest)
-// alias on purpose: docs.opencv.org retains ONLY the newest 4.x build —
-// pinning a specific version (e.g. 4.10.0) 404s once it's superseded. This
-// mirrors the app's existing `@mediapipe/tasks-vision@latest` CDN convention.
-const OPENCV_CDN_URL = 'https://docs.opencv.org/4.x/opencv.js'
+// docs.opencv.org ships a single self-contained opencv.js with the WASM embedded
+// (no sibling .wasm fetch), loaded no-cors via this <script> under credentialless COEP.
+//
+// PINNED on purpose (was the floating `4.x`): the `4.x` alias 301-redirects to
+// whatever the newest build is, which silently jumped to 4.13.0 (~11 MB) and froze
+// the page — any OpenCV node hung the main thread immediately while that build
+// loaded/initialized. Pin to a known-good prior build so the OpenCV runtime can't
+// change underneath us. 4.9.0 is the newest version docs.opencv.org still retains
+// below 4.13.0 (4.10–4.12 now 404). If this URL ever 404s, bump to the next
+// retained version (and consider moving OpenCV off the main thread into a worker).
+const OPENCV_CDN_URL = 'https://docs.opencv.org/4.9.0/opencv.js'
 
 class OpenCVService {
   private ready = false
