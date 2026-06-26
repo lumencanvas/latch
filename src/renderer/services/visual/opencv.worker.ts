@@ -52,49 +52,72 @@ const ctx = self as unknown as {
 // Lazy opencv.js load (mirrors OpenCVService.load()'s runtime-ready handshake)
 // ---------------------------------------------------------------------------
 
+// Lifecycle diagnostics (worker logs surface in the main DevTools console). Left
+// on while the in-browser paint path is being validated.
+const DEBUG = true
+
 let cv: CV | null = null
 let loadPromise: Promise<CV> | null = null
+let loggedFirstProcess = false
+let loggedFirstResult = false
 
 function ensureLoaded(): Promise<CV> {
   if (cv) return Promise.resolve(cv)
   if (loadPromise) return loadPromise
 
   loadPromise = new Promise<CV>((resolve, reject) => {
+    let settled = false
     const finalize = (mod: CV) => {
+      // Idempotent: the Promise return and the onRuntimeInitialized hook can both
+      // fire. Only accept a runtime that's actually usable (cv.Mat present).
+      if (settled || !mod || typeof mod.Mat !== 'function') return
+      settled = true
       cv = mod
+      if (DEBUG) console.info('[OpenCV worker] runtime ready (cv.Mat available)')
       resolve(mod)
     }
+    const fail = (err: unknown) => {
+      if (settled) return
+      settled = true
+      const e = err instanceof Error ? err : new Error(String(err))
+      if (DEBUG) console.error('[OpenCV worker] load failed:', e.message)
+      reject(e)
+    }
 
-    const waitForRuntime = (cvObj: CV) => {
-      if (!cvObj) {
-        reject(new Error('OpenCV.js loaded but `cv` global is undefined'))
-        return
-      }
-      // Some Emscripten builds expose `cv` as a thenable (MODULARIZE). Adopt it
-      // via Promise.resolve (chaining on the raw thenable can throw).
-      if (typeof cvObj.then === 'function') {
-        Promise.resolve(cvObj)
-          .then((mod: CV) => finalize(mod ?? ctx.cv))
-          .catch((err: unknown) => reject(err instanceof Error ? err : new Error(String(err))))
-        return
-      }
-      // Runtime already initialized.
-      if (typeof cvObj.Mat === 'function') {
-        finalize(cvObj)
-        return
-      }
-      // Otherwise wait for the runtime-initialized callback.
-      cvObj.onRuntimeInitialized = () => finalize(cvObj)
+    // Pre-define Module so a Module-style build invokes our hook; opencv.js 4.9.0
+    // is the Promise-returning MODULARIZE build (verified: factory() yields a
+    // thenable that resolves to the runtime), handled via the thenable below.
+    ;(ctx as { Module?: unknown }).Module = {
+      onRuntimeInitialized: () => {
+        const c = ctx.cv
+        if (c && typeof c.then === 'function') Promise.resolve(c).then(finalize, fail)
+        else finalize(c)
+      },
     }
 
     try {
+      if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_CDN_URL)
       // Synchronous, but on the WORKER thread — no main-thread freeze.
       ctx.importScripts(OPENCV_CDN_URL)
     } catch (err) {
-      reject(err instanceof Error ? err : new Error('Failed to importScripts opencv.js'))
+      fail(err instanceof Error ? err : new Error('importScripts failed (COEP/network?)'))
       return
     }
-    waitForRuntime(ctx.cv)
+
+    const c = ctx.cv
+    if (DEBUG) {
+      console.info('[OpenCV worker] post-importScripts: cv typeof=', typeof c, 'thenable=', !!(c && typeof c.then === 'function'))
+    }
+    if (c && typeof c.then === 'function') {
+      Promise.resolve(c).then(finalize, fail) // Promise-returning MODULARIZE (4.9.0)
+    } else if (c && typeof c.Mat === 'function') {
+      finalize(c) // already initialized
+    }
+    // else: rely on the Module.onRuntimeInitialized hook set above.
+
+    // A stuck init must surface as an error (visible on the node) instead of
+    // leaving the node on "loading" forever.
+    setTimeout(() => fail(new Error('opencv.js did not initialize within 60s')), 60_000)
   })
 
   return loadPromise
@@ -428,6 +451,18 @@ async function handleProcess(msg: ProcessMessage): Promise<void> {
   // The transferred buffer is always ArrayBuffer-backed (SharedArrayBuffer can't
   // be transferred), so the cast to satisfy ImageData's typed-array param is sound.
   const imageData = new ImageData(msg.data as Uint8ClampedArray<ArrayBuffer>, msg.width, msg.height)
+  if (DEBUG && !loggedFirstProcess) {
+    loggedFirstProcess = true
+    const d = msg.data
+    const mid = (((msg.width * msg.height) >> 1) << 2) % (d.length || 1)
+    // A first/mid pixel of [0,0,0,255] (or all-zero) means the SOURCE arrived black
+    // (e.g. a video-backed texture sampling black) — i.e. the op is fine, the input
+    // isn't. Non-zero here means real pixels reached the worker.
+    console.info(
+      '[OpenCV worker] first process:', msg.op, `${msg.width}x${msg.height}`,
+      'firstPx=', [d[0], d[1], d[2], d[3]], 'midPx=', [d[mid], d[mid + 1], d[mid + 2], d[mid + 3]]
+    )
+  }
   const src = cv.matFromImageData(imageData)
   const scratch: Mat[] = []
   const track = (m: Mat): Mat => {
@@ -437,6 +472,10 @@ async function handleProcess(msg: ProcessMessage): Promise<void> {
   try {
     const { output, extra } = runOp(msg.op, msg.params, src, msg.nodeId, track)
     const rgba = matToRGBA(output)
+    if (DEBUG && !loggedFirstResult) {
+      loggedFirstResult = true
+      console.info('[OpenCV worker] first result posted:', `${rgba.width}x${rgba.height}`)
+    }
     ctx.postMessage(
       { type: 'result', id: msg.id, ok: true, width: rgba.width, height: rgba.height, data: rgba.data, extra },
       [rgba.data.buffer]

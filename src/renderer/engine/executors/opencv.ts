@@ -251,7 +251,14 @@ function runCvNode(
 
   // Lazy-load opencv.js in the worker on first use; emit held texture meanwhile.
   if (!openCVService.isReady()) {
-    void openCVService.load().catch((err) => console.error('[OpenCV]', err))
+    const loadErr = openCVService.getLoadError()
+    if (loadErr) {
+      // Surface the failure ON the node (not just the console) so it's diagnosable.
+      const out = serve(false)
+      out.set('_error', `OpenCV failed to load: ${loadErr}`)
+      return out
+    }
+    void openCVService.load().catch(() => {}) // failure captured in getLoadError()
     return serve(true)
   }
 
