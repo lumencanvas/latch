@@ -14,6 +14,7 @@ import { textToSpeechService } from '@/services/ai/TextToSpeechService'
 import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
 import { getThreeShaderRenderer } from './visual'
 import { drawBoundingBox } from '@/registry/ai/utils/mediapipe-drawing'
+import { COCO_LABELS } from '@/services/ai/yolo'
 
 // Cache for node state and results
 const nodeCache = new Map<string, unknown>()
@@ -1171,6 +1172,8 @@ interface LiveOverlayOptions {
   showLabels: boolean
   boxColor: string
   lineWidth: number
+  boxStyle: 'box' | 'corners' | 'filled'
+  colorMode: 'class' | 'uniform'
 }
 
 /**
@@ -1180,16 +1183,26 @@ interface LiveOverlayOptions {
  * (transformers pipeline vs raw YOLO ONNX); everything else is identical.
  */
 
-// Distinct, readable box colors cycled per class so a multi-class scene is legible.
-// The user's Box Color seeds index 0, so a single-class feed still honors it.
+// Ultralytics' 20-color palette — distinct, high-contrast per-class colors.
 const DETECTION_PALETTE = [
-  '#4ecdc4', '#ffd93d', '#6c5ce7', '#fd79a8', '#00b894', '#e17055', '#0984e3', '#a29bfe', '#ff6b6b',
+  '#042AFF', '#0BDBEB', '#F3F3F3', '#00DFB7', '#111F68', '#FF6FDD', '#FF444F', '#CCED00',
+  '#00F344', '#BD00FF', '#00B4FF', '#DD00BA', '#00FFFF', '#26C000', '#01FFB3', '#7D24FF',
+  '#7B0068', '#FF1B6C', '#FC6D2F', '#A2FF0B',
 ]
-function colorForLabel(label: string, base: string): string {
+const cocoClassIndex = new Map(COCO_LABELS.map((label, i) => [label, i]))
+
+function hashLabel(label: string): number {
   let hash = 0
   for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash)
-  const colors = [base, ...DETECTION_PALETTE]
-  return colors[Math.abs(hash) % colors.length]
+  return Math.abs(hash)
+}
+
+// Stable, distinct color per class: index by COCO class when the label is known
+// (so 'person' is always the same color across frames and detectors), else by a
+// label hash, into the curated palette.
+function colorForLabel(label: string): string {
+  const idx = cocoClassIndex.get(label) ?? hashLabel(label)
+  return DETECTION_PALETTE[idx % DETECTION_PALETTE.length]
 }
 
 // A compact status bar burned into the annotated frame (so it shows on the node
@@ -1197,27 +1210,56 @@ function colorForLabel(label: string, base: string): string {
 // latency — the "annotate on the preview" overlay.
 function drawDetectionHud(
   ctx: CanvasRenderingContext2D,
+  width: number,
   height: number,
-  info: { count: number; topLabel: string; detectMs: number; loading: boolean }
+  info: { count: number; topLabel: string; detectMs: number; loading: boolean; accent: string }
 ): void {
-  const fontPx = Math.max(11, Math.round(height * 0.04))
-  const pad = Math.round(fontPx * 0.45)
+  const fontPx = Math.max(12, Math.round(((width + height) / 2) * 0.022))
+  const pad = Math.round(fontPx * 0.55)
   const parts: string[] = []
-  if (info.loading) parts.push('loading…')
   parts.push(`${info.count} object${info.count === 1 ? '' : 's'}`)
   if (info.topLabel) parts.push(info.topLabel)
-  if (info.detectMs > 0) parts.push(`${Math.round(info.detectMs)}ms`)
-  const text = parts.join('  ·  ')
+  if (info.detectMs > 0) parts.push(`${Math.round(info.detectMs)} ms`)
+  const text = (info.loading ? 'loading…   ·   ' : '') + parts.join('   ·   ')
 
   ctx.save()
-  ctx.font = `bold ${fontPx}px monospace`
+  ctx.font = `600 ${fontPx}px ui-sans-serif, system-ui, -apple-system, sans-serif`
   ctx.textBaseline = 'middle'
+
+  const margin = Math.round(fontPx * 0.5)
+  const dot = Math.round(fontPx * 0.42)
+  const tw = ctx.measureText(text).width
   const barH = fontPx + pad * 2
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
-  ctx.fillRect(0, 0, ctx.measureText(text).width + pad * 2, barH)
-  ctx.fillStyle = info.loading ? '#ffd93d' : '#ffffff'
-  ctx.fillText(text, pad, barH / 2)
+  const barW = pad + dot + pad * 0.6 + tw + pad
+
+  // Pill background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+  roundRectPath(ctx, margin, margin, barW, barH, Math.min(barH / 2, 10))
+  ctx.fill()
+
+  // Status dot (accent / amber while loading)
+  ctx.fillStyle = info.loading ? '#ffd93d' : info.accent
+  ctx.beginPath()
+  ctx.arc(margin + pad + dot / 2, margin + barH / 2, dot / 2, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.fillStyle = '#f5f5f5'
+  ctx.fillText(text, margin + pad + dot + pad * 0.6, margin + barH / 2 + 0.5)
   ctx.restore()
+}
+
+/** Local rounded-rect path helper (mirrors the one in mediapipe-drawing). */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2))
+  ctx.beginPath()
+  ctx.roundRect(x, y, w, h, rr)
 }
 
 function runLiveDetection(
@@ -1228,7 +1270,7 @@ function runLiveDetection(
   const outputs = new Map<string, unknown>()
   const source = ctx.inputs.get('source')
   const trigger = ctx.inputs.get('trigger')
-  const { interval, showBoxes, showLabels, boxColor, lineWidth } = opts
+  const { interval, showBoxes, showLabels, boxColor, lineWidth, boxStyle, colorMode } = opts
 
   const cachedDetections = getCached<Detection[]>(`${ctx.nodeId}:detections`, [])
   const loading = pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false)
@@ -1314,18 +1356,23 @@ function runLiveDetection(
           height,
           showLabels ? det.label : undefined,
           showLabels ? det.score : undefined,
-          { color: colorForLabel(det.label, boxColor), lineWidth }
+          {
+            color: colorMode === 'uniform' ? boxColor : colorForLabel(det.label),
+            lineWidth: lineWidth > 0 ? lineWidth : undefined,
+            style: boxStyle,
+          }
         )
       }
     }
 
     // Status HUD (gated on Show Labels so a clean passthrough stays clean).
     if (showLabels) {
-      drawDetectionHud(c2d, height, {
+      drawDetectionHud(c2d, width, height, {
         count: cachedDetections.length,
         topLabel: getCached(`${ctx.nodeId}:topLabel`, ''),
         detectMs: getCached(`${ctx.nodeId}:detectMs`, 0),
         loading: pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false),
+        accent: boxColor,
       })
     }
 
@@ -1352,7 +1399,9 @@ function overlayOptions(ctx: ExecutionContext, defaultInterval: number): LiveOve
     showBoxes: (ctx.controls.get('showBoxes') as boolean) ?? true,
     showLabels: (ctx.controls.get('showLabels') as boolean) ?? true,
     boxColor: (ctx.controls.get('boxColor') as string) || '#00ff00',
-    lineWidth: (ctx.controls.get('lineWidth') as number) ?? 2,
+    lineWidth: (ctx.controls.get('lineWidth') as number) ?? 0,
+    boxStyle: ((ctx.controls.get('boxStyle') as string) || 'box') as 'box' | 'corners' | 'filled',
+    colorMode: ((ctx.controls.get('colorMode') as string) || 'class') as 'class' | 'uniform',
   }
 }
 

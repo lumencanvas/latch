@@ -20,6 +20,12 @@ const runtimeStore = useRuntimeStore()
 const canvas = ref<HTMLCanvasElement | null>(null)
 const hasTexture = ref(false)
 
+// Render the backing buffer at device-pixel-ratio so the thumbnail is crisp on
+// hi-dpi screens (capped so a 4K display doesn't allocate an oversized buffer).
+const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+function backingW() { return Math.round(props.width * dpr) }
+function backingH() { return Math.round(props.height * dpr) }
+
 /**
  * Update preview from texture
  */
@@ -40,10 +46,11 @@ function updatePreview() {
   }
 
   // Check for video element first (webcam, video player)
+  ctx.imageSmoothingQuality = 'high'
   const video = outputs.get('video') as HTMLVideoElement | undefined
   if (video instanceof HTMLVideoElement && video.readyState >= 2) {
     hasTexture.value = true
-    ctx.drawImage(video, 0, 0, props.width, props.height)
+    ctx.drawImage(video, 0, 0, ctx.canvas.width, ctx.canvas.height)
     return
   }
 
@@ -51,7 +58,7 @@ function updatePreview() {
   const display = outputs.get('_display')
   if (display instanceof HTMLCanvasElement) {
     hasTexture.value = true
-    ctx.drawImage(display, 0, 0, props.width, props.height)
+    ctx.drawImage(display, 0, 0, ctx.canvas.width, ctx.canvas.height)
     return
   }
 
@@ -67,7 +74,7 @@ function updatePreview() {
   // Handle canvas element
   if (texture instanceof HTMLCanvasElement) {
     hasTexture.value = true
-    ctx.drawImage(texture, 0, 0, props.width, props.height)
+    ctx.drawImage(texture, 0, 0, ctx.canvas.width, ctx.canvas.height)
     return
   }
 
@@ -86,13 +93,14 @@ function updatePreview() {
 
 function drawPlaceholder(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = '#1a1a1a'
-  ctx.fillRect(0, 0, props.width, props.height)
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
   if (props.showPlaceholder) {
     ctx.fillStyle = '#666'
-    ctx.font = '10px monospace'
+    ctx.font = `${Math.round(10 * dpr)}px monospace`
     ctx.textAlign = 'center'
-    ctx.fillText('No texture', props.width / 2, props.height / 2)
+    ctx.textBaseline = 'middle'
+    ctx.fillText('No texture', ctx.canvas.width / 2, ctx.canvas.height / 2)
   }
 }
 
@@ -118,8 +126,8 @@ function stopUpdateLoop() {
 
 onMounted(() => {
   if (canvas.value) {
-    canvas.value.width = props.width
-    canvas.value.height = props.height
+    canvas.value.width = backingW()
+    canvas.value.height = backingH()
     updatePreview()
     startUpdateLoop()
   }
@@ -144,8 +152,8 @@ watch(() => runtimeStore.isRunning, (running) => {
 // Handle size changes
 watch([() => props.width, () => props.height], ([w, h]) => {
   if (canvas.value) {
-    canvas.value.width = w
-    canvas.value.height = h
+    canvas.value.width = Math.round(w * dpr)
+    canvas.value.height = Math.round(h * dpr)
     updatePreview()
   }
 })

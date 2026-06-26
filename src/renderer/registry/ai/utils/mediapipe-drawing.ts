@@ -30,6 +30,17 @@ export interface BoundingBox {
   height: number
 }
 
+export interface BoxDrawOptions extends DrawOptions {
+  /** Outline only (`box`), corner brackets (`corners`), or a translucent fill (`filled`). */
+  style?: 'box' | 'corners' | 'filled'
+  /** Fill opacity for the `filled` style (0–1). */
+  fillAlpha?: number
+  /** Corner radius in px (auto-scaled to the box when omitted). */
+  cornerRadius?: number
+  /** Label font size in px (auto-scaled to the image when omitted). */
+  fontPx?: number
+}
+
 // ============================================================================
 // Connection Definitions
 // ============================================================================
@@ -342,8 +353,58 @@ export function drawContour(
   ctx.restore()
 }
 
+/** Trace a rounded-rect subpath (radius is clamped to the box). */
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  const rr = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2))
+  ctx.beginPath()
+  ctx.roundRect(x, y, w, h, rr)
+}
+
+/** Draw the four L-shaped corner brackets of a box (less occlusion in busy scenes). */
+function drawCornerBrackets(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  len: number
+): void {
+  const x2 = x + w
+  const y2 = y + h
+  const L = Math.min(len, w / 2, h / 2)
+  ctx.beginPath()
+  ctx.moveTo(x, y + L); ctx.lineTo(x, y); ctx.lineTo(x + L, y) // top-left
+  ctx.moveTo(x2 - L, y); ctx.lineTo(x2, y); ctx.lineTo(x2, y + L) // top-right
+  ctx.moveTo(x, y2 - L); ctx.lineTo(x, y2); ctx.lineTo(x + L, y2) // bottom-left
+  ctx.moveTo(x2 - L, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - L) // bottom-right
+  ctx.stroke()
+}
+
 /**
- * Draw bounding box with label and confidence
+ * Pick black or white label text for legibility on a given box color, using the
+ * standard YIQ luminance (threshold biased slightly toward white text on
+ * saturated colors). See Ultralytics get_txt_color / WCAG luminance.
+ */
+export function textColorForHex(hex: string): string {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return '#000'
+  const lum = (rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114) / 255
+  return lum > 0.6 ? '#000000' : '#ffffff'
+}
+
+/**
+ * Draw a detection bounding box with an optional class+confidence label.
+ *
+ * Line width and font auto-scale to the image resolution (Ultralytics formulas),
+ * the label tag flips below the top edge and clamps to the left/right edges so it
+ * never clips, and its text color is chosen for contrast against the box color.
  */
 export function drawBoundingBox(
   ctx: CanvasRenderingContext2D,
@@ -352,51 +413,65 @@ export function drawBoundingBox(
   height: number,
   label?: string,
   confidence?: number,
-  options: DrawOptions = {}
+  options: BoxDrawOptions = {}
 ): void {
-  const {
-    color = '#00ff00',
-    lineWidth = 2,
-    alpha = 1,
-  } = options
+  const { color = '#00ff00', alpha = 1, style = 'box' } = options
+  // Scale stroke to resolution: ≈3px @720p, ≈6px @4K, min 2px.
+  const lw = options.lineWidth ?? Math.max(2, Math.round(((width + height) / 2) * 0.003))
 
   const x = box.originX * width
   const y = box.originY * height
   const w = box.width * width
   const h = box.height * height
+  const radius = options.cornerRadius ?? Math.max(2, Math.min(10, Math.min(w, h) * 0.12))
 
   ctx.save()
   ctx.globalAlpha = alpha
   ctx.strokeStyle = color
-  ctx.lineWidth = lineWidth
+  ctx.lineWidth = lw
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
   ctx.setLineDash([])
 
-  // Draw box
-  ctx.strokeRect(x, y, w, h)
+  if (style === 'corners') {
+    drawCornerBrackets(ctx, x, y, w, h, Math.max(12, Math.min(w, h) * 0.22))
+  } else {
+    if (style === 'filled') {
+      ctx.globalAlpha = alpha * (options.fillAlpha ?? 0.18)
+      ctx.fillStyle = color
+      roundRectPath(ctx, x, y, w, h, radius)
+      ctx.fill()
+      ctx.globalAlpha = alpha
+    }
+    roundRectPath(ctx, x, y, w, h, radius)
+    ctx.stroke()
+  }
 
-  // Draw label background and text
   if (label) {
-    const text = confidence !== undefined
-      ? `${label} ${(confidence * 100).toFixed(0)}%`
-      : label
+    const text = confidence !== undefined ? `${label} ${Math.round(confidence * 100)}%` : label
+    const fontPx = options.fontPx ?? Math.max(12, Math.round(0.0175 * (width + height)))
+    ctx.font = `600 ${fontPx}px ui-sans-serif, system-ui, -apple-system, sans-serif`
+    ctx.textBaseline = 'top'
 
-    ctx.font = 'bold 12px monospace'
-    const metrics = ctx.measureText(text)
-    const textHeight = 14
-    const padding = 4
+    const pad = Math.max(3, Math.round(lw * 1.4))
+    const tagW = ctx.measureText(text).width + pad * 2
+    const tagH = fontPx + pad * 2
 
-    // Label background
+    // Default above the box; flip to inside-top when it would clip; clamp to edges.
+    let lx = x - lw / 2
+    let ly = y - tagH - lw / 2
+    if (ly < 0) ly = y + lw / 2
+    if (lx + tagW > width) lx = width - tagW
+    if (lx < 0) lx = 0
+
+    ctx.globalAlpha = alpha * 0.92
     ctx.fillStyle = color
-    ctx.fillRect(
-      x,
-      y - textHeight - padding,
-      metrics.width + padding * 2,
-      textHeight + padding
-    )
+    roundRectPath(ctx, lx, ly, tagW, tagH, Math.min(4, radius))
+    ctx.fill()
 
-    // Label text
-    ctx.fillStyle = '#000'
-    ctx.fillText(text, x + padding, y - padding)
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = textColorForHex(color)
+    ctx.fillText(text, lx + pad, ly + pad)
   }
 
   ctx.restore()

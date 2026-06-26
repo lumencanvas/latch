@@ -38,8 +38,33 @@ export const objectDetectionLiveNode: NodeDefinition = {
     { id: 'interval', type: 'number', label: 'Frame Interval', default: 20, props: { min: 1, max: 120 } },
     { id: 'showBoxes', type: 'toggle', label: 'Show Boxes', default: true },
     { id: 'showLabels', type: 'toggle', label: 'Show Labels', default: true },
+    {
+      id: 'boxStyle',
+      type: 'select',
+      label: 'Box Style',
+      default: 'box',
+      props: {
+        options: [
+          { value: 'box', label: 'Outline' },
+          { value: 'corners', label: 'Corner Brackets' },
+          { value: 'filled', label: 'Filled' },
+        ],
+      },
+    },
+    {
+      id: 'colorMode',
+      type: 'select',
+      label: 'Box Colors',
+      default: 'class',
+      props: {
+        options: [
+          { value: 'class', label: 'Per-class' },
+          { value: 'uniform', label: 'Uniform (Box Color)' },
+        ],
+      },
+    },
     { id: 'boxColor', type: 'color', label: 'Box Color', default: '#00ff00' },
-    { id: 'lineWidth', type: 'slider', label: 'Line Width', default: 2, props: { min: 1, max: 8, step: 1 } },
+    { id: 'lineWidth', type: 'slider', label: 'Line Width (0 = auto)', default: 0, props: { min: 0, max: 8, step: 1 } },
   ],
   tags: ['object detection', 'live', 'detect', 'yolo', 'yolos', 'detr', 'bounding box', 'vision', 'ai', 'annotate'],
   info: {

@@ -1,24 +1,35 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
-import { Handle, Position } from '@vue-flow/core'
+import { Handle, Position, useVueFlow } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
-import { Maximize2, Minimize2 } from 'lucide-vue-next'
+import { RotateCcw } from 'lucide-vue-next'
 import * as THREE from 'three'
 import { categoryMeta, dataTypeMeta, type NodeDefinition, useNodesStore } from '@/stores/nodes'
 import { useRuntimeStore } from '@/stores/runtime'
+import { useFlowsStore } from '@/stores/flows'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 
 const props = defineProps<NodeProps>()
 const runtimeStore = useRuntimeStore()
 const nodesStore = useNodesStore()
+const flowsStore = useFlowsStore()
+const { getViewport } = useVueFlow()
 
-// Preview canvas
 const previewCanvas = ref<HTMLCanvasElement | null>(null)
-const isExpanded = ref(false)
 const inputResolution = ref({ w: 0, h: 0 })
 
-// Get definition from nodesStore
+// Arbitrary display size (CSS px), persisted on the node so it survives reloads.
+const DEFAULT_SIZE = { w: 320, h: 180 }
+const MIN = { w: 160, h: 90 }
+const MAX = { w: 1280, h: 720 }
+const size = ref({
+  w: (props.data?.outputSize as { w: number; h: number } | undefined)?.w ?? DEFAULT_SIZE.w,
+  h: (props.data?.outputSize as { w: number; h: number } | undefined)?.h ?? DEFAULT_SIZE.h,
+})
+// Cap the device-pixel-ratio so a 4K screen doesn't allocate a huge buffer.
+const dpr = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2)
+
 const definition = computed<NodeDefinition | null>(() => {
   const nodeType = (props.data?.nodeType as string) ?? 'main-output'
   return nodesStore.getDefinition(nodeType) ?? props.data?.definition ?? null
@@ -29,73 +40,67 @@ const categoryColor = computed(() => {
   return categoryMeta[definition.value.category]?.color ?? 'var(--color-neutral-400)'
 })
 
-// Preview dimensions
-const previewWidth = computed(() => isExpanded.value ? 320 : 200)
-const previewHeight = computed(() => isExpanded.value ? 200 : 125)
+/** Size the backing buffer to the display size × DPR for crisp output. */
+function syncCanvasResolution() {
+  const c = previewCanvas.value
+  if (!c) return
+  const bw = Math.round(size.value.w * dpr)
+  const bh = Math.round(size.value.h * dpr)
+  if (c.width !== bw || c.height !== bh) {
+    c.width = bw
+    c.height = bh
+  }
+}
 
-// Animation loop
-let animationFrame: number | null = null
-
-/**
- * Update preview - get texture directly from ExecutionEngine and render to canvas
- */
 function updatePreview() {
-  if (!previewCanvas.value) return
-
-  const ctx = previewCanvas.value.getContext('2d')
+  const c = previewCanvas.value
+  if (!c) return
+  syncCanvasResolution()
+  const ctx = c.getContext('2d')
   if (!ctx) return
 
-  // Get texture directly from execution engine (bypasses Vue reactivity issues)
   const engine = getExecutionEngine()
   const texture = engine.getNodeTexture(props.id) as THREE.Texture | null
 
   if (!texture || !(texture instanceof THREE.Texture)) {
-    // No input - draw placeholder
     ctx.fillStyle = '#1a1a1a'
-    ctx.fillRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
+    ctx.fillRect(0, 0, c.width, c.height)
     ctx.fillStyle = '#666'
-    ctx.font = '12px monospace'
+    ctx.font = `${14 * dpr}px monospace`
     ctx.textAlign = 'center'
-    ctx.fillText('No Input', previewCanvas.value.width / 2, previewCanvas.value.height / 2)
+    ctx.fillText('No Input', c.width / 2, c.height / 2)
     return
   }
 
-  // If the texture wraps a canvas or video, draw it directly (avoids Three.js WebGL round-trip)
+  // Canvas/video-backed textures draw directly (avoids a WebGL round-trip).
   const img = texture.image
   if (img instanceof HTMLCanvasElement || img instanceof HTMLVideoElement) {
     const srcW = img instanceof HTMLCanvasElement ? img.width : img.videoWidth
     const srcH = img instanceof HTMLCanvasElement ? img.height : img.videoHeight
-    if (srcW > 0 && srcH > 0) {
-      inputResolution.value = { w: srcW, h: srcH }
-    }
-    ctx.drawImage(img, 0, 0, previewCanvas.value.width, previewCanvas.value.height)
+    if (srcW > 0 && srcH > 0) inputResolution.value = { w: srcW, h: srcH }
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, c.width, c.height)
     return
   }
 
-  // Fall back to ThreeShaderRenderer's renderToCanvas for render target textures
   if (texture.image) {
-    // texture.image is typed `{}` in @types/three 0.184; it's an image/video/canvas source.
     const image = texture.image as { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
     const srcW = image.width ?? image.videoWidth ?? 0
     const srcH = image.height ?? image.videoHeight ?? 0
-    if (srcW > 0 && srcH > 0) {
-      inputResolution.value = { w: srcW, h: srcH }
-    }
+    if (srcW > 0 && srcH > 0) inputResolution.value = { w: srcW, h: srcH }
   }
-  const threeRenderer = getThreeShaderRenderer()
-  threeRenderer.renderToCanvas(texture, previewCanvas.value)
+  getThreeShaderRenderer().renderToCanvas(texture, c)
 }
 
+// Animation loop
+let animationFrame: number | null = null
 function startLoop() {
   const loop = () => {
-    if (runtimeStore.isRunning) {
-      updatePreview()
-    }
+    if (runtimeStore.isRunning) updatePreview()
     animationFrame = requestAnimationFrame(loop)
   }
   loop()
 }
-
 function stopLoop() {
   if (animationFrame !== null) {
     cancelAnimationFrame(animationFrame)
@@ -103,30 +108,66 @@ function stopLoop() {
   }
 }
 
-function toggleExpanded() {
-  isExpanded.value = !isExpanded.value
+// ---- Drag-to-resize ----
+const resizing = ref(false)
+let startX = 0, startY = 0, startW = 0, startH = 0
+
+function clamp(w: number, h: number) {
+  return {
+    w: Math.round(Math.max(MIN.w, Math.min(MAX.w, w))),
+    h: Math.round(Math.max(MIN.h, Math.min(MAX.h, h))),
+  }
 }
 
-// Handle resize when expanded state changes
-watch([previewWidth, previewHeight], () => {
-  if (previewCanvas.value) {
-    previewCanvas.value.width = previewWidth.value
-    previewCanvas.value.height = previewHeight.value
-    updatePreview()
+function onResizeMove(e: PointerEvent) {
+  if (!resizing.value) return
+  // Drag deltas are screen px; divide by the flow zoom so resizing feels 1:1.
+  const zoom = getViewport().zoom || 1
+  size.value = clamp(startW + (e.clientX - startX) / zoom, startH + (e.clientY - startY) / zoom)
+}
+function onResizeEnd() {
+  if (!resizing.value) return
+  resizing.value = false
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', onResizeEnd)
+  flowsStore.updateNodeData(props.id, { outputSize: { ...size.value } })
+}
+function onResizeStart(e: PointerEvent) {
+  resizing.value = true
+  startX = e.clientX
+  startY = e.clientY
+  startW = size.value.w
+  startH = size.value.h
+  window.addEventListener('pointermove', onResizeMove)
+  window.addEventListener('pointerup', onResizeEnd)
+  e.preventDefault()
+  e.stopPropagation()
+}
+
+function resetSize() {
+  // Reset to the input's aspect ratio at a comfortable width, else the default.
+  const { w: iw, h: ih } = inputResolution.value
+  if (iw > 0 && ih > 0) {
+    size.value = clamp(DEFAULT_SIZE.w, (DEFAULT_SIZE.w * ih) / iw)
+  } else {
+    size.value = { ...DEFAULT_SIZE }
   }
-})
+  flowsStore.updateNodeData(props.id, { outputSize: { ...size.value } })
+}
+
+watch(size, () => { if (previewCanvas.value) { syncCanvasResolution(); updatePreview() } }, { deep: true })
 
 onMounted(() => {
   if (previewCanvas.value) {
-    previewCanvas.value.width = previewWidth.value
-    previewCanvas.value.height = previewHeight.value
+    syncCanvasResolution()
     updatePreview()
     startLoop()
   }
 })
-
 onUnmounted(() => {
   stopLoop()
+  window.removeEventListener('pointermove', onResizeMove)
+  window.removeEventListener('pointerup', onResizeEnd)
 })
 
 function getTypeColor(type: string): string {
@@ -137,10 +178,7 @@ function getTypeColor(type: string): string {
 <template>
   <div
     class="main-output-node"
-    :class="{
-      selected: props.selected,
-      expanded: isExpanded,
-    }"
+    :class="{ selected: props.selected, resizing }"
   >
     <!-- Header -->
     <div
@@ -149,25 +187,23 @@ function getTypeColor(type: string): string {
     >
       <span class="node-title">OUTPUT</span>
       <button
-        class="expand-btn"
-        @click.stop="toggleExpanded"
+        class="reset-btn nodrag"
+        title="Reset size to input aspect ratio"
+        @click.stop="resetSize"
       >
-        <Minimize2
-          v-if="isExpanded"
-          :size="14"
-        />
-        <Maximize2
-          v-else
-          :size="14"
-        />
+        <RotateCcw :size="13" />
       </button>
     </div>
 
     <!-- Preview Area -->
-    <div class="preview-area">
+    <div
+      class="preview-area"
+      :style="{ width: `${size.w}px` }"
+    >
       <canvas
         ref="previewCanvas"
         class="preview-canvas"
+        :style="{ width: `${size.w}px`, height: `${size.h}px` }"
       />
 
       <!-- Input Port -->
@@ -181,15 +217,34 @@ function getTypeColor(type: string): string {
         />
         <span class="port-label">Texture</span>
       </div>
+
+      <!-- Drag-to-resize handle -->
+      <div
+        class="resize-handle nodrag nopan"
+        title="Drag to resize"
+        @pointerdown="onResizeStart"
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+        >
+          <path
+            d="M11 1 L1 11 M11 5 L5 11 M11 9 L9 11"
+            stroke="currentColor"
+            stroke-width="1.2"
+            fill="none"
+          />
+        </svg>
+      </div>
     </div>
 
     <!-- Footer with status -->
     <div class="node-footer">
-      <span class="status-text">
-        {{ runtimeStore.isRunning ? 'Live' : 'Stopped' }}
-      </span>
+      <span class="status-text">{{ runtimeStore.isRunning ? 'Live' : 'Stopped' }}</span>
       <span class="resolution-text">
-        {{ inputResolution.w > 0 ? `${inputResolution.w} x ${inputResolution.h}` : '—' }}
+        {{ inputResolution.w > 0 ? `${inputResolution.w}×${inputResolution.h}` : '—' }}
+        · {{ size.w }}×{{ size.h }}
       </span>
     </div>
   </div>
@@ -197,13 +252,14 @@ function getTypeColor(type: string): string {
 
 <style scoped>
 .main-output-node {
-  min-width: 220px;
+  min-width: 200px;
   background: var(--color-neutral-900);
   border: 2px solid var(--color-primary-400);
   border-radius: var(--radius-default);
   box-shadow: 4px 4px 0 0 var(--color-primary-300);
   font-family: var(--font-mono);
-  transition: all var(--transition-fast);
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+  display: inline-block;
 }
 
 .main-output-node.selected {
@@ -211,8 +267,8 @@ function getTypeColor(type: string): string {
   box-shadow: 6px 6px 0 0 var(--color-primary-200);
 }
 
-.main-output-node.expanded {
-  min-width: 340px;
+.main-output-node.resizing {
+  user-select: none;
 }
 
 .node-header {
@@ -234,23 +290,22 @@ function getTypeColor(type: string): string {
   color: white;
 }
 
-.expand-btn {
+.reset-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 20px;
   height: 20px;
   padding: 0;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border: none;
   border-radius: 2px;
   color: white;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
-
-.expand-btn:hover {
-  background: rgba(255,255,255,0.2);
+.reset-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .preview-area {
@@ -260,10 +315,9 @@ function getTypeColor(type: string): string {
 
 .preview-canvas {
   display: block;
-  width: 100%;
-  height: auto;
   background: #000;
   border: 1px solid var(--color-neutral-700);
+  image-rendering: auto;
 }
 
 .input-port {
@@ -282,10 +336,31 @@ function getTypeColor(type: string): string {
   margin-left: var(--space-3);
 }
 
+.resize-handle {
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  color: var(--color-neutral-400);
+  cursor: nwse-resize;
+  border-radius: 2px;
+  opacity: 0.65;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+.resize-handle:hover {
+  opacity: 1;
+  color: var(--color-primary-300);
+}
+
 .node-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   background: var(--color-neutral-800);
   border-top: 1px solid var(--color-neutral-700);
@@ -302,6 +377,7 @@ function getTypeColor(type: string): string {
 .resolution-text {
   font-size: 10px;
   color: var(--color-neutral-500);
+  white-space: nowrap;
 }
 
 /* Handle styles */

@@ -6,6 +6,37 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-25 — v1.2.6: detection annotation UI + resizable, hi-dpi Main Output
+
+User asked to make the detection overlay annotations "so much better", raise the view
+resolution, make Main Output arbitrarily resizable, and give each detected class a distinct
+color. Web-researched Ultralytics + Roboflow `supervision` annotator source for the specifics.
+Branch `detection-ui-polish`, 2 commits, gates green, shipped as v1.2.6.
+
+- **Annotation rendering** (`registry/ai/utils/mediapipe-drawing.ts` `drawBoundingBox`): line
+  width `max(round((W+H)/2*0.003),2)` and font `max(round(0.0175*(W+H)),12)` scale to image
+  resolution; rounded corners; optional `corners` (L-brackets) and `filled` styles; the label
+  tag flips to inside-top when it would clip the top edge and clamps to the left/right edges;
+  label text color chosen by YIQ luminance (`lum>0.6 ? black : white`) so it's readable on any
+  box color.
+- **Per-class colors** (`ai.ts`): boxes use the Ultralytics 20-color palette, indexed by COCO
+  class (stable per class, hash fallback) — `person` always the same color, every class distinct.
+  New **Box Style** (outline/corners/filled) and **Box Colors** (per-class / uniform) controls on
+  both detection nodes; **Line Width 0 = auto**. HUD is a rounded pill with a status dot.
+- **Main Output** (`MainOutputNode.vue`): drag-to-resize corner handle (zoom-aware, persisted via
+  `flowsStore.updateNodeData`, min 160×90 / max 1280×720), reset-to-input-aspect button, replacing
+  the old binary expand toggle. Preview canvas + inline `TexturePreview` thumbnails now size the
+  backing buffer to display×devicePixelRatio (capped 2) → crisp instead of a tiny upscaled buffer.
+
+**Verified (Playwright + real WebGL):** rendered a multi-class annotation scene to PNG and
+eyeballed it — distinct per-class colors, readable labels on every color, the top-edge label
+flipping inside, corners/filled styles. Drove the Main Output resize handle: node grew 320×180 →
+640×400 (zoom-aware delta correct). App boots 0 console errors; gates green (typecheck, lint,
+test:unit 1493, build). **Lesson applied:** verify a texture *effect/overlay* by reading back
+rendered pixels / screenshotting, not just "returns a texture" (see [[latch-video-texture-black]]).
+
+---
+
 ## 2026-06-25 — v1.2.5: fix shader effects rendering BLACK for webcam/video sources
 
 **User-reported:** the new image-fx nodes "don't paint" — they (and the older blur /
