@@ -61,20 +61,21 @@ const videoPlayerState = new Map<
 const lastPreset = new Map<string, string>()
 // Cache detected uniforms per-node to persist across frames
 const cachedUniforms = new Map<string, UniformDefinition[]>()
-// Per-node video→canvas conversion for image-fx nodes. A video-backed THREE.Texture
+// Per-node video→canvas conversion for shader-effect nodes (image-fx + blur /
+// color-correction / displacement / transform-2d). A video-backed THREE.Texture
 // can't be uploaded through the offscreen ThreeShaderRenderer (it samples BLACK — the
 // v1.2.1 video-texture issue), so the live frame is drawn to a 2D canvas and a
 // canvas-backed texture is sampled instead. Holds a reused canvas + texture per node.
-const imageFxState = new Map<string, { canvas: HTMLCanvasElement; texture: THREE.Texture | null }>()
+const effectVideoState = new Map<string, { canvas: HTMLCanvasElement; texture: THREE.Texture | null }>()
 
 /** Dispose an image-fx node's video-conversion canvas/texture. */
-function disposeImageFxState(nodeId: string): void {
-  const st = imageFxState.get(nodeId)
+function disposeEffectVideoState(nodeId: string): void {
+  const st = effectVideoState.get(nodeId)
   if (st) {
     if (st.texture) st.texture.dispose()
     st.canvas.width = 0
     st.canvas.height = 0
-    imageFxState.delete(nodeId)
+    effectVideoState.delete(nodeId)
   }
 }
 
@@ -148,7 +149,7 @@ export function disposeVisualNode(nodeId: string): void {
   disposeSnapshotNode(nodeId)
 
   // Clean up image-fx video-conversion state
-  disposeImageFxState(nodeId)
+  disposeEffectVideoState(nodeId)
 
   // Clean up framebuffers (legacy renderer) - only if it was initialized
   if (hasShaderRenderer()) {
@@ -217,8 +218,8 @@ export function disposeAllVisualNodes(): void {
   }
 
   // Clean up all image-fx video-conversion states
-  for (const nodeId of imageFxState.keys()) {
-    disposeImageFxState(nodeId)
+  for (const nodeId of effectVideoState.keys()) {
+    disposeEffectVideoState(nodeId)
   }
   if (snapshotScratchCanvas) {
     snapshotScratchCanvas.width = 0
@@ -289,9 +290,9 @@ export function gcVisualState(validNodeIds: Set<string>): void {
   }
 
   // Clean image-fx video-conversion state
-  for (const nodeId of imageFxState.keys()) {
+  for (const nodeId of effectVideoState.keys()) {
     if (!validNodeIds.has(nodeId)) {
-      disposeImageFxState(nodeId)
+      disposeEffectVideoState(nodeId)
     }
   }
 
@@ -687,7 +688,7 @@ function hexToVec3(hex: string): number[] {
  * renderer, so its live frame is drawn to a per-node 2D canvas and a canvas-backed
  * texture is returned instead. Everything else passes through coerceInputToTexture.
  */
-function resolveImageFxSource(
+function resolveEffectSource(
   nodeId: string,
   renderer: ReturnType<typeof getThreeShaderRenderer>,
   input: unknown
@@ -703,10 +704,10 @@ function resolveImageFxSource(
     const w = video.videoWidth || 0
     const h = video.videoHeight || 0
     if (!w || !h || video.readyState < 2) return null // not painting yet
-    let st = imageFxState.get(nodeId)
+    let st = effectVideoState.get(nodeId)
     if (!st) {
       st = { canvas: document.createElement('canvas'), texture: null }
-      imageFxState.set(nodeId, st)
+      effectVideoState.set(nodeId, st)
     }
     st.canvas.width = w
     st.canvas.height = h
@@ -732,7 +733,7 @@ function runImageFx(ctx: ExecutionContext, presetId: string): Map<string, unknow
     return outputs
   }
 
-  const coerced = resolveImageFxSource(ctx.nodeId, renderer, ctx.inputs.get('source'))
+  const coerced = resolveEffectSource(ctx.nodeId, renderer, ctx.inputs.get('source'))
   if (!coerced) {
     outputs.set('texture', null)
     if (ctx.inputs.get('source')) {
@@ -1092,7 +1093,7 @@ void main() {
 `
 
 export const blurExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
   const radius = (ctx.inputs.get('radius') as number) ?? (ctx.controls.get('radius') as number) ?? 1
 
   const outputs = new Map<string, unknown>()
@@ -1198,7 +1199,7 @@ void main() {
 `
 
 export const colorCorrectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
   const brightness = (ctx.inputs.get('brightness') as number) ?? (ctx.controls.get('brightness') as number) ?? 0
   const contrast = (ctx.inputs.get('contrast') as number) ?? (ctx.controls.get('contrast') as number) ?? 1
   const saturation = (ctx.inputs.get('saturation') as number) ?? (ctx.controls.get('saturation') as number) ?? 1
@@ -1277,7 +1278,7 @@ void main() {
 `
 
 export const displacementExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
   const displacementMap = ctx.inputs.get('displacement') as THREE.Texture | null
   const strength = (ctx.inputs.get('strength') as number) ?? (ctx.controls.get('strength') as number) ?? 0.1
 
@@ -1365,7 +1366,7 @@ void main() {
 `
 
 export const transform2DExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
   const translateX = (ctx.inputs.get('translateX') as number) ?? (ctx.controls.get('translateX') as number) ?? 0
   const translateY = (ctx.inputs.get('translateY') as number) ?? (ctx.controls.get('translateY') as number) ?? 0
   const rotate = (ctx.inputs.get('rotate') as number) ?? (ctx.controls.get('rotate') as number) ?? 0
