@@ -18,22 +18,68 @@ stop→start on the same graph, detection/STT/depth nodes stayed flagged dispose
 results were silently dropped until a page refresh. Fix: `resetAINodeDisposal()` (clears the set),
 called from `ExecutionEngine.start()`. Confirmed by the code path.
 
-### OpenCV nodes "crash"/freeze the page — fix shipped, NOT yet user-confirmed ⚠️
-User report: any OpenCV node makes the page **freeze/unresponsive immediately** (not OOM).
-**Could NOT reproduce** — opencv.js never loads in the headless Playwright sandbox (`cvReady`
-false for 60s; the ~11 MB script won't download/init there), which itself mirrors the freeze.
-Ruled out by code audit: no per-frame Mat leak (all freed in `finally`), error array is capped,
-renderToCanvas/createTexture/updateTexture don't leak GPU resources.
-**Root-cause diagnosis:** the loader used the floating `docs.opencv.org/4.x` alias, which
-301-redirects to the newest build — silently jumped to **4.13.0 (~11 MB)**. Loading/initializing
-that on the main thread hangs it → freeze on any cv node. (4.9.0 and 4.13.0 are structurally
-identical otherwise — both single-threaded, no SharedArrayBuffer/Atomics — so it's a build
-regression, not a threading change.) **Fix:** pin to `docs.opencv.org/4.9.0` (newest retained
-build below 4.13.0; 4.10–4.12 now 404) so the runtime can't change underneath us. Also capped CV
-processing to ≤1280px (downscale source before cv work) to bound WASM memory + cost at high res.
-**If this does NOT resolve the freeze**, the definitive fix is moving OpenCV off the main thread
-into a Web Worker (executors become async/deferred, like the AI detection path) — a bigger change,
-not done here.
+### OpenCV nodes freeze the page — STILL OPEN; root cause confirmed, real fix = Web Worker
+User report: any OpenCV node makes the page **freeze/unresponsive immediately** (not OOM, not a
+specific node). v1.2.7 pinned the loader off the floating `docs.opencv.org/4.x` alias (it had
+silently jumped to a ~11 MB **4.13.0** build) to **4.9.0**, and added a ≤1280px CV resolution cap.
+**The user confirmed v1.2.7 did NOT fix the freeze** → it is **not version-specific**: the freeze
+is inherent to loading/initializing a **~10 MB opencv.js on the MAIN thread** (parsing 10 MB of JS
++ instantiating the WASM blocks the UI thread; any cv node triggers it). Confirmed: opencv.js never
+finishes initializing in a headless sandbox either. Ruled out by audit: per-frame Mat leak (freed
+in `finally`), capped error array, GPU-texture leaks. WebGPU is N/A (opencv.js is CPU/WASM).
+
+**REAL FIX (open task): move OpenCV into a Web Worker.** Load opencv.js + run all cv ops in a
+worker (off main thread), mirroring the existing AI worker (`ai.worker.ts` + `AIInference.ts` +
+the `runLiveDetection` deferred fire-and-cache executor pattern). Texture I/O stays on main.
+Full plan: **`docs/plans/OPENCV_WORKER_MIGRATION_2026-06-26.md`**. Kept in place going in: the
+4.9.0 pin + the `CV_MAX_DIM=1280` cap in `sourceToImageData` (both still useful).
+
+#### IMPLEMENTED (worker migration) — needs a real-browser confirm ✓ pending
+- **`services/visual/opencv.worker.ts`** (new): CLASSIC worker (spawned without `{type:'module'}`
+  so `importScripts('https://docs.opencv.org/4.9.0/opencv.js')` works). Lazy-loads opencv.js on the
+  worker thread (no main-thread freeze), runs all 9 ops, copies each result Mat out as RGBA bytes
+  (`matToRGBA`, no OffscreenCanvas/imshow needed), and transfers the buffer back. Every transient
+  Mat freed in `finally`; per-node persistent Mats — optical-flow `prevGray`, MOG2 subtractor —
+  live worker-side keyed by nodeId, freed on `dispose`/`disposeAll`.
+- **`services/visual/OpenCVService.ts`** (reworked): worker facade — promise-per-request keyed by
+  id, `isReady()/isLoading()/load()` (resolves on the worker's `ready` msg), `process(nodeId, op,
+  params, imageData)` (copies pixels into a fresh transferable so upstream ImageData isn't
+  detached, transfers both ways), `dispose(nodeId)`/`disposeAll()`. Old `getCV()` removed.
+- **`engine/executors/opencv.ts`** (rewritten): shared `runCvNode()` deferred runner — throttle by
+  `interval`, one in-flight op per node, serve last texture + cached scalar outputs every frame,
+  update when the async result lands (guarded by `isOpenCVNodeDisposed`). `sourceToImageData` + the
+  `CV_MAX_DIM=1280` cap + texture create/update stay on main. `disposeOpenCVNode`/`gcOpenCVState`/
+  `disposeAllOpenCVNodes` now also free the worker's per-node Mats; `resetOpenCVNodeDisposal()` is
+  wired into `ExecutionEngine.start()` (stop→restart safety, same as the AI fix above).
+- Gates green: typecheck / lint / `test:unit` (1494 pass; `opencv.test.ts` rewritten to the worker
+  facade) / build (emits a separate classic `opencv.worker-*.js` chunk). **Still TODO: confirm in a
+  real browser** (`npm run dev`, webcam → cv-canny → main-output) that the page no longer freezes
+  and the cv output renders/updates — opencv.js doesn't load in headless sandboxes. Also re-check
+  cv-optical-flow + cv-background-subtraction (stateful) and stop→restart.
+
+#### FOLLOW-UP — architecture audit + shared worker facade (same session)
+A 3-agent deep audit (node authoring / worker threading / monolith+docs) found the backbone sound
+(flat executor map, real async model, ~100% dispose/gc discipline) with two real gaps: (1) built-in
+nodes are split across `registry/<cat>` + `executors/<cat>` and NOT authored as isolated units like
+`CustomNodeLoader`'s `definition.json`+`executor.js` packages; (2) the worker facades were ~70%
+duplicated boilerplate (the OpenCV migration above had cloned `AIInference`).
+- **`services/worker/WorkerFacade.ts`** (new): shared main↔worker RPC base — promise-per-request by
+  numeric id, pending map, optional per-request timeout, progress forwarding, transferables, and
+  reject-all on crash/terminate. Subclass provides only `createWorker()` + `handleMessage()`.
+- **`OpenCVService` + `AIInference`** now `extend WorkerFacade`. AIInference kept its public API and
+  all ~15 `sendToWorker(...)` call sites (now a thin wrapper over `request()`); removed its private
+  pending-map/id/timeout/onerror plumbing. OpenCVService gained a 30 s per-op timeout (a hung op now
+  self-recovers next frame instead of sticking "pending"; `load` stays untimed — it downloads 10 MB).
+- **ESLint guard** (`.eslintrc.cjs` override): `opencv.worker.ts` may not use ES `import`/`export`
+  (would flip Vite to a module worker and silently break `importScripts`). Verified active on that
+  file only.
+- NOT done (deferred, low-value/high-churn): converging built-ins onto the custom-node package
+  layout; splitting `executors/index.ts`'s inline executors; a `docs/executor-authoring.md` guide;
+  refreshing the stale `docs/architecture/ARCHITECTURE.md`. Worker `terminate()` deliberately NOT
+  added to `disposeAll()` — that runs on every engine stop, and tearing down the worker there would
+  force a 10 MB opencv re-init each restart (the AI worker is a warm page-lifetime singleton too).
+- Gates green after refactor: typecheck / lint / `test:unit` (1494) / build (worker types unchanged:
+  opencv classic + `importScripts`, ai module).
 
 ---
 
