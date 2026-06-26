@@ -6,6 +6,37 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-25 — v1.2.5: fix shader effects rendering BLACK for webcam/video sources
+
+**User-reported:** the new image-fx nodes "don't paint" — they (and the older blur /
+color-correction / displacement / transform-2d effects) rendered **black** when fed a
+**webcam/video** source. Branch `imagefx-video-fix`, 2 commits, gates green, shipped as v1.2.5.
+
+**Root cause:** these GPU effects sample their input as a texture (`iChannel0` / `u_texture`).
+The Webcam node's `texture` output is a **video-backed THREE.Texture** (`createTexture(video)`),
+and Three can't upload a video-backed texture through the offscreen `ThreeShaderRenderer` — it
+samples BLACK. This is the **same** video-texture issue as v1.2.1, which only fixed the
+`renderToCanvas` *read* path, not the *sampler* path. (My initial browser "verification" missed
+it: I compiled+rendered the shaders WITHOUT binding iChannel0, so a blank result still looked
+"OK". Driving the real executor with a captureStream-backed `<video>` reproduced the black.)
+
+**Fix:** `resolveEffectSource(nodeId, renderer, input)` detects a video source (raw `<video>` or
+a video-backed THREE.Texture), draws its live frame to a per-node 2D canvas, and samples a
+**canvas-backed** texture instead — the same video→canvas trick the detection/OpenCV nodes use.
+Canvas / render-target / image sources are unchanged. The per-node conversion canvas+texture is
+freed in disposeVisualNode / gcVisualState / disposeAllVisualNodes. Applied to the 8 image-fx
+nodes AND blur / color-correction / displacement / transform-2d.
+
+**Verified (Playwright + real WebGL):** a captureStream `<video>` → each of glitch / blur /
+color-correction / displacement / transform-2d now paints the source (was 0,0,0); canvas /
+render-target / chained sources still paint (no regression). Gates green (typecheck, test:unit
+1493, lint, build).
+
+**Lesson for next time:** to verify a texture *effect* actually paints, bind a real source and
+read back the OUTPUT pixels — "compiles + returns a non-null texture" is NOT proof it paints.
+
+---
+
 ## 2026-06-25 — v1.2.4: 18 new nodes from the NODE_LIBRARY_REVIEW backlog
 
 Built out the highest-value web-testable nodes from `docs/NODE_LIBRARY_REVIEW_2026-06-18.md`
