@@ -27,6 +27,7 @@ vi.mock('@/services/visual/OpenCVService', () => ({
   openCVService: {
     isReady: () => facade.ready,
     isLoading: () => false,
+    getLoadError: () => null,
     load: () => Promise.resolve(),
     process: processMock,
     dispose: disposeMock,

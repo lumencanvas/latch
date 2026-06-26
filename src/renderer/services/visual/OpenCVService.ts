@@ -53,6 +53,7 @@ class OpenCVService extends WorkerFacade {
   private ready = false
   private loadingFlag = false
   private loadPromise: Promise<void> | null = null
+  private loadError: string | null = null
 
   protected get label(): string {
     return 'OpenCV'
@@ -61,6 +62,7 @@ class OpenCVService extends WorkerFacade {
   // CLASSIC worker (no `{ type: 'module' }`) so the worker can `importScripts()`
   // the opencv.js build.
   protected createWorker(): Worker {
+    console.info('[OpenCV] spawning worker')
     return new Worker(new URL('./opencv.worker.ts', import.meta.url))
   }
 
@@ -70,9 +72,11 @@ class OpenCVService extends WorkerFacade {
       this.loadingFlag = false
       if (msg.ok) {
         this.ready = true
+        console.info('[OpenCV] worker reported ready')
         this.settle(msg.id, undefined)
       } else {
-        this.loadPromise = null
+        // Keep loadPromise (rejected) so the executor doesn't re-post 'load' every
+        // frame and re-download ~10 MB; the rejection records loadError below.
         this.fail(msg.id, new Error(msg.error || 'Failed to load OpenCV.js in worker'))
       }
       return
@@ -95,7 +99,8 @@ class OpenCVService extends WorkerFacade {
     super.onWorkerError(error) // log + reject all in-flight
     this.ready = false
     this.loadingFlag = false
-    this.loadPromise = null
+    this.loadPromise = null // a crashed worker can be re-spawned on the next load()
+    this.loadError = 'OpenCV worker crashed'
   }
 
   /** True once opencv.js is initialized in the worker and ops can run. */
@@ -108,6 +113,11 @@ class OpenCVService extends WorkerFacade {
     return this.loadingFlag
   }
 
+  /** The load-failure message if opencv.js failed to initialize, else null. */
+  getLoadError(): string | null {
+    return this.loadError
+  }
+
   /**
    * Trigger the worker to download + initialize opencv.js. Idempotent:
    * concurrent/duplicate calls share one promise. Resolves once the runtime is
@@ -117,12 +127,13 @@ class OpenCVService extends WorkerFacade {
     if (this.ready) return Promise.resolve()
     if (this.loadPromise) return this.loadPromise
     this.loadingFlag = true
-    // If the worker fails to even spawn, `request` rejects with no `ready` message
-    // ever arriving to reset state — null out loadPromise on any rejection so a
-    // later load() can retry instead of returning the same rejected promise forever.
+    this.loadError = null
+    // Keep the (resolved or rejected) loadPromise so we never re-post 'load' and
+    // re-download ~10 MB every frame. A rejection records loadError so the executor
+    // can surface it on the node instead of spinning on "loading" forever.
     this.loadPromise = this.request<void>({ type: 'load' }).catch((err) => {
       this.loadingFlag = false
-      this.loadPromise = null
+      this.loadError = err instanceof Error ? err.message : String(err)
       throw err
     })
     return this.loadPromise

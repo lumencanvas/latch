@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-26 — v1.2.9: OpenCV worker init hardening + diagnostics
+
+Follow-up to v1.2.8 (OpenCV → Web Worker). Reported: CV nodes no longer freeze the page but
+never paint. Investigation: opencv.js 4.9.0 is the **Promise-returning MODULARIZE build**
+(verified by loading it in Node — `factory()` yields a thenable that resolves to a runtime with
+`cv.Mat`); the app is **COEP credentialless** (vite + netlify.toml + coi-serviceworker), under
+which the worker's cross-origin `importScripts` is allowed. So neither the build type nor COEP is
+an obvious blocker — the failure is browser-/worker-only and wasn't observable from here.
+
+Shipped to make the failure self-diagnosing rather than silent:
+- **Hardened worker init** (`opencv.worker.ts`): pre-sets `Module.onRuntimeInitialized` AND handles
+  the Promise return AND an already-ready check (idempotent `finalize`), plus a **60 s timeout** so
+  a stuck init rejects with a clear message instead of leaving the node on "loading" forever.
+- **Load failures surface ON the node** (`OpenCVService.getLoadError()` → executor sets `_error`
+  "OpenCV failed to load: …"), and the facade no longer re-posts `load` (no 10 MB re-download
+  storm) on failure.
+- **Lifecycle logging** (`DEBUG = true` in `opencv.worker.ts`): spawn → importScripts → cv typeof/
+  thenable → runtime ready → first process (with input pixel sample to detect a black source) →
+  first result. **TODO: flip `DEBUG` off once the in-browser paint path is confirmed.**
+- Open question the trace answers: does the runtime become ready in the worker (init hang?), does a
+  process run, and is the source frame non-black? Where the `[OpenCV ...]` logs stop = root cause.
+- Gates green (typecheck / lint / test:unit 1494 / build:web); worker still classic + importScripts.
+
+---
+
 ## 2026-06-26 — v1.2.7: detection stop/restart fix + OpenCV freeze fix
 
 Two user-reported bugs. Shipped as v1.2.7.
