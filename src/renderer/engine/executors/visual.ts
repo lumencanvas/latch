@@ -61,6 +61,22 @@ const videoPlayerState = new Map<
 const lastPreset = new Map<string, string>()
 // Cache detected uniforms per-node to persist across frames
 const cachedUniforms = new Map<string, UniformDefinition[]>()
+// Per-node video→canvas conversion for image-fx nodes. A video-backed THREE.Texture
+// can't be uploaded through the offscreen ThreeShaderRenderer (it samples BLACK — the
+// v1.2.1 video-texture issue), so the live frame is drawn to a 2D canvas and a
+// canvas-backed texture is sampled instead. Holds a reused canvas + texture per node.
+const imageFxState = new Map<string, { canvas: HTMLCanvasElement; texture: THREE.Texture | null }>()
+
+/** Dispose an image-fx node's video-conversion canvas/texture. */
+function disposeImageFxState(nodeId: string): void {
+  const st = imageFxState.get(nodeId)
+  if (st) {
+    if (st.texture) st.texture.dispose()
+    st.canvas.width = 0
+    st.canvas.height = 0
+    imageFxState.delete(nodeId)
+  }
+}
 
 /**
  * Dispose visual resources for a node
@@ -131,6 +147,9 @@ export function disposeVisualNode(nodeId: string): void {
   // Clean up snapshot held-frame state
   disposeSnapshotNode(nodeId)
 
+  // Clean up image-fx video-conversion state
+  disposeImageFxState(nodeId)
+
   // Clean up framebuffers (legacy renderer) - only if it was initialized
   if (hasShaderRenderer()) {
     const legacyRenderer = getShaderRenderer()
@@ -195,6 +214,11 @@ export function disposeAllVisualNodes(): void {
   // Clean up all snapshot held-frame states
   for (const nodeId of snapshotState.keys()) {
     disposeSnapshotNode(nodeId)
+  }
+
+  // Clean up all image-fx video-conversion states
+  for (const nodeId of imageFxState.keys()) {
+    disposeImageFxState(nodeId)
   }
   if (snapshotScratchCanvas) {
     snapshotScratchCanvas.width = 0
@@ -261,6 +285,13 @@ export function gcVisualState(validNodeIds: Set<string>): void {
   for (const nodeId of cachedUniforms.keys()) {
     if (!validNodeIds.has(nodeId)) {
       cachedUniforms.delete(nodeId)
+    }
+  }
+
+  // Clean image-fx video-conversion state
+  for (const nodeId of imageFxState.keys()) {
+    if (!validNodeIds.has(nodeId)) {
+      disposeImageFxState(nodeId)
     }
   }
 
@@ -649,6 +680,47 @@ function hexToVec3(hex: string): number[] {
   ]
 }
 
+/**
+ * Resolve an image-fx `source` input to a sampleable texture. A video-backed
+ * source (a raw <video> or a video-backed THREE.Texture, e.g. the Webcam node's
+ * texture output) renders BLACK if sampled directly through the offscreen
+ * renderer, so its live frame is drawn to a per-node 2D canvas and a canvas-backed
+ * texture is returned instead. Everything else passes through coerceInputToTexture.
+ */
+function resolveImageFxSource(
+  nodeId: string,
+  renderer: ReturnType<typeof getThreeShaderRenderer>,
+  input: unknown
+): { tex: THREE.Texture; w: number; h: number } | null {
+  const video =
+    input instanceof HTMLVideoElement
+      ? input
+      : input instanceof THREE.Texture && input.image instanceof HTMLVideoElement
+        ? input.image
+        : null
+
+  if (video) {
+    const w = video.videoWidth || 0
+    const h = video.videoHeight || 0
+    if (!w || !h || video.readyState < 2) return null // not painting yet
+    let st = imageFxState.get(nodeId)
+    if (!st) {
+      st = { canvas: document.createElement('canvas'), texture: null }
+      imageFxState.set(nodeId, st)
+    }
+    st.canvas.width = w
+    st.canvas.height = h
+    const c2d = st.canvas.getContext('2d')
+    if (!c2d) return null
+    c2d.drawImage(video, 0, 0, w, h)
+    if (st.texture) renderer.updateTexture(st.texture, st.canvas)
+    else st.texture = renderer.createTexture(st.canvas)
+    return st.texture ? { tex: st.texture, w, h } : null
+  }
+
+  return coerceInputToTexture(renderer, input)
+}
+
 /** Run a fixed effect preset on the node's `source` texture. */
 function runImageFx(ctx: ExecutionContext, presetId: string): Map<string, unknown> {
   const outputs = new Map<string, unknown>()
@@ -660,7 +732,7 @@ function runImageFx(ctx: ExecutionContext, presetId: string): Map<string, unknow
     return outputs
   }
 
-  const coerced = coerceInputToTexture(renderer, ctx.inputs.get('source'))
+  const coerced = resolveImageFxSource(ctx.nodeId, renderer, ctx.inputs.get('source'))
   if (!coerced) {
     outputs.set('texture', null)
     if (ctx.inputs.get('source')) {
