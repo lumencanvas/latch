@@ -6,6 +6,37 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-26 — v1.2.7: detection stop/restart fix + OpenCV freeze fix
+
+Two user-reported bugs. Shipped as v1.2.7.
+
+### Detection nodes dead after stop→restart — FIXED ✓ (high confidence)
+`disposeAllAINodes()` (on stop) flags every AI node disposed so in-flight detect/transcribe
+promises don't write into the just-cleared cache. But the only thing that CLEARS that flag —
+`gcAIState` — runs only when nodes are REMOVED from the graph, not on a plain restart. So after
+stop→start on the same graph, detection/STT/depth nodes stayed flagged disposed and their async
+results were silently dropped until a page refresh. Fix: `resetAINodeDisposal()` (clears the set),
+called from `ExecutionEngine.start()`. Confirmed by the code path.
+
+### OpenCV nodes "crash"/freeze the page — fix shipped, NOT yet user-confirmed ⚠️
+User report: any OpenCV node makes the page **freeze/unresponsive immediately** (not OOM).
+**Could NOT reproduce** — opencv.js never loads in the headless Playwright sandbox (`cvReady`
+false for 60s; the ~11 MB script won't download/init there), which itself mirrors the freeze.
+Ruled out by code audit: no per-frame Mat leak (all freed in `finally`), error array is capped,
+renderToCanvas/createTexture/updateTexture don't leak GPU resources.
+**Root-cause diagnosis:** the loader used the floating `docs.opencv.org/4.x` alias, which
+301-redirects to the newest build — silently jumped to **4.13.0 (~11 MB)**. Loading/initializing
+that on the main thread hangs it → freeze on any cv node. (4.9.0 and 4.13.0 are structurally
+identical otherwise — both single-threaded, no SharedArrayBuffer/Atomics — so it's a build
+regression, not a threading change.) **Fix:** pin to `docs.opencv.org/4.9.0` (newest retained
+build below 4.13.0; 4.10–4.12 now 404) so the runtime can't change underneath us. Also capped CV
+processing to ≤1280px (downscale source before cv work) to bound WASM memory + cost at high res.
+**If this does NOT resolve the freeze**, the definitive fix is moving OpenCV off the main thread
+into a Web Worker (executors become async/deferred, like the AI detection path) — a bigger change,
+not done here.
+
+---
+
 ## 2026-06-25 — v1.2.6: detection annotation UI + resizable, hi-dpi Main Output
 
 User asked to make the detection overlay annotations "so much better", raise the view

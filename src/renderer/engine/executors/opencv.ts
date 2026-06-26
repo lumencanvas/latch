@@ -83,6 +83,11 @@ export function disposeAllOpenCVNodes(): void {
     scratchCanvas.height = 0
     scratchCanvas = null
   }
+  if (imageDataCanvas) {
+    imageDataCanvas.width = 0
+    imageDataCanvas.height = 0
+    imageDataCanvas = null
+  }
 }
 
 /** Garbage-collect OpenCV state for nodes no longer in the graph. */
@@ -98,6 +103,21 @@ export function gcOpenCVState(validNodeIds: Set<string>): void {
 // Shared helpers
 // ============================================================================
 
+// Cap CV processing resolution. A high-res source (a 4K image, a 1080p webcam)
+// otherwise makes every op allocate full-res Mats — optical flow alone builds ~15
+// per frame — which can exhaust the opencv.js WASM heap and CRASH the tab, and is
+// needlessly slow. We downscale the source to this longest-side limit; the result
+// texture displays upscaled, which is fine for live visuals. ~1280 keeps the
+// heaviest op's working set well within the heap while preserving detail.
+const CV_MAX_DIM = 1280
+
+function fitDims(w: number, h: number): { w: number; h: number } {
+  const m = Math.max(w, h)
+  if (m <= CV_MAX_DIM || m <= 0) return { w: Math.max(1, w), h: Math.max(1, h) }
+  const s = CV_MAX_DIM / m
+  return { w: Math.max(1, Math.round(w * s)), h: Math.max(1, Math.round(h * s)) }
+}
+
 // Shared scratch canvas for texture/video readback. Reused across all cv nodes
 // (executors run sequentially in topo order, and each readback's ImageData is
 // copied out immediately) so we avoid allocating a canvas every frame.
@@ -110,37 +130,59 @@ function getScratch(width: number, height: number): { canvas: HTMLCanvasElement;
   return ctx ? { canvas: scratchCanvas, ctx } : null
 }
 
-/** Normalize a texture/video/canvas/ImageData source to ImageData. */
+// Second canvas, only used to shrink an oversized raw ImageData source (rare).
+let imageDataCanvas: HTMLCanvasElement | null = null
+function imageDataToCanvas(id: ImageData): HTMLCanvasElement | null {
+  if (!imageDataCanvas) imageDataCanvas = document.createElement('canvas')
+  imageDataCanvas.width = id.width
+  imageDataCanvas.height = id.height
+  const c = imageDataCanvas.getContext('2d')
+  if (!c) return null
+  c.putImageData(id, 0, 0)
+  return imageDataCanvas
+}
+
+/** Normalize a texture/video/canvas/ImageData source to ImageData, capped to CV_MAX_DIM. */
 function sourceToImageData(source: unknown): ImageData | null {
   if (!source) return null
 
-  if (source instanceof ImageData) return source
-
-  if (source instanceof HTMLCanvasElement) {
-    const ctx = source.getContext('2d')
-    return ctx ? ctx.getImageData(0, 0, source.width, source.height) : null
-  }
-
-  if (source instanceof HTMLVideoElement) {
-    const w = source.videoWidth || source.width || 640
-    const h = source.videoHeight || source.height || 480
-    const scratch = getScratch(w, h)
-    if (!scratch) return null
-    scratch.ctx.drawImage(source, 0, 0, w, h)
-    return scratch.ctx.getImageData(0, 0, w, h)
-  }
-
+  // THREE.Texture renders straight into a capped-size scratch (renderToCanvas
+  // scales to the canvas), so no full-res intermediate is ever allocated.
   if (source instanceof THREE.Texture) {
     const image = source.image as { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined
-    const w = image?.width || image?.videoWidth || 512
-    const h = image?.height || image?.videoHeight || 512
+    const { w, h } = fitDims(image?.width || image?.videoWidth || 512, image?.height || image?.videoHeight || 512)
     const scratch = getScratch(w, h)
     if (!scratch) return null
     getThreeShaderRenderer().renderToCanvas(source, scratch.canvas)
     return scratch.ctx.getImageData(0, 0, w, h)
   }
 
-  return null
+  // Resolve a drawable source + its native size.
+  let drawable: CanvasImageSource | null = null
+  let nativeW = 0
+  let nativeH = 0
+  if (source instanceof ImageData) {
+    const fit = fitDims(source.width, source.height)
+    if (fit.w === source.width && fit.h === source.height) return source // already within cap
+    drawable = imageDataToCanvas(source)
+    nativeW = source.width
+    nativeH = source.height
+  } else if (source instanceof HTMLCanvasElement) {
+    drawable = source
+    nativeW = source.width
+    nativeH = source.height
+  } else if (source instanceof HTMLVideoElement) {
+    drawable = source
+    nativeW = source.videoWidth || source.width || 640
+    nativeH = source.videoHeight || source.height || 480
+  }
+  if (!drawable) return null
+
+  const { w, h } = fitDims(nativeW, nativeH)
+  const scratch = getScratch(w, h)
+  if (!scratch) return null
+  scratch.ctx.drawImage(drawable, 0, 0, w, h) // scales down to the cap
+  return scratch.ctx.getImageData(0, 0, w, h)
 }
 
 /** Force a kernel/block size to an odd integer >= min. */
