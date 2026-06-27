@@ -33,10 +33,13 @@ type CV = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Mat = any
 
-// PINNED build (see OpenCVService.ts for the rationale): the floating `4.x`
-// alias silently jumped to a ~11 MB 4.13.0 build. 4.9.0 is a known-good prior
-// build that docs.opencv.org still retains.
-const OPENCV_CDN_URL = 'https://docs.opencv.org/4.9.0/opencv.js'
+// SELF-HOSTED opencv.js (same-origin, served from public/vendor/opencv/4.9.0/).
+// Loading it from the docs.opencv.org CDN was unreliable — `importScripts` could
+// sit forever before the runtime was ready (the CDN was flagged "too slow"), so
+// the worker never reported ready and CV nodes never painted. Serving it from our
+// own origin via Netlify is fast and removes the cross-origin/COEP variables.
+// Pinned to the 4.9.0 build (the floating `4.x` alias jumped to a ~11 MB 4.13.0).
+const OPENCV_URL = '/vendor/opencv/4.9.0/opencv.js'
 
 // Worker globals under the DOM lib (no webworker lib configured). `self` is typed
 // as Window there, which lacks `importScripts` and types `postMessage` with a
@@ -47,6 +50,11 @@ const ctx = self as unknown as {
   onmessage: ((event: MessageEvent) => void) | null
   cv?: CV
 }
+
+// Top-level boot marker: if this never appears in the console, the classic worker
+// itself isn't executing (a worker-load/COEP problem), as opposed to a load/op
+// failure inside it.
+console.info('[OpenCV worker] booted (classic)')
 
 // ---------------------------------------------------------------------------
 // Lazy opencv.js load (mirrors OpenCVService.load()'s runtime-ready handshake)
@@ -96,9 +104,9 @@ function ensureLoaded(): Promise<CV> {
     }
 
     try {
-      if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_CDN_URL)
+      if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_URL)
       // Synchronous, but on the WORKER thread — no main-thread freeze.
-      ctx.importScripts(OPENCV_CDN_URL)
+      ctx.importScripts(OPENCV_URL)
     } catch (err) {
       fail(err instanceof Error ? err : new Error('importScripts failed (COEP/network?)'))
       return
@@ -496,6 +504,7 @@ ctx.onmessage = (event: MessageEvent) => {
     | { type: 'dispose'; nodeId: string }
     | { type: 'disposeAll' }
 
+  if (DEBUG) console.info('[OpenCV worker] message:', msg.type)
   switch (msg.type) {
     case 'load':
       ensureLoaded().then(
