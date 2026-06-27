@@ -60,5 +60,7 @@ module.exports = {
       },
     },
   ],
-  ignorePatterns: ['dist', 'dist-electron', 'out', 'node_modules', '*.config.ts'],
+  // public/vendor holds third-party builds (opencv.js — minified emscripten/UMD)
+  // that we serve verbatim; never lint them.
+  ignorePatterns: ['dist', 'dist-electron', 'out', 'node_modules', '*.config.ts', 'public/vendor'],
 }
