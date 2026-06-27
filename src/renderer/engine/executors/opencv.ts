@@ -163,6 +163,12 @@ function sourceToImageData(source: unknown): ImageData | null {
   // scales to the canvas), so no full-res intermediate is ever allocated.
   if (source instanceof THREE.Texture) {
     const image = source.image as { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined
+    // A video-backed texture renders BLACK until the video has real frames
+    // (readyState >= 2, non-zero dimensions). Skip until then so the worker isn't
+    // fed an all-black startup frame (mirrors resolveEffectSource in visual.ts).
+    if (source.image instanceof HTMLVideoElement && (source.image.readyState < 2 || !source.image.videoWidth)) {
+      return null
+    }
     const { w, h } = fitDims(image?.width || image?.videoWidth || 512, image?.height || image?.videoHeight || 512)
     const scratch = getScratch(w, h)
     if (!scratch) return null
@@ -265,7 +271,14 @@ function runCvNode(
   const imageData = sourceToImageData(source)
   if (!imageData) {
     const out = serve(false)
-    if (source) out.set('_error', 'Unsupported source. Connect a texture or video feed.')
+    // Only flag genuinely unsupported inputs; a supported-but-not-yet-ready source
+    // (e.g. a webcam texture still warming up) just keeps serving the held texture.
+    const supported =
+      source instanceof THREE.Texture ||
+      source instanceof HTMLVideoElement ||
+      source instanceof HTMLCanvasElement ||
+      source instanceof ImageData
+    if (source && !supported) out.set('_error', 'Unsupported source. Connect a texture or video feed.')
     return out
   }
 
@@ -294,6 +307,9 @@ function runCvNode(
         if (!('_error' in extra)) delete state.outputs._error
       } catch (err) {
         console.error('[OpenCV] op failed:', err)
+        // Surface the op failure ON the node (a later successful op clears it via
+        // the `_error` reset above) so it's diagnosable without the console.
+        state.outputs._error = `OpenCV op failed: ${err instanceof Error ? err.message : String(err)}`
       } finally {
         pendingOperations.delete(nodeId)
       }
