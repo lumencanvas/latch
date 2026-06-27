@@ -6,6 +6,33 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-26 — v1.2.10: self-host opencv.js (CV worker was never loading)
+
+Decisive runtime evidence from latch.design (v1.2.9): the console showed `[OpenCV] spawning
+worker` and then NOTHING from the worker — no `[OpenCV worker] importScripts`, no ready, and the CV
+nodes sat on "NO TEXTURE" with no error (the 60 s timeout lives inside `ensureLoaded`, which never
+ran). Meanwhile the module AI worker logged `[AI Worker] Ready` and detection painted. So the
+worker spawned but its `importScripts('https://docs.opencv.org/4.9.0/opencv.js')` never produced a
+ready runtime — consistent with the long-standing note that the docs.opencv.org CDN is "too slow"
+to finish loading (a synchronous 10 MB cross-origin `importScripts` that stalls).
+
+Fix:
+- **Vendored opencv.js same-origin**: `public/vendor/opencv/4.9.0/opencv.js` (the exact 4.9.0 build,
+  verified to initialize). Worker now `importScripts('/vendor/opencv/4.9.0/opencv.js')` — fast,
+  Netlify-served, no cross-origin/COEP variable. (Kept the worker CLASSIC so `importScripts` works
+  and emscripten still detects the worker environment; a module worker would have needed fetch+eval
+  and broken opencv's `ENVIRONMENT_IS_WORKER` detection.)
+- **Boot + message diagnostics**: a top-level `[OpenCV worker] booted (classic)` log (if absent →
+  the classic worker itself isn't executing, a deeper worker-load issue → switch to a module worker)
+  and a per-message log. `DEBUG` still on.
+- Also: OpenCV **op failures now surface on the node** (`_error`), and `sourceToImageData` skips a
+  video-backed texture until `readyState >= 2` (no black warmup frame); a not-ready supported source
+  no longer flashes a misleading "Unsupported source" error.
+- Gates green (typecheck / lint / test:unit 1494 / build:web; vendor file copied to dist).
+- **TODO once confirmed painting**: flip `DEBUG` off; consider trimming the vendored build.
+
+---
+
 ## 2026-06-26 — v1.2.9: OpenCV worker init hardening + diagnostics
 
 Follow-up to v1.2.8 (OpenCV → Web Worker). Reported: CV nodes no longer freeze the page but
