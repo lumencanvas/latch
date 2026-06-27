@@ -72,63 +72,79 @@ let loggedFirstResult = false
 function ensureLoaded(): Promise<CV> {
   if (cv) return Promise.resolve(cv)
   if (loadPromise) return loadPromise
-
-  loadPromise = new Promise<CV>((resolve, reject) => {
-    let settled = false
-    const finalize = (mod: CV) => {
-      // Idempotent: the Promise return and the onRuntimeInitialized hook can both
-      // fire. Only accept a runtime that's actually usable (cv.Mat present).
-      if (settled || !mod || typeof mod.Mat !== 'function') return
-      settled = true
-      cv = mod
-      if (DEBUG) console.info('[OpenCV worker] runtime ready (cv.Mat available)')
-      resolve(mod)
-    }
-    const fail = (err: unknown) => {
-      if (settled) return
-      settled = true
-      const e = err instanceof Error ? err : new Error(String(err))
-      if (DEBUG) console.error('[OpenCV worker] load failed:', e.message)
-      reject(e)
-    }
-
-    // Pre-define Module so a Module-style build invokes our hook; opencv.js 4.9.0
-    // is the Promise-returning MODULARIZE build (verified: factory() yields a
-    // thenable that resolves to the runtime), handled via the thenable below.
-    ;(ctx as { Module?: unknown }).Module = {
-      onRuntimeInitialized: () => {
-        const c = ctx.cv
-        if (c && typeof c.then === 'function') Promise.resolve(c).then(finalize, fail)
-        else finalize(c)
-      },
-    }
-
-    try {
-      if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_URL)
-      // Synchronous, but on the WORKER thread — no main-thread freeze.
-      ctx.importScripts(OPENCV_URL)
-    } catch (err) {
-      fail(err instanceof Error ? err : new Error('importScripts failed (COEP/network?)'))
-      return
-    }
-
-    const c = ctx.cv
-    if (DEBUG) {
-      console.info('[OpenCV worker] post-importScripts: cv typeof=', typeof c, 'thenable=', !!(c && typeof c.then === 'function'))
-    }
-    if (c && typeof c.then === 'function') {
-      Promise.resolve(c).then(finalize, fail) // Promise-returning MODULARIZE (4.9.0)
-    } else if (c && typeof c.Mat === 'function') {
-      finalize(c) // already initialized
-    }
-    // else: rely on the Module.onRuntimeInitialized hook set above.
-
-    // A stuck init must surface as an error (visible on the node) instead of
-    // leaving the node on "loading" forever.
-    setTimeout(() => fail(new Error('opencv.js did not initialize within 60s')), 60_000)
+  // Race the real load against a hard timeout so a stuck init surfaces as a
+  // node error instead of an eternal "loading".
+  loadPromise = Promise.race([
+    loadOpenCV(),
+    new Promise<CV>((_, reject) =>
+      setTimeout(() => reject(new Error('opencv.js did not initialize within 60s')), 60_000)
+    ),
+  ]).then((mod) => {
+    cv = mod
+    return mod
   })
-
   return loadPromise
+}
+
+/** Wait for a usable runtime: a Mat-bearing module on `c` or on `self.cv`. */
+function hasMat(c: CV): CV | null {
+  if (c && typeof c.Mat === 'function') return c
+  const g = ctx.cv
+  if (g && typeof g.Mat === 'function') return g
+  return null
+}
+
+async function loadOpenCV(): Promise<CV> {
+  if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_URL)
+  ctx.importScripts(OPENCV_URL) // synchronous, on the worker thread
+
+  let c: CV = ctx.cv
+  if (DEBUG) {
+    console.info('[OpenCV worker] post-importScripts: cv typeof=', typeof c, 'thenable=', !!(c && typeof c.then === 'function'))
+  }
+
+  // opencv.js 4.9.0 is the Promise-returning MODULARIZE build: factory() yields a
+  // thenable that resolves to the runtime. Await it directly.
+  if (c && typeof c.then === 'function') {
+    c = await c
+    if (DEBUG) console.info('[OpenCV worker] cv promise resolved; Mat?', typeof c?.Mat)
+  }
+
+  // If the resolved value doesn't expose cv.Mat yet, wait for it via
+  // onRuntimeInitialized and/or a short poll (covers Module-style builds and any
+  // late binding registration).
+  let ready = hasMat(c)
+  if (!ready) {
+    if (DEBUG) console.warn('[OpenCV worker] no cv.Mat after resolve — awaiting onRuntimeInitialized/poll')
+    ready = await new Promise<CV>((resolve) => {
+      const tryResolve = () => {
+        const m = hasMat(c)
+        if (m) {
+          resolve(m)
+          return true
+        }
+        return false
+      }
+      if (tryResolve()) return
+      const base = c && !c.then ? c : ctx.cv
+      if (base && !base.then) {
+        try {
+          base.onRuntimeInitialized = () => tryResolve()
+        } catch {
+          /* ignore */
+        }
+      }
+      const iv = setInterval(() => {
+        if (tryResolve()) clearInterval(iv)
+      }, 100)
+    })
+  }
+
+  if (!ready || typeof ready.Mat !== 'function') {
+    throw new Error('opencv.js loaded but cv.Mat is unavailable')
+  }
+  if (DEBUG) console.info('[OpenCV worker] runtime ready (cv.Mat available)')
+  return ready
 }
 
 // ---------------------------------------------------------------------------
