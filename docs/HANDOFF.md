@@ -6,6 +6,36 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-28 — v1.2.13: emulator survives Vue Flow virtualization (off-screen crash)
+
+User report: the Emulator node crashes (`RuntimeError: Aborted(undefined)` from the libretro core,
+then `Cannot read properties of null (reading 'classList')`) when the node is scrolled/zoomed
+partially off-screen. Root cause: `EditorView.vue` sets `:only-render-visible-elements="true"`, so
+Vue Flow **unmounts** off-screen nodes. `EmulatorNode.vue`'s `onUnmounted` tore the emulator down on
+EVERY unmount — `unregisterEmulator()` + `removeChild(host)` — ripping the EmulatorJS WebGL canvas
+out of the DOM → context loss → core abort → EmulatorJS error path hits a now-null element. The
+existing `onActivated`/`onDeactivated` park/dock only covered KeepAlive tab-switches, not
+virtualization. (Not related to the OpenCV/WorkerFacade work — separate subsystem.)
+
+Fix — decouple the emulator's lifetime from the node component's mount:
+- **`EmulatorNode.vue` `onUnmounted`**: if the node is still in `flowsStore.activeFlow.nodes`
+  (virtualized, just off-screen) → `parkHostOffscreen()` and KEEP it alive; only on real removal
+  (node deleted / flow closed) → `unregisterEmulator()` (frees loader/texture/host). `onMounted`
+  now RE-ADOPTS a still-running emulator via `getEmulatorLoader(id)` + `loader.getHost()` (re-dock,
+  reuse loader, refresh callbacks — preserves the captured texture/audio) instead of booting anew.
+- **`emulation.ts`**: new `getEmulatorLoader(nodeId)`; `cleanupEntry` gained a `removeHost` flag so
+  `unregisterEmulator`/`gcEmulationState` (node gone) remove the parked host, but `disposeAll`
+  (flow stop, component still mounted) does not.
+- **`emulatorjs.ts`**: `EmulatorJSLoader.getHost()`.
+- Bonus: the emulator now keeps running AND keeps outputting its captured texture while the node is
+  virtualized off-screen — matching the expectation that it's an "off-screen canvas". Triggers
+  (start/stop/reset inlets) no-op while virtualized (callbacks bound to the unmounted instance) and
+  refresh on re-mount — acceptable since the node is off-screen.
+- Gates green (typecheck / lint / test:unit 1494 / build:web). Verify on the deployed site (couldn't
+  headless-repro Vue Flow node virtualization with a live ROM).
+
+---
+
 ## 2026-06-27 — v1.2.12: OpenCV worker ACTUALLY works (init + port comms)
 
 Root-caused via a local Playwright repro (the key move — opencv is same-origin now, so it loads
@@ -27,9 +57,30 @@ chunk (load → ready → process → Canny → result, incl. the MOG2/video mod
    it; the worker adopts `event.ports[0]` and replies via `respond()`.
 
 Other: kept the self-hosted `/vendor/opencv/4.9.0/opencv.js` (same-origin importScripts works and
-is fast). `DEBUG` lifecycle logs left ON for this confirming deploy — **strip once confirmed in the
-user's browser** (one-time, prefixed `[OpenCV worker]`). Gates green (typecheck / lint / test:unit
-1494 / build:web). Repro scripts were in scratch (not committed).
+is fast). Gates green (typecheck / lint / test:unit 1494 / build:web). Repro scripts were in scratch
+(not committed).
+
+### Post-deploy audit (2026-06-28) — clean
+Audited the shipped diff (3 files) for regressions:
+- **All 9 cv ops intact** (grayscale/canny/threshold/blur/morphology/contours/corners/optical-flow/
+  background-subtraction) and the per-node Mat discipline survived the worker rewrite: `prevGrayByNode`
+  /`subtractorByNode` + `disposeNode`/`disposeAllNodes`/`safeDelete`; `handleProcess` frees `scratch`
+  + `src` in `finally`; optical-flow `prevGray` retention preserved. `handleProcess` is now fully
+  synchronous (no `await`).
+- **`WorkerFacade` change is safe for `AIInference`.** `usePort` defaults `false`, so AIInference keeps
+  the original `w.onmessage` path; `_send` falls back to `worker.postMessage`; `terminate` skips the
+  port. Port mode is strictly opt-in (only `OpenCVService` sets `usePort=true`). NOTE for future work:
+  AIInference is exercised only via mocks in unit tests, so this base change isn't runtime-covered —
+  it's behavior-preserving by construction, but a smoke test of an AI node after any `WorkerFacade`
+  edit is wise.
+- In port mode the worker's `self.onmessage` is left unset after the handshake, so opencv's stray
+  `self` setImmediate messages are simply dropped (correct — they must not reach the facade).
+
+### OPEN
+- **DEBUG still ON** in `opencv.worker.ts` (`const DEBUG = true`) — one-time `[OpenCV worker]`/`[OpenCV]`
+  lifecycle logs. Strip (flip to `false`) once the user confirms CV nodes paint in their real browser.
+- Awaiting user confirmation on latch.design (hard-refresh) that `webcam → cv-canny → main-output`
+  paints. Headless Playwright validated the full pipeline against the built chunk, so confidence is high.
 
 ---
 
