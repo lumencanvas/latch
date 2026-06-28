@@ -35,6 +35,7 @@ interface PendingRequest {
 
 export abstract class WorkerFacade {
   private _worker: Worker | null = null
+  private _port: MessagePort | null = null
   private _pending = new Map<number, PendingRequest>()
   private _idCounter = 0
   /** Per-request timeout default (ms); 0 disables timeouts unless a call overrides. */
@@ -46,6 +47,17 @@ export abstract class WorkerFacade {
 
   /** Spawn this service's worker (subclass picks classic vs module + URL). */
   protected abstract createWorker(): Worker
+
+  /**
+   * Communicate with the worker over a dedicated MessageChannel port instead of
+   * `worker.postMessage`/`onmessage`. Required when the worker hosts a library
+   * (e.g. opencv.js / emscripten) that installs its own `self` message listeners
+   * which would otherwise intercept the facade's messages. The base posts a
+   * `{ type: '__port' }` handshake transferring port2; the worker must adopt it.
+   */
+  protected get usePort(): boolean {
+    return false
+  }
 
   /** Route a worker message to `settle`/`fail`/`reportProgress` by its `id`. */
   protected abstract handleMessage(data: unknown): void
@@ -65,14 +77,32 @@ export abstract class WorkerFacade {
     if (this._worker) return this._worker
     try {
       const w = this.createWorker()
-      w.onmessage = (event: MessageEvent) => this.handleMessage(event.data)
       w.onerror = (error) => this.onWorkerError(error)
+      if (this.usePort) {
+        // Route all comms over a private port so a library inside the worker can't
+        // intercept them via `self` message listeners. The handshake itself uses
+        // worker.postMessage (it runs before that library loads).
+        const channel = new MessageChannel()
+        this._port = channel.port1
+        channel.port1.onmessage = (event: MessageEvent) => this.handleMessage(event.data)
+        w.postMessage({ type: '__port' }, [channel.port2])
+        channel.port1.start?.()
+      } else {
+        w.onmessage = (event: MessageEvent) => this.handleMessage(event.data)
+      }
       this._worker = w
     } catch (error) {
       console.error(`[${this.label}] Failed to initialize worker:`, error)
       this._worker = null
+      this._port = null
     }
     return this._worker
+  }
+
+  /** Post to the worker over the port (if in port mode) or directly. */
+  private _send(message: Record<string, unknown>, transfer?: Transferable[]): void {
+    if (this._port) this._port.postMessage(message, transfer ?? [])
+    else this._worker?.postMessage(message, transfer ?? [])
   }
 
   /**
@@ -104,13 +134,14 @@ export abstract class WorkerFacade {
         onProgress: opts.onProgress,
         timeoutId,
       })
-      worker.postMessage({ ...message, id }, opts.transfer ?? [])
+      // `worker` is spawned above; the actual post goes via _send (port-aware).
+      this._send({ ...message, id }, opts.transfer)
     })
   }
 
   /** Fire-and-forget message (no response awaited), e.g. a dispose/config notice. */
   protected notify(message: Record<string, unknown>): void {
-    this._worker?.postMessage(message)
+    if (this._worker) this._send(message)
   }
 
   /** Resolve the pending request `id` (clears its timeout). No-op if unknown. */
@@ -140,6 +171,10 @@ export abstract class WorkerFacade {
   /** Terminate the worker and reject any in-flight requests. */
   protected terminate(reason = 'worker terminated'): void {
     this.rejectAll(reason)
+    if (this._port) {
+      this._port.close()
+      this._port = null
+    }
     if (this._worker) {
       this._worker.terminate()
       this._worker = null
