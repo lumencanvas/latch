@@ -6,6 +6,33 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-27 — v1.2.12: OpenCV worker ACTUALLY works (init + port comms)
+
+Root-caused via a local Playwright repro (the key move — opencv is same-origin now, so it loads
+headlessly). Two distinct worker bugs, both fixed; validated end-to-end against the BUILT worker
+chunk (load → ready → process → Canny → result, incl. the MOG2/video module):
+
+1. **Init never completed.** opencv.js 4.9.0 is the Promise-returning MODULARIZE build; awaiting that
+   Promise (self.cv) HANGS in a dedicated worker because its resolution is deferred through a
+   postMessage-based `setImmediate` that never fires (self.postMessage in a worker goes to the
+   parent, not back). Fix: the CANONICAL pattern — set `Module.onRuntimeInitialized` BEFORE
+   importScripts and read `cv.Mat` off the Module synchronously in that callback. Never touch the
+   promise. (`opencv.worker.ts` rewritten to a top-level Module hook + lazy one-time `startLoad` +
+   synchronous `handleProcess`.)
+2. **Messages were intercepted.** opencv/emscripten installs a capturing `self` 'message' listener
+   (its setImmediate emulation), which entangled the facade's `self.postMessage`/`onmessage` traffic
+   (responses didn't arrive; the 2nd message wasn't received). Fix: route ALL facade↔worker comms
+   over a dedicated **MessageChannel port** — opencv's `self` listeners never see it. Added opt-in
+   `usePort` to `WorkerFacade` (port handshake + `_send`/terminate close); `OpenCVService` enables
+   it; the worker adopts `event.ports[0]` and replies via `respond()`.
+
+Other: kept the self-hosted `/vendor/opencv/4.9.0/opencv.js` (same-origin importScripts works and
+is fast). `DEBUG` lifecycle logs left ON for this confirming deploy — **strip once confirmed in the
+user's browser** (one-time, prefixed `[OpenCV worker]`). Gates green (typecheck / lint / test:unit
+1494 / build:web). Repro scripts were in scratch (not committed).
+
+---
+
 ## 2026-06-26 — v1.2.10: self-host opencv.js (CV worker was never loading)
 
 Decisive runtime evidence from latch.design (v1.2.9): the console showed `[OpenCV] spawning
