@@ -67,9 +67,18 @@ export function registerEmulatorNode(nodeId: string, controls: EmulatorControls)
 export function unregisterEmulator(nodeId: string): void {
   const entry = emulators.get(nodeId)
   if (entry) {
-    cleanupEntry(entry, true)
+    cleanupEntry(entry, true, true)
     emulators.delete(nodeId)
   }
+}
+
+/**
+ * The live loader for a node, if one is registered. The node component uses this
+ * to RE-ADOPT a still-running emulator when it remounts after Vue Flow virtualized
+ * it off-screen (instead of booting a fresh one), so the game keeps running.
+ */
+export function getEmulatorLoader(nodeId: string): EmulatorJSLoader | undefined {
+  return emulators.get(nodeId)?.controls.loader
 }
 
 function isTrigger(v: unknown): boolean {
@@ -202,7 +211,7 @@ export const emulatorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-function cleanupEntry(entry: EmulatorEntry, teardownLoader: boolean): void {
+function cleanupEntry(entry: EmulatorEntry, teardownLoader: boolean, removeHost = false): void {
   if (entry.texture) {
     try { entry.texture.dispose() } catch { /* ignore */ }
     entry.texture = undefined
@@ -220,14 +229,23 @@ function cleanupEntry(entry: EmulatorEntry, teardownLoader: boolean): void {
     entry.audioSource = undefined
   }
   if (teardownLoader) {
-    try { entry.controls.loader.teardown() } catch { /* ignore */ }
+    const loader = entry.controls.loader
+    try { loader.teardown() } catch { /* ignore */ }
+    // Only on REAL removal (unregister / gc): remove the parked host from <body> —
+    // the node component may already be unmounted (it was virtualized), so it can't
+    // clean up its own host. NOT on flow stop (disposeAll), where the component is
+    // still mounted and expects its host to stay docked in the node.
+    if (removeHost) {
+      const h = loader.getHost?.()
+      if (h?.parentNode) h.parentNode.removeChild(h)
+    }
   }
 }
 
 export function gcEmulationState(validNodeIds: Set<string>): void {
   for (const [id, entry] of emulators) {
     if (!validNodeIds.has(id)) {
-      cleanupEntry(entry, true)
+      cleanupEntry(entry, true, true)
       emulators.delete(id)
     }
   }
