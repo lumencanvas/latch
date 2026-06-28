@@ -8,7 +8,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useAssetsStore } from '@/stores/assets'
 import { coreSpec, detectCoreFromFilename } from '@/services/emulation/coreMap'
 import { EmulatorJSLoader, DEFAULT_EJS_DATA } from '@/services/emulation/emulatorjs'
-import { registerEmulatorNode, unregisterEmulator } from '@/engine/executors/emulation'
+import { registerEmulatorNode, unregisterEmulator, getEmulatorLoader } from '@/engine/executors/emulation'
 
 const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
@@ -181,12 +181,26 @@ function parkHostOffscreen() {
 
 onMounted(() => {
   if (!container.value) return
-  host = document.createElement('div')
-  host.style.cssText = 'width:100%;height:100%;'
-  container.value.appendChild(host)
-  loader = new EmulatorJSLoader(host)
-  // Register on mount (not after Load) so the start/stop/reset trigger inlets can
-  // drive the emulator from the graph, and the executor can inject + capture.
+  // Vue Flow has `only-render-visible-elements` ON, so this component is UNMOUNTED
+  // whenever the node scrolls/zooms off-screen and remounted when it returns. If the
+  // emulator is still alive (parked off-screen by the previous unmount), re-adopt its
+  // live host + loader instead of booting a new one — otherwise the canvas is rebuilt,
+  // the WebGL context is lost, and the libretro core aborts.
+  const existing = getEmulatorLoader(props.id)
+  if (existing) {
+    loader = existing
+    host = existing.getHost() as HTMLDivElement
+    dockHostInNode()
+    booted.value = existing.isReady()
+  } else {
+    host = document.createElement('div')
+    host.style.cssText = 'width:100%;height:100%;'
+    container.value.appendChild(host)
+    loader = new EmulatorJSLoader(host)
+  }
+  // (Re)register so the start/stop/reset trigger inlets drive the emulator and the
+  // executor injects + captures. Re-registering with the SAME loader preserves the
+  // captured texture/audio (see registerEmulatorNode); it only refreshes callbacks.
   registerEmulatorNode(props.id, {
     loader,
     getCoreKey: () => resolvedCoreKey.value,
@@ -202,14 +216,22 @@ onDeactivated(parkHostOffscreen)
 
 onUnmounted(() => {
   if (loadWatchdog) { clearTimeout(loadWatchdog); loadWatchdog = null }
-  unregisterEmulator(props.id)
-  loader = null
-  if (host?.parentNode) host.parentNode.removeChild(host)
-  host = null
-  if (currentRomUrl) {
-    URL.revokeObjectURL(currentRomUrl)
-    currentRomUrl = null
+  // Distinguish virtualization (node still in the graph, just scrolled off-screen)
+  // from real removal (node deleted / flow closed). On virtualization, KEEP the
+  // emulator alive parked off-screen so it resumes — and keeps outputting its
+  // texture — on remount; only tear down when the node is actually gone.
+  const stillInGraph = flowsStore.activeFlow?.nodes.some((n) => n.id === props.id) ?? false
+  if (stillInGraph) {
+    parkHostOffscreen()
+  } else {
+    unregisterEmulator(props.id) // frees loader, texture/audio, and removes the host
+    if (currentRomUrl) {
+      URL.revokeObjectURL(currentRomUrl)
+      currentRomUrl = null
+    }
   }
+  loader = null
+  host = null
 })
 </script>
 

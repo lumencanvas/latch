@@ -145,6 +145,15 @@ export class EmulatorJSLoader {
     return this.container.querySelector('canvas')
   }
 
+  /**
+   * The DOM element EmulatorJS renders into. It outlives the Vue node component
+   * (which Vue Flow unmounts when the node scrolls off-screen) so the emulator can
+   * be re-adopted on remount and torn down on real removal.
+   */
+  getHost(): HTMLElement {
+    return this.container
+  }
+
   getAudioStream(): MediaStream | null {
     return lastAudioTap
   }
