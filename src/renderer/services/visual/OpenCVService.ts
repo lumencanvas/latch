@@ -59,6 +59,12 @@ class OpenCVService extends WorkerFacade {
     return 'OpenCV'
   }
 
+  // opencv.js installs its own `self` message listeners in the worker; route
+  // facade comms over a private MessageChannel port so they can't be intercepted.
+  protected get usePort(): boolean {
+    return true
+  }
+
   // CLASSIC worker (no `{ type: 'module' }`) so the worker can `importScripts()`
   // the opencv.js build.
   protected createWorker(): Worker {

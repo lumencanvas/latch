@@ -49,6 +49,7 @@ const ctx = self as unknown as {
   postMessage: (message: unknown, transfer?: Transferable[]) => void
   onmessage: ((event: MessageEvent) => void) | null
   cv?: CV
+  Module?: CV
 }
 
 // Top-level boot marker: if this never appears in the console, the classic worker
@@ -65,86 +66,70 @@ console.info('[OpenCV worker] booted (classic)')
 const DEBUG = true
 
 let cv: CV | null = null
-let loadPromise: Promise<CV> | null = null
+let importStarted = false
+let loadFailed: string | null = null
 let loggedFirstProcess = false
 let loggedFirstResult = false
 
-function ensureLoaded(): Promise<CV> {
-  if (cv) return Promise.resolve(cv)
-  if (loadPromise) return loadPromise
-  // Race the real load against a hard timeout so a stuck init surfaces as a
-  // node error instead of an eternal "loading".
-  loadPromise = Promise.race([
-    loadOpenCV(),
-    new Promise<CV>((_, reject) =>
-      setTimeout(() => reject(new Error('opencv.js did not initialize within 60s')), 60_000)
-    ),
-  ]).then((mod) => {
-    cv = mod
-    return mod
-  })
-  return loadPromise
+// The facade talks to us over a private MessageChannel port (WorkerFacade usePort):
+// opencv.js installs its own `self` message listeners in the worker, so EVERY reply
+// must go through the port, never self.postMessage. (Falls back to self only before
+// the port handshake, which can't happen — the port is sent first.)
+let outPort: MessagePort | null = null
+function respond(message: unknown, transfer?: Transferable[]): void {
+  if (outPort) outPort.postMessage(message, transfer ?? [])
+  else ctx.postMessage(message, transfer)
 }
 
-/** Wait for a usable runtime: a Mat-bearing module on `c` or on `self.cv`. */
-function hasMat(c: CV): CV | null {
-  if (c && typeof c.Mat === 'function') return c
-  const g = ctx.cv
-  if (g && typeof g.Mat === 'function') return g
-  return null
+// Load-request ids awaiting runtime readiness; 'ready' is posted to each when the
+// runtime initializes (or fails to).
+const pendingLoads: number[] = []
+function flushLoads(ok: boolean, error?: string): void {
+  for (const id of pendingLoads.splice(0)) {
+    respond(ok ? { type: 'ready', id, ok: true } : { type: 'ready', id, ok: false, error })
+  }
 }
 
-async function loadOpenCV(): Promise<CV> {
-  if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_URL)
-  ctx.importScripts(OPENCV_URL) // synchronous, on the worker thread
+// CANONICAL opencv.js init (verified end-to-end in a headless worker): set
+// Module.onRuntimeInitialized BEFORE importScripts; the runtime calls it when ready
+// with `cv.Mat` available on the Module. Do NOT await the emscripten MODULARIZE
+// Promise (self.cv) or use any Promise/`.then` for readiness — in a dedicated worker
+// the promise's resolution is deferred via a postMessage `setImmediate` that never
+// fires, so it hangs forever. This synchronous callback is the only reliable signal.
+ctx.Module = {
+  onRuntimeInitialized: () => {
+    const m =
+      ctx.Module && typeof ctx.Module.Mat === 'function'
+        ? ctx.Module
+        : ctx.cv && typeof ctx.cv.Mat === 'function'
+          ? ctx.cv
+          : null
+    if (!m) return
+    cv = m
+    if (DEBUG) console.info('[OpenCV worker] runtime ready (cv.Mat available)')
+    flushLoads(true)
+  },
+}
 
-  let c: CV = ctx.cv
-  if (DEBUG) {
-    console.info('[OpenCV worker] post-importScripts: cv typeof=', typeof c, 'thenable=', !!(c && typeof c.then === 'function'))
+// Load opencv.js once, lazily, on the first load request (it's ~10 MB).
+function startLoad(): void {
+  if (importStarted) return
+  importStarted = true
+  try {
+    if (DEBUG) console.info('[OpenCV worker] importScripts', OPENCV_URL)
+    ctx.importScripts(OPENCV_URL) // synchronous, on the worker thread
+  } catch (err) {
+    loadFailed = err instanceof Error ? err.message : 'importScripts failed'
+    flushLoads(false, loadFailed)
+    return
   }
-
-  // opencv.js 4.9.0 is the Promise-returning MODULARIZE build: factory() yields a
-  // thenable that resolves to the runtime. Await it directly.
-  if (c && typeof c.then === 'function') {
-    c = await c
-    if (DEBUG) console.info('[OpenCV worker] cv promise resolved; Mat?', typeof c?.Mat)
-  }
-
-  // If the resolved value doesn't expose cv.Mat yet, wait for it via
-  // onRuntimeInitialized and/or a short poll (covers Module-style builds and any
-  // late binding registration).
-  let ready = hasMat(c)
-  if (!ready) {
-    if (DEBUG) console.warn('[OpenCV worker] no cv.Mat after resolve — awaiting onRuntimeInitialized/poll')
-    ready = await new Promise<CV>((resolve) => {
-      const tryResolve = () => {
-        const m = hasMat(c)
-        if (m) {
-          resolve(m)
-          return true
-        }
-        return false
-      }
-      if (tryResolve()) return
-      const base = c && !c.then ? c : ctx.cv
-      if (base && !base.then) {
-        try {
-          base.onRuntimeInitialized = () => tryResolve()
-        } catch {
-          /* ignore */
-        }
-      }
-      const iv = setInterval(() => {
-        if (tryResolve()) clearInterval(iv)
-      }, 100)
-    })
-  }
-
-  if (!ready || typeof ready.Mat !== 'function') {
-    throw new Error('opencv.js loaded but cv.Mat is unavailable')
-  }
-  if (DEBUG) console.info('[OpenCV worker] runtime ready (cv.Mat available)')
-  return ready
+  // Surface a stuck init as a node error instead of an eternal "loading".
+  setTimeout(() => {
+    if (!cv && !loadFailed) {
+      loadFailed = 'opencv.js did not initialize within 60s'
+      flushLoads(false, loadFailed)
+    }
+  }, 60_000)
 }
 
 // ---------------------------------------------------------------------------
@@ -464,11 +449,9 @@ interface ProcessMessage {
   data: Uint8ClampedArray
 }
 
-async function handleProcess(msg: ProcessMessage): Promise<void> {
-  try {
-    await ensureLoaded()
-  } catch (err) {
-    ctx.postMessage({ type: 'result', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) })
+function handleProcess(msg: ProcessMessage): void {
+  if (!cv) {
+    respond({ type: 'result', id: msg.id, ok: false, error: loadFailed || 'OpenCV runtime not ready' })
     return
   }
 
@@ -500,37 +483,41 @@ async function handleProcess(msg: ProcessMessage): Promise<void> {
       loggedFirstResult = true
       console.info('[OpenCV worker] first result posted:', `${rgba.width}x${rgba.height}`)
     }
-    ctx.postMessage(
+    respond(
       { type: 'result', id: msg.id, ok: true, width: rgba.width, height: rgba.height, data: rgba.data, extra },
       [rgba.data.buffer]
     )
   } catch (err) {
     console.error('[OpenCV Worker] op failed:', err)
-    ctx.postMessage({ type: 'result', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) })
+    respond({ type: 'result', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) })
   } finally {
     for (const m of scratch) safeDelete(m)
     safeDelete(src)
   }
 }
 
-ctx.onmessage = (event: MessageEvent) => {
-  const msg = event.data as
-    | { type: 'load'; id: number }
-    | ProcessMessage
-    | { type: 'dispose'; nodeId: string }
-    | { type: 'disposeAll' }
+type IncomingMessage =
+  | { type: 'load'; id: number }
+  | ProcessMessage
+  | { type: 'dispose'; nodeId: string }
+  | { type: 'disposeAll' }
 
+function handleIncoming(msg: IncomingMessage): void {
   if (DEBUG) console.info('[OpenCV worker] message:', msg.type)
   switch (msg.type) {
     case 'load':
-      ensureLoaded().then(
-        () => ctx.postMessage({ type: 'ready', id: msg.id, ok: true }),
-        (err: unknown) =>
-          ctx.postMessage({ type: 'ready', id: msg.id, ok: false, error: err instanceof Error ? err.message : String(err) })
-      )
+      if (cv) {
+        respond({ type: 'ready', id: msg.id, ok: true }) // already initialized
+      } else if (loadFailed) {
+        respond({ type: 'ready', id: msg.id, ok: false, error: loadFailed })
+      } else {
+        // 'ready' is posted by flushLoads() once onRuntimeInitialized fires.
+        pendingLoads.push(msg.id)
+        startLoad()
+      }
       break
     case 'process':
-      void handleProcess(msg)
+      handleProcess(msg)
       break
     case 'dispose':
       disposeNode(msg.nodeId)
@@ -541,4 +528,20 @@ ctx.onmessage = (event: MessageEvent) => {
     default:
       console.warn('[OpenCV Worker] Unknown message:', msg)
   }
+}
+
+// The facade hands us a private MessageChannel port before it sends anything else
+// (the handshake runs before opencv.js loads, so self.onmessage is safe here).
+// After that, ALL comms use the port — opencv.js's own self message listeners
+// can't intercept it.
+ctx.onmessage = (event: MessageEvent) => {
+  const data = event.data as IncomingMessage | { type: '__port' }
+  if (data && data.type === '__port') {
+    outPort = event.ports[0]
+    outPort.onmessage = (ev: MessageEvent) => handleIncoming(ev.data as IncomingMessage)
+    outPort.start?.()
+    return
+  }
+  // Fallback: no port handshake (shouldn't happen) — handle via self.
+  handleIncoming(data as IncomingMessage)
 }
