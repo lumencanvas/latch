@@ -6,6 +6,26 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-28 — v1.2.14: CONFIRMED working + stripped OpenCV debug logging
+
+User confirmed in their browser: **OpenCV CV nodes paint** (the v1.2.12 worker init + MessageChannel
+port fix landed) **and** the **emulator survives going off-screen** (v1.2.13). Both the long
+"CV nodes never paint" saga and the emulator off-screen crash are RESOLVED.
+
+Cleanup shipped here:
+- `opencv.worker.ts`: `DEBUG` flipped to **false** (lifecycle logs are gated behind it — one flip to
+  re-enable the load→ready→process→result trace if CV ever regresses). Removed the unconditional
+  top-level boot log.
+- `OpenCVService.ts`: removed the two diagnostic `console.info`s (`spawning worker`, `worker reported
+  ready`). Real errors (`console.error`, node `_error` output) are unchanged.
+- Production CV console is now quiet. Gates green (typecheck / lint / test:unit 1494 / build:web).
+
+No open OpenCV/emulator items remain. (Deferred, unrelated tech debt still in the architecture-audit
+notes below: shared `WorkerFacade` is only mock-tested for AIInference; built-in nodes aren't authored
+as isolated packages like `CustomNodeLoader`; `executors/index.ts` mixes aggregation + inline executors.)
+
+---
+
 ## 2026-06-28 — v1.2.13: emulator survives Vue Flow virtualization (off-screen crash)
 
 User report: the Emulator node crashes (`RuntimeError: Aborted(undefined)` from the libretro core,
@@ -31,8 +51,8 @@ Fix — decouple the emulator's lifetime from the node component's mount:
   virtualized off-screen — matching the expectation that it's an "off-screen canvas". Triggers
   (start/stop/reset inlets) no-op while virtualized (callbacks bound to the unmounted instance) and
   refresh on re-mount — acceptable since the node is off-screen.
-- Gates green (typecheck / lint / test:unit 1494 / build:web). Verify on the deployed site (couldn't
-  headless-repro Vue Flow node virtualization with a live ROM).
+- Gates green (typecheck / lint / test:unit 1494 / build:web). **Confirmed working in the user's
+  browser** (couldn't headless-repro Vue Flow node virtualization with a live ROM).
 
 ---
 
@@ -76,11 +96,9 @@ Audited the shipped diff (3 files) for regressions:
 - In port mode the worker's `self.onmessage` is left unset after the handshake, so opencv's stray
   `self` setImmediate messages are simply dropped (correct — they must not reach the facade).
 
-### OPEN
-- **DEBUG still ON** in `opencv.worker.ts` (`const DEBUG = true`) — one-time `[OpenCV worker]`/`[OpenCV]`
-  lifecycle logs. Strip (flip to `false`) once the user confirms CV nodes paint in their real browser.
-- Awaiting user confirmation on latch.design (hard-refresh) that `webcam → cv-canny → main-output`
-  paints. Headless Playwright validated the full pipeline against the built chunk, so confidence is high.
+### RESOLVED (v1.2.14)
+- User confirmed CV nodes paint in their browser. `DEBUG` flipped to `false` (logs gated, one flip to
+  re-enable) and the facade's diagnostic `console.info`s removed in v1.2.14.
 
 ---
 
