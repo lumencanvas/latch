@@ -52,18 +52,15 @@ const ctx = self as unknown as {
   Module?: CV
 }
 
-// Top-level boot marker: if this never appears in the console, the classic worker
-// itself isn't executing (a worker-load/COEP problem), as opposed to a load/op
-// failure inside it.
-console.info('[OpenCV worker] booted (classic)')
-
 // ---------------------------------------------------------------------------
 // Lazy opencv.js load (mirrors OpenCVService.load()'s runtime-ready handshake)
 // ---------------------------------------------------------------------------
 
-// Lifecycle diagnostics (worker logs surface in the main DevTools console). Left
-// on while the in-browser paint path is being validated.
-const DEBUG = true
+// Lifecycle diagnostics (worker logs surface in the main DevTools console). Flip
+// to true to trace the load → ready → process → result handshake if CV nodes ever
+// stop painting again.
+const DEBUG = false
+if (DEBUG) console.info('[OpenCV worker] booted (classic)')
 
 let cv: CV | null = null
 let importStarted = false

@@ -68,7 +68,6 @@ class OpenCVService extends WorkerFacade {
   // CLASSIC worker (no `{ type: 'module' }`) so the worker can `importScripts()`
   // the opencv.js build.
   protected createWorker(): Worker {
-    console.info('[OpenCV] spawning worker')
     return new Worker(new URL('./opencv.worker.ts', import.meta.url))
   }
 
@@ -78,7 +77,6 @@ class OpenCVService extends WorkerFacade {
       this.loadingFlag = false
       if (msg.ok) {
         this.ready = true
-        console.info('[OpenCV] worker reported ready')
         this.settle(msg.id, undefined)
       } else {
         // Keep loadPromise (rejected) so the executor doesn't re-post 'load' every
