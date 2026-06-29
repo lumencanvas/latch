@@ -13,20 +13,19 @@ Executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
 attribution). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no change
 needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
-**▶ NEXT ACTION:** number `:min`/`:max` (Open/next #1) is **DONE** (first `@vue/test-utils` component
-test landed). Next clean UI win is the **per-node error badge** (Open/next #2, UI-only, data already in
-`runtimeStore.lastError`); or the **2b** ctx-accessor factory (infra). `random` and
-single-input-edge-replacement still need design / Vue-Flow-sync work first.
+**▶ NEXT ACTION:** Open/next #1 (number `:min`/`:max`) and #2 (per-node error badge) are **DONE**.
+Next: the **2b** ctx-accessor factory (infra, self-contained) or **undo for param edits** (Open/next #6,
+P0). `random` (#4) and single-input-edge-replacement (#3) still need design / Vue-Flow-sync work first.
 
 **Landed this session** (15 commits): planning corpus · `.latch` v2 file format (+ store wiring) ·
 engine registry-resolved definitions + boundary input coercion · extensibility scaffold
 (`defineNode`/`trigger`/`defineNodeState`/`nodeRegistry`) · `power` finite-guard · import toasts ·
 engine lifecycle wiring · edge-triggered `latch`/`sample-hold` · Tone-analyser dispose · clasp
-`captureStream` stop · **number control `:min`/`:max` + blur-clamp (first component test)**.
-Test count **1517 → 1573**.
+`captureStream` stop · **number control `:min`/`:max` + blur-clamp (first component test)** ·
+**per-node error badge**. Test count **1517 → 1579**.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1573 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1579 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -151,8 +150,15 @@ Done already: file format (Sub-task 1), scaffold 2a/2c, **engine lifecycle wirin
    the cycle entry point, `registry/components.ts`'s module-scope `markRaw(BaseNode)` runs with BaseNode
    undefined → crash (same circular-init hazard as the nodeRegistry guard test). `units`/`precision`
    display is a P1 follow-on and currently **0 controls define it** — don't build dead UI for it.
-2. **per-node error badge** (AUDIT §G) — BaseNode reads `runtimeStore` `lastError` for its node and
-   shows a red border/badge. Data already exists; UI-only.
+2. **per-node error badge — DONE** (AUDIT §G). `BaseNode` reads `runtimeStore.getNodeMetrics(id)
+   .lastError` (reactive via `nodeMetricsVersion`) → red `.node-content` border (`--color-error`) + an
+   `AlertTriangle` header badge with the message as its `title`. Two **runtime-store behavior fixes**
+   were required (no prior runtime-store tests existed): (a) `addError`/`recordNodeError` now create a
+   metrics entry if the node failed before ever running (was guarded by `if (metrics)` → first-frame
+   failures showed no badge) — extracted into `setNodeError(nodeId, message)`; (b) `updateNodeMetrics`
+   now clears `lastError` on success so the badge reflects live state, not a stale failure (errorCount
+   and the `errors[]` log stay cumulative, so StatusBar/Debug are unchanged). Tests:
+   `tests/unit/stores/runtime.test.ts` (4) + 2 added to `BaseNode.test.ts`.
 3. **single-input edge replacement** (AUDIT §D) — in `addEdge` (`flows.ts`), replace the existing edge
    into a non-`multiple` target (registry via `useNodesStore` gives the `multiple` flag). **CAVEAT**:
    `onConnect` also calls Vue Flow's `addEdges()` independently (`EditorView.vue:133`), so a store-side
