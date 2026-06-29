@@ -243,7 +243,9 @@ export function disposeAllVisualNodes(): void {
  * Call this with the set of currently valid node IDs.
  */
 export function gcVisualState(validNodeIds: Set<string>): void {
-  const threeRenderer = getThreeShaderRenderer()
+  // Resolve the Three renderer lazily — only when a node texture actually needs
+  // disposing. Removing a non-visual node must not spin up a WebGL context (it has
+  // none in headless tests, and it is wasted work in production).
 
   // Clean compiledShaderMaterials
   for (const key of compiledShaderMaterials.keys()) {
@@ -271,7 +273,7 @@ export function gcVisualState(validNodeIds: Set<string>): void {
       const texture = nodeTextures.get(nodeId)
       if (texture) texture.dispose()
       nodeTextures.delete(nodeId)
-      threeRenderer.disposeNode(nodeId)
+      getThreeShaderRenderer().disposeNode(nodeId)
     }
   }
 
