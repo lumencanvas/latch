@@ -14,7 +14,7 @@ maintainer's). License decision: **MIT confirmed** — already in `LICENSE` + `p
 change needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1558 tests** (was 1517). Committed to `phase0-file-format` in 8 logical commits (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1561 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -45,6 +45,18 @@ still embeds `definition` at node creation — drop it later so the format is un
   **Conservative**: only primitive number/boolean/string targets when the runtime type mismatches;
   `any`/trigger/textures/3D/`data`/placeholder ports pass through untouched. Golden + dirty-equivalence
   green (correctly-typed flows unchanged). Pure-fn + engine-integration tests added.
+- **Edge-trigger `latch` / `sample-hold` DONE** (AUDIT §E P1): both were level-triggered despite the
+  docs — a held-high gate made `sample-hold` a per-frame pass-through. Now use `risingEdge(nodeId, key,
+  value)` from `engine/trigger.ts` (sample-hold on `trigger`; latch on `set`/`reset`, reset wins).
+  **This is the first real consumer of `risingEdge`** — so `utility.ts` now imports `trigger.ts` at
+  boot, registering its `defineNodeState` lifecycle which the engine drains (the §11-step-1 wiring is
+  now exercised in production, not just a no-op). Existing tests kept passing (they used clean low→high
+  transitions); 3 discriminating edge tests added. Held-value state stays in the legacy `gcUtilityState`
+  path; edge state GCs via the new lifecycle loop.
+- **`random` sample-on-trigger — NOT done** (deferred): needs an optional `trigger` input on the
+  definition + reliable "is the trigger wired" detection. `ctx.inputs.has('trigger')` is unreliable
+  (depends on whether the upstream emits continuously vs only on fire), so this needs either engine
+  support for per-input edge-presence or an explicit mode control — design it deliberately, don't guess.
 
 ### Sub-task 1 — `.latch` v2 file format (FILE_FORMAT_SPEC) — COMPLETE
 The strategic centerpiece (diff-friendly, durable, versioned). Logic (`flow.nodes` controls) is
@@ -116,8 +128,8 @@ separated from layout (positions/size/custom label) so moving a node never churn
    must add a canvas mock to `tests/setup.ts`** (onStart/disposeAll/endFrame ARE tested).
 3. **Sub-task 3 quick-wins** (ROADMAP Phase 0; file:line map ready from POLISH §5): number
    `:min`/`:max` + units (`BaseNode.vue:666`); ~~boundary coercion~~ **(DONE)**; texture traps (`visual.ts:611-612`/`:1282`, render-3d depth via `emulation.ts:88-110`); edge-trigger
-   `latch`/`sample-hold` (`utility.ts:288-323` → `risingEdge`); `random` sample-on-trigger
-   (`index.ts:284-298`); ~~`power` finite-guard~~ **(DONE)**; oscilloscope/equalizer Tone-analyser
+   ~~`latch`/`sample-hold`~~ **(DONE)**; `random` sample-on-trigger
+   (`index.ts:284-298`, deferred — see above); ~~`power` finite-guard~~ **(DONE)**; oscilloscope/equalizer Tone-analyser
    `.dispose()`; clasp `captureStream` stop; single-input edge replacement honoring `multiple`
    (`flows.ts:325-356`); undo for param edits; per-node error badge. **Note**: `single-input edge
    replacement` now has the registry available in `flows.ts` (`useNodesStore`) to look up the target
