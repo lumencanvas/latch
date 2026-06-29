@@ -35,14 +35,23 @@ the store.
    `const disposeAllXState = () => xState.disposeAll()` to avoid churning many call sites; for
    multi-store categories like signal, the helper clears each store).
 
-**Converted so far (9) — the entire headless tier is DONE:** `spring`, `signal` (signalState+tapState),
-`gamepad`, `utility` (6 stores), `code` (compiledFunctions+nodeState, compound `nodeId:…` keys via
-`keyToNodeId`), and the four `executors/index.ts`-internal groups: `RAG` (vectorMemoryStores), `input`
-(triggerPrevPressed/smoothState/gateLastValue), `timing` (interval/delay/timer/metronome/stepSequencer +
-the `startFiredNodes` **Set** → `defineNodeState<true>` presence store), `debug` (console/monitor +
-oscilloscope/equalizer analysers — Tone teardown via per-entry `dispose: (s) => disposeAnalyzer(...)`,
-no double-dispose because rewire mutates state in place and never deletes). Each its own commit.
-`code` proved the **compound-key** pattern (`keyToNodeId: k => k.split(':')[0]`).
+**Converted so far (11) — the entire NON-HEAVY tier is DONE:** `spring`, `signal` (signalState+tapState),
+`gamepad`, `utility` (6 stores), `code` (compound `nodeId:…` keys via `keyToNodeId`), and the
+`executors/index.ts`-internal groups: `RAG`, `input`, `timing` (incl. `startFiredNodes` **Set** →
+`defineNodeState<true>` presence store), `debug` (analysers via per-entry `dispose` callback — no
+double-dispose since rewire mutates in place), `WebLLM`, and `messaging`. Each its own commit.
+
+**New infra: `defineLifecycle(hook)` in `nodeState.ts`** — registers a lifecycle NOT backed by a
+`defineNodeState` map, for cleanup that is a *side effect* rather than per-node state (gc/disposeAll
+default to no-ops). Used by `WebLLM` (`webLLMService.gc`/`stopActive`) and `messaging` (channel-keyed
+`receiveProcessed` GC + `messageBus.clear` + the end-of-frame change-flag flush, replacing the bespoke
+`endMessagingFrame` engine call site — the generic `endFrame` loop now drives it). Pattern for any
+remaining group with non-map side effects: convert nodeId-keyed maps to stores, register the rest via
+`defineLifecycle`. `messaging` keeps `disposeAllMessagingState`/`gcMessagingState` exported as
+test/teardown helpers (reimplemented on the stores) — the engine no longer calls them.
+
+**Engine is much slimmer now:** the `updateGraph` gc loop and `stop()` disposeAll loop only retain the
+**heavy/in-app** categories below; everything else flows through `for (const l of this.lifecycles) …`.
 
 **⚠️ LESSON (cost me a red full-run): before deleting a `disposeXState`/`gcXState`, grep ALL of
 `tests/` for it — not just the test file you know about.** `input`'s removal broke `smooth.test.ts`
@@ -57,15 +66,7 @@ local `const disposeAllXState = () => store.disposeAll()` helper (keeps call sit
   `messageBus` side effects (`messageBus.clear()` / `clearChangeFlag`). Convert `sendPrevValues` +
   `activeReceiveNodes` to stores but keep a bespoke path (or a non-nodeState helper) for
   `receiveProcessed` + the messageBus calls. Has `executor-gc.test.ts` coupling.
-- **`WebLLM` + `messaging` need a SIDE-EFFECT lifecycle first.** Both have cleanup beyond per-node maps:
-  WebLLM's `gcWebLLMState` calls `webLLMService.gc(validNodeIds)` + `disposeAllWebLLMState` calls
-  `webLLMService.stopActive()`; messaging's `disposeAll`/`endFrame` call `messageBus.clear()`/
-  `clearChangeFlag`, and its `receiveProcessed` is **channel-keyed** (not nodeId). `defineNodeState`
-  only registers a *map-backed* lifecycle. **Recommended infra step:** add a public
-  `registerLifecycle(hook: LifecycleHooks)` (or `defineLifecycle({ gc?, disposeAll?, endFrame? })`) to
-  `nodeState.ts` so non-map side effects can join the generic loop; then convert these two's maps to
-  stores and register their service/bus calls as a separate lifecycle. Do this deliberately in a fresh
-  context — it's a small additive API, not a hack.
+  (`WebLLM` + `messaging` are DONE — see above; `defineLifecycle` landed.)
 - **Heavy dispose / needs in-app verification:** `audio` (Tone), `visual` (WebGL/canvas), `ai`,
   `opencv` (workers + `disposedNodes` marker Set + `onStart` reset), `clasp` (media), `connectivity`
   (sockets/MIDI/BLE), `3d`, `emulation`, `subflow`, `http`/`mqtt`/`websocket`. These have real
