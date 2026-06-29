@@ -1437,6 +1437,22 @@ export const claspGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext
 // Video Node Disposal
 // ============================================================================
 
+/**
+ * Tear down a <video> backed by a canvas captureStream: stop its MediaStream
+ * tracks, pause it, and clear srcObject. Disposing the texture alone leaves the
+ * captured tracks running — a leak on every video-receive node remove/stop.
+ * Null- and error-safe. (AUDIT §F.)
+ */
+export function stopVideoElement(video: HTMLVideoElement | null): void {
+  if (!video) return
+  try {
+    const stream = video.srcObject as MediaStream | null
+    stream?.getTracks().forEach((track) => track.stop())
+    video.pause()
+    video.srcObject = null
+  } catch { /* ignore */ }
+}
+
 function disposeClaspVideoReceiveNode(nodeId: string): void {
   const state = videoReceiveState.get(nodeId)
   if (!state) return
@@ -1446,6 +1462,9 @@ function disposeClaspVideoReceiveNode(nodeId: string): void {
   if (state.decoder && state.decoder.state !== 'closed') {
     try { state.decoder.close() } catch { /* ignore */ }
   }
+  // Stop the captureStream tracks + tear down the <video> (texture.dispose alone leaks them).
+  stopVideoElement(state.videoElement)
+  state.videoElement = null
   state.assembler.clear()
   state.texture.dispose()
   videoReceiveState.delete(nodeId)
