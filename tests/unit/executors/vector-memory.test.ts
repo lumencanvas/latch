@@ -2,11 +2,14 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   vectorMemoryExecutor,
   retrieveExecutor,
-  disposeVectorMemoryNode,
-  disposeAllRAGState,
-  gcRAGState,
+  vectorMemoryStores,
 } from '@/engine/executors'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
+
+// vector-memory state migrated to defineNodeState; drive cleanup through the store.
+const disposeVectorMemoryNode = (id: string) => vectorMemoryStores.delete(id)
+const disposeAllRAGState = () => vectorMemoryStores.disposeAll()
+const gcRAGState = (ids: Set<string>) => vectorMemoryStores.gc(ids)
 
 function ctx(
   nodeId: string,

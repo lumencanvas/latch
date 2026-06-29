@@ -13,11 +13,10 @@ import {
   gcTimingState,
   gcDebugState,
   gcInputState,
-  disposeAllRAGState,
-  gcRAGState,
   disposeAllWebLLMState,
   gcWebLLMState,
 } from './executors/index'
+// RAG (vector-memory) state is migrated to defineNodeState — generic lifecycle loop.
 // utility state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
 // spring + signal state are migrated to defineNodeState — cleaned up via the generic lifecycle loop.
@@ -314,7 +313,6 @@ export class ExecutionEngine {
         gcDebugState(validNodeIds)
         gcInputState(validNodeIds)
         gcClaspState(validNodeIds)
-        gcRAGState(validNodeIds)
         gcWebLLMState(validNodeIds)
         gcMqttState(validNodeIds)
         gcWebSocketState(validNodeIds)
@@ -963,7 +961,6 @@ export class ExecutionEngine {
     disposeAllConnectivityNodes()
     disposeAllClaspConnections()
     disposeAllAINodes()
-    disposeAllRAGState()
     disposeAllWebLLMState()
     clearAllSubflowContexts()
     disposeAllMqttNodes()

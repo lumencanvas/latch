@@ -5,6 +5,7 @@
 
 import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
 import { cosineSimilarity, VectorStore } from '../../services/ai/VectorStore'
 import { webLLMService } from '../../services/ai/WebLLMService'
 import { DEFAULT_WEBLLM_MODEL } from '../../registry/ai/llm'
@@ -1320,7 +1321,8 @@ interface VectorMemoryState {
   snapshot: RetrieveDoc[]
 }
 
-const vectorMemoryStores = new Map<string, VectorMemoryState>()
+// defineNodeState auto-registers gc/dispose with the engine's generic lifecycle loop.
+export const vectorMemoryStores = defineNodeState<VectorMemoryState>({ label: 'vector-memory' })
 
 function getVectorMemoryState(nodeId: string): VectorMemoryState {
   let s = vectorMemoryStores.get(nodeId)
@@ -1403,22 +1405,6 @@ export const vectorMemoryExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   ])
 }
 
-/** Drop a single Vector Memory node's accumulated corpus (node removed). */
-export function disposeVectorMemoryNode(nodeId: string): void {
-  vectorMemoryStores.delete(nodeId)
-}
-
-/** GC RAG node state for nodes no longer in the graph. */
-export function gcRAGState(validNodeIds: Set<string>): void {
-  for (const id of vectorMemoryStores.keys()) {
-    if (!validNodeIds.has(id)) vectorMemoryStores.delete(id)
-  }
-}
-
-/** Clear all RAG node state (called when execution stops). */
-export function disposeAllRAGState(): void {
-  vectorMemoryStores.clear()
-}
 
 // ============================================================================
 // WebLLM (streaming LLM, WebGPU)
