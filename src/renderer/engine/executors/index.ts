@@ -1000,6 +1000,24 @@ export const monitorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // Audio waveform analyzers per oscilloscope node
 const scopeAnalyzers = new Map<string, { waveform: unknown; prevAudio: unknown }>()
 
+/**
+ * Tear down a Tone analyser: disconnect it from its source (if still wired) and
+ * dispose it. A Tone Waveform/FFT wraps a Web Audio AnalyserNode that leaks unless
+ * disposed — disconnect alone is not enough, so every add/remove/stop/rewire that
+ * discarded one previously leaked an AnalyserNode. Null- and error-safe. (AUDIT §F.)
+ */
+export function disposeAnalyzer(node: unknown, source: unknown): void {
+  if (!node) return
+  if (source && typeof source === 'object' && 'disconnect' in source) {
+    try {
+      (source as { disconnect: (n: unknown) => void }).disconnect(node)
+    } catch { /* already disconnected */ }
+  }
+  try {
+    (node as { dispose?: () => void }).dispose?.()
+  } catch { /* ignore */ }
+}
+
 export const oscilloscopeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const signal = ctx.inputs.get('signal') as number | undefined
   const audio = ctx.inputs.get('audio') as unknown
@@ -1014,12 +1032,8 @@ export const oscilloscopeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   if (audio && typeof audio === 'object' && 'connect' in audio) {
     // Create or get waveform analyzer
     if (!state.waveform || state.prevAudio !== audio) {
-      // Disconnect previous
-      if (state.waveform && state.prevAudio) {
-        try {
-          (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.waveform)
-        } catch { /* ignore */ }
-      }
+      // Dispose the previous analyser before replacing it (disconnect alone leaks).
+      disposeAnalyzer(state.waveform, state.prevAudio)
       // Create new waveform analyzer
       state.waveform = new Tone.Waveform(256)
       ;(audio as { connect: (n: unknown) => void }).connect(state.waveform as unknown)
@@ -1075,12 +1089,8 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   if (audio && typeof audio === 'object' && 'connect' in audio) {
     // Create or reconnect FFT analyzer
     if (!state.fft || state.prevAudio !== audio) {
-      // Disconnect previous
-      if (state.fft && state.prevAudio) {
-        try {
-          (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.fft)
-        } catch { /* ignore */ }
-      }
+      // Dispose the previous analyser before replacing it (disconnect alone leaks).
+      disposeAnalyzer(state.fft, state.prevAudio)
       // Create new FFT analyzer with more bins for better resolution
       state.fft = new Tone.FFT(128)
       ;(audio as { connect: (n: unknown) => void }).connect(state.fft as unknown)
@@ -1093,8 +1103,9 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Clear state if no audio
+  // Clear state if no audio — dispose the analyser, don't just drop the reference.
   if (state.fft) {
+    disposeAnalyzer(state.fft, state.prevAudio)
     state.fft = null
     state.prevAudio = null
   }
@@ -1158,20 +1169,12 @@ export function disposeDebugNode(nodeId: string): void {
 
   // Clean up oscilloscope waveform analyzer
   const scopeState = scopeAnalyzers.get(nodeId)
-  if (scopeState?.waveform && scopeState.prevAudio) {
-    try {
-      (scopeState.prevAudio as { disconnect: (n: unknown) => void }).disconnect(scopeState.waveform)
-    } catch { /* ignore */ }
-  }
+  if (scopeState) disposeAnalyzer(scopeState.waveform, scopeState.prevAudio)
   scopeAnalyzers.delete(nodeId)
 
   // Clean up equalizer FFT analyzer
   const eqState = eqAnalyzers.get(nodeId)
-  if (eqState?.fft && eqState.prevAudio) {
-    try {
-      (eqState.prevAudio as { disconnect: (n: unknown) => void }).disconnect(eqState.fft)
-    } catch { /* ignore */ }
-  }
+  if (eqState) disposeAnalyzer(eqState.fft, eqState.prevAudio)
   eqAnalyzers.delete(nodeId)
 }
 
@@ -1204,23 +1207,11 @@ export function disposeAllDebugState(): void {
   monitorLastValue.clear()
 
   // Clean up oscilloscope waveform analyzers
-  for (const [, state] of scopeAnalyzers) {
-    if (state.waveform && state.prevAudio) {
-      try {
-        (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.waveform)
-      } catch { /* ignore */ }
-    }
-  }
+  for (const [, state] of scopeAnalyzers) disposeAnalyzer(state.waveform, state.prevAudio)
   scopeAnalyzers.clear()
 
   // Clean up equalizer FFT analyzers
-  for (const [, state] of eqAnalyzers) {
-    if (state.fft && state.prevAudio) {
-      try {
-        (state.prevAudio as { disconnect: (n: unknown) => void }).disconnect(state.fft)
-      } catch { /* ignore */ }
-    }
-  }
+  for (const [, state] of eqAnalyzers) disposeAnalyzer(state.fft, state.prevAudio)
   eqAnalyzers.clear()
 }
 
