@@ -11,6 +11,7 @@
 import * as THREE from 'three'
 import * as Tone from 'tone'
 import type { NodeExecutorFn, ExecutionContext } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { coreSpec, controllerStateToEmuInputs } from '@/services/emulation/coreMap'
 import { setExcludedAudioContext, type EmulatorJSLoader } from '@/services/emulation/emulatorjs'
@@ -259,3 +260,14 @@ export function disposeAllEmulationNodes(): void {
   // is cleaned per-node by unregisterEmulator (unmount) and gcEmulationState (removal).
   for (const entry of emulators.values()) cleanupEntry(entry, true)
 }
+
+// Self-register into the engine's generic lifecycle loop (replaces the hand-wired
+// gc/disposeAll calls in ExecutionEngine). NOT a `defineNodeState` store: gc and
+// disposeAll are deliberately ASYMMETRIC here — gc drops the entry + removes the host,
+// disposeAll keeps the registration so a node survives flow stop→restart — which a
+// store's uniform `disposeAll()` (always clears the map) cannot express.
+defineLifecycle({
+  label: 'emulation',
+  gc: gcEmulationState,
+  disposeAll: disposeAllEmulationNodes,
+})
