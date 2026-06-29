@@ -13,19 +13,20 @@ Executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
 attribution). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no change
 needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
-**▶ NEXT ACTION:** the clean leak/correctness quick-win sweep is done; what remains (see "Open / next")
-is UI work (number `:min`/`:max` P0 + per-node error badge — would add the repo's first
-`@vue/test-utils` component test) or infra (**2b** ctx-accessor factory). `random` and
-single-input-edge-replacement need design / Vue-Flow-sync work first.
+**▶ NEXT ACTION:** number `:min`/`:max` (Open/next #1) is **DONE** (first `@vue/test-utils` component
+test landed). Next clean UI win is the **per-node error badge** (Open/next #2, UI-only, data already in
+`runtimeStore.lastError`); or the **2b** ctx-accessor factory (infra). `random` and
+single-input-edge-replacement still need design / Vue-Flow-sync work first.
 
 **Landed this session** (15 commits): planning corpus · `.latch` v2 file format (+ store wiring) ·
 engine registry-resolved definitions + boundary input coercion · extensibility scaffold
 (`defineNode`/`trigger`/`defineNodeState`/`nodeRegistry`) · `power` finite-guard · import toasts ·
 engine lifecycle wiring · edge-triggered `latch`/`sample-hold` · Tone-analyser dispose · clasp
-`captureStream` stop. Test count **1517 → 1569**.
+`captureStream` stop · **number control `:min`/`:max` + blur-clamp (first component test)**.
+Test count **1517 → 1573**.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1569 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1573 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -139,11 +140,17 @@ separated from layout (positions/size/custom label) so moving a node never churn
 ### Open / next (remaining Phase-0 work, roughly priority order)
 Done already: file format (Sub-task 1), scaffold 2a/2c, **engine lifecycle wiring**, and 5 quick-wins
 (power, boundary coercion, edge-trigger latch/sample-hold, Tone dispose, clasp captureStream). Remaining:
-1. **number `:min`/`:max` + units** (AUDIT §B P0, 127 controls) — BaseNode number branch binds only
-   `:step` (`BaseNode.vue:666`; the slider branch ~`:606` already binds min/max). Bind `:min`/`:max`
-   (omit when undefined → unbounded); check PropertiesPanel's number branch too. UX: do **not** hard-clamp
-   per keystroke (breaks typing) — bind the attributes, optionally clamp on blur. Units/precision display
-   is the P1 follow-on. First component test (`@vue/test-utils` is installed; no precedent yet).
+1. **number `:min`/`:max` — DONE** (AUDIT §B P0, 127 controls). Both number branches (`BaseNode.vue`
+   inline + `PropertiesPanel.vue`) now bind `:min`/`:max` (cast `as number` — a bare `unknown` value is
+   omitted at runtime, so unbounded controls stay unbounded). NOTE: a union cast `as number | undefined`
+   in a template trips eslint `vue/no-deprecated-filter` — the `|` parses as a Vue-2 filter pipe; use
+   `as number`. A shared `clampNumberControl(control, raw)` settles the value to the range **on blur
+   only** (not per keystroke, so typing intermediate values isn't broken). **First `@vue/test-utils`
+   component test** in the repo: `tests/unit/components/BaseNode.test.ts` (4 tests). GOTCHA captured
+   there: import the store/registry chain (`@/stores/flows`) **before** `BaseNode.vue` — if BaseNode is
+   the cycle entry point, `registry/components.ts`'s module-scope `markRaw(BaseNode)` runs with BaseNode
+   undefined → crash (same circular-init hazard as the nodeRegistry guard test). `units`/`precision`
+   display is a P1 follow-on and currently **0 controls define it** — don't build dead UI for it.
 2. **per-node error badge** (AUDIT §G) — BaseNode reads `runtimeStore` `lastError` for its node and
    shows a red border/badge. Data already exists; UI-only.
 3. **single-input edge replacement** (AUDIT §D) — in `addEdge` (`flows.ts`), replace the existing edge
