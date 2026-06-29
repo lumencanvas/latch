@@ -8,10 +8,21 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ## 2026-06-28 — Phase 0 foundations: `.latch` v2 file format + extensibility scaffolding
 
-Started executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
-**`phase0-file-format`** (off `main`). Nothing committed yet (per CLAUDE.md — staging is the
-maintainer's). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no
-change needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
+Executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
+**`phase0-file-format`** (off `main`) — **15 commits, all green, working tree clean** (no AI
+attribution). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no change
+needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
+
+**▶ NEXT ACTION:** the clean leak/correctness quick-win sweep is done; what remains (see "Open / next")
+is UI work (number `:min`/`:max` P0 + per-node error badge — would add the repo's first
+`@vue/test-utils` component test) or infra (**2b** ctx-accessor factory). `random` and
+single-input-edge-replacement need design / Vue-Flow-sync work first.
+
+**Landed this session** (15 commits): planning corpus · `.latch` v2 file format (+ store wiring) ·
+engine registry-resolved definitions + boundary input coercion · extensibility scaffold
+(`defineNode`/`trigger`/`defineNodeState`/`nodeRegistry`) · `power` finite-guard · import toasts ·
+engine lifecycle wiring · edge-triggered `latch`/`sample-hold` · Tone-analyser dispose · clasp
+`captureStream` stop. Test count **1517 → 1569**.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
 **1569 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
@@ -125,28 +136,36 @@ separated from layout (positions/size/custom label) so moving a node never churn
   and refactor the ~25 helpers to spread from it. The sole runtime construction site is
   `ExecutionEngine.ts` (~line 378).
 
-### Open / next (in order)
-1. **2b** — ctx accessors (see deferred note above). Needed by several sub-task-3 quick-wins (boundary
-   coercion).
-2. ~~**Engine lifecycle wiring**~~ **(DONE)** — `ExecutionEngine` gained `registerLifecycles()` + the
-   four generic loops (gc/disposeAll/endFrame/onStart) running *alongside* the legacy hardcoded ones;
-   `useExecutionEngine` calls `engine.registerLifecycles(collectedLifecycles())` (live array → late
-   registrations seen). No-op today (array empty until a consumer imports `trigger.ts`), so golden +
-   dirty-equivalence are unchanged. `risingEdge` state now GCs, so the edge-trigger / `random`
-   quick-wins are unblocked. **Test gap**: the engine-`gc`-on-removal path isn't unit-tested because
-   the legacy gc touches `canvas.getContext` (happy-dom lacks it) — **Phase 1's per-type leak tests
-   must add a canvas mock to `tests/setup.ts`** (onStart/disposeAll/endFrame ARE tested).
-3. **Sub-task 3 quick-wins** (ROADMAP Phase 0; file:line map ready from POLISH §5): number
-   `:min`/`:max` + units (`BaseNode.vue:666`); ~~boundary coercion~~ **(DONE)**; texture traps (`visual.ts:611-612`/`:1282`, render-3d depth via `emulation.ts:88-110`); edge-trigger
-   ~~`latch`/`sample-hold`~~ **(DONE)**; `random` sample-on-trigger
-   (`index.ts:284-298`, deferred — see above); ~~`power` finite-guard~~ **(DONE)**; ~~oscilloscope/equalizer Tone-analyser
-   `.dispose()`~~ **(DONE)**; ~~clasp `captureStream` stop~~ **(DONE)**; single-input edge replacement honoring `multiple`
-   (`flows.ts:325-356`); undo for param edits; per-node error badge. **Note**: `single-input edge
-   replacement` now has the registry available in `flows.ts` (`useNodesStore`) to look up the target
-   port's `multiple` flag.
-4. Phase 1+: convert executors to `defineNodeState`, split `executors/index.ts`, derive `PURE_NODE_TYPES`
-   (24-id exact set), then the Phase-6 co-location that makes `nodeRegistry` authoritative + flips the
-   count guard to strict `===`.
+### Open / next (remaining Phase-0 work, roughly priority order)
+Done already: file format (Sub-task 1), scaffold 2a/2c, **engine lifecycle wiring**, and 5 quick-wins
+(power, boundary coercion, edge-trigger latch/sample-hold, Tone dispose, clasp captureStream). Remaining:
+1. **number `:min`/`:max` + units** (AUDIT §B P0, 127 controls) — BaseNode number branch binds only
+   `:step` (`BaseNode.vue:666`; the slider branch ~`:606` already binds min/max). Bind `:min`/`:max`
+   (omit when undefined → unbounded); check PropertiesPanel's number branch too. UX: do **not** hard-clamp
+   per keystroke (breaks typing) — bind the attributes, optionally clamp on blur. Units/precision display
+   is the P1 follow-on. First component test (`@vue/test-utils` is installed; no precedent yet).
+2. **per-node error badge** (AUDIT §G) — BaseNode reads `runtimeStore` `lastError` for its node and
+   shows a red border/badge. Data already exists; UI-only.
+3. **single-input edge replacement** (AUDIT §D) — in `addEdge` (`flows.ts`), replace the existing edge
+   into a non-`multiple` target (registry via `useNodesStore` gives the `multiple` flag). **CAVEAT**:
+   `onConnect` also calls Vue Flow's `addEdges()` independently (`EditorView.vue:133`), so a store-side
+   replacement risks a store↔VF desync — must keep them in sync and verify in-app, not just unit tests.
+4. **`random` sample-on-trigger** (AUDIT §E, `index.ts:284-298`) — needs a `trigger` input + reliable
+   wired-detection (engine per-input edge-presence, or a mode control). Design first; don't guess.
+5. **texture traps** (AUDIT §D P0) — shader `iChannel` + `displacement` via `resolveEffectSource`
+   (`visual.ts:611-612`/`:1282`); make render-3d depth canvas-backed (copy `emulation.ts:88-110` blit).
+   Hard to unit-test under happy-dom (WebGL); verify in-app.
+6. **undo for param edits** (AUDIT §G P0) — wrap `updateNodeData` control edits in history, debounced.
+7. **2b ctx accessors** — `ctx.num/bool/str/trig/level`; introduce a shared `createExecutionContext`
+   factory + refactor ~25 executor-test `createContext` helpers, make accessors required. Sole runtime
+   build site: `ExecutionEngine.ts` (~:378).
+8. **Sub-task 4 policies** — checked-in `tests/contracts/public-exports.ts` must-not-break fixture
+   (activates as a Phase-1+ gate); the `defineNode` deprecation policy is already in POLICIES.
+9. **Phase 1+** — convert executors to `defineNodeState` (delete the 23×3 hardcoded gc/disposeAll),
+   split `executors/index.ts`, derive `PURE_NODE_TYPES` (24-id exact set), then Phase-6 co-location that
+   makes `nodeRegistry` authoritative + flips its count guard to strict `===`. **The per-type leak tests
+   here exercise engine node-removal → MUST add a `canvas.getContext` mock to `tests/setup.ts`** first
+   (the legacy visual gc touches canvas; happy-dom lacks it — see the lifecycle-wiring test gap).
 
 ### Key decisions/invariants for the next session
 - Node ids are **opaque, no `/`** (subflow rebuild joins ids with `/`); the format uses `:` for edge
