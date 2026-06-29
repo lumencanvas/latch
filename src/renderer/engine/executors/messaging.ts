@@ -5,62 +5,61 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState, defineLifecycle } from '../nodeState'
 import { messageBus } from '@/services/messaging/MessageBus'
 
-// Track previous values for change detection in send nodes
-const sendPrevValues = new Map<string, unknown>()
+// Per-node state (nodeId-keyed) — auto-cleaned via defineNodeState.
+export const sendPrevValues = defineNodeState<unknown>({ label: 'send' })
+export const activeReceiveNodes = defineNodeState<true>({ label: 'receive-active' })
 
-// Track which receive nodes have processed the change
+// Channel-keyed (NOT nodeId-keyed), so it can't be a defineNodeState; its cleanup
+// + the message-bus side effects + the end-of-frame flush ride the generic loop
+// via the defineLifecycle below.
 const receiveProcessed = new Map<string, Map<string, boolean>>()
 
-// Track active receive nodes for proper change detection
-const activeReceiveNodes = new Set<string>()
-
-/**
- * Clean up state for a specific node
- */
-export function disposeMessagingNode(nodeId: string): void {
-  sendPrevValues.delete(nodeId)
-  activeReceiveNodes.delete(nodeId)
-  // Clean up any processed entries for this node
+/** Drop receiveProcessed entries for nodes no longer in the graph. */
+function gcReceiveProcessed(validNodeIds: Set<string>): void {
   for (const [, processed] of receiveProcessed) {
-    processed.delete(nodeId)
+    for (const id of processed.keys()) if (!validNodeIds.has(id)) processed.delete(id)
   }
 }
 
+/** End-of-frame: reset change flags + per-node processed markers so the next
+ *  frame can detect new changes. */
+function endMessagingFrame(): void {
+  for (const channel of messageBus.getChannels()) messageBus.clearChangeFlag(channel)
+  for (const [, processed] of receiveProcessed) processed.clear()
+}
+
+// sendPrevValues + activeReceiveNodes clean via their own stores; this lifecycle
+// covers the channel-keyed receiveProcessed map and the message-bus side effects.
+defineLifecycle({
+  label: 'messaging-bus',
+  gc: gcReceiveProcessed,
+  disposeAll: () => {
+    receiveProcessed.clear()
+    messageBus.clear()
+  },
+  endFrame: endMessagingFrame,
+})
+
 /**
- * Clean up all messaging state (called when execution stops)
+ * Full reset, for tests / explicit teardown. Production cleanup runs through the
+ * generic lifecycle loop (the stores + the messaging-bus lifecycle above), so the
+ * engine no longer calls this.
  */
 export function disposeAllMessagingState(): void {
-  sendPrevValues.clear()
+  sendPrevValues.disposeAll()
+  activeReceiveNodes.disposeAll()
   receiveProcessed.clear()
-  activeReceiveNodes.clear()
   messageBus.clear()
 }
 
-/** Drop per-node state for nodes no longer in the graph (called on node removal). */
+/** Full per-node GC, for tests / explicit teardown (see disposeAllMessagingState). */
 export function gcMessagingState(validNodeIds: Set<string>): void {
-  const ids = new Set<string>([...sendPrevValues.keys(), ...activeReceiveNodes])
-  for (const [, processed] of receiveProcessed) {
-    for (const id of processed.keys()) ids.add(id)
-  }
-  for (const id of ids) {
-    if (!validNodeIds.has(id)) disposeMessagingNode(id)
-  }
-}
-
-/**
- * Called at the end of each frame to reset change tracking
- */
-export function endMessagingFrame(): void {
-  // Clear all change flags and processed markers at frame end
-  for (const channel of messageBus.getChannels()) {
-    messageBus.clearChangeFlag(channel)
-  }
-  // Clear processed flags so next frame can detect new changes
-  for (const [, processed] of receiveProcessed) {
-    processed.clear()
-  }
+  sendPrevValues.gc(validNodeIds)
+  activeReceiveNodes.gc(validNodeIds)
+  gcReceiveProcessed(validNodeIds)
 }
 
 // ============================================================================
@@ -100,7 +99,7 @@ export const receiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const channel = (ctx.controls.get('channel') as string) ?? 'default'
 
   // Register this receive node as active
-  activeReceiveNodes.add(ctx.nodeId)
+  activeReceiveNodes.set(ctx.nodeId, true)
 
   const outputs = new Map<string, unknown>()
   const value = messageBus.get(channel)

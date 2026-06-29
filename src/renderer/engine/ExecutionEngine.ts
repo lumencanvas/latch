@@ -10,12 +10,7 @@ import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
 // utility, spring, signal, gamepad, code, RAG, input, timing, debug, and WebLLM
 // (its webLLMService side effects via defineLifecycle).
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
-import {
-  disposeAllMessagingState,
-  gcMessagingState,
-  endMessagingFrame,
-} from './executors/messaging'
-// code state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
+// messaging + code state are migrated to defineNodeState/defineLifecycle — generic lifecycle loop.
 import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
 import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
@@ -304,7 +299,6 @@ export class ExecutionEngine {
         gcWebSocketState(validNodeIds)
         gcHttpState(validNodeIds)
         gcSubflowState(validNodeIds)
-        gcMessagingState(validNodeIds)
         gcEmulationState(validNodeIds)
         gcOpenCVState(validNodeIds)
         // Clean up node metrics for deleted nodes
@@ -626,8 +620,7 @@ export class ExecutionEngine {
       this.pendingAsyncChange.clear()
     }
 
-    // End-of-frame cleanup for messaging (reset change flags)
-    endMessagingFrame()
+    // End-of-frame hooks (messaging change-flag reset, etc.) via the generic loop.
     for (const l of this.lifecycles) l.endFrame?.()
 
     // Update FPS
@@ -939,7 +932,6 @@ export class ExecutionEngine {
     // Clean up all executor state to prevent memory leaks and stop audio
     disposeAllAudioNodes()
     disposeAllVisualNodes()
-    disposeAllMessagingState()
     disposeAll3DNodes()
     disposeAllConnectivityNodes()
     disposeAllClaspConnections()
