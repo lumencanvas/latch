@@ -14,7 +14,7 @@ maintainer's). License decision: **MIT confirmed** — already in `LICENSE` + `p
 change needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1561 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1566 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -53,6 +53,12 @@ still embeds `definition` at node creation — drop it later so the format is un
   now exercised in production, not just a no-op). Existing tests kept passing (they used clean low→high
   transitions); 3 discriminating edge tests added. Held-value state stays in the legacy `gcUtilityState`
   path; edge state GCs via the new lifecycle loop.
+- **Tone-analyser dispose DONE** (AUDIT §F P1): oscilloscope (`Tone.Waveform`) and equalizer
+  (`Tone.FFT`) `.disconnect()`'d their analyser but never `.dispose()`'d it, leaking a Web Audio
+  `AnalyserNode` on every add/remove/stop/rewire (and the equalizer's no-audio branch dropped the
+  reference without disconnecting). One error/null-safe `disposeAnalyzer(node, source)` helper now
+  replaces all six discard sites (2 rewire, equalizer no-audio, per-node dispose, 2 disposeAll loops).
+  Tested via a partial `vi.mock('tone')` (stub Waveform/FFT) asserting dispose fires at each site.
 - **`random` sample-on-trigger — NOT done** (deferred): needs an optional `trigger` input on the
   definition + reliable "is the trigger wired" detection. `ctx.inputs.has('trigger')` is unreliable
   (depends on whether the upstream emits continuously vs only on fire), so this needs either engine
@@ -129,8 +135,8 @@ separated from layout (positions/size/custom label) so moving a node never churn
 3. **Sub-task 3 quick-wins** (ROADMAP Phase 0; file:line map ready from POLISH §5): number
    `:min`/`:max` + units (`BaseNode.vue:666`); ~~boundary coercion~~ **(DONE)**; texture traps (`visual.ts:611-612`/`:1282`, render-3d depth via `emulation.ts:88-110`); edge-trigger
    ~~`latch`/`sample-hold`~~ **(DONE)**; `random` sample-on-trigger
-   (`index.ts:284-298`, deferred — see above); ~~`power` finite-guard~~ **(DONE)**; oscilloscope/equalizer Tone-analyser
-   `.dispose()`; clasp `captureStream` stop; single-input edge replacement honoring `multiple`
+   (`index.ts:284-298`, deferred — see above); ~~`power` finite-guard~~ **(DONE)**; ~~oscilloscope/equalizer Tone-analyser
+   `.dispose()`~~ **(DONE)**; clasp `captureStream` stop; single-input edge replacement honoring `multiple`
    (`flows.ts:325-356`); undo for param edits; per-node error badge. **Note**: `single-input edge
    replacement` now has the registry available in `flows.ts` (`useNodesStore`) to look up the target
    port's `multiple` flag.
