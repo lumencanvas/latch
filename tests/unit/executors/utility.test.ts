@@ -394,6 +394,17 @@ describe('Utility Executors', () => {
       const result = sampleHoldExecutor(createContext({ value: 'third', trigger: true }, {}, nodeId))
       expect(result.get('result')).toBe('third')
     })
+
+    it('does NOT re-sample while trigger stays high (edge-triggered, not level)', () => {
+      const nodeId = 'sample-hold-edge'
+      // Rising edge captures 'a'...
+      expect(sampleHoldExecutor(createContext({ value: 'a', trigger: true }, {}, nodeId)).get('result')).toBe('a')
+      // ...trigger STILL high: a level-triggered impl would re-sample 'b'; edge-triggered holds 'a'.
+      expect(sampleHoldExecutor(createContext({ value: 'b', trigger: true }, {}, nodeId)).get('result')).toBe('a')
+      // Falls low (no sample), then a fresh rising edge captures 'c'.
+      sampleHoldExecutor(createContext({ value: 'b', trigger: false }, {}, nodeId))
+      expect(sampleHoldExecutor(createContext({ value: 'c', trigger: true }, {}, nodeId)).get('result')).toBe('c')
+    })
   })
 
   // ============================================================================
@@ -423,6 +434,21 @@ describe('Utility Executors', () => {
       const nodeId = 'latch-test-4'
       latchExecutor(createContext({ set: true }, { initialState: false }, nodeId))
       const result = latchExecutor(createContext({ set: true, reset: true }, {}, nodeId))
+      expect(result.get('result')).toBe(0)
+    })
+
+    it('reset wins when set and reset rise on the same frame', () => {
+      const nodeId = 'latch-both'
+      const result = latchExecutor(createContext({ set: true, reset: true }, { initialState: false }, nodeId))
+      expect(result.get('result')).toBe(0)
+    })
+
+    it('set is edge-triggered: a held-high set does not re-assert after a reset', () => {
+      const nodeId = 'latch-edge'
+      latchExecutor(createContext({ set: true }, { initialState: false }, nodeId)) // rising set -> latched
+      latchExecutor(createContext({ set: true, reset: true }, {}, nodeId)) // reset rises (set held) -> cleared
+      // set is STILL high (no new rising edge); a level-triggered impl would re-set to 1.
+      const result = latchExecutor(createContext({ set: true }, {}, nodeId))
       expect(result.get('result')).toBe(0)
     })
   })

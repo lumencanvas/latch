@@ -5,6 +5,7 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { risingEdge } from '../trigger'
 
 // ============================================================================
 // State Management for Stateful Nodes
@@ -287,12 +288,11 @@ export const changedExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
 export const sampleHoldExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
-  const trigger = ctx.inputs.get('trigger')
 
-  // Check for trigger (truthy value)
-  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
-
-  if (hasTrigger && value !== undefined) {
+  // Sample only on the RISING EDGE of trigger (edge-triggered, as documented). A
+  // held-high gate previously re-sampled every frame, making this a pass-through.
+  // (AUDIT §E.)
+  if (risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger')) && value !== undefined) {
     sampleHoldValue.set(ctx.nodeId, value)
   }
 
@@ -300,8 +300,6 @@ export const sampleHoldExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 export const latchExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const setTrigger = ctx.inputs.get('set')
-  const resetTrigger = ctx.inputs.get('reset')
   const initialState = (ctx.controls.get('initialState') as boolean) ?? false
 
   // Initialize state if not exists
@@ -309,13 +307,14 @@ export const latchExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     latchState.set(ctx.nodeId, initialState)
   }
 
-  const hasSet = setTrigger === true || setTrigger === 1 || (typeof setTrigger === 'number' && setTrigger > 0)
-  const hasReset = resetTrigger === true || resetTrigger === 1 || (typeof resetTrigger === 'number' && resetTrigger > 0)
-
-  // Reset takes priority
-  if (hasReset) {
+  // Edge-triggered SR latch: act on the rising edge of set/reset, not the level —
+  // a held-high set/reset previously re-asserted every frame. Both edges are
+  // evaluated each frame (to update their state); reset wins on a tie. (AUDIT §E.)
+  const setEdge = risingEdge(ctx.nodeId, 'set', ctx.inputs.get('set'))
+  const resetEdge = risingEdge(ctx.nodeId, 'reset', ctx.inputs.get('reset'))
+  if (resetEdge) {
     latchState.set(ctx.nodeId, false)
-  } else if (hasSet) {
+  } else if (setEdge) {
     latchState.set(ctx.nodeId, true)
   }
 
