@@ -1,159 +1,109 @@
 # Next-Session Kickoff Prompt
 
 Copy everything in the code block below as your first message to a fresh Claude
-Code session to resume the LATCH modernization with full context.
-(Last updated 2026-06-15.)
+Code session to resume the LATCH Phase-1 work with full context.
+(Last updated 2026-06-29.)
 
 ---
 
 ```
-You're resuming an in-progress modernization of LATCH — a Vue 3 + TypeScript +
-Electron node-based creative-coding app ("Live Art Tool for Creative Humans";
-133+ nodes, web + desktop) — on the `modernization` git branch. Do NOT start
-coding yet: get context, confirm the baseline, then propose the next step.
+ultrathink You're picking up Phase 1 of LATCH — a free/open web+desktop node-based
+creative-coding tool (Vue 3 + TS + Vite, Electron Forge) at
+/Users/obsidian/Projects/lumencanvas/latch. Branch: phase0-file-format (54 commits in,
+tree clean, all green). Get up to speed before touching code.
 
-## Rules (mandatory, non-negotiable)
-- NEVER put AI/Claude attribution in git. No "Co-Authored-By: Claude", no
-  "Generated with Claude Code", no robot emoji, no Anthropic mention — in commit
-  messages, PR bodies, tags, or anywhere in history. The author stays me
-  (Moheeb Zara). This is codified in CLAUDE.md and has held; keep it.
-- NEVER assume. Back every claim by reading the actual implementation or doing
-  current research (WebSearch/WebFetch). If you can't verify it, say so. Reading
-  the real code + live docs has repeatedly overturned stale assumptions here
-  (test baselines, already-installed deps, hidden node state, dep export maps,
-  three.js internals).
-- Commit ONLY when I ask. ALL phases live on the single `modernization` branch;
-  nothing is pushed or merged. Don't push/merge/commit without asking.
-- Work test-driven: write/extend the test, watch it fail, implement, watch it
-  pass. Never drop below the test baseline. Keep typecheck + lint + build:web
-  green. Update docs/plans/MODERNIZATION_PLAN_2026.md + HANDOFF.md as you go.
+## STEP 1 — Read, in order
+1. CLAUDE.md (project rules — authoritative; NO AI attribution in git, ever).
+2. docs/HANDOFF.md — read the TOP entries (newest first). "(later 6)" is the deep-audit
+   + plan-adherence checkpoint; "(later 1..5)" are the per-category migration entries.
+3. docs/plans/ROADMAP_2026-06-28.md — canonical sequencing. The "Progress snapshot —
+   2026-06-29" block at the top is the at-a-glance status.
+4. docs/plans/EXTENSIBILITY_ARCHITECTURE_2026-06-28.md §4 (defineNodeState + lifecycle)
+   and docs/plans/POLICIES_2026-06-28.md §1 (the CI gate list).
+5. Recall the memories: latch-smoke-test-harness, latch-nanoid-underscore-split,
+   latch-component-test-gotchas.
+Then run the baseline: npm run typecheck (clean) · npm run lint (0 errors; 49 pre-existing
+`any` warnings are fine) · npm run test:unit (**1616 pass** + 11 todo) · npm run build (ok).
 
-## Git state (updated 2026-06-15 — the old "everything uncommitted" note is obsolete)
-Everything is now **committed** on the `modernization` branch in clean, task-aligned
-commits (nothing pushed/merged — eventual single PR to `main` when the maintainer
-says). The working tree is clean except `.DS_Store` (an already-tracked OS artifact,
-intentionally left unstaged). So `git log --oneline -20` reflects reality. The
-2026-06-15 session committed: the Phase 4 ML batch + Phase 5 + clasp/three bumps
-(7 commits), the capability-requirement badge, the Phase 6 WebGPU renderer scaffold
-+ TSL prototype, and fixes for three real bugs found by adversarial audits (WebLLM
-concurrent-engine leak, `smooth` node no-op, and timing/debug/input/clasp per-node
-state leaks). Plus UX: model-license surfacing + badge a11y.
+## MANDATORY RULES
+- NO AI attribution anywhere in git (commits/PRs/tags) — history reads as Moheeb Zara's.
+- Commit ONLY when asked. Stay on phase0-file-format. Logical, individually-revertible commits.
+- NEVER assume — read the actual implementation or verify in-app before changing behavior.
+- Every step ends green (typecheck + lint + test:unit), build before declaring larger work
+  done. Honor strategy/05 DON'T-OVERCLAIM (no raw-perf / GC-free / scales-to-huge claims).
 
-## Get context (read these in order, then run the checks)
-1. CLAUDE.md — project rules + the architecture map.
-2. docs/plans/MODERNIZATION_PLAN_2026.md — THE SOURCE OF TRUTH: phase checkboxes,
-   status board, and a detailed per-task writeup for everything done/remaining.
-3. docs/AUDIT_2026-06-14.md — deep audit log across sessions: bugs found+fixed,
-   browser-validation results, and design findings (e.g. capability-duality,
-   three.js `__webglTexture` internal, clasp export resolution).
-4. HANDOFF.md — top entry is the modernization change log (Phases 0-5).
-5. docs/MODERNIZATION_ASSESSMENT_2026-06.md — original sourced findings/rationale.
-6. docs/nodes/ai.md — reference for the AI nodes (incl. the new Vector Memory,
-   Retrieve, and LLM streaming nodes).
-Then run:
-- `git status` (clean except `.DS_Store`) and `git log --oneline -20`.
-- `npm run test:unit` → baseline **1283 passing / 11 todo** (as of 2026-06-15).
-- `npm run typecheck` (0 errors). `npm run lint` (0 errors). `npm run build:web` (clean).
+## WHERE WE ARE (Phase 0 DONE; Phase 1 ~70%; Phases 2–9 not started)
+Phase 1 = "de-monolith executors/index.ts + kill the leak class" (convert ~23 hand-wired
+gc/disposeAll state groups onto the engine's generic lifecycle loop so the leak class is
+structurally impossible). Status of Phase 1's four deliverables:
+1. State-group migration: **18/23 done.** Remaining 4 heavy (visual, 3d, connectivity, clasp)
+   + subflow (deferred to its Phase-7 rebuild). Engine gc/disposeAll loops now hold only those.
+2. Per-type leak gate: DONE — tests/unit/engine/engine-leak.test.ts (in CI, mutation-verified).
+3. Exact-pure-set gate: DONE — tests/unit/engine/pure-node-types.test.ts (pins 24); full
+   derive-from-pure:true is a Phase-6 co-location follow-up (0 co-located node.ts files yet).
+4. De-monolith split: PARTIAL — 24 category files extracted; executors/index.ts still ~1482
+   lines (input/timing/debug/math/logic/RAG/WebLLM groups + the builtinExecutors registry).
 
-## How the repo works (architecture)
-- Stack: Vue 3 + TS + Vite; web build + Electron (electron-vite). Pinia state.
-- `src/renderer/registry/<category>/` — node DEFINITIONS (ports, controls, info).
-- `src/renderer/engine/executors/<category>.ts` — node RUNTIME behavior. The big
-  `executors/index.ts` holds input/math/logic/RAG/LLM executors + their cleanup.
-- `src/renderer/engine/ExecutionEngine.ts` — graph execution: topo sort + per-frame
-  rAF loop; OPT-IN `dirty` (change-driven) and `deferred` (fire-and-latch async)
-  modes (both default OFF); per-category gc*/disposeAll* cleanup wired here.
-- `src/renderer/components/nodes/BaseNode.vue` — generic node UI shell (~1165 lines).
-- `src/renderer/services/` — audio / visual / ai / connections / clasp services.
-- `src/renderer/stores/` — flows, runtime, ui, assets, connections, nodes.
-- Stateful executors keep per-node state in module-level Maps and MUST register a
-  gc (node-removal) + disposeAll (stop) path — the engine calls them. (Recurring
-  leak bug class; follow the existing pattern.)
-- Key libs (all current as of this branch): Vue Flow 1.48, three r184, Tone.js,
-  Meyda, transformers.js 4.2, ONNX Runtime, MediaPipe, @mlc-ai/web-llm 0.2.84,
-  @clasp-to/core 4.3.2 (first-party realtime protocol), Dexie, pixi.js 8.
-- Commands: `npm run dev` (Vite, port 5173, falls back to 5174), `dev:electron`,
-  `test:unit`, `typecheck`, `lint`, `build:web`.
+## TWO CONVERSION MODES (pick per category — this is the key judgment)
+- defineNodeState (self-cleaning store, the ideal): for INDEPENDENT per-node state where each
+  entry's teardown doesn't depend on others. Used for the sockets (websocket/mqtt): each
+  store gets a dispose(state) callback; the rewire/.delete() paths need care (avoid
+  double-fire). Eliminates intra-category leak risk too.
+- defineLifecycle-wrap (behavior-identical, SAFE): keep the existing plain Map(s) +
+  gcXState/disposeAllXState/reset functions UNCHANGED, just `defineLifecycle({ label, gc,
+  disposeAll, onStart? })` at the bottom of the file, and delete the engine's import + gc +
+  disposeAll (+ explicit onStart reset) lines. Correct for ordering-sensitive (audio's Tone
+  disposal SEQUENCE), marker (opencv/ai disposedNodes Set that survives gc, clears onStart),
+  or asymmetric (emulation keeps registration on stop) teardown — where a store restructure
+  would risk real bugs. emulation/opencv/ai/audio all went this way. Tradeoff: leaves the
+  intra-category leak risk; a later pass can refine into stores with in-app verification.
+Recipe per category: convert → add to engine-leak.test.ts (a store goes in CONVERTED_STORES;
+a defineLifecycle category goes in the self-registration guard list) → remove the engine
+wiring → grep ALL of tests/ before deleting any gc/disposeAll fn (keep as store-backed
+helpers if tests/index re-exports use them) → run the FULL test:unit (module state crosses
+files) → smoke-verify.
 
-## You CAN drive a real browser for validation (use it)
-Playwright is installed and system Chrome is present, so a node script using
-`require('@playwright/test').chromium.launch({ channel: 'chrome', headless: true })`
-(run from the project dir so it resolves node_modules) can load `npm run dev` and
-evaluate in-page. In THIS environment: WebGPU is available (Chrome→Metal),
-crossOriginIsolated is true, and network egress to huggingface.co / jsdelivr
-works. Already validated automatically this way: crossOriginIsolated + COOP/COEP,
-transformers.js v4 model load (real 384-dim embedding), and three r184 WebGL
-render (+ the `__webglTexture` internal the texture bridge relies on). What still
-can't be done headlessly: multi-GB model downloads end-to-end (WebLLM token
-stream), transformers WebGPU *device* path, clasp realtime (needs two peers),
-and real-device touch feel.
+## ▶ NEXT ACTIONS (Phase 1, prioritized)
+A. **Finish the 4 heavy conversions** (visual, 3d, connectivity, clasp) via defineLifecycle-wrap,
+   one per green commit, each verified with the smoke harness (run→stop, 0 real errors;
+   3d/visual also screenshot the render). clasp is the biggest (1604 lines, mixed media +
+   subscriptions + connections). FOLD IN the latent _-split fix when doing `visual` (and patch
+   `audio`): gcAudioState/gcVisualState do key.split('_')[0], but nanoid ids contain '_' (~26%)
+   so live nodes' state is wrongly GC'd on any node removal — strip only known suffixes
+   (e.g. /_(meter|input|fft)$/) or switch the suffix separator to '::'. See the
+   latch-nanoid-underscore-split memory.
+B. **Build the must-not-break export-list gate** (POLICIES §1 — NOT yet built): a checked-in
+   fixture tests/contracts/public-exports.ts asserting every documented public export still
+   resolves from @/engine/executors{,/<cat>} + @/registry. Do this BEFORE/with finishing the
+   de-monolith split (the split is exactly what could silently break an export).
+C. **Finish the de-monolith split** of executors/index.ts (extract the remaining groups; barrels
+   preserve imports; the export-list gate from (B) guards it).
 
-## What's DONE (verify against the plan/code; don't trust blindly)
-- Phase 0: engine O(1) node lookup; COOP/COEP (`credentialless`) + vendored
-  coi-serviceworker; vite-env types. (crossOriginIsolated browser-validated.)
-- Phase 1: render loop pauses when hidden, FPS cap, delta clamp; `loopToken` race
-  fix; `prefersReducedMotion`/`clampDevicePixelRatio` utils.
-- Phase 2: golden-output oracle harness; OPT-IN `dirty` mode (pure-node skip,
-  byte-identical to full); OPT-IN `deferred` async (long-I/O fire-and-latch).
-  Both DEFAULT OFF — production unchanged until explicitly enabled.
-- Phase 3 (ALL dependency upgrades done): 3a Vue Flow 1.48 + only-render-visible;
-  3b three r162→r184 + @types/three (6 type-only casts; render-validated); 3c
-  @clasp-to/core 3.3.2→4.3.2 (drop-in, verified); 3d transformers 3.8.1→4.2.0
-  (model load browser-validated).
-- Phase 4 (ML, code-complete): VectorStore + Retrieve + Vector Memory (RAG triad,
-  Embed→Memory→Retrieve); model-catalog refresh (network-verified HF ids +
-  license field); transferable image data (zero-copy to AI worker); persistent
-  storage (`services/ai/modelStorage.ts` + persist()/estimate() + model-manager
-  "GB free" line); WebLLM streaming LLM node (`@mlc-ai/web-llm`, dedicated
-  dynamic-imported worker, WebGPU-gated, concurrency-hardened with a genToken).
-  Worker chat-format bug found+fixed (`services/ai/textGenFormat.ts` + contract
-  test). New files mostly under `services/ai/` + `registry/ai/`.
-- Phase 5 (started): p5-capability (`utils/platform.ts` capability matrix +
-  `getPlatformTier` + `getCapabilityStatus`); p5-audio-unlock
-  (`services/audio/audioUnlock.ts` + AudioManager iOS interruption recovery,
-  `needsUserGesture` state, `unlock()`).
+## SMOKE HARNESS (you CAN drive the app — use it to verify each heavy conversion)
+Playwright + system Chrome are installed. `npm run dev` serves localhost:5173. A node script with
+NODE_PATH=<repo>/node_modules and chromium.launch({ channel:'chrome', headless:true }) loads the
+page; the first-visit Starter Flow (19 nodes incl. audio/3d/visual) auto-runs. To exercise the
+cleanup paths: click button[title="Play"], wait ~4s, click button[title="Stop"] (→ engine.stop()
+→ the disposeAll lifecycle loop), then read console errors. Filter noise: headless Chrome has no
+camera (Webcam/Hand/Face nodes spam NotAllowedError — pass args:['--use-fake-ui-for-media-stream',
+'--use-fake-device-for-media-stream'] + permissions:['camera','microphone']) and a benign MediaPipe
+`INFO`. Clean = 0 real errors through boot→run→stop. (Full recipe: latch-smoke-test-harness memory.)
+A worthwhile harness upgrade: add a delete-a-node step — it would catch the _-split bug.
 
-## Known issues / notes
-- OPT-IN dirty/deferred engine modes want in-app validation before any default flip.
-- ✅ FIXED 2026-06-15: `smooth` node no-op (now per-node `smoothState`); WebLLM
-  concurrent-engine leak (serialized `ensureEngine`); timing/debug/input/clasp
-  per-node state leaks (added the missing `gc*` functions) + the `gateLastValue`
-  leak; the BaseNode capability-badge wiring (per-platform `resolveNodeRequirement`).
-- Remaining minor: WebLLM `disposeAll()` during an in-flight model load can orphan
-  the just-loaded engine (rare; the generation bails on token).
-- ~52 npm advisories from the heavy AI dep tree (sharp / nightly ORT) — do NOT
-  `npm audit fix --force` (would break pinned ORT/transformers).
-- Vector Memory / WebLLM state is runtime-only (cleared on stop, not persisted to
-  the saved flow) — consistent with other stateful nodes; persistence is a follow-up.
+## KEY INVARIANTS / GOTCHAS
+- defineNodeState store API = get/has/set/getOrCreate/delete/gc/disposeAll/entries/size (NO
+  keys/clear/add). Compound keys → keyToNodeId (':' is safe; ids never contain ':'). '_' is NOT
+  safe (the bug above). Sets → defineNodeState<true> presence store.
+- Production cleanup registers via useExecutionEngine setup → registerLifecycles(collectedLifecycles())
+  (live-array reference — order-independent, sees late registrations). The engine never imports
+  nodeState.ts. start() runs `for (l of lifecycles) l.onStart?.()`; stop() the disposeAll loop;
+  updateGraph (on node removal) the gc loop.
+- Component tests: import stores before the .vue (circular markRaw crash); stub Vue Flow Handle;
+  `as number | undefined` in a template trips eslint's deprecated-filter rule (use `as number`).
+- CI (.github/workflows/ci.yml) = typecheck + lint + test:unit + build-web. The leak + pure gates
+  run via test:unit, so they ARE enforced. (must-not-break export gate still TODO — see (B).)
 
-## What REMAINS (full inventory in HANDOFF.md "Remaining work snapshot" + the plan)
-- Phase 1: wire `prefersReducedMotion()` into animated nodes (+ a CSS
-  `@media (prefers-reduced-motion)` block — currently none).
-- Phase 2: flip dirty/deferred opt-in → default (needs in-app validation); optional
-  trigger-edges.
-- Phase 4: Vector Memory corpus persistence across reload; optional LLMLingua-2
-  compress node; promote a modern ungated text-gen default.
-- Phase 5 (mobile/touch tier): **`Enable Audio` UI button** bound to
-  `audioManager.unlock()` / `needsUserGesture` (backend fully built — top UX win,
-  best validated on a real iOS device); `p5-touch-connect` (tap-to-connect, big
-  handles, Loose mode — note the node *palette* is drag-only, unusable on touch);
-  `p5-layout` (bottom sheets / radial menu; 44pt/48dp touch targets — current UI is
-  far below); `p5-osc-bridge-first` (config). Broader a11y: dialog semantics/focus
-  trap on modals, ARIA on the custom dropdown/tabs (see the 2026-06-15 UX audit in
-  docs/AUDIT_2026-06-14.md).
-- Phase 6 (flagship, high risk, behind a flag): renderer scaffold + TSL authoring
-  are **proven** (browser-validated on WebGPU, flag-gated/standalone). The blocker
-  for production wiring is the texture bridge — `ThreeRenderer.render()` returns a
-  raw `WebGLTexture` (`__webglTexture`) the compositor consumes, but WebGPU makes a
-  `GPUTexture`. Start with the WebGPU→readback→`DataTexture` path. Then GLSL-parity
-  + `p6-postfx`.
-
-## What to do next
-Read the plan + HANDOFF, confirm the baseline (1283 green), then pick up a remaining
-item. Prefer headless-verifiable work and use the Playwright+Chrome path (incl. the
-Pinia-store-via-`__vue_app__` trick) to validate UI. The biggest levers: the
-Phase 6 texture-bridge integration (the production unlock — higher risk, worth
-confirming scope first) and the `Enable Audio` button (top mobile UX win, best
-paired with device testing). The touch/layout items are best paired with device
-testing.
+Dev: npm run dev · dev:electron · build · typecheck · lint · test:unit · test:e2e (playwright,
+no tests yet). Pick a NEXT ACTION, confirm with the maintainer, keep each step green, update
+docs/HANDOFF.md, commit only when asked.
 ```

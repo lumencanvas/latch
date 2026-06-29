@@ -6,6 +6,52 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 6) — Deep audit + plan-adherence checkpoint (no code change)
+
+Stepped back to audit the whole Phase-1 migration against `ROADMAP_2026-06-28.md` + `POLICIES`.
+**Verdict: following the plan well on the headline goal (kill the leak class, test-driven, gates in
+CI, no AI attribution), but Phase 1 is NOT complete — ~70%, with three real gaps.** A progress overlay
+was added to the top of the ROADMAP.
+
+**Where we are (overall ROADMAP Phase 0–9):** Phase 0 DONE. Phase 1 in progress (~70%). Phases 2–9 not
+started. 54 commits on `phase0-file-format`, never below test baseline (1595→1616).
+
+**Phase 1 — four deliverables, status:**
+1. **State-group migration → generic lifecycle loop: 18/23 done.** Remaining 4 heavy (visual, 3d,
+   connectivity, clasp) + subflow (deferred to Phase 7). Engine gc/disposeAll loops now hold only those.
+2. **Per-type leak gate: DONE** (`engine-leak.test.ts`, in CI, mutation-verified). ✓
+3. **Exact-pure-set gate: DONE** (`pure-node-types.test.ts`, pins 24); derive-from-`pure:true` correctly
+   deferred to Phase-6 co-location. ✓
+4. **De-monolith split of `executors/index.ts`: PARTIAL** — 24 category files extracted, but `index.ts`
+   is still **~1482 lines** (input/timing/debug/math/logic/RAG/WebLLM + the `builtinExecutors` registry).
+
+**GAPS found this audit (the honest "what's left in Phase 1"):**
+- **Must-not-break export-list gate is NOT built.** POLICIES §1 specifies a checked-in fixture
+  `tests/contracts/public-exports.ts`; the `tests/contracts/` dir does not exist. This is a Phase-1+ CI
+  gate we skipped. Build it before/with the remaining de-monolith split (the split is exactly what could
+  silently break a public export).
+- **De-monolith split unfinished** (index.ts still monolithic for ~7 groups + the registry map).
+- **4 heavy conversions remain** (visual, 3d, connectivity, clasp) — all `defineLifecycle`-wrap +
+  run→stop smoke. subflow stays deferred to Phase 7.
+- **Latent `_`-split bug** in gcAudioState/gcVisualState (see `(later 5)` + the
+  [[latch-nanoid-underscore-split]] memory) — pre-existing, not from the migration; fold the fix into
+  the `visual` conversion + patch `audio`.
+
+**Plan-adherence notes / deviations (all defensible, recorded so they're not silent):**
+- **`defineLifecycle`-wrap vs `defineNodeState` for the heavy tier.** The ROADMAP says "convert to
+  `defineNodeState`"; for ordering-sensitive (audio Tone-sequence) / marker (opencv/ai disposedNodes) /
+  asymmetric (emulation keep-on-stop) teardown, a blind store restructure risks real bugs, so we wrapped
+  the unchanged functions via `defineLifecycle` (the documented escape hatch). This removes the
+  hand-wiring (the leak-class kill) but leaves the *intra-category* leak risk (a future added map without
+  gc) — a known tradeoff; a later pass can refine wrapped categories into stores with in-app verification.
+- **Split deferred until after conversion** — deliberate: converted/wrapped categories move between files
+  cleanly; engine-wired ones don't.
+
+**CI-gate compliance (POLICIES §1):** registry count-equality ✓, format round-trip ✓ (golden), per-type
+leak ✓ (new), exact-pure-set ✓ (new), **must-not-break export list ✗ (not built)**, a11y lint — Phase 4.
+
+---
+
 ## 2026-06-29 (later 5) — `audio` → `defineLifecycle` + first in-app smoke verification
 
 Branch **`phase0-file-format`** (continuing). **18/23 converted; 4 heavy + `subflow`(deferred) remain**
