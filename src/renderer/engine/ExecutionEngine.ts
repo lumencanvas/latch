@@ -1,7 +1,7 @@
 import type { Node, Edge } from '@vue-flow/core'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
-import type { NodeDefinition } from '@/stores/nodes'
+import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
 import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
 import {
@@ -116,6 +116,29 @@ export interface ExecutionContext {
 export type NodeExecutorFn = (ctx: ExecutionContext) => Promise<Map<string, unknown>> | Map<string, unknown>
 
 /**
+ * Coerce an input value to its target port's declared primitive type. Honors the
+ * connection matrix's promised number/boolean/string coercions
+ * (`utils/connections.ts`: number→{string,boolean}, boolean→{number,string}) that
+ * the engine previously skipped — e.g. a boolean into a `number` port arrived as
+ * `true`, so `true + 0 === 1` and `?? 0` never caught it (the "coercion lie",
+ * AUDIT §D). Conservative: only primitive number/boolean/string targets are
+ * coerced, and only when the value's runtime type mismatches; `any`, trigger,
+ * textures, 3D types, `data`, and unknown/placeholder ports pass through untouched.
+ */
+export function coerceToPortType(value: unknown, portType: string | undefined): unknown {
+  switch (portType) {
+    case 'number':
+      return typeof value === 'boolean' ? (value ? 1 : 0) : value
+    case 'boolean':
+      return typeof value === 'number' ? value !== 0 : value
+    case 'string':
+      return typeof value === 'number' || typeof value === 'boolean' ? String(value) : value
+    default:
+      return value
+  }
+}
+
+/**
  * Execution engine for running flow graphs
  */
 export class ExecutionEngine {
@@ -156,6 +179,7 @@ export class ExecutionEngine {
   private lastFrameTime: number = 0
   private frameCount: number = 0
   private runtimeStore = useRuntimeStore()
+  private nodesStore = useNodesStore()
 
   // --- Render-loop lifecycle (Phase 1) ---
   /** Target frames per second; 0 = uncapped (run at the display refresh rate). */
@@ -315,6 +339,12 @@ export class ExecutionEngine {
   private getNodeInputs(nodeId: string): Map<string, unknown> {
     const inputs = new Map<string, unknown>()
 
+    // Resolve the target node's declared input types once, so each value can be
+    // coerced to its port's type at the boundary (the connection matrix promises
+    // number/boolean/string coercion the engine otherwise never performed).
+    const targetType = this.nodeById.get(nodeId)?.data?.nodeType as string | undefined
+    const targetDef = targetType ? this.nodesStore.getDefinition(targetType) : undefined
+
     // Find all edges that target this node
     for (const edge of this.edges) {
       if (edge.target === nodeId && edge.targetHandle && edge.sourceHandle) {
@@ -322,7 +352,8 @@ export class ExecutionEngine {
         if (sourceOutputs) {
           const value = sourceOutputs.get(edge.sourceHandle)
           if (value !== undefined) {
-            inputs.set(edge.targetHandle, value)
+            const portType = targetDef?.inputs.find((p) => p.id === edge.targetHandle)?.type
+            inputs.set(edge.targetHandle, coerceToPortType(value, portType))
           }
         }
       }
@@ -337,7 +368,12 @@ export class ExecutionEngine {
   private async executeNode(node: Node, deltaTime: number): Promise<ExecutionResult> {
     const startTime = performance.now()
     const nodeType = node.data?.nodeType as string
-    const definition = node.data?.definition as NodeDefinition | undefined
+    // Resolve the definition from the embedded copy if present (legacy/new nodes
+    // still carry one), else from the registry by type. The `.latch` v2 format
+    // drops the stale embedded definition (FILE_FORMAT_SPEC), so imported flows
+    // rely on registry resolution to populate control defaults below.
+    const definition =
+      (node.data?.definition as NodeDefinition | undefined) ?? this.nodesStore.getDefinition(nodeType)
 
     // Get executor
     const executor = this.executors.get(nodeType)

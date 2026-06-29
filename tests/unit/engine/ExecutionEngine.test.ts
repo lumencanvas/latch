@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import type { Node, Edge } from '@vue-flow/core'
-import { ExecutionEngine, shouldRenderFrame, clampDelta, MAX_FRAME_DELTA } from '@/engine/ExecutionEngine'
+import { ExecutionEngine, shouldRenderFrame, clampDelta, MAX_FRAME_DELTA, coerceToPortType } from '@/engine/ExecutionEngine'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 import { useRuntimeStore } from '@/stores/runtime'
+import { useNodesStore } from '@/stores/nodes'
 
 /**
  * Characterization tests for ExecutionEngine.
@@ -96,6 +97,67 @@ describe('ExecutionEngine', () => {
     await engine.executeFrame()
 
     expect(seen).toBe(5)
+  })
+
+  it('populates control defaults from the REGISTRY when the node has no embedded definition (v2 imports)', async () => {
+    // v2 `.latch` flows drop the embedded definition; defaults must come from the registry.
+    const nodes = useNodesStore()
+    nodes.register({
+      id: 'withdef', name: 'WD', version: '1.0.0', category: 'data', description: '', icon: 'box',
+      platforms: ['web'], inputs: [], outputs: [],
+      controls: [{ id: 'amount', type: 'number', label: 'Amount', default: 7 }],
+    })
+    let seen: unknown
+    engine.registerExecutor('withdef', (ctx: ExecutionContext) => {
+      seen = ctx.controls.get('amount')
+      return new Map<string, unknown>()
+    })
+    // Node carries NO data.definition and NO explicit `amount`.
+    engine.updateGraph([node('n', 'withdef')], [])
+    await engine.executeFrame()
+
+    expect(seen).toBe(7)
+  })
+
+  it('coerces a boolean output into a number input port at the boundary (AUDIT §D)', async () => {
+    const nodes = useNodesStore()
+    nodes.register({
+      id: 'sink-num', name: 'SinkNum', version: '1.0.0', category: 'data', description: '', icon: 'box',
+      platforms: ['web'], inputs: [{ id: 'n', type: 'number', label: 'N' }], outputs: [], controls: [],
+    })
+    let seen: unknown
+    engine.registerExecutor('boolsrc', () => new Map<string, unknown>([['out', true]]))
+    engine.registerExecutor('sink-num', (ctx: ExecutionContext) => {
+      seen = ctx.inputs.get('n')
+      return new Map<string, unknown>()
+    })
+    engine.updateGraph(
+      [node('b', 'boolsrc'), node('s', 'sink-num')],
+      [edge('b', 's', 'out', 'n')],
+    )
+    await engine.executeFrame()
+
+    // Previously the executor received `true` (so `true + 0 === 1`); now it's a real number.
+    expect(seen).toBe(1)
+    expect(typeof seen).toBe('number')
+  })
+
+  it('lets explicit node data override the registry default', async () => {
+    const nodes = useNodesStore()
+    nodes.register({
+      id: 'withdef2', name: 'WD2', version: '1.0.0', category: 'data', description: '', icon: 'box',
+      platforms: ['web'], inputs: [], outputs: [],
+      controls: [{ id: 'amount', type: 'number', label: 'Amount', default: 7 }],
+    })
+    let seen: unknown
+    engine.registerExecutor('withdef2', (ctx: ExecutionContext) => {
+      seen = ctx.controls.get('amount')
+      return new Map<string, unknown>()
+    })
+    engine.updateGraph([node('n', 'withdef2', { amount: 99 })], [])
+    await engine.executeFrame()
+
+    expect(seen).toBe(99)
   })
 
   it('merges multiple inputs into one node (diamond converges)', async () => {
@@ -471,5 +533,45 @@ describe('ExecutionEngine render-loop lifecycle', () => {
     // The active loop re-arms normally.
     await activeLoop(1000)
     expect(rafSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('coerceToPortType (boundary coercion)', () => {
+  it('coerces boolean → number (the matrix promise)', () => {
+    expect(coerceToPortType(true, 'number')).toBe(1)
+    expect(coerceToPortType(false, 'number')).toBe(0)
+  })
+
+  it('coerces number → boolean', () => {
+    expect(coerceToPortType(5, 'boolean')).toBe(true)
+    expect(coerceToPortType(0, 'boolean')).toBe(false)
+    expect(coerceToPortType(-2, 'boolean')).toBe(true)
+  })
+
+  it('coerces number and boolean → string', () => {
+    expect(coerceToPortType(42, 'string')).toBe('42')
+    expect(coerceToPortType(true, 'string')).toBe('true')
+  })
+
+  it('passes matching primitives through unchanged', () => {
+    expect(coerceToPortType(3.14, 'number')).toBe(3.14)
+    expect(coerceToPortType('hi', 'string')).toBe('hi')
+    expect(coerceToPortType(true, 'boolean')).toBe(true)
+  })
+
+  it('never coerces into any / trigger / complex / unknown ports', () => {
+    const tex = { isTexture: true }
+    expect(coerceToPortType(tex, 'texture')).toBe(tex)
+    expect(coerceToPortType(true, 'any')).toBe(true)
+    expect(coerceToPortType(1, 'trigger')).toBe(1)
+    expect(coerceToPortType(tex, undefined)).toBe(tex) // placeholder / dynamic port
+    const obj = { a: 1 }
+    expect(coerceToPortType(obj, 'data')).toBe(obj)
+  })
+
+  it('does not invent string→number coercion (blocked by the matrix anyway)', () => {
+    // 'string' source can only reach string/any ports, so a string never arrives
+    // at a number port; if it somehow did, we leave it rather than emit NaN.
+    expect(coerceToPortType('abc', 'number')).toBe('abc')
   })
 })
