@@ -144,6 +144,27 @@ function updateControl(controlId: string, value: unknown) {
   }
 }
 
+/**
+ * Clamp a number control to its declared min/max — on blur only. We bind
+ * :min/:max for spinner + validation affordances but deliberately do NOT clamp
+ * per keystroke (that breaks typing intermediate values, e.g. "1" before "10").
+ * Controls without a min/max stay unbounded.
+ */
+function clampNumberControl(
+  control: { id: string; props?: Record<string, unknown>; default?: unknown },
+  raw: string,
+) {
+  let value = parseFloat(raw)
+  if (!Number.isFinite(value)) {
+    value = (controlValues.value[control.id] as number) ?? (control.default as number) ?? 0
+  }
+  const min = control.props?.min
+  const max = control.props?.max
+  if (typeof min === 'number' && value < min) value = min
+  if (typeof max === 'number' && value > max) value = max
+  updateControl(control.id, value)
+}
+
 // Open shader editor
 function openShaderEditor() {
   if (inspectedNode.value) {
@@ -629,8 +650,11 @@ function shouldShowControl(control: { props?: Record<string, unknown> }): boolea
                   type="number"
                   class="control-input"
                   :value="(controlValues[control.id] as number) ?? 0"
+                  :min="control.props?.min as number"
+                  :max="control.props?.max as number"
                   :step="(control.props?.step as number) ?? 1"
                   @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value) || 0)"
+                  @blur="clampNumberControl(control, ($event.target as HTMLInputElement).value)"
                 >
 
                 <!-- Slider -->
