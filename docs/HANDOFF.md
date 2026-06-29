@@ -6,15 +6,35 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
-## 2026-06-29 — Phase 1 started: `defineNodeState` migration (kill the leak class)
+## 2026-06-29 — Phase 1 in progress: `defineNodeState` migration (kill the leak class)
 
 Branch **`phase0-file-format`** (continuing). Phase 0's autonomous work is complete (see entry
-below); started **Phase 1** (de-monolith + convert ~23 hand-wired state groups to `defineNodeState`
-so the engine's generic lifecycle loop is authoritative and the leak class is structurally impossible).
-All green throughout; **1593 → 1594 tests** (audited 2026-06-29: generic gc runs in the same
-`if (hasRemovedNodes)` guard as the removed hand-wiring; generic `disposeAll` runs unconditionally in
-`stop()`; production registration via `useExecutionEngine.onMounted`; Vue 3.5 computed value-equality
-means the per-node error badge's `nodeMetricsVersion` dep does not cause a per-frame re-render storm).
+below); **Phase 1** (de-monolith + convert ~23 hand-wired state groups to `defineNodeState` so the
+engine's generic lifecycle loop is authoritative and the leak class is structurally impossible) is
+**~12/23 done** — every group convertible/verifiable **headless** is migrated; only the heavy/in-app
+tier remains.
+
+**▶ NEXT ACTION:** convert the **heavy/in-app tier** (audio, visual, ai, opencv, clasp, connectivity,
+mqtt, websocket, 3d, emulation — `subflow` deferred to Phase 7). Each has **real resource teardown**
+(Tone/WebGL/workers/sockets/media): move it into a `dispose(state)` callback (or `defineLifecycle` for
+service/global side effects), then **VERIFY IN-APP** (`npm run dev` / `dev:electron`) that audio/video/
+connections actually tear down — green unit tests with mocks are necessary but NOT sufficient here.
+One category per green commit. Alternatively, lower-risk headless wins still open: (a) the
+**engine-level per-type leak-test gate** (roadmap) — add a `canvas.getContext` mock to `tests/setup.ts`,
+then an `updateGraph` add→remove→assert-store-empty test (per-category UNIT gc tests exist via
+`store.gc`, but the engine-integration leak test is still TODO and is the actual roadmap gate);
+(b) **`PURE_NODE_TYPES`** derivation — still the hardcoded **19-id** set (`ExecutionEngine.ts:~84`),
+docs say "24"; reconcile before deriving from `pure:true`.
+
+**Current state (audited 2026-06-29, all green):** `typecheck` clean · `lint` 0 errors (49 pre-existing
+`any` warnings) · `test:unit` **1595 pass** (+11 todo) · `build` ok. 43 commits on the branch, tree
+clean, no AI attribution. Engine `updateGraph` gc loop + `stop()` disposeAll loop verified to hold
+**exactly** the 11 heavy groups + `gcNodeMetrics`; every converted group flows through
+`for (const l of this.lifecycles) …`. Earlier audit invariants confirmed: generic gc runs in the same
+`if (hasRemovedNodes)` guard as the removed hand-wiring; generic `disposeAll` is unconditional in
+`stop()`; the `endFrame` loop replaced the bespoke `endMessagingFrame` call site; production
+registration via `useExecutionEngine.onMounted` (live-array reference, so order-independent); Vue 3.5
+computed value-equality means the error badge's `nodeMetricsVersion` dep causes no per-frame re-render.
 
 **Foundation landed:** `defineNodeState`'s store now exposes **`gc(validNodeIds)` + `disposeAll()`**
 directly (`engine/nodeState.ts`); the auto-registered lifecycle hook delegates to them. So a converted
