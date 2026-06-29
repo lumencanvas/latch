@@ -33,7 +33,7 @@ import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
 import { stringExecutors } from './string'
 import { messagingExecutors } from './messaging'
-import { utilityExecutors, disposeUtilityNode, disposeAllUtilityState } from './utility'
+import { utilityExecutors } from './utility'
 import { dataExecutors } from './data'
 import { gamepadExecutor, gamepadVisualExecutor } from './gamepad'
 import { emulatorExecutor, gcEmulationState, disposeAllEmulationNodes } from './emulation'
@@ -50,8 +50,6 @@ export { disposeHttpNode, disposeAllHttpNodes, gcHttpState }
 // Re-export emulation executor state cleanup
 export { gcEmulationState, disposeAllEmulationNodes }
 
-// Re-export utility node disposal functions
-export { disposeUtilityNode, disposeAllUtilityState }
 
 // ============================================================================
 // Input Nodes

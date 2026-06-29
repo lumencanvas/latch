@@ -6,28 +6,31 @@
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { risingEdge } from '../trigger'
+import { defineNodeState } from '../nodeState'
 
 // ============================================================================
 // State Management for Stateful Nodes
 // ============================================================================
+// Each group uses defineNodeState, which auto-registers its gc/dispose path with
+// the engine's generic lifecycle loop — no bespoke gc/disposeAll to hand-wire.
 
 // Changed node state: stores previous value
-const changedPrevValue = new Map<string, unknown>()
+export const changedPrevValue = defineNodeState<unknown>({ label: 'changed' })
 
 // Sample & Hold state: stores held value
-const sampleHoldValue = new Map<string, unknown>()
+export const sampleHoldValue = defineNodeState<unknown>({ label: 'sample-hold' })
 
 // Latch state: stores boolean state
-const latchState = new Map<string, boolean>()
+export const latchState = defineNodeState<boolean>({ label: 'latch' })
 
 // Counter state: stores count
-const counterState = new Map<string, number>()
+export const counterState = defineNodeState<number>({ label: 'counter' })
 
 // Debounce state: stores timer and pending value
-const debounceState = new Map<string, { value: unknown; lastChange: number; settled: boolean }>()
+export const debounceState = defineNodeState<{ value: unknown; lastChange: number; settled: boolean }>({ label: 'debounce' })
 
 // Throttle state: stores last output time and value
-const throttleState = new Map<string, { lastOutput: number; value: unknown }>()
+export const throttleState = defineNodeState<{ lastOutput: number; value: unknown }>({ label: 'throttle' })
 
 // ============================================================================
 // Value Checking Nodes
@@ -531,43 +534,6 @@ export const dispatchExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     }
   }
   return outputs
-}
-
-// ============================================================================
-// Cleanup Functions
-// ============================================================================
-
-export function disposeUtilityNode(nodeId: string): void {
-  changedPrevValue.delete(nodeId)
-  sampleHoldValue.delete(nodeId)
-  latchState.delete(nodeId)
-  counterState.delete(nodeId)
-  debounceState.delete(nodeId)
-  throttleState.delete(nodeId)
-}
-
-export function disposeAllUtilityState(): void {
-  changedPrevValue.clear()
-  sampleHoldValue.clear()
-  latchState.clear()
-  counterState.clear()
-  debounceState.clear()
-  throttleState.clear()
-}
-
-/** Drop per-node state for nodes no longer in the graph (called on node removal). */
-export function gcUtilityState(validNodeIds: Set<string>): void {
-  const ids = new Set<string>([
-    ...changedPrevValue.keys(),
-    ...sampleHoldValue.keys(),
-    ...latchState.keys(),
-    ...counterState.keys(),
-    ...debounceState.keys(),
-    ...throttleState.keys(),
-  ])
-  for (const id of ids) {
-    if (!validNodeIds.has(id)) disposeUtilityNode(id)
-  }
 }
 
 // ============================================================================

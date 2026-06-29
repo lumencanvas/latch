@@ -21,9 +21,24 @@ import {
   counterExecutor,
   debounceExecutor,
   throttleExecutor,
-  disposeAllUtilityState,
+  changedPrevValue,
+  sampleHoldValue,
+  latchState,
+  counterState,
+  debounceState,
+  throttleState,
 } from '@/engine/executors/utility'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
+
+/** Reset every utility state store between cases (replaces disposeAllUtilityState). */
+const disposeAllUtilityState = () => {
+  changedPrevValue.disposeAll()
+  sampleHoldValue.disposeAll()
+  latchState.disposeAll()
+  counterState.disposeAll()
+  debounceState.disposeAll()
+  throttleState.disposeAll()
+}
 
 // Helper to create a mock execution context
 function createContext(

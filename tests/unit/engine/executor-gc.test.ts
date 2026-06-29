@@ -15,7 +15,7 @@ import {
   gcHttpState,
 } from '@/engine/executors'
 import { gcClaspState } from '@/engine/executors/clasp'
-import { changedExecutor, gcUtilityState, disposeAllUtilityState } from '@/engine/executors/utility'
+import { changedExecutor, changedPrevValue } from '@/engine/executors/utility'
 import {
   subflowOutputExecutor,
   gcSubflowState,
@@ -106,8 +106,8 @@ describe('gcClaspState', () => {
   })
 })
 
-describe('gcUtilityState', () => {
-  beforeEach(() => disposeAllUtilityState())
+describe('changed state gc (defineNodeState)', () => {
+  beforeEach(() => changedPrevValue.disposeAll())
 
   it('drops change-tracking state for removed nodes but keeps valid ones', () => {
     // Seed prev-value for both nodes (first call always reports changed).
@@ -117,7 +117,7 @@ describe('gcUtilityState', () => {
     expect((changedExecutor(ctx('keep', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(0)
     expect((changedExecutor(ctx('drop', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(0)
 
-    gcUtilityState(new Set(['keep'])) // 'drop' removed
+    changedPrevValue.gc(new Set(['keep'])) // 'drop' removed
 
     // 'drop' lost its prev → the same value now reads as changed again.
     expect((changedExecutor(ctx('drop', { value: 5 })) as Map<string, unknown>).get('changed')).toBe(1)
