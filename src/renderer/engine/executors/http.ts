@@ -9,11 +9,15 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
 import { useConnectionsStore } from '@/stores/connections'
 import type { HttpAdapterImpl } from '@/services/connections/adapters/HttpAdapter'
 
-// Cache for HTTP request state
-const httpCache = new Map<string, unknown>()
+// Cache for HTTP request state. Compound `nodeId:…` keys (node ids never contain
+// ':'), so keyToNodeId splits on it; defineNodeState auto-registers the gc/dispose
+// path with the engine's generic lifecycle loop. The cache holds response data,
+// not handles, so there is no per-entry teardown.
+const httpCache = defineNodeState<unknown>({ label: 'http-cache', keyToNodeId: (k) => k.split(':')[0] })
 
 /**
  * Set cached value
@@ -292,29 +296,20 @@ async function executeDirectRequest(
 /**
  * Dispose HTTP node and clean up resources
  */
+// The store auto-registers gc/disposeAll into the engine's generic lifecycle loop;
+// these remain exported as test/utility helpers (the engine no longer calls them).
 export function disposeHttpNode(nodeId: string): void {
-  // Clear cached state
-  const keys = Array.from(httpCache.keys()).filter((k) => k.startsWith(nodeId))
-  for (const key of keys) {
-    httpCache.delete(key)
+  for (const [key] of Array.from(httpCache.entries())) {
+    if (key.split(':')[0] === nodeId) httpCache.delete(key)
   }
 }
 
-/**
- * Dispose all HTTP node resources
- */
+/** Clear all cached HTTP state (test/teardown). */
 export function disposeAllHttpNodes(): void {
-  httpCache.clear()
+  httpCache.disposeAll()
 }
 
-/**
- * Garbage collect HTTP state for removed nodes
- */
+/** Drop cached HTTP state for removed nodes (test/teardown). */
 export function gcHttpState(validNodeIds: Set<string>): void {
-  for (const key of httpCache.keys()) {
-    const nodeId = key.split(':')[0]
-    if (!validNodeIds.has(nodeId)) {
-      httpCache.delete(key)
-    }
-  }
+  httpCache.gc(validNodeIds)
 }

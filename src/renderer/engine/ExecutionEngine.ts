@@ -20,7 +20,7 @@ import { disposeAllAINodes, gcAIState, resetAINodeDisposal } from './executors/a
 // own GC + teardown — gcConnectivityState only covers OSC/Serial/MIDI/BLE.
 import { disposeAllMqttNodes, gcMqttState } from './executors/mqtt'
 import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocket'
-import { disposeAllHttpNodes, gcHttpState } from './executors/http'
+// http cache state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 // gamepad state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import { disposeAllEmulationNodes, gcEmulationState } from './executors/emulation'
 import { disposeAllOpenCVNodes, gcOpenCVState, resetOpenCVNodeDisposal } from './executors/opencv'
@@ -297,7 +297,6 @@ export class ExecutionEngine {
         gcClaspState(validNodeIds)
         gcMqttState(validNodeIds)
         gcWebSocketState(validNodeIds)
-        gcHttpState(validNodeIds)
         gcSubflowState(validNodeIds)
         gcEmulationState(validNodeIds)
         gcOpenCVState(validNodeIds)
@@ -939,7 +938,6 @@ export class ExecutionEngine {
     clearAllSubflowContexts()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()
-    disposeAllHttpNodes()
     disposeAllEmulationNodes()
     disposeAllOpenCVNodes()
     for (const l of this.lifecycles) l.disposeAll()
