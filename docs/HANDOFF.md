@@ -35,11 +35,19 @@ the store.
    `const disposeAllXState = () => xState.disposeAll()` to avoid churning many call sites; for
    multi-store categories like signal, the helper clears each store).
 
-**Converted so far (11) — the entire NON-HEAVY tier is DONE:** `spring`, `signal` (signalState+tapState),
-`gamepad`, `utility` (6 stores), `code` (compound `nodeId:…` keys via `keyToNodeId`), and the
-`executors/index.ts`-internal groups: `RAG`, `input`, `timing` (incl. `startFiredNodes` **Set** →
-`defineNodeState<true>` presence store), `debug` (analysers via per-entry `dispose` callback — no
-double-dispose since rewire mutates in place), `WebLLM`, and `messaging`. Each its own commit.
+**Converted so far (12) — entire NON-HEAVY tier + `http`:** `spring`, `signal` (signalState+tapState),
+`gamepad`, `utility` (6 stores), `code` (compound `nodeId:…` keys via `keyToNodeId`), the
+`executors/index.ts`-internal groups `RAG`/`input`/`timing` (incl. `startFiredNodes` **Set** →
+`defineNodeState<true>` presence store)/`debug` (analysers via per-entry `dispose` callback — no
+double-dispose since rewire mutates in place)/`WebLLM`, `messaging`, and `http` (pure response cache,
+compound keys — the one connection-group executor with no real teardown; `disposeHttpNode`/etc. kept as
+store-backed test helpers). Each its own commit.
+
+**AUDIT NOTE (2026-06-29, perf — not a bug, not yet fixed):** `createExecutionContext`
+(`ExecutionEngine.ts`) allocates 6 closures (read + num/bool/str/trig/level) **per node per frame** in
+`executeNode`, and the accessors have **zero consumers yet**. Negligible vs the Maps `executeNode`
+already allocates each frame, so not worth fixing in isolation — but when profiling 500+ nodes / when
+executors start using `ctx.num`, switch to a **class-based context** (prototype methods allocated once).
 
 **New infra: `defineLifecycle(hook)` in `nodeState.ts`** — registers a lifecycle NOT backed by a
 `defineNodeState` map, for cleanup that is a *side effect* rather than per-node state (gc/disposeAll
@@ -67,11 +75,14 @@ local `const disposeAllXState = () => store.disposeAll()` helper (keeps call sit
   `activeReceiveNodes` to stores but keep a bespoke path (or a non-nodeState helper) for
   `receiveProcessed` + the messageBus calls. Has `executor-gc.test.ts` coupling.
   (`WebLLM` + `messaging` are DONE — see above; `defineLifecycle` landed.)
-- **Heavy dispose / needs in-app verification:** `audio` (Tone), `visual` (WebGL/canvas), `ai`,
-  `opencv` (workers + `disposedNodes` marker Set + `onStart` reset), `clasp` (media), `connectivity`
-  (sockets/MIDI/BLE), `3d`, `emulation`, `subflow`, `http`/`mqtt`/`websocket`. These have real
-  teardown in their `disposeAll` — move it into the `dispose(state)` callback; verify in-app. (`code`
-  done — it had no real teardown, just caches.)
+- **ONLY the heavy/in-app tier remains** (real resource teardown — convert by moving teardown into a
+  `dispose(state)` callback, then **verify in-app**, one category per green commit): `audio` (Tone),
+  `visual` (WebGL/canvas), `ai`, `opencv` (workers + `disposedNodes` marker Set + `onStart` reset →
+  `defineNodeState({ onStart })` or a `defineLifecycle`), `clasp` (media), `connectivity` +
+  `mqtt`/`websocket` (sockets/MIDI/BLE — unsubscribe/close on dispose; unit-mockable but real teardown
+  needs the app), `3d` (Three geometry/material `.dispose()`), `emulation` (EmulatorJS WebGL).
+  `subflow` is best left for its **Phase-7 rebuild** (state will be restructured). `code`/`http` are
+  done (caches, no real teardown).
 
 **Still pending for the engine-level per-type leak test gate** (roadmap): add a `canvas.getContext`
 mock to `tests/setup.ts` first — an engine `updateGraph`-removal test runs the *remaining* hand-wired
