@@ -14,7 +14,7 @@ maintainer's). License decision: **MIT confirmed** — already in `LICENSE` + `p
 change needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1556 tests** (was 1517). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1558 tests** (was 1517). Committed to `phase0-file-format` in 8 logical commits (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -106,12 +106,14 @@ separated from layout (positions/size/custom label) so moving a node never churn
 ### Open / next (in order)
 1. **2b** — ctx accessors (see deferred note above). Needed by several sub-task-3 quick-wins (boundary
    coercion).
-2. **Engine lifecycle wiring** (EXTENSIBILITY §11 step 1): wire `engine.registerLifecycles(
-   collectedLifecycles())` + the four generic loops (gc/disposeAll/endFrame/onStart) to run *in
-   addition to* the existing hardcoded ones. **Sequencing constraint**: `risingEdge` state is GC'd only
-   once this lands — so do it **before** migrating `latch`/`sample-hold` to `risingEdge` (a sub-task-3
-   quick-win) or that edge state leaks. `collectedLifecycles()` returns the *live* array, so late
-   `defineNodeState` registrations are still seen.
+2. ~~**Engine lifecycle wiring**~~ **(DONE)** — `ExecutionEngine` gained `registerLifecycles()` + the
+   four generic loops (gc/disposeAll/endFrame/onStart) running *alongside* the legacy hardcoded ones;
+   `useExecutionEngine` calls `engine.registerLifecycles(collectedLifecycles())` (live array → late
+   registrations seen). No-op today (array empty until a consumer imports `trigger.ts`), so golden +
+   dirty-equivalence are unchanged. `risingEdge` state now GCs, so the edge-trigger / `random`
+   quick-wins are unblocked. **Test gap**: the engine-`gc`-on-removal path isn't unit-tested because
+   the legacy gc touches `canvas.getContext` (happy-dom lacks it) — **Phase 1's per-type leak tests
+   must add a canvas mock to `tests/setup.ts`** (onStart/disposeAll/endFrame ARE tested).
 3. **Sub-task 3 quick-wins** (ROADMAP Phase 0; file:line map ready from POLISH §5): number
    `:min`/`:max` + units (`BaseNode.vue:666`); ~~boundary coercion~~ **(DONE)**; texture traps (`visual.ts:611-612`/`:1282`, render-3d depth via `emulation.ts:88-110`); edge-trigger
    `latch`/`sample-hold` (`utility.ts:288-323` → `risingEdge`); `random` sample-on-trigger
