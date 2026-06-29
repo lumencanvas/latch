@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { smoothExecutor, disposeAllInputState } from '@/engine/executors'
+import { smoothExecutor, smoothState } from '@/engine/executors'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
+
+// smooth state migrated to defineNodeState; reset the store between tests.
+const disposeAllInputState = () => smoothState.disposeAll()
 
 /**
  * The smooth node applies exponential smoothing. It was a no-op: it read `_prev`

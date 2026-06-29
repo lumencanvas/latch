@@ -9,13 +9,12 @@ import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
 import {
   disposeAllTimingState,
   disposeAllDebugState,
-  disposeAllInputState,
   gcTimingState,
   gcDebugState,
-  gcInputState,
   disposeAllWebLLMState,
   gcWebLLMState,
 } from './executors/index'
+// input state (trigger/smooth/gate) is migrated to defineNodeState — generic lifecycle loop.
 // RAG (vector-memory) state is migrated to defineNodeState — generic lifecycle loop.
 // utility state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
@@ -311,7 +310,6 @@ export class ExecutionEngine {
         gcAIState(validNodeIds)
         gcTimingState(validNodeIds)
         gcDebugState(validNodeIds)
-        gcInputState(validNodeIds)
         gcClaspState(validNodeIds)
         gcWebLLMState(validNodeIds)
         gcMqttState(validNodeIds)
@@ -955,7 +953,6 @@ export class ExecutionEngine {
     disposeAllVisualNodes()
     disposeAllTimingState()
     disposeAllDebugState()
-    disposeAllInputState()
     disposeAllMessagingState()
     disposeAll3DNodes()
     disposeAllConnectivityNodes()

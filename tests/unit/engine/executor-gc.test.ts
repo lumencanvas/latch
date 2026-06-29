@@ -4,16 +4,29 @@ import {
   gateExecutor,
   startExecutor,
   monitorExecutor,
-  gcInputState,
+  triggerPrevPressed,
+  smoothState,
+  gateLastValue,
   gcTimingState,
   gcDebugState,
-  disposeAllInputState,
   disposeAllTimingState,
   disposeAllDebugState,
   gcMqttState,
   gcWebSocketState,
   gcHttpState,
 } from '@/engine/executors'
+
+// input state (trigger/smooth/gate) migrated to defineNodeState; drive via the stores.
+const disposeAllInputState = () => {
+  triggerPrevPressed.disposeAll()
+  smoothState.disposeAll()
+  gateLastValue.disposeAll()
+}
+const gcInputState = (ids: Set<string>) => {
+  triggerPrevPressed.gc(ids)
+  smoothState.gc(ids)
+  gateLastValue.gc(ids)
+}
 import { gcClaspState } from '@/engine/executors/clasp'
 import { changedExecutor, changedPrevValue } from '@/engine/executors/utility'
 import {

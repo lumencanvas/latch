@@ -62,7 +62,7 @@ export const constantExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Track previous trigger button state for edge detection
-const triggerPrevPressed = new Map<string, boolean>()
+export const triggerPrevPressed = defineNodeState<boolean>({ label: 'trigger' })
 
 export const triggerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputType = (ctx.controls.get('outputType') as string) ?? 'boolean'
@@ -258,10 +258,9 @@ export const absExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Per-node smoothing state (previous output). Outputs aren't fed back as inputs,
-// so the previous value must live here, not in controls/outputs. Cleared on stop
-// via disposeAllInputState (cheap per-node number — no per-removal gc needed,
-// same as triggerPrevPressed).
-const smoothState = new Map<string, number>()
+// so the previous value must live here, not in controls/outputs. defineNodeState
+// auto-registers gc/dispose with the engine's generic lifecycle loop.
+export const smoothState = defineNodeState<number>({ label: 'smooth' })
 
 export const smoothExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const target = (ctx.inputs.get('value') as number) ?? 0
@@ -640,7 +639,7 @@ export const notExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Gate holds last passed value
-const gateLastValue = new Map<string, unknown>()
+export const gateLastValue = defineNodeState<unknown>({ label: 'gate' })
 
 export const gateExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const valueControl = ctx.controls.get('value') as string | undefined
@@ -1177,12 +1176,6 @@ export function disposeDebugNode(nodeId: string): void {
 /**
  * Clean up state for input nodes
  */
-export function disposeInputNode(nodeId: string): void {
-  triggerPrevPressed.delete(nodeId)
-  smoothState.delete(nodeId)
-  gateLastValue.delete(nodeId)
-}
-
 /**
  * Clean up all timing-related state (called when execution stops)
  */
@@ -1212,16 +1205,7 @@ export function disposeAllDebugState(): void {
 }
 
 /**
- * Clean up all input-related state (called when execution stops)
- */
-export function disposeAllInputState(): void {
-  triggerPrevPressed.clear()
-  smoothState.clear()
-  gateLastValue.clear()
-}
-
-/**
- * GC timing/debug/input state for nodes no longer in the graph (per-node removal).
+ * GC timing/debug state for nodes no longer in the graph (per-node removal).
  * Each mirrors the wired `gc*` functions in the other executors: reuse the
  * per-node `disposeXNode` helper for ids absent from the valid set. Without these
  * the state only cleared on stop(), so deleting timer/oscilloscope/equalizer/
@@ -1241,13 +1225,6 @@ export function gcDebugState(validNodeIds: Set<string>): void {
     ...scopeAnalyzers.keys(), ...eqAnalyzers.keys(),
   ])
   for (const id of ids) if (!validNodeIds.has(id)) disposeDebugNode(id)
-}
-
-export function gcInputState(validNodeIds: Set<string>): void {
-  const ids = new Set<string>([
-    ...triggerPrevPressed.keys(), ...smoothState.keys(), ...gateLastValue.keys(),
-  ])
-  for (const id of ids) if (!validNodeIds.has(id)) disposeInputNode(id)
 }
 
 // ============================================================================
