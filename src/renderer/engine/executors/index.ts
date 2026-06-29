@@ -5,7 +5,7 @@
 
 import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
-import { defineNodeState } from '../nodeState'
+import { defineNodeState, defineLifecycle } from '../nodeState'
 import { cosineSimilarity, VectorStore } from '../../services/ai/VectorStore'
 import { webLLMService } from '../../services/ai/WebLLMService'
 import { DEFAULT_WEBLLM_MODEL } from '../../registry/ai/llm'
@@ -1312,8 +1312,17 @@ export const vectorMemoryExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
  * text + status. Without WebGPU the service yields an `unsupported` state and
  * `supported` goes false (a clear, non-throwing capability gate).
  */
-const llmTriggerPrev = new Map<string, boolean>()
-const llmPrevStatus = new Map<string, string>()
+export const llmTriggerPrev = defineNodeState<boolean>({ label: 'llm-trigger' })
+export const llmPrevStatus = defineNodeState<string>({ label: 'llm-status' })
+
+// The per-node maps above auto-clean via defineNodeState; the WebLLM *service*
+// needs its own cleanup (drop per-node generations on removal; stop active
+// generations on engine stop — but keep loaded engines, which are user-managed).
+defineLifecycle({
+  label: 'webllm-service',
+  gc: (validNodeIds) => webLLMService.gc(validNodeIds),
+  disposeAll: () => webLLMService.stopActive(),
+})
 
 export const llmExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const pressed = Boolean(ctx.inputs.get('trigger'))
@@ -1347,24 +1356,6 @@ export const llmExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     ['done', state.status === 'done' && prevStatus !== 'done'],
     ['supported', state.status !== 'unsupported'],
   ])
-}
-
-/** GC LLM node state for nodes no longer in the graph. */
-export function gcWebLLMState(validNodeIds: Set<string>): void {
-  for (const id of llmTriggerPrev.keys()) if (!validNodeIds.has(id)) llmTriggerPrev.delete(id)
-  for (const id of llmPrevStatus.keys()) if (!validNodeIds.has(id)) llmPrevStatus.delete(id)
-  webLLMService.gc(validNodeIds)
-}
-
-/**
- * Stop LLM generations + clear per-node trigger state when execution stops, but
- * KEEP loaded engines (they're user-managed via the model manager, like the
- * transformers models — persist until explicitly unloaded).
- */
-export function disposeAllWebLLMState(): void {
-  llmTriggerPrev.clear()
-  llmPrevStatus.clear()
-  webLLMService.stopActive()
 }
 
 // ============================================================================

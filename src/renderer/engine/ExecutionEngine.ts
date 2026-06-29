@@ -6,17 +6,10 @@ import { risingEdge, isHigh } from './trigger'
 import type { LifecycleHooks } from './nodeState'
 import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
 import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
-import {
-  disposeAllWebLLMState,
-  gcWebLLMState,
-} from './executors/index'
-// debug state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
-// timing state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
-// input state (trigger/smooth/gate) is migrated to defineNodeState — generic lifecycle loop.
-// RAG (vector-memory) state is migrated to defineNodeState — generic lifecycle loop.
-// utility state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
+// Migrated to defineNodeState (cleaned up via the generic lifecycle loop below):
+// utility, spring, signal, gamepad, code, RAG, input, timing, debug, and WebLLM
+// (its webLLMService side effects via defineLifecycle).
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
-// spring + signal state are migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import {
   disposeAllMessagingState,
   gcMessagingState,
@@ -307,7 +300,6 @@ export class ExecutionEngine {
         gcConnectivityState(validNodeIds)
         gcAIState(validNodeIds)
         gcClaspState(validNodeIds)
-        gcWebLLMState(validNodeIds)
         gcMqttState(validNodeIds)
         gcWebSocketState(validNodeIds)
         gcHttpState(validNodeIds)
@@ -952,7 +944,6 @@ export class ExecutionEngine {
     disposeAllConnectivityNodes()
     disposeAllClaspConnections()
     disposeAllAINodes()
-    disposeAllWebLLMState()
     clearAllSubflowContexts()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { defineNodeState, collectedLifecycles, _resetLifecyclesForTest } from '@/engine/nodeState'
+import { defineNodeState, defineLifecycle, collectedLifecycles, _resetLifecyclesForTest } from '@/engine/nodeState'
 
 describe('defineNodeState', () => {
   beforeEach(() => _resetLifecyclesForTest())
@@ -88,5 +88,25 @@ describe('defineNodeState', () => {
     defineNodeState({ label: 'a' })
     defineNodeState({ label: 'b' })
     expect(collectedLifecycles().map((l) => l.label)).toEqual(['a', 'b'])
+  })
+
+  it('defineLifecycle registers a map-less side-effect hook with no-op defaults', () => {
+    const gc = vi.fn()
+    const disposeAll = vi.fn()
+    defineLifecycle({ label: 'service', gc, disposeAll })
+    // A hook providing only some methods still gets safe no-op gc/disposeAll.
+    const endFrame = vi.fn()
+    defineLifecycle({ label: 'flush', endFrame })
+
+    const [svc, flush] = collectedLifecycles()
+    svc.gc(new Set(['x']))
+    svc.disposeAll()
+    expect(gc).toHaveBeenCalledWith(new Set(['x']))
+    expect(disposeAll).toHaveBeenCalledTimes(1)
+
+    expect(() => flush.gc(new Set())).not.toThrow() // no-op default
+    expect(() => flush.disposeAll()).not.toThrow() // no-op default
+    flush.endFrame?.()
+    expect(endFrame).toHaveBeenCalledTimes(1)
   })
 })

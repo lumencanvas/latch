@@ -127,6 +127,29 @@ export function defineNodeState<T>(opts: DefineNodeStateOptions<T> = {}): NodeSt
   return store
 }
 
+/**
+ * Register a lifecycle hook NOT backed by a `defineNodeState` map — for cleanup
+ * that is a side effect rather than per-node state (e.g. a service-level
+ * `gc(validNodeIds)`/`stopActive()`, or a message bus `clear()`/end-of-frame
+ * flush). Joins the same generic loop the engine drains. `gc`/`disposeAll`
+ * default to no-ops so callers only provide the hooks they need.
+ */
+export function defineLifecycle(hook: {
+  label: string
+  gc?: (validNodeIds: Set<string>) => void
+  disposeAll?: () => void
+  endFrame?: () => void
+  onStart?: () => void
+}): void {
+  lifecycles.push({
+    label: hook.label,
+    gc: hook.gc ?? (() => {}),
+    disposeAll: hook.disposeAll ?? (() => {}),
+    endFrame: hook.endFrame,
+    onStart: hook.onStart,
+  })
+}
+
 /** The lifecycle hooks of every `defineNodeState` created so far (engine reads once). */
 export function collectedLifecycles(): readonly LifecycleHooks[] {
   return lifecycles
