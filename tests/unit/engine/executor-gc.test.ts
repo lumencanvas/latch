@@ -13,20 +13,25 @@ import {
   metronomeState,
   stepSequencerState,
   startFiredNodes,
-  gcDebugState,
-  disposeAllDebugState,
+  consolePrevValues,
+  monitorLastValue,
+  scopeAnalyzers,
+  eqAnalyzers,
   gcMqttState,
   gcWebSocketState,
   gcHttpState,
 } from '@/engine/executors'
 
-// input + timing state migrated to defineNodeState; drive cleanup via the stores.
+// input + timing + debug state migrated to defineNodeState; drive cleanup via the stores.
 const inputStores = [triggerPrevPressed, smoothState, gateLastValue]
 const timingStores = [intervalState, delayState, timerState, metronomeState, stepSequencerState, startFiredNodes]
+const debugStores = [consolePrevValues, monitorLastValue, scopeAnalyzers, eqAnalyzers]
 const disposeAllInputState = () => inputStores.forEach((s) => s.disposeAll())
 const gcInputState = (ids: Set<string>) => inputStores.forEach((s) => s.gc(ids))
 const disposeAllTimingState = () => timingStores.forEach((s) => s.disposeAll())
 const gcTimingState = (ids: Set<string>) => timingStores.forEach((s) => s.gc(ids))
+const disposeAllDebugState = () => debugStores.forEach((s) => s.disposeAll())
+const gcDebugState = (ids: Set<string>) => debugStores.forEach((s) => s.gc(ids))
 import { gcClaspState } from '@/engine/executors/clasp'
 import { changedExecutor, changedPrevValue } from '@/engine/executors/utility'
 import {

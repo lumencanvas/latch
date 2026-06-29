@@ -27,11 +27,19 @@ vi.mock('tone', async (importOriginal) => {
 import {
   oscilloscopeExecutor,
   equalizerExecutor,
-  disposeDebugNode,
-  disposeAllDebugState,
   disposeAnalyzer,
+  consolePrevValues,
+  monitorLastValue,
+  scopeAnalyzers,
+  eqAnalyzers,
 } from '@/engine/executors'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
+
+// debug state migrated to defineNodeState; the scope/eq stores carry a dispose
+// callback (disposeAnalyzer), so delete/disposeAll tear the analysers down.
+const debugStores = [consolePrevValues, monitorLastValue, scopeAnalyzers, eqAnalyzers]
+const disposeDebugNode = (id: string) => debugStores.forEach((s) => s.delete(id))
+const disposeAllDebugState = () => debugStores.forEach((s) => s.disposeAll())
 
 function ctx(nodeId: string, inputs: Record<string, unknown>): ExecutionContext {
   return {

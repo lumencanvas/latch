@@ -968,10 +968,10 @@ export const stepSequencerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
 // ============================================================================
 
 // Track previous values for change detection
-const consolePrevValues = new Map<string, unknown>()
+export const consolePrevValues = defineNodeState<unknown>({ label: 'console' })
 
 // Monitor remembers last received value
-const monitorLastValue = new Map<string, unknown>()
+export const monitorLastValue = defineNodeState<unknown>({ label: 'monitor' })
 
 export const monitorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
@@ -989,7 +989,10 @@ export const monitorExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Audio waveform analyzers per oscilloscope node
-const scopeAnalyzers = new Map<string, { waveform: unknown; prevAudio: unknown }>()
+export const scopeAnalyzers = defineNodeState<{ waveform: unknown; prevAudio: unknown }>({
+  label: 'oscilloscope',
+  dispose: (s) => disposeAnalyzer(s.waveform, s.prevAudio),
+})
 
 /**
  * Tear down a Tone analyser: disconnect it from its source (if still wired) and
@@ -1064,7 +1067,10 @@ export const graphExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Equalizer FFT analyzers per node
-const eqAnalyzers = new Map<string, { fft: unknown; prevAudio: unknown }>()
+export const eqAnalyzers = defineNodeState<{ fft: unknown; prevAudio: unknown }>({
+  label: 'equalizer',
+  dispose: (s) => disposeAnalyzer(s.fft, s.prevAudio),
+})
 
 export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const audio = ctx.inputs.get('audio') as unknown
@@ -1138,53 +1144,6 @@ function safeStringify(value: unknown): unknown {
 // ============================================================================
 // Cleanup Functions
 // ============================================================================
-
-/**
- * Clean up state for debug nodes
- */
-export function disposeDebugNode(nodeId: string): void {
-  consolePrevValues.delete(nodeId)
-  monitorLastValue.delete(nodeId)
-
-  // Clean up oscilloscope waveform analyzer
-  const scopeState = scopeAnalyzers.get(nodeId)
-  if (scopeState) disposeAnalyzer(scopeState.waveform, scopeState.prevAudio)
-  scopeAnalyzers.delete(nodeId)
-
-  // Clean up equalizer FFT analyzer
-  const eqState = eqAnalyzers.get(nodeId)
-  if (eqState) disposeAnalyzer(eqState.fft, eqState.prevAudio)
-  eqAnalyzers.delete(nodeId)
-}
-
-/**
- * Clean up all debug-related state (called when execution stops)
- */
-export function disposeAllDebugState(): void {
-  consolePrevValues.clear()
-  monitorLastValue.clear()
-
-  // Clean up oscilloscope waveform analyzers
-  for (const [, state] of scopeAnalyzers) disposeAnalyzer(state.waveform, state.prevAudio)
-  scopeAnalyzers.clear()
-
-  // Clean up equalizer FFT analyzers
-  for (const [, state] of eqAnalyzers) disposeAnalyzer(state.fft, state.prevAudio)
-  eqAnalyzers.clear()
-}
-
-/**
- * GC debug state for nodes no longer in the graph (per-node removal). Reuses
- * disposeDebugNode for ids absent from the valid set so the heavy audio analysers
- * (oscilloscope/equalizer) are disposed, not just dropped.
- */
-export function gcDebugState(validNodeIds: Set<string>): void {
-  const ids = new Set<string>([
-    ...consolePrevValues.keys(), ...monitorLastValue.keys(),
-    ...scopeAnalyzers.keys(), ...eqAnalyzers.keys(),
-  ])
-  for (const id of ids) if (!validNodeIds.has(id)) disposeDebugNode(id)
-}
 
 // ============================================================================
 // RAG

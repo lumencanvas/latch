@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { consoleExecutor, disposeAllDebugState } from '@/engine/executors'
+import { consoleExecutor, consolePrevValues } from '@/engine/executors'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
+
+// console state migrated to defineNodeState; reset its store between cases.
+const disposeAllDebugState = () => consolePrevValues.disposeAll()
 
 function ctx(
   nodeId: string,
