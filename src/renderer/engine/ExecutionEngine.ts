@@ -14,16 +14,15 @@ import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
 import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
 import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
-import { disposeAllAINodes, gcAIState, resetAINodeDisposal } from './executors/ai'
+// ai state self-registers via defineLifecycle (asymmetric marker Set + onStart reset) — generic loop.
 // mqtt/websocket/http executors override the legacy connectivity ones for those
 // node types, so their per-node state (live WebSockets, fetch caches) needs its
 // own GC + teardown — gcConnectivityState only covers OSC/Serial/MIDI/BLE.
-import { disposeAllMqttNodes, gcMqttState } from './executors/mqtt'
-import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocket'
+// mqtt + websocket state migrated to defineNodeState — drained via the generic lifecycle loop.
 // http cache state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 // gamepad state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
-import { disposeAllEmulationNodes, gcEmulationState } from './executors/emulation'
-import { disposeAllOpenCVNodes, gcOpenCVState, resetOpenCVNodeDisposal } from './executors/opencv'
+// emulation state self-registers via defineLifecycle (asymmetric gc/disposeAll) — generic loop.
+// opencv state self-registers via defineLifecycle (asymmetric marker Set + onStart reset) — generic loop.
 
 /**
  * Largest delta (seconds) a single frame may report. Caps the time spike that
@@ -293,13 +292,8 @@ export class ExecutionEngine {
         gcVisualState(validNodeIds)
         gc3DState(validNodeIds)
         gcConnectivityState(validNodeIds)
-        gcAIState(validNodeIds)
         gcClaspState(validNodeIds)
-        gcMqttState(validNodeIds)
-        gcWebSocketState(validNodeIds)
         gcSubflowState(validNodeIds)
-        gcEmulationState(validNodeIds)
-        gcOpenCVState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
         // Generic defineNodeState cleanup (additive to the legacy gc* calls above).
@@ -801,12 +795,8 @@ export class ExecutionEngine {
     this.inFlightAsync.clear()
     this.pendingAsyncChange.clear()
     this.acceptAsyncResults = true
-    // Un-flag AI nodes that were marked disposed on the previous stop() — otherwise
-    // their detect/transcribe/depth results are dropped until a page refresh.
-    resetAINodeDisposal()
-    // Same stop→restart guard for OpenCV nodes: un-flag any node marked disposed
-    // on the previous stop() so its worker results aren't dropped after restart.
-    resetOpenCVNodeDisposal()
+    // ai + opencv un-flag their disposed-node markers here via their defineLifecycle
+    // onStart hooks (stop→restart guard) — drained by the generic loop below.
     for (const l of this.lifecycles) l.onStart?.()
     this.runtimeStore.start()
 
@@ -934,12 +924,7 @@ export class ExecutionEngine {
     disposeAll3DNodes()
     disposeAllConnectivityNodes()
     disposeAllClaspConnections()
-    disposeAllAINodes()
     clearAllSubflowContexts()
-    disposeAllMqttNodes()
-    disposeAllWebSocketNodes()
-    disposeAllEmulationNodes()
-    disposeAllOpenCVNodes()
     for (const l of this.lifecycles) l.disposeAll()
   }
 
