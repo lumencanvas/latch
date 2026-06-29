@@ -83,4 +83,29 @@ describe('WebSocket auto-connect throttle', () => {
     await websocketExecutor(frame('c2'))
     expect(store.connect).toHaveBeenCalledTimes(1) // no dials while connected
   })
+
+  it('unsubscribes the old listener exactly once when the connection is rewired', async () => {
+    // Regression guard for the defineNodeState migration: the rewire path used to
+    // unsubscribe manually AND .delete(); now .delete() disposes (unsubscribes), so a
+    // manual unsubscribe too would double-fire. The old listener must release once.
+    const unsubs: Array<ReturnType<typeof vi.fn>> = []
+    store.__adapter.status = 'connected'
+    store.__adapter.onMessage = vi.fn(() => {
+      const u = vi.fn()
+      unsubs.push(u)
+      return u
+    })
+
+    const f = frame('rewire-a') // node id is stable; only the connectionId changes
+    f.controls.set('connectionId', 'conn-A')
+    await websocketExecutor(f)
+    expect(unsubs).toHaveLength(1) // first listener registered, not yet released
+
+    f.controls.set('connectionId', 'conn-B') // rewire same node to a new connection
+    await websocketExecutor(f)
+
+    expect(unsubs[0]).toHaveBeenCalledTimes(1) // old listener released exactly once
+    expect(unsubs).toHaveLength(2) // new listener registered
+    expect(unsubs[1]).not.toHaveBeenCalled()
+  })
 })

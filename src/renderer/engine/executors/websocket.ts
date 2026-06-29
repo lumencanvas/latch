@@ -8,17 +8,19 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { useConnectionsStore } from '@/stores/connections'
 import type { WebSocketAdapterImpl } from '@/services/connections/adapters/WebSocketAdapter'
+import { defineNodeState } from '../nodeState'
 
-// State cache for received messages per node
-const wsState = new Map<string, {
+// Per-node received-message cache. Auto-gc'd via the engine's generic lifecycle loop.
+export const wsState = defineNodeState<{
   lastMessage: unknown
-}>()
+}>({ label: 'websocket' })
 
-// Track active message listeners per node
-const nodeListeners = new Map<string, {
+// Active message listener per node. The dispose callback unsubscribes — that IS the
+// resource teardown — so engine gc, stop(), and a rewire .delete() all release it.
+export const nodeListeners = defineNodeState<{
   connectionId: string
   unsubscribe: () => void
-}>()
+}>({ label: 'websocket-listeners', dispose: (l) => l.unsubscribe() })
 
 /**
  * Get WebSocket adapter from ConnectionManager
@@ -118,9 +120,9 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
   const existingListener = nodeListeners.get(ctx.nodeId)
 
   if (!existingListener || existingListener.connectionId !== connectionId) {
-    // Unsubscribe from old listener
+    // Release the old listener. `.delete()` runs the dispose callback (unsubscribe),
+    // so we must NOT unsubscribe manually too — that would double-fire.
     if (existingListener) {
-      existingListener.unsubscribe()
       nodeListeners.delete(ctx.nodeId)
     }
 
@@ -151,40 +153,24 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
   return outputs
 }
 
-/**
- * Dispose WebSocket node and clean up resources
- */
-export function disposeWebSocketNode(nodeId: string): void {
-  // Clean up message listener
-  const listener = nodeListeners.get(nodeId)
-  if (listener) {
-    listener.unsubscribe()
-    nodeListeners.delete(nodeId)
-  }
+// The engine now drains both stores through its generic lifecycle loop (the
+// `nodeListeners` dispose callback unsubscribes); the helpers below are thin
+// store-backed wrappers retained for tests and the index barrel re-export.
 
-  // Clean up state
+/** Dispose one WebSocket node's listener (unsubscribe) + message cache. */
+export function disposeWebSocketNode(nodeId: string): void {
+  nodeListeners.delete(nodeId) // dispose callback unsubscribes
   wsState.delete(nodeId)
 }
 
-/**
- * Dispose all WebSocket node resources
- */
+/** Dispose all WebSocket node resources (test/teardown helper). */
 export function disposeAllWebSocketNodes(): void {
-  for (const [, listener] of nodeListeners) {
-    listener.unsubscribe()
-  }
-
-  nodeListeners.clear()
-  wsState.clear()
+  nodeListeners.disposeAll() // unsubscribes each
+  wsState.disposeAll()
 }
 
-/**
- * Garbage collect WebSocket state for removed nodes
- */
+/** Garbage-collect WebSocket state for removed nodes (test helper). */
 export function gcWebSocketState(validNodeIds: Set<string>): void {
-  for (const nodeId of wsState.keys()) {
-    if (!validNodeIds.has(nodeId)) {
-      disposeWebSocketNode(nodeId)
-    }
-  }
+  nodeListeners.gc(validNodeIds)
+  wsState.gc(validNodeIds)
 }
