@@ -6,6 +6,134 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-28 — Phase 0 foundations: `.latch` v2 file format + extensibility scaffolding
+
+Started executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
+**`phase0-file-format`** (off `main`). Nothing committed yet (per CLAUDE.md — staging is the
+maintainer's). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no
+change needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
+
+**State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
+**1556 tests** (was 1517). Every step was kept individually revertible. (One pre-existing flaky timer test,
+`adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
+unrelated to this work.)
+
+### ⚠️ Critical engine fix (third `ultrathink` audit) — required by the v2 format
+`ExecutionEngine.executeNode` read the node definition **only** from `node.data.definition`
+(`:340`) and used it to populate control **defaults** (`:358`). The `.latch` v2 format **drops** the
+embedded definition, so imported flows (incl. the **first-visit `sample-flow.json`**) would execute
+with control defaults missing — masked only where executors have their own `?? default`. Fixed per
+FILE_FORMAT_SPEC ("resolve from the registry by type at load"):
+`definition = node.data?.definition ?? this.nodesStore.getDefinition(nodeType)` (+ `private nodesStore
+= useNodesStore()`). **Conservative** (embedded-first → zero change for existing/autosaved flows that
+still carry a definition; registry fallback fixes v2-imported and NodeExplorer-added nodes). No
+executor reads `ctx.definition` (verified 0 occurrences), so the undefined-`ctx.definition` case was
+already harmless. Tests: registry default reaches the executor when no embedded def; explicit value
+still overrides. Golden + dirty-equivalence suites green. **Follow-up (not blocking):** `EditorView.vue:192`
+still embeds `definition` at node creation — drop it later so the format is uniformly registry-resolved.
+
+### Sub-task 3 quick-wins — STARTED
+- **`power` finite-guard DONE** (AUDIT §E): `powerExecutor` returned `isNaN(result) ? 0 : result`,
+  letting `±Infinity` through (`log(0)=-∞`, `0^-1=+∞`, `exp(710)=+∞`). Now `Number.isFinite(result) ?
+  result : 0` (`executors/index.ts:381`). Four bug-characterizing tests in `math.test.ts` were
+  tightened from "tolerates Infinity" to asserting the guarded `0`.
+- **Boundary coercion DONE** (AUDIT §D P0 — the "coercion lie"): `getNodeInputs` copied upstream
+  values verbatim, so a boolean into a `number` port arrived as `true` (`true + 0 === 1`; `?? 0` never
+  caught it). New exported `coerceToPortType(value, portType)` in `ExecutionEngine.ts` honors the
+  connection-matrix coercions (number→{string,boolean}, boolean→{number,string}); `getNodeInputs`
+  resolves the target node's definition (registry) once and coerces each value to its port type.
+  **Conservative**: only primitive number/boolean/string targets when the runtime type mismatches;
+  `any`/trigger/textures/3D/`data`/placeholder ports pass through untouched. Golden + dirty-equivalence
+  green (correctly-typed flows unchanged). Pure-fn + engine-integration tests added.
+
+### Sub-task 1 — `.latch` v2 file format (FILE_FORMAT_SPEC) — COMPLETE
+The strategic centerpiece (diff-friendly, durable, versioned). Logic (`flow.nodes` controls) is
+separated from layout (positions/size/custom label) so moving a node never churns a logic diff.
+- **`src/renderer/services/fileFormat.ts`** (new, pure — no store/registry/IO/random):
+  v2 types; `migrateDocument`/`migrateToExport` (legacy v1.0 single + v1.0.0 multi → v2);
+  byte-deterministic `serializeDocument`/`serializeExport` (sorted keys, nodes/edges by id,
+  `controls` deep-sorted); `validateDocument` (drops dangling edges, PRESERVES unknown-type nodes);
+  `endpoint`/`parseEndpoint` (`"node:port"`, `:` delimiter — **never `/`**, so subflow-expanded
+  `a/b` ids stay safe); `migrateNode`/`migrateDocumentNodes` (per-node `version`+`migrate`,
+  resolver-injected — no-op today, all nodes v1); `looksLikeLatchFile` guard.
+- **`src/renderer/stores/flows.ts`**: `exportFlow`/`exportAllFlows` now **write v2 only** (maintainer
+  chose v2-only over dual-write); `importFlow`/`importFlows` read v1.0 + v1.0.0 + v2 via one
+  `migrateToExport → docToFlowState` path. Unknown types load as **placeholders** (controls + wires
+  preserved; dynamic ports derived from surviving edges). `importFlows` returns a structured
+  **`ImportReport`** (imported / migrated / unknownNodes / droppedEdges / warnings). **Persistence is
+  untouched** — `usePersistence` stores `FlowState` directly in Dexie, independent of the file format.
+- **`src/renderer/stores/ui.ts`** + **`components/layout/NotificationToasts.vue`** (new, mounted in
+  `App.vue`): minimal toast system (`notify`/`dismissNotification`). `AppHeader.importProject` now
+  surfaces the `ImportReport` as a success/warning toast (errors sticky) instead of `console.log`/`alert`.
+- Gates (all green, unit-level): byte-identical round-trip, logic/layout isolation, legacy
+  `public/sample-flow.json` upgrade, missing-node placeholder. **Integration gate**: the real sample
+  flow (19 nodes/18 edges) upgrades through the **full 238-node registry with 0 unknown / 0 dropped**.
+
+### Audit findings fixed (two `ultrathink` self-audits)
+- **REGRESSION**: store-export stripped all `_`-prefixed data keys while legacy-migrate kept them →
+  silently dropped real persisted state (`_width`/`_height` KeyboardNode sizing;
+  `_dynamicInputs/_dynamicControls/_dynamicOutputs`, which regenerate **only while the engine runs**,
+  `ExecutionEngine.ts:461`). Both paths now preserve everything except `{nodeType, label, definition,
+  _unknownType}`.
+- **Placeholder dynamic-port leak**: a placeholder's edge-derived `_dynamic*` must not be persisted
+  (would pollute the node with stale handles if its type later loads) — stripped on export for
+  `_unknownType` nodes only.
+- **Validation hole**: arbitrary JSON imported as an empty "success" flow → `looksLikeLatchFile` guard.
+- Defensive `delete data._unknownType` on load; fatal validation errors surfaced as report `warnings`.
+- Determinism proof: a round-trip test was order-fragile (`nodes[0]` after id-sort) — fixed to resolve
+  by `nodeType`.
+
+### Sub-task 2 — extensibility primitives (additive, alongside existing code)
+- **2a DONE** — `engine/defineNode.ts` (`NodeSpec`, frozen-contract identity fn — core fields only;
+  `ui`/`models`/`lifecycle` are additive-later per POLICIES §2), `engine/trigger.ts`
+  (`TRIGGER`=1/`isHigh`/`risingEdge`), `engine/nodeState.ts` (`defineNodeState` + `collectedLifecycles`
+  + lifecycle registry). Unit-tested; **not yet wired into the engine**.
+- **2c DONE** — `registry/nodeRegistry.ts` globs `./**/node.ts` (eager, `import:'default'`); throws on
+  duplicate id / missing-default at load; exports `nodeSpecs`/`colocatedNodeIds`/`colocatedExecutors`/
+  `COLOCATED_PURE_NODE_TYPES`. Glob matches **0 files today** (inert; app still uses the legacy
+  registry). Guard tests are **green-from-commit-1**: dup-id + default-export are meaningful now;
+  count-equality is `colocated ≤ legacy` with a `TODO(phase6)` to tighten to `===` once every node is
+  co-located. NOTE (EXTENSIBILITY §6 risk #3): the guard test must load `@/registry/components`
+  **before** `@/registry` — importing `@/registry` re-exports `./components` mid-eval (`index.ts:72`)
+  and trips a happy-dom `markRaw(undefined)` circular-init hazard otherwise.
+- **2b DEFERRED** — `ctx.num/bool/str/trig/level` on `ExecutionContext`. Reason: ~25 executor test
+  files build their own `ExecutionContext` literals via local `createContext` helpers, so making the
+  accessors **required** breaks all of them; **optional** kills the ergonomics. The right move (next
+  session): introduce a shared `createExecutionContext(partial)` factory, make the accessors required,
+  and refactor the ~25 helpers to spread from it. The sole runtime construction site is
+  `ExecutionEngine.ts` (~line 378).
+
+### Open / next (in order)
+1. **2b** — ctx accessors (see deferred note above). Needed by several sub-task-3 quick-wins (boundary
+   coercion).
+2. **Engine lifecycle wiring** (EXTENSIBILITY §11 step 1): wire `engine.registerLifecycles(
+   collectedLifecycles())` + the four generic loops (gc/disposeAll/endFrame/onStart) to run *in
+   addition to* the existing hardcoded ones. **Sequencing constraint**: `risingEdge` state is GC'd only
+   once this lands — so do it **before** migrating `latch`/`sample-hold` to `risingEdge` (a sub-task-3
+   quick-win) or that edge state leaks. `collectedLifecycles()` returns the *live* array, so late
+   `defineNodeState` registrations are still seen.
+3. **Sub-task 3 quick-wins** (ROADMAP Phase 0; file:line map ready from POLISH §5): number
+   `:min`/`:max` + units (`BaseNode.vue:666`); ~~boundary coercion~~ **(DONE)**; texture traps (`visual.ts:611-612`/`:1282`, render-3d depth via `emulation.ts:88-110`); edge-trigger
+   `latch`/`sample-hold` (`utility.ts:288-323` → `risingEdge`); `random` sample-on-trigger
+   (`index.ts:284-298`); ~~`power` finite-guard~~ **(DONE)**; oscilloscope/equalizer Tone-analyser
+   `.dispose()`; clasp `captureStream` stop; single-input edge replacement honoring `multiple`
+   (`flows.ts:325-356`); undo for param edits; per-node error badge. **Note**: `single-input edge
+   replacement` now has the registry available in `flows.ts` (`useNodesStore`) to look up the target
+   port's `multiple` flag.
+4. Phase 1+: convert executors to `defineNodeState`, split `executors/index.ts`, derive `PURE_NODE_TYPES`
+   (24-id exact set), then the Phase-6 co-location that makes `nodeRegistry` authoritative + flips the
+   count guard to strict `===`.
+
+### Key decisions/invariants for the next session
+- Node ids are **opaque, no `/`** (subflow rebuild joins ids with `/`); the format uses `:` for edge
+  endpoints. Never `.split('/')` an id.
+- `defineNode` is a **frozen contract** — additive optional fields only; retire via deprecation + a
+  node-data `migrate()` (POLICIES §2).
+- Honor `strategy/05` DON'T-OVERCLAIM (never claim raw GPU/DSP perf, "scales to huge graphs", deep
+  hardware interop, GC-free, touch-first authoring). Positioning = open/durable/accessible.
+
+---
+
 ## 2026-06-28 — v1.2.14: CONFIRMED working + stripped OpenCV debug logging
 
 User confirmed in their browser: **OpenCV CV nodes paint** (the v1.2.12 worker init + MessageChannel
