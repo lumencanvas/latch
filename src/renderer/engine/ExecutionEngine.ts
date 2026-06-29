@@ -2,6 +2,7 @@ import type { Node, Edge } from '@vue-flow/core'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
+import { risingEdge, isHigh } from './trigger'
 import type { LifecycleHooks } from './nodeState'
 import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
 import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
@@ -109,6 +110,69 @@ export interface ExecutionContext {
   deltaTime: number
   totalTime: number
   frameCount: number
+  /** input ?? control ?? fallback, coerced to a finite number (NaN/±Infinity → fallback). */
+  num(id: string, fallback?: number): number
+  /** input ?? control ?? fallback, coerced to a boolean. */
+  bool(id: string, fallback?: boolean): boolean
+  /** input ?? control ?? fallback, coerced to a string. */
+  str(id: string, fallback?: string): string
+  /** Rising edge (low→high transition) of an input/control this frame (= risingEdge). */
+  trig(id: string): boolean
+  /** Whether an input/control is currently high (= isHigh). */
+  level(id: string): boolean
+}
+
+/** The plain data fields of a context; the typed accessors are added by the factory. */
+export type ExecutionContextData = Omit<
+  ExecutionContext,
+  'num' | 'bool' | 'str' | 'trig' | 'level'
+>
+
+/**
+ * Build an {@link ExecutionContext} with the typed input accessors wired up. The
+ * production construction site and any test that needs a context should go through
+ * this so executors can rely on `ctx.num/bool/str/trig/level` (EXTENSIBILITY §5.2).
+ * Accessors read `input ?? control` for the given id, then fall back to the
+ * supplied default. Additive: raw `ctx.inputs.get()` keeps working unchanged.
+ */
+export function createExecutionContext(data: ExecutionContextData): ExecutionContext {
+  const read = (id: string): unknown => {
+    const fromInput = data.inputs.get(id)
+    return fromInput !== undefined ? fromInput : data.controls.get(id)
+  }
+  return {
+    ...data,
+    num(id, fallback = 0) {
+      const v = read(id)
+      const n =
+        typeof v === 'number' ? v
+        : typeof v === 'boolean' ? (v ? 1 : 0)
+        : typeof v === 'string' ? parseFloat(v)
+        : NaN
+      return Number.isFinite(n) ? n : fallback
+    },
+    bool(id, fallback = false) {
+      const v = read(id)
+      if (v === undefined || v === null) return fallback
+      if (typeof v === 'boolean') return v
+      if (typeof v === 'number') return v !== 0
+      if (typeof v === 'string') return v === 'true' || v === '1'
+      return Boolean(v)
+    },
+    str(id, fallback = '') {
+      const v = read(id)
+      if (v === undefined || v === null) return fallback
+      if (typeof v === 'string') return v
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+      return fallback
+    },
+    trig(id) {
+      return risingEdge(data.nodeId, id, read(id))
+    },
+    level(id) {
+      return isHigh(read(id))
+    },
+  }
 }
 
 /**
@@ -428,7 +492,7 @@ export class ExecutionEngine {
       }
     }
 
-    const context: ExecutionContext = {
+    const context = createExecutionContext({
       nodeId: node.id,
       inputs: this.getNodeInputs(node.id),
       controls: controlMap,
@@ -436,7 +500,7 @@ export class ExecutionEngine {
       deltaTime,
       totalTime: (performance.now() - this.startTime) / 1000,
       frameCount: this.frameCount,
-    }
+    })
 
     try {
       const isDeferred = this.deferredNodeTypes.has(nodeType)
