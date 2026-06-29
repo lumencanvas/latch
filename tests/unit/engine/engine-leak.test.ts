@@ -261,13 +261,14 @@ describe('engine leak gate', () => {
     expect(nodeSubscriptions.size).toBe(0)
   })
 
-  it('asymmetric/marker categories self-register via defineLifecycle (opencv, ai, emulation)', () => {
-    // These cannot be defineNodeState stores (gc/disposeAll differ — marker Sets that
-    // survive gc and clear only onStart). They self-register their existing functions so
-    // the engine's generic loop drives them. Guard that the registration is present and
-    // fully wired (the engine drains gc/disposeAll/onStart generically — see
-    // ExecutionEngine.test.ts's lifecycle spy).
-    for (const label of ['opencv', 'ai', 'emulation']) {
+  it('defineLifecycle categories self-register their cleanup (opencv, ai, emulation, audio)', () => {
+    // These don't fit defineNodeState — marker Sets that survive gc and clear only
+    // onStart (opencv/ai), an asymmetric keep-on-stop map (emulation), or an
+    // ordering-sensitive multi-map Tone teardown (audio). They self-register their
+    // existing functions so the engine's generic loop drives them. Guard that the
+    // registration is present and fully wired (the engine drains gc/disposeAll/onStart
+    // generically — see ExecutionEngine.test.ts's lifecycle spy).
+    for (const label of ['opencv', 'ai', 'emulation', 'audio']) {
       const hook = collectedLifecycles().find((l) => l.label === label)
       expect(hook, `${label} lifecycle not registered`).toBeDefined()
       expect(typeof hook!.gc).toBe('function')

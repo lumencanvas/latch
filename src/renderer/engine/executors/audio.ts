@@ -6,6 +6,7 @@
 
 import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { audioManager } from '@/services/audio/AudioManager'
 
 // Store for persistent audio nodes (oscillators, effects, etc.)
@@ -1690,3 +1691,15 @@ export const audioExecutors: Record<string, NodeExecutorFn> = {
   'audio-distortion': distortionExecutor,
   'audio-bitcrusher': bitcrusherExecutor,
 }
+
+// Self-register into the engine's generic lifecycle loop (replaces the hand-wired
+// gcAudioState / disposeAllAudioNodes calls in ExecutionEngine). `defineLifecycle`,
+// NOT `defineNodeState`: disposeAllAudioNodes encodes a specific Tone teardown SEQUENCE
+// across 8 maps (audioNodes first, then synth voices / players / filters), and the
+// audioNodes map uses suffixed keys (`${id}_meter`). Splitting into independent stores
+// could reorder disposal and break Tone graphs. Cleanup logic is unchanged.
+defineLifecycle({
+  label: 'audio',
+  gc: gcAudioState,
+  disposeAll: disposeAllAudioNodes,
+})

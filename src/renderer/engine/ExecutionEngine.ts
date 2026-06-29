@@ -4,7 +4,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { risingEdge, isHigh } from './trigger'
 import type { LifecycleHooks } from './nodeState'
-import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
+// audio state self-registers via defineLifecycle (ordering-sensitive Tone teardown) — generic loop.
 import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
 // Migrated to defineNodeState (cleaned up via the generic lifecycle loop below):
 // utility, spring, signal, gamepad, code, RAG, input, timing, debug, and WebLLM
@@ -288,7 +288,6 @@ export class ExecutionEngine {
 
       if (hasRemovedNodes) {
         // Run garbage collection for orphaned state
-        gcAudioState(validNodeIds)
         gcVisualState(validNodeIds)
         gc3DState(validNodeIds)
         gcConnectivityState(validNodeIds)
@@ -919,7 +918,6 @@ export class ExecutionEngine {
     this.frameCount = 0
 
     // Clean up all executor state to prevent memory leaks and stop audio
-    disposeAllAudioNodes()
     disposeAllVisualNodes()
     disposeAll3DNodes()
     disposeAllConnectivityNodes()
