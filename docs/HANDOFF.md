@@ -13,20 +13,23 @@ Executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
 attribution). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no change
 needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
-**▶ NEXT ACTION:** Open/next #1 (number `:min`/`:max`), #2 (per-node error badge), and #6 (undo for
-param edits) are **DONE**. Next: the **2b** ctx-accessor factory (infra, self-contained). `random` (#4)
-and single-input-edge-replacement (#3) still need design / Vue-Flow-sync work first. `texture traps`
-(#5) needs in-app WebGL verification (hard to unit-test).
+**▶ NEXT ACTION:** Open/next #1 (number `:min`/`:max`), #2 (per-node error badge), #6 (undo for param
+edits), and #7 (**2b** ctx accessors + factory) are **DONE**. Remaining clean autonomous work is thin:
+#8 policies fixture needs a public-API-surface decision (maintainer call). #3 (single-input edge
+replace) and #5 (texture traps, P0) need **in-app verification**; #4 (`random`) needs a design call.
+Next session likely starts **Phase 1** (de-monolith `executors/index.ts` + `defineNodeState`
+conversion) — see the §1 add-`canvas.getContext`-mock-to-`tests/setup.ts` prerequisite below.
 
 **Landed this session** (15 commits): planning corpus · `.latch` v2 file format (+ store wiring) ·
 engine registry-resolved definitions + boundary input coercion · extensibility scaffold
 (`defineNode`/`trigger`/`defineNodeState`/`nodeRegistry`) · `power` finite-guard · import toasts ·
 engine lifecycle wiring · edge-triggered `latch`/`sample-hold` · Tone-analyser dispose · clasp
 `captureStream` stop · **number control `:min`/`:max` + blur-clamp (first component test)** ·
-**per-node error badge** · **undo for param edits (debounced)**. Test count **1517 → 1586**.
+**per-node error badge** · **undo for param edits (debounced)** · **2b ctx accessors + factory**.
+Test count **1517 → 1593**.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1586 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1593 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -130,12 +133,18 @@ separated from layout (positions/size/custom label) so moving a node never churn
   co-located. NOTE (EXTENSIBILITY §6 risk #3): the guard test must load `@/registry/components`
   **before** `@/registry` — importing `@/registry` re-exports `./components` mid-eval (`index.ts:72`)
   and trips a happy-dom `markRaw(undefined)` circular-init hazard otherwise.
-- **2b DEFERRED** — `ctx.num/bool/str/trig/level` on `ExecutionContext`. Reason: ~25 executor test
-  files build their own `ExecutionContext` literals via local `createContext` helpers, so making the
-  accessors **required** breaks all of them; **optional** kills the ergonomics. The right move (next
-  session): introduce a shared `createExecutionContext(partial)` factory, make the accessors required,
-  and refactor the ~25 helpers to spread from it. The sole runtime construction site is
-  `ExecutionEngine.ts` (~line 378).
+- **2b DONE** — `ctx.num/bool/str/trig/level` on `ExecutionContext`, required, via a new exported
+  `createExecutionContext(data)` factory now used at the sole runtime site (`ExecutionEngine.ts:431`).
+  Accessors read `input ?? control ?? fallback`: `num` coerces + NaN/±Infinity-guards; `bool`/`str`
+  coerce; `trig` = `risingEdge(nodeId, id, value)`; `level` = `isHigh`. **The prior "breaks ~25 test
+  helpers" deferral premise was WRONG**: `tsconfig.json` `include` is `src/**` only, so `vue-tsc`
+  **does not typecheck `tests/`** — the test helpers' `: ExecutionContext` annotations are esbuild-
+  stripped at runtime and never checked (proof: `math.test.ts`'s helper already omits `definition` and
+  carries a stale `getInputNode` not in the interface, yet typecheck is green). So making the accessors
+  required broke nothing, and **the mass 25-helper refactor is unnecessary churn** — no executor uses
+  the accessors yet, so each helper migrates incrementally when its executor adopts `ctx.num` (Phase 1+).
+  Shipped instead: a shared, factory-based test helper `tests/unit/_helpers/executionContext.ts`
+  (`makeContext`) for new/migrated executor tests, plus `tests/unit/engine/executionContext.test.ts` (7).
 
 ### Open / next (remaining Phase-0 work, roughly priority order)
 Done already: file format (Sub-task 1), scaffold 2a/2c, **engine lifecycle wiring**, and 5 quick-wins
@@ -181,9 +190,9 @@ Done already: file format (Sub-task 1), scaffold 2a/2c, **engine lifecycle wirin
    Tests: `tests/unit/composables/useFlowHistory.test.ts` (7). **Follow-up (non-blocking):** the
    Code/Shader editor modals call `updateNodeData` directly and are still unrecorded — wrap them in
    `withHistory` (they're discrete saves, not rapid) when convenient.
-7. **2b ctx accessors** — `ctx.num/bool/str/trig/level`; introduce a shared `createExecutionContext`
-   factory + refactor ~25 executor-test `createContext` helpers, make accessors required. Sole runtime
-   build site: `ExecutionEngine.ts` (~:378).
+7. **2b ctx accessors — DONE** (see the "extensibility primitives" section above). Factory + required
+   accessors landed; the 25-helper refactor was found unnecessary (tests aren't typechecked) — migrate
+   each helper to `makeContext` only when its executor adopts `ctx.num` (Phase 1+).
 8. **Sub-task 4 policies** — checked-in `tests/contracts/public-exports.ts` must-not-break fixture
    (activates as a Phase-1+ gate); the `defineNode` deprecation policy is already in POLICIES.
 9. **Phase 1+** — convert executors to `defineNodeState` (delete the 23×3 hardcoded gc/disposeAll),
