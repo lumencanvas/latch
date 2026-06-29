@@ -3,6 +3,17 @@ import { defineStore } from 'pinia'
 export type Theme = 'light' | 'dark' | 'system'
 export type ViewMode = 'editor' | 'controlPanel'
 
+export type NotificationLevel = 'info' | 'success' | 'warning' | 'error'
+
+/** A transient, user-facing toast message. */
+export interface AppNotification {
+  id: number
+  level: NotificationLevel
+  message: string
+}
+
+let notificationSeq = 0
+
 // LocalStorage keys
 const STORAGE_KEY_EXPOSED_CONTROLS = 'clasp-exposed-controls'
 const STORAGE_KEY_CONTROL_GROUPS = 'clasp-control-groups'
@@ -160,6 +171,9 @@ interface UIState {
   controlPanelEditMode: boolean
   controlPanelLayout: ControlLayout[] // Positions/sizes for control nodes
   controlPanelGridSize: number // Grid cell size in pixels
+
+  // Transient toast notifications
+  notifications: AppNotification[]
 }
 
 export const useUIStore = defineStore('ui', {
@@ -220,6 +234,9 @@ export const useUIStore = defineStore('ui', {
     controlPanelEditMode: false,
     controlPanelLayout: loadFromStorage<ControlLayout[]>(STORAGE_KEY_CONTROL_LAYOUT, []),
     controlPanelGridSize: 20, // 20px grid cells
+
+    // Notifications
+    notifications: [],
   }),
 
   getters: {
@@ -765,6 +782,27 @@ export const useUIStore = defineStore('ui', {
      */
     snapToControlGrid(value: number): number {
       return Math.round(value / this.controlPanelGridSize) * this.controlPanelGridSize
+    },
+
+    // =========================================================================
+    // Notifications (transient toasts)
+    // =========================================================================
+
+    /**
+     * Show a transient toast. Returns its id. A non-positive `durationMs` keeps
+     * it until dismissed manually (use for errors the user should acknowledge).
+     */
+    notify(message: string, level: NotificationLevel = 'info', durationMs = 6000): number {
+      const id = ++notificationSeq
+      this.notifications.push({ id, level, message })
+      if (durationMs > 0) {
+        setTimeout(() => this.dismissNotification(id), durationMs)
+      }
+      return id
+    },
+
+    dismissNotification(id: number) {
+      this.notifications = this.notifications.filter((n) => n.id !== id)
     },
   },
 })

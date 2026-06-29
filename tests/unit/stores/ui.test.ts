@@ -137,4 +137,29 @@ describe('UI Store', () => {
     store.setGridSize(200)
     expect(store.gridSize).toBe(100) // Max
   })
+
+  describe('notifications', () => {
+    it('notify pushes a toast with a unique id and the given level; dismiss removes it', () => {
+      const store = useUIStore()
+      expect(store.notifications).toEqual([])
+
+      const id1 = store.notify('Imported 2 flows', 'success', 0) // sticky (no auto-dismiss)
+      const id2 = store.notify('Something failed', 'error', 0)
+      expect(id1).not.toBe(id2)
+      expect(store.notifications).toHaveLength(2)
+      expect(store.notifications[0]).toMatchObject({ id: id1, level: 'success', message: 'Imported 2 flows' })
+      expect(store.notifications[1].level).toBe('error')
+
+      store.dismissNotification(id1)
+      expect(store.notifications.map((n) => n.id)).toEqual([id2])
+    })
+
+    it('auto-dismisses after the given duration', async () => {
+      const store = useUIStore()
+      const id = store.notify('temp', 'info', 10)
+      expect(store.notifications.some((n) => n.id === id)).toBe(true)
+      await new Promise((r) => setTimeout(r, 25))
+      expect(store.notifications.some((n) => n.id === id)).toBe(false)
+    })
+  })
 })

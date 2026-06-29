@@ -127,10 +127,12 @@ async function importProject() {
     // Imported flows live only in the store until written; the autosave watcher
     // covers only the active flow, so persist them all now or they vanish on reload.
     await saveAllFlows()
-    console.log(result.message)
+    // Surface the structured outcome (migrated / placeholder / dropped-edge counts);
+    // a clean import is a success, a degraded one is a warning the user should see.
+    const hadIssues = !!(result.unknownNodes || result.droppedEdges || result.warnings?.length)
+    uiStore.notify(result.message, hadIssues ? 'warning' : 'success')
   } else if (result.message !== 'Import cancelled') {
-    console.error(result.message)
-    alert(result.message)
+    uiStore.notify(result.message, 'error', 0) // sticky until dismissed
   }
 }
 

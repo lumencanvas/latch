@@ -16,6 +16,7 @@ import AIModelManagerModal from './components/modals/AIModelManagerModal.vue'
 import ConnectionManagerModal from './components/connections/ConnectionManagerModal.vue'
 import NodeExplorerModal from './components/modals/NodeExplorerModal.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
+import NotificationToasts from './components/layout/NotificationToasts.vue'
 import { usePersistence } from './composables/usePersistence'
 import { useExecutionEngine } from './composables/useExecutionEngine'
 import { aiInference } from './services/ai/AIInference'
@@ -122,6 +123,9 @@ onUnmounted(() => {
   <div :class="appClasses">
     <!-- Animated loading screen on app launch -->
     <LoadingScreen />
+
+    <!-- Transient toast notifications (import results, etc.) -->
+    <NotificationToasts />
 
     <!-- Old loading overlay for data loading -->
     <div
