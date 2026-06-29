@@ -6,6 +6,60 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 7) — Must-not-break export-list gate BUILT (closes the headline Phase-1 gap)
+
+Branch **`phase0-file-format`** (continuing). Built the CI gate the `(later 6)` audit flagged as the
+clearest skipped Phase-1 deliverable (POLICIES §1 "Must-not-break export list"). **No production source
+changed** — fixture + test only. Tests: typecheck clean · lint 0 err (49 pre-existing warns) ·
+`test:unit` **1616 → 1675** (+59 cases, +1 file) · build unaffected (tests excluded from the build graph).
+
+**What landed (NOT committed):**
+- **`tests/contracts/public-exports.ts`** — the checked-in fixture POLICIES §1 names verbatim. A pure-data
+  `PUBLIC_EXPORT_CONTRACT: ExportContract[]` mapping each public module → the named exports that must
+  resolve. Scope = the genuine **governed** contract surface (NOT every executor): (1) the
+  `@/engine/executors` barrel surface the split must keep re-exporting — `builtinExecutors`, the 14
+  "external use" cleanup utils, the moved groups' state stores + debug/RAG/LLM executors; (2) **every name
+  PRODUCTION `src/` code imports from a per-category path** — `emulation`
+  (registerEmulatorNode/unregisterEmulator/getEmulatorLoader, via EmulatorNode.vue), `clasp`
+  (disposeAllClaspConnections/gcClaspState, via ExecutionEngine), `easing`(EASINGS), `noise`(fbmNoise),
+  `euclidean`(bjorklund), `color-ramp`(PALETTES/sampleStops) — the preview components + engine; (3) the
+  leak-gate store paths (`spring`/`signal`/`gamepad`); (4) `CUSTOM_NODE_TYPE_IDS`. Deliberately excluded
+  (documented in the header): individual math/logic/timing executors that only flow through
+  `builtinExecutors` (owned by the registry-count gate; their by-name barrel imports are self-guarding via
+  math/timing tests), and test-only deep imports into stable per-category files (self-guarding).
+- **AUDIT (this session) found + closed a completeness hole:** the first cut pinned only `spring`/`signal`/
+  `gamepad` among per-category paths. A clean re-grep of all `from '@/engine/executors/<cat>'` imports
+  surfaced **6 production `src/` consumers** (the previews + EmulatorNode + ExecutionEngine's clasp
+  cleanup) that were unprotected — the true external surface, where a refactor could drop an export with
+  its consumer and no in-repo test would notice. Added them as tier (2). Per-category loader path then
+  re-mutation-verified (corrupted `EASINGS` name → that case red).
+- **`tests/unit/contracts/public-exports.test.ts`** — the gate (under `tests/unit/**` so `test:unit`/CI
+  actually runs it; the fixture stays at the POLICIES path `tests/contracts/`). Asserts every contract
+  name resolves; a coverage check that fixture-modules === loader-modules; and a `builtinExecutors`
+  non-empty-record-of-functions sanity. Uses static `import()` literals (so Vite resolves `@/` aliases)
+  + a 30s timeout on the import-bearing cases (the barrel pulls Tone+three on first load).
+- **Mutation-verified:** temporarily dropping the `gcEmulationState`/`disposeAllEmulationNodes`
+  re-exports from `index.ts` turned the gate red with an actionable message ("...no longer resolves...
+  update tests/contracts/public-exports.ts"); restored via `git checkout`. The gate genuinely catches
+  the de-monolith-split breakage it exists to guard.
+
+**Deviations recorded (defensible):** (1) POLICIES §1 writes the id-list module as `@/registry`, but
+`CUSTOM_NODE_TYPE_IDS` actually lives at / is consumed from `@/registry/components` (the `@/registry`
+barrel doesn't re-export it) — fixture pins the real path; noted in the fixture header. (2) Fixture path
+(`tests/contracts/`) vs test path (`tests/unit/contracts/`) split is forced by the vitest include glob
+(`tests/unit/**`); without it the gate would never run in CI.
+
+**Phase-1 CI-gate compliance now:** registry count-equality ✓, format round-trip ✓, per-type leak ✓,
+exact-pure-set ✓, **must-not-break export list ✓ (NEW)**, a11y lint — Phase 4. The `(later 6)` "✗ not
+built" line is now closed.
+
+**▶ NEXT (unchanged priority order, now that the guardrail exists):** (A) the 4 heavy conversions
+(visual/3d/connectivity/clasp via `defineLifecycle`-wrap, one per green commit, smoke-verified; fold the
+`_`-split fix into visual + patch audio) and (C) finish the de-monolith split of `index.ts` — the new
+gate will catch a dropped re-export during (C). Commit only when asked.
+
+---
+
 ## 2026-06-29 (later 6) — Deep audit + plan-adherence checkpoint (no code change)
 
 Stepped back to audit the whole Phase-1 migration against `ROADMAP_2026-06-28.md` + `POLICIES`.
