@@ -547,11 +547,22 @@ describe('generic node-state lifecycles', () => {
     }
   }
 
-  // NOTE: the gc loop (updateGraph on node removal) is the same pattern as
-  // disposeAll below; it isn't unit-tested via the engine here because the legacy
-  // gc path touches canvas.getContext, which happy-dom lacks. Phase 1's per-type
-  // leak tests (which exercise engine removal) will add a canvas mock to setup.
-  // The defineNodeState.gc mechanism itself is covered in nodeState.test.ts.
+  it('drains gc on updateGraph node removal', () => {
+    const e = new ExecutionEngine()
+    const h = hooks()
+    e.registerLifecycles([h])
+    e.registerExecutor('x', () => new Map())
+    e.updateGraph([node('a', 'x')], [])
+    e.updateGraph([], []) // 'a' removed → hasRemovedNodes branch runs the gc loop
+    expect(h.gc).toHaveBeenCalledTimes(1)
+    expect(h.gc).toHaveBeenCalledWith(new Set()) // validNodeIds is now empty
+  })
+
+  // The legacy gc path (gcVisualState et al.) used to crash here because it eagerly
+  // built a WebGL renderer; that fetch is now lazy and the canvas mock in setup.ts
+  // covers the 2D path, so engine removal is exercisable headless. The broader
+  // per-type leak gate over every defineNodeState store lives in engine-leak.test.ts;
+  // the defineNodeState.gc mechanism itself is covered in nodeState.test.ts.
   it('drains onStart on start() and disposeAll on stop()', () => {
     const e = new ExecutionEngine()
     const h = hooks()
