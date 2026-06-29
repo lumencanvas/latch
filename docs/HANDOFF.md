@@ -35,11 +35,18 @@ the store.
    `const disposeAllXState = () => xState.disposeAll()` to avoid churning many call sites; for
    multi-store categories like signal, the helper clears each store).
 
-**Converted so far (5):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
+**Converted so far (7):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
 (`gamepadState`), `utility` (6 stores: changed/sample-hold/latch/counter/debounce/throttle), `code`
-(`compiledFunctions` + `nodeState`, compound `nodeId:…` keys via `keyToNodeId`). Each its own commit.
-`code` proved the **compound-key** pattern (`keyToNodeId: k => k.split(':')[0]`) — node ids never
-contain `:`. No test imported code's cleanup fns (only the engine), so zero test migration.
+(`compiledFunctions` + `nodeState`, compound `nodeId:…` keys via `keyToNodeId`), `RAG`
+(`vectorMemoryStores`, first index.ts-internal group), `input` (`triggerPrevPressed`/`smoothState`/
+`gateLastValue` in index.ts). Each its own commit. `code` proved the **compound-key** pattern
+(`keyToNodeId: k => k.split(':')[0]`) — node ids never contain `:`.
+
+**⚠️ LESSON (cost me a red full-run): before deleting a `disposeXState`/`gcXState`, grep ALL of
+`tests/` for it — not just the test file you know about.** `input`'s removal broke `smooth.test.ts`
+(imported `disposeAllInputState`) which I hadn't checked; per-file tests pass but the full
+`test:unit` caught it. Always run the FULL suite after a conversion, and migrate every importer to a
+local `const disposeAllXState = () => store.disposeAll()` helper (keeps call sites unchanged).
 
 **Remaining state groups, by risk tier (do NOT batch blindly):**
 - **`messaging` is NOT a simple conversion** (handoff previously mis-said "safe"): its `receiveProcessed`
@@ -48,8 +55,14 @@ contain `:`. No test imported code's cleanup fns (only the engine), so zero test
   `messageBus` side effects (`messageBus.clear()` / `clearChangeFlag`). Convert `sendPrevValues` +
   `activeReceiveNodes` to stores but keep a bespoke path (or a non-nodeState helper) for
   `receiveProcessed` + the messageBus calls. Has `executor-gc.test.ts` coupling.
-- **Inside `executors/index.ts` (1616 lines):** `timing`, `debug`, `input`, `RAG`, `WebLLM` — entangled
-  with the monolith; convert alongside the index.ts split, and they're covered by `executor-gc.test.ts`.
+- **Inside `executors/index.ts` — still TODO:** `timing` (6 groups incl. a `startFiredNodes` **Set** →
+  model as `defineNodeState<true>`; coupled to `executor-gc.test.ts` + check for a timing test),
+  `debug` (`consolePrevValues`/`monitorLastValue` pure, but `scopeAnalyzers`/`eqAnalyzers` need a
+  per-entry `dispose: (s) => disposeAnalyzer(...)` callback — see `analyzer-dispose.test.ts`).
+  **`WebLLM` is tricky like messaging:** `gcWebLLMState`/`disposeAllWebLLMState` call
+  `webLLMService.gc()`/`stopActive()` — service side effects beyond the maps; convert `llmTriggerPrev`/
+  `llmPrevStatus` to stores but keep a path for the service calls (a `defineNodeState({ onStart/…})`
+  hook can't take `validNodeIds`, so the service.gc needs its own home).
 - **Heavy dispose / needs in-app verification:** `audio` (Tone), `visual` (WebGL/canvas), `ai`,
   `opencv` (workers + `disposedNodes` marker Set + `onStart` reset), `clasp` (media), `connectivity`
   (sockets/MIDI/BLE), `3d`, `emulation`, `subflow`, `http`/`mqtt`/`websocket`. These have real
