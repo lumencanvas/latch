@@ -6,6 +6,58 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 — Phase 1 started: `defineNodeState` migration (kill the leak class)
+
+Branch **`phase0-file-format`** (continuing). Phase 0's autonomous work is complete (see entry
+below); started **Phase 1** (de-monolith + convert ~23 hand-wired state groups to `defineNodeState`
+so the engine's generic lifecycle loop is authoritative and the leak class is structurally impossible).
+All green throughout; **1593 → 1594 tests**.
+
+**Foundation landed:** `defineNodeState`'s store now exposes **`gc(validNodeIds)` + `disposeAll()`**
+directly (`engine/nodeState.ts`); the auto-registered lifecycle hook delegates to them. So a converted
+category needs **no bespoke `gcXState`/`disposeAllXState`** — production cleanup runs via the generic
+loop (already wired: `ExecutionEngine` `registerLifecycles(collectedLifecycles())` from
+`useExecutionEngine.ts:26`, draining gc/disposeAll/onStart/endFrame), and tests drive cleanup through
+the store.
+
+**Canonical conversion recipe (per category):**
+1. In the category file: `export const xState = defineNodeState<T>({ label, dispose? })` (replace
+   `new Map()`). The store's `.get/.set/.has/.delete` match `Map`, so executor bodies usually don't
+   change; `Map.clear()`→`.disposeAll()`, `Map.keys()`-gc loop → delete the whole hand-rolled `gc` fn.
+2. Delete the `gcXState`/`disposeAllXState` functions.
+3. `ExecutionEngine.ts`: remove the category's import + its line in the `updateGraph` gc loop (~:324)
+   + its line in the `stop()` disposeAll loop (~:972).
+4. `executors/index.ts`: remove any re-export of those functions (e.g. gamepad had one).
+5. Tests: import the store; replace `disposeAllXState()` with `xState.disposeAll()` (or a tiny local
+   `const disposeAllXState = () => xState.disposeAll()` to avoid churning many call sites; for
+   multi-store categories like signal, the helper clears each store).
+
+**Converted so far (3):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
+(`gamepadState`). Each its own commit.
+
+**Remaining state groups, by risk tier (do NOT batch blindly):**
+- **Safe, own-file, headless:** `utility` (latch/counter/debounce/throttle), `messaging` (has an
+  `endFrame` hook — `endMessagingFrame` moves into `defineNodeState({ endFrame })`). Both have
+  `executor-gc.test.ts` coupling (it calls their gc/disposeAll directly → migrate those call sites).
+- **Inside `executors/index.ts` (1616 lines):** `timing`, `debug`, `input`, `RAG`, `WebLLM` — entangled
+  with the monolith; convert alongside the index.ts split, and they're covered by `executor-gc.test.ts`.
+- **Heavy dispose / needs in-app verification:** `audio` (Tone), `visual` (WebGL/canvas), `ai`,
+  `opencv` (workers + `disposedNodes` marker Set + `onStart` reset), `clasp` (media), `connectivity`
+  (sockets/MIDI/BLE), `code`, `3d`, `emulation`, `subflow`, `http`/`mqtt`/`websocket`. These have real
+  teardown in their `disposeAll` — move it into the `dispose(state)` callback; verify in-app.
+
+**Still pending for the engine-level per-type leak test gate** (roadmap): add a `canvas.getContext`
+mock to `tests/setup.ts` first — an engine `updateGraph`-removal test runs the *remaining* hand-wired
+`gcVisualState`, which touches canvas (happy-dom lacks it). Per-category unit gc tests (seed via
+executor → `store.gc(validIds)` → assert) work without it and are sufficient per-category until then.
+
+**Discrepancy to resolve when deriving `PURE_NODE_TYPES`:** the live set is **19 ids**
+(`ExecutionEngine.ts:84`), but ROADMAP/handoff say "24-id". Re-audit before flipping the glob count
+guard to strict `===` (Phase 6) or deriving from `pure:true` (`NodeSpec` has the field; `NodeDefinition`
+does not yet).
+
+---
+
 ## 2026-06-28 — Phase 0 foundations: `.latch` v2 file format + extensibility scaffolding
 
 Executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
