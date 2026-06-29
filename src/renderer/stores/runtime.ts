@@ -120,7 +120,10 @@ export const useRuntimeStore = defineStore('runtime', {
         executionTime: data.lastExecutionTime ?? existing?.executionTime ?? 0,
         lastExecuted: new Date(),
         errorCount: existing?.errorCount ?? 0,
-        lastError: existing?.lastError ?? null,
+        // A successful execution clears the node's current error so the per-node
+        // error badge reflects live state, not a stale failure. The cumulative
+        // errorCount and the errors[] history are preserved.
+        lastError: null,
         outputValues: data.outputValues ?? existing?.outputValues,
       })
       // Trigger reactivity by incrementing version
@@ -150,13 +153,9 @@ export const useRuntimeStore = defineStore('runtime', {
         this.errors = this.errors.slice(-this.maxErrors)
       }
 
-      // Update node metrics
-      const metrics = this.nodeMetrics.get(error.nodeId)
-      if (metrics) {
-        metrics.errorCount++
-        metrics.lastError = error.message
-        this.nodeMetricsVersion++
-      }
+      // Update node metrics — create an entry if the node failed before it ever
+      // ran successfully, so the per-node error badge shows on first-frame errors.
+      this.setNodeError(error.nodeId, error.message)
     },
 
     recordNodeError(nodeId: string, nodeName: string, message: string) {
@@ -175,13 +174,30 @@ export const useRuntimeStore = defineStore('runtime', {
         this.errors = this.errors.slice(-this.maxErrors)
       }
 
-      // Update node metrics
+      // Update node metrics (create an entry if absent — see addError).
+      this.setNodeError(nodeId, message)
+    },
+
+    /**
+     * Record an error against a node's metrics, creating the metrics entry if the
+     * node has never executed successfully. Bumps errorCount and sets lastError
+     * (which drives the per-node error badge); does not touch the errors[] log.
+     */
+    setNodeError(nodeId: string, message: string) {
       const metrics = this.nodeMetrics.get(nodeId)
       if (metrics) {
         metrics.errorCount++
         metrics.lastError = message
-        this.nodeMetricsVersion++
+      } else {
+        this.nodeMetrics.set(nodeId, {
+          nodeId,
+          executionTime: 0,
+          lastExecuted: null,
+          errorCount: 1,
+          lastError: message,
+        })
       }
+      this.nodeMetricsVersion++
     },
 
     clearErrors() {

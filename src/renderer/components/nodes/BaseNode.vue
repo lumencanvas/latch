@@ -12,6 +12,7 @@ import { categoryMeta, dataTypeMeta, type NodeDefinition, useNodesStore } from '
 import { categoryIcons, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
+import { useRuntimeStore } from '@/stores/runtime'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
 import ColorRampPreview from '@/components/preview/ColorRampPreview.vue'
@@ -39,6 +40,14 @@ import { useDeviceEnumeration, type DeviceType, type DeviceOption } from '@/comp
 const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
+const runtimeStore = useRuntimeStore()
+
+// The node's current runtime error (cleared when it next executes successfully).
+// Drives the red border + header badge. `getNodeMetrics` is reactive via the
+// store's nodeMetricsVersion counter.
+const nodeError = computed<string | null>(
+  () => runtimeStore.getNodeMetrics(props.id)?.lastError ?? null,
+)
 
 // Device enumeration for audio/video selects
 const { audioInputDevices, audioOutputDevices, videoInputDevices } = useDeviceEnumeration()
@@ -415,6 +424,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       'simple-node': isSimpleNode && !isCollapsed,
       'compact-node': isCompactNode && !isCollapsed,
       'has-preview': hasTextureOutput || !!nodePreview,
+      'has-error': !!nodeError,
     }"
     :style="{
       '--port-count': maxPorts,
@@ -515,6 +525,14 @@ function onLabelKeydown(e: KeyboardEvent) {
           v-if="isLoading"
           :size="12"
           class="loading-indicator"
+        />
+        <AlertTriangle
+          v-if="nodeError"
+          :size="12"
+          class="error-indicator"
+          role="img"
+          aria-label="Node error"
+          :title="nodeError"
         />
         <button
           v-if="!isSimpleNode"
@@ -754,6 +772,20 @@ function onLabelKeydown(e: KeyboardEvent) {
 .base-node.selected .node-content {
   border-color: var(--color-primary-400);
   box-shadow: 4px 4px 0 0 var(--color-primary-200);
+}
+
+/* Per-node error state: the node's last execution failed. */
+.base-node.has-error .node-content {
+  border-color: var(--color-error);
+}
+
+.base-node.has-error.selected .node-content {
+  box-shadow: 4px 4px 0 0 var(--color-error);
+}
+
+.error-indicator {
+  color: var(--color-error);
+  flex-shrink: 0;
 }
 
 .base-node:hover .node-content {

@@ -7,6 +7,7 @@ import { mount } from '@vue/test-utils'
 // store first fully resolves BaseNode via components.ts before we import it here.
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { useFlowsStore } from '@/stores/flows'
+import { useRuntimeStore } from '@/stores/runtime'
 import BaseNode from '@/components/nodes/BaseNode.vue'
 
 /**
@@ -118,6 +119,31 @@ describe('BaseNode number controls', () => {
     await free.setValue('99999')
     await free.trigger('blur')
     expect(spy).toHaveBeenLastCalledWith('node-1', { free: 99999 })
+  })
+})
+
+describe('BaseNode error badge', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('shows the error indicator and has-error class when the node has a runtime error', () => {
+    const runtime = useRuntimeStore()
+    runtime.addError({ nodeId: 'node-1', message: 'kaboom', timestamp: 1 })
+
+    const wrapper = mountNode()
+
+    expect(wrapper.classes()).toContain('has-error')
+    const badge = wrapper.find('.error-indicator')
+    expect(badge.exists()).toBe(true)
+    expect(badge.attributes('title')).toBe('kaboom')
+  })
+
+  it('shows no error state when the node is healthy', () => {
+    const wrapper = mountNode()
+
+    expect(wrapper.classes()).not.toContain('has-error')
+    expect(wrapper.find('.error-indicator').exists()).toBe(false)
   })
 })
 
