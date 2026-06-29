@@ -2,6 +2,7 @@ import type { Node, Edge } from '@vue-flow/core'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
+import type { LifecycleHooks } from './nodeState'
 import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
 import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
 import {
@@ -180,6 +181,12 @@ export class ExecutionEngine {
   private frameCount: number = 0
   private runtimeStore = useRuntimeStore()
   private nodesStore = useNodesStore()
+  /**
+   * Generic per-node-state lifecycles (from `defineNodeState`), drained alongside
+   * the legacy hardcoded `gc*`/`disposeAll*` calls. Empty until
+   * `registerLifecycles()` is called, so this is a no-op until a consumer exists.
+   */
+  private lifecycles: readonly LifecycleHooks[] = []
 
   // --- Render-loop lifecycle (Phase 1) ---
   /** Target frames per second; 0 = uncapped (run at the display refresh rate). */
@@ -210,6 +217,15 @@ export class ExecutionEngine {
    */
   unregisterExecutor(nodeType: string): void {
     this.executors.delete(nodeType)
+  }
+
+  /**
+   * Register the generic per-node-state lifecycles (from `collectedLifecycles()`).
+   * Stored by reference so late `defineNodeState` registrations are still seen; the
+   * engine never imports `nodeState` itself, keeping it free of that dependency.
+   */
+  registerLifecycles(hooks: readonly LifecycleHooks[]): void {
+    this.lifecycles = hooks
   }
 
   /**
@@ -251,6 +267,8 @@ export class ExecutionEngine {
         gcOpenCVState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
+        // Generic defineNodeState cleanup (additive to the legacy gc* calls above).
+        for (const l of this.lifecycles) l.gc(validNodeIds)
         // Drop dirty-mode / async tracking for removed nodes
         for (const id of this.prevControlSnapshots.keys()) {
           if (!validNodeIds.has(id)) this.prevControlSnapshots.delete(id)
@@ -568,6 +586,7 @@ export class ExecutionEngine {
 
     // End-of-frame cleanup for messaging (reset change flags)
     endMessagingFrame()
+    for (const l of this.lifecycles) l.endFrame?.()
 
     // Update FPS
     this.runtimeStore.updateFps(deltaTime)
@@ -754,6 +773,7 @@ export class ExecutionEngine {
     // Same stop→restart guard for OpenCV nodes: un-flag any node marked disposed
     // on the previous stop() so its worker results aren't dropped after restart.
     resetOpenCVNodeDisposal()
+    for (const l of this.lifecycles) l.onStart?.()
     this.runtimeStore.start()
 
     this.addVisibilityListener()
@@ -898,6 +918,7 @@ export class ExecutionEngine {
     disposeAllGamepadState()
     disposeAllEmulationNodes()
     disposeAllOpenCVNodes()
+    for (const l of this.lifecycles) l.disposeAll()
   }
 
   /**

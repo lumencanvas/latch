@@ -3,6 +3,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import { builtinExecutors } from '@/engine/executors'
+import { collectedLifecycles } from '@/engine/nodeState'
 import { audioManager } from '@/services/audio/AudioManager'
 
 /**
@@ -20,6 +21,9 @@ export function useExecutionEngine() {
     for (const [nodeType, executor] of Object.entries(builtinExecutors)) {
       engine.registerExecutor(nodeType, executor)
     }
+    // Drain all defineNodeState lifecycles generically (the live array is captured
+    // by reference, so executors that register state on import are all covered).
+    engine.registerLifecycles(collectedLifecycles())
   }
 
   /**

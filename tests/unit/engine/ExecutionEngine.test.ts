@@ -536,6 +536,43 @@ describe('ExecutionEngine render-loop lifecycle', () => {
   })
 })
 
+describe('generic node-state lifecycles', () => {
+  function hooks() {
+    return {
+      label: 'spy',
+      gc: vi.fn(),
+      disposeAll: vi.fn(),
+      endFrame: vi.fn(),
+      onStart: vi.fn(),
+    }
+  }
+
+  // NOTE: the gc loop (updateGraph on node removal) is the same pattern as
+  // disposeAll below; it isn't unit-tested via the engine here because the legacy
+  // gc path touches canvas.getContext, which happy-dom lacks. Phase 1's per-type
+  // leak tests (which exercise engine removal) will add a canvas mock to setup.
+  // The defineNodeState.gc mechanism itself is covered in nodeState.test.ts.
+  it('drains onStart on start() and disposeAll on stop()', () => {
+    const e = new ExecutionEngine()
+    const h = hooks()
+    e.registerLifecycles([h])
+    e.start()
+    expect(h.onStart).toHaveBeenCalledTimes(1)
+    e.stop()
+    expect(h.disposeAll).toHaveBeenCalledTimes(1)
+  })
+
+  it('drains endFrame each executed frame', async () => {
+    const e = new ExecutionEngine()
+    const h = hooks()
+    e.registerLifecycles([h])
+    e.registerExecutor('x', () => new Map())
+    e.updateGraph([node('a', 'x')], [])
+    await e.executeFrame()
+    expect(h.endFrame).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('coerceToPortType (boundary coercion)', () => {
   it('coerces boolean → number (the matrix promise)', () => {
     expect(coerceToPortType(true, 'number')).toBe(1)
