@@ -8,19 +8,32 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { useConnectionsStore } from '@/stores/connections'
 import type { MqttAdapterImpl } from '@/services/connections/adapters/MqttAdapter'
+import { defineNodeState } from '../nodeState'
 
-// State cache for subscribed values per node
-const mqttState = new Map<string, {
+// State cache for subscribed values per node. Auto-gc'd via the generic lifecycle loop.
+export const mqttState = defineNodeState<{
   lastMessage: unknown
   lastTopic: string | null
-}>()
+}>({ label: 'mqtt' })
 
-// Track active subscriptions per node
-const nodeSubscriptions = new Map<string, {
+// Active subscription per node. The dispose callback is the FULL teardown — release the
+// message listener AND unsubscribe the adapter from the topic (matching the old
+// disposeMqttNode) — so engine gc / stop() / the topic-cleared .delete() all run it.
+export const nodeSubscriptions = defineNodeState<{
   connectionId: string
   topic: string
   unsubscribe: () => void
-}>()
+}>({
+  label: 'mqtt-subscriptions',
+  dispose: (sub) => {
+    sub.unsubscribe()
+    try {
+      getMqttAdapter(sub.connectionId)?.unsubscribe(sub.topic)
+    } catch {
+      // Ignore errors during cleanup
+    }
+  },
+})
 
 /**
  * Get MQTT adapter from ConnectionManager
@@ -125,10 +138,12 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const existingSub = nodeSubscriptions.get(ctx.nodeId)
 
   if (topic && (!existingSub || existingSub.connectionId !== connectionId || existingSub.topic !== topic)) {
-    // Unsubscribe from old topic
+    // Release only the old message listener — the adapter subscription is replaced by
+    // subscribe() below, so we deliberately do NOT adapter.unsubscribe here (preserves
+    // the original rewire behavior). NOT .delete(): that would run the full-teardown
+    // dispose (adapter.unsubscribe too); the .set() below overwrites the stale entry.
     if (existingSub) {
       existingSub.unsubscribe()
-      nodeSubscriptions.delete(ctx.nodeId)
     }
 
     // Subscribe to new topic
@@ -152,10 +167,10 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     nodeSubscriptions.set(ctx.nodeId, { connectionId, topic, unsubscribe })
   }
 
-  // Handle unsubscribe when topic is cleared
+  // Handle unsubscribe when topic is cleared — full teardown via the dispose callback
+  // (.delete() runs unsubscribe + adapter.unsubscribe for the subscription's own
+  // connection, consistent with node-removal teardown).
   if (!topic && existingSub) {
-    existingSub.unsubscribe()
-    adapter.unsubscribe(existingSub.topic)
     nodeSubscriptions.delete(ctx.nodeId)
   }
 
@@ -208,60 +223,24 @@ function matchMqttTopic(pattern: string, topic: string): boolean {
   return patternParts.length === topicParts.length
 }
 
-/**
- * Dispose MQTT node and clean up resources
- */
+// The engine drains both stores through its generic lifecycle loop (the
+// `nodeSubscriptions` dispose callback does the full unsubscribe + adapter.unsubscribe);
+// the helpers below are thin store-backed wrappers kept for tests + the index re-export.
+
+/** Dispose one MQTT node's subscription (unsubscribe + adapter.unsubscribe) + cache. */
 export function disposeMqttNode(nodeId: string): void {
-  // Clean up subscription
-  const sub = nodeSubscriptions.get(nodeId)
-  if (sub) {
-    sub.unsubscribe()
-
-    // Try to unsubscribe from the adapter
-    try {
-      const adapter = getMqttAdapter(sub.connectionId)
-      if (adapter) {
-        adapter.unsubscribe(sub.topic)
-      }
-    } catch {
-      // Ignore errors during cleanup
-    }
-
-    nodeSubscriptions.delete(nodeId)
-  }
-
-  // Clean up state
+  nodeSubscriptions.delete(nodeId) // dispose callback does the full teardown
   mqttState.delete(nodeId)
 }
 
-/**
- * Dispose all MQTT node resources
- */
+/** Dispose all MQTT node resources (test/teardown helper). */
 export function disposeAllMqttNodes(): void {
-  for (const [, sub] of nodeSubscriptions) {
-    sub.unsubscribe()
-
-    try {
-      const adapter = getMqttAdapter(sub.connectionId)
-      if (adapter) {
-        adapter.unsubscribe(sub.topic)
-      }
-    } catch {
-      // Ignore errors during cleanup
-    }
-  }
-
-  nodeSubscriptions.clear()
-  mqttState.clear()
+  nodeSubscriptions.disposeAll() // full teardown per entry
+  mqttState.disposeAll()
 }
 
-/**
- * Garbage collect MQTT state for removed nodes
- */
+/** Garbage-collect MQTT state for removed nodes (test helper). */
 export function gcMqttState(validNodeIds: Set<string>): void {
-  for (const nodeId of mqttState.keys()) {
-    if (!validNodeIds.has(nodeId)) {
-      disposeMqttNode(nodeId)
-    }
-  }
+  nodeSubscriptions.gc(validNodeIds)
+  mqttState.gc(validNodeIds)
 }
