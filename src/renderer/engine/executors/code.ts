@@ -14,11 +14,16 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
 
-// Cache for compiled functions and state
+// Cache for compiled functions and state. Both use compound keys (`nodeId:fn`,
+// `nodeId:state:…`); node ids never contain ':', so keyToNodeId splits on it so
+// the auto-registered gc keeps entries for live nodes. defineNodeState wires the
+// gc/dispose path into the engine's generic lifecycle loop.
+const codeKeyToNodeId = (k: string) => k.split(':')[0]
 // eslint-disable-next-line @typescript-eslint/ban-types
-const compiledFunctions = new Map<string, Function>()
-const nodeState = new Map<string, unknown>()
+const compiledFunctions = defineNodeState<Function>({ label: 'code-fn', keyToNodeId: codeKeyToNodeId })
+const nodeState = defineNodeState<unknown>({ label: 'code-state', keyToNodeId: codeKeyToNodeId })
 
 /**
  * Prepended to user code: shadows host globals so casual/accidental access to the
@@ -422,48 +427,6 @@ export const valueDelayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-// ============================================================================
-// Cleanup helpers
-// ============================================================================
-
-export function disposeCodeNode(nodeId: string): void {
-  // Clear compiled functions
-  compiledFunctions.delete(`${nodeId}:fn`)
-  compiledFunctions.delete(`${nodeId}:expr`)
-
-  // Clear state
-  const keys = Array.from(nodeState.keys()).filter(k => k.startsWith(nodeId))
-  keys.forEach(k => nodeState.delete(k))
-}
-
-export function disposeAllCodeNodes(): void {
-  compiledFunctions.clear()
-  nodeState.clear()
-}
-
-/**
- * Garbage collect orphaned code state entries.
- * Call this with the set of currently valid node IDs.
- */
-export function gcCodeState(validNodeIds: Set<string>): void {
-  // Clean compiledFunctions
-  for (const key of compiledFunctions.keys()) {
-    // Keys are formatted as "nodeId:fn" or "nodeId:expr"
-    const nodeId = key.split(':')[0]
-    if (!validNodeIds.has(nodeId)) {
-      compiledFunctions.delete(key)
-    }
-  }
-
-  // Clean nodeState
-  for (const key of nodeState.keys()) {
-    // Keys are formatted as "nodeId:..." or "nodeId:state:..."
-    const nodeId = key.split(':')[0]
-    if (!validNodeIds.has(nodeId)) {
-      nodeState.delete(key)
-    }
-  }
-}
 
 // ============================================================================
 // Registry

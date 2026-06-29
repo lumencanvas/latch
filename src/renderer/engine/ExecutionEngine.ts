@@ -26,7 +26,7 @@ import {
   gcMessagingState,
   endMessagingFrame,
 } from './executors/messaging'
-import { gcCodeState, disposeAllCodeNodes } from './executors/code'
+// code state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import { gc3DState, disposeAll3DNodes } from './executors/3d'
 import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
 import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
@@ -307,7 +307,6 @@ export class ExecutionEngine {
         // Run garbage collection for orphaned state
         gcAudioState(validNodeIds)
         gcVisualState(validNodeIds)
-        gcCodeState(validNodeIds)
         gc3DState(validNodeIds)
         gcConnectivityState(validNodeIds)
         gcAIState(validNodeIds)
@@ -960,7 +959,6 @@ export class ExecutionEngine {
     disposeAllDebugState()
     disposeAllInputState()
     disposeAllMessagingState()
-    disposeAllCodeNodes()
     disposeAll3DNodes()
     disposeAllConnectivityNodes()
     disposeAllClaspConnections()
