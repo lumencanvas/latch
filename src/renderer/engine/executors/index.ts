@@ -378,7 +378,9 @@ export const powerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
       result = Math.pow(base, exponent)
   }
 
-  return new Map([['result', isNaN(result) ? 0 : result]])
+  // Guard NaN *and* ±Infinity (e.g. log(0) = -Infinity, pow(0, -1) = Infinity) —
+  // isNaN alone let infinities propagate downstream. (AUDIT §E.)
+  return new Map([['result', Number.isFinite(result) ? result : 0]])
 }
 
 export const vectorMathExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {

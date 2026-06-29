@@ -306,13 +306,11 @@ describe('Math Executors', () => {
         expect(result.get('result')).toBeCloseTo(3, 10)
       })
 
-      it('returns 0 for log(0) (NaN handled)', () => {
+      it('returns 0 for log(0) (−Infinity is guarded)', () => {
         const ctx = createContext({ base: 0, exponent: 10 }, { operation: 'Log' })
         const result = powerExecutor(ctx)
-        // log(0) = -Infinity, which is not NaN but Infinity
-        // Current implementation converts NaN to 0 but not Infinity
-        const r = result.get('result') as number
-        expect(r === 0 || !Number.isFinite(r)).toBe(true)
+        // log(0) = -Infinity → finite-guarded to 0 (AUDIT §E).
+        expect(result.get('result')).toBe(0)
       })
 
       it('returns NaN (as 0) for log of negative', () => {
@@ -321,12 +319,11 @@ describe('Math Executors', () => {
         expect(result.get('result')).toBe(0)
       })
 
-      it('handles log base 1 (returns Infinity)', () => {
+      it('returns 0 for log base 1 (Infinity is guarded)', () => {
         const ctx = createContext({ base: 10, exponent: 1 }, { operation: 'Log' })
         const result = powerExecutor(ctx)
-        // log(10) / log(1) = log(10) / 0 = Infinity
-        const r = result.get('result') as number
-        expect(!Number.isFinite(r) || r === 0).toBe(true)
+        // log(10) / log(1) = log(10) / 0 = Infinity → finite-guarded to 0 (AUDIT §E).
+        expect(result.get('result')).toBe(0)
       })
     })
 
@@ -371,12 +368,11 @@ describe('Math Executors', () => {
         expect(result.get('result')).toBe(1)
       })
 
-      it('handles large exponents', () => {
-        // e^100 is a very large number but not Infinity (~2.69e43)
-        // e^710 is approximately the threshold for Infinity in JavaScript
+      it('guards an overflowing exponent to 0 (no Infinity downstream)', () => {
+        // e^710 overflows to Infinity in JS → finite-guarded to 0 (AUDIT §E).
         const ctx = createContext({ base: 710 }, { operation: 'Exp' })
         const result = powerExecutor(ctx)
-        expect(result.get('result')).toBe(Infinity)
+        expect(result.get('result')).toBe(0)
       })
     })
 
@@ -393,10 +389,11 @@ describe('Math Executors', () => {
         expect(result.get('result')).toBe(0)
       })
 
-      it('handles 0^negative = Infinity', () => {
+      it('guards 0^negative (Infinity) to 0', () => {
+        // 0^-1 = Infinity → finite-guarded to 0 (AUDIT §E).
         const ctx = createContext({ base: 0, exponent: -1 }, { operation: 'Power' })
         const result = powerExecutor(ctx)
-        expect(result.get('result')).toBe(Infinity)
+        expect(result.get('result')).toBe(0)
       })
 
       it('defaults to Power operation', () => {
