@@ -9,6 +9,7 @@
 import * as Tone from 'tone'
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { aiInference } from '@/services/ai/AIInference'
 import { textToSpeechService } from '@/services/ai/TextToSpeechService'
 import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
@@ -2695,3 +2696,16 @@ export const aiExecutors: Record<string, NodeExecutorFn> = {
   'mediapipe-gesture': mediapipeGestureExecutor,
   'mediapipe-audio': mediapipeAudioExecutor,
 }
+
+// Self-register into the engine's generic lifecycle loop (replaces the hand-wired
+// gcAIState / disposeAllAINodes / resetAINodeDisposal calls in ExecutionEngine).
+// `defineLifecycle`, NOT `defineNodeState`: the `disposedNodes` marker Set is
+// deliberately asymmetric — disposeAll/gc ADD to it (so late worker/model results are
+// dropped), and only onStart (engine start) CLEARS it (stop→restart guard). A store's
+// uniform disposeAll-clears-the-map cannot express that. Logic is unchanged.
+defineLifecycle({
+  label: 'ai',
+  gc: gcAIState,
+  disposeAll: disposeAllAINodes,
+  onStart: resetAINodeDisposal,
+})

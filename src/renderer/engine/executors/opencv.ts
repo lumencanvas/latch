@@ -20,6 +20,7 @@
 
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { getThreeShaderRenderer } from './visual'
 import { openCVService } from '@/services/visual/OpenCVService'
 
@@ -454,3 +455,15 @@ export const opencvExecutors: Record<string, NodeExecutorFn> = {
   'cv-optical-flow': cvOpticalFlowExecutor,
   'cv-background-subtraction': cvBackgroundSubtractionExecutor,
 }
+
+// Self-register into the engine's generic lifecycle loop (replaces the hand-wired
+// gcOpenCVState / disposeAllOpenCVNodes / resetOpenCVNodeDisposal calls in
+// ExecutionEngine). `defineLifecycle`, NOT `defineNodeState`: the `disposedNodes`
+// marker Set is asymmetric — gc/disposeAll ADD to it (drop late worker results), only
+// onStart CLEARS it (stop→restart guard) — which a store cannot express. Unchanged logic.
+defineLifecycle({
+  label: 'opencv',
+  gc: gcOpenCVState,
+  disposeAll: disposeAllOpenCVNodes,
+  onStart: resetOpenCVNodeDisposal,
+})
