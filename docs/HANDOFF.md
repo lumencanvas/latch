@@ -35,9 +35,11 @@ the store.
    `const disposeAllXState = () => xState.disposeAll()` to avoid churning many call sites; for
    multi-store categories like signal, the helper clears each store).
 
-**Converted so far (4):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
-(`gamepadState`), `utility` (6 stores: changed/sample-hold/latch/counter/debounce/throttle). Each its
-own commit.
+**Converted so far (5):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
+(`gamepadState`), `utility` (6 stores: changed/sample-hold/latch/counter/debounce/throttle), `code`
+(`compiledFunctions` + `nodeState`, compound `nodeId:…` keys via `keyToNodeId`). Each its own commit.
+`code` proved the **compound-key** pattern (`keyToNodeId: k => k.split(':')[0]`) — node ids never
+contain `:`. No test imported code's cleanup fns (only the engine), so zero test migration.
 
 **Remaining state groups, by risk tier (do NOT batch blindly):**
 - **`messaging` is NOT a simple conversion** (handoff previously mis-said "safe"): its `receiveProcessed`
@@ -50,8 +52,9 @@ own commit.
   with the monolith; convert alongside the index.ts split, and they're covered by `executor-gc.test.ts`.
 - **Heavy dispose / needs in-app verification:** `audio` (Tone), `visual` (WebGL/canvas), `ai`,
   `opencv` (workers + `disposedNodes` marker Set + `onStart` reset), `clasp` (media), `connectivity`
-  (sockets/MIDI/BLE), `code`, `3d`, `emulation`, `subflow`, `http`/`mqtt`/`websocket`. These have real
-  teardown in their `disposeAll` — move it into the `dispose(state)` callback; verify in-app.
+  (sockets/MIDI/BLE), `3d`, `emulation`, `subflow`, `http`/`mqtt`/`websocket`. These have real
+  teardown in their `disposeAll` — move it into the `dispose(state)` callback; verify in-app. (`code`
+  done — it had no real teardown, just caches.)
 
 **Still pending for the engine-level per-type leak test gate** (roadmap): add a `canvas.getContext`
 mock to `tests/setup.ts` first — an engine `updateGraph`-removal test runs the *remaining* hand-wired
