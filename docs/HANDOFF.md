@@ -11,7 +11,10 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 Branch **`phase0-file-format`** (continuing). Phase 0's autonomous work is complete (see entry
 below); started **Phase 1** (de-monolith + convert ~23 hand-wired state groups to `defineNodeState`
 so the engine's generic lifecycle loop is authoritative and the leak class is structurally impossible).
-All green throughout; **1593 → 1594 tests**.
+All green throughout; **1593 → 1594 tests** (audited 2026-06-29: generic gc runs in the same
+`if (hasRemovedNodes)` guard as the removed hand-wiring; generic `disposeAll` runs unconditionally in
+`stop()`; production registration via `useExecutionEngine.onMounted`; Vue 3.5 computed value-equality
+means the per-node error badge's `nodeMetricsVersion` dep does not cause a per-frame re-render storm).
 
 **Foundation landed:** `defineNodeState`'s store now exposes **`gc(validNodeIds)` + `disposeAll()`**
 directly (`engine/nodeState.ts`); the auto-registered lifecycle hook delegates to them. So a converted
@@ -32,13 +35,17 @@ the store.
    `const disposeAllXState = () => xState.disposeAll()` to avoid churning many call sites; for
    multi-store categories like signal, the helper clears each store).
 
-**Converted so far (3):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
-(`gamepadState`). Each its own commit.
+**Converted so far (4):** `spring` (`springState`), `signal` (`signalState` + `tapState`), `gamepad`
+(`gamepadState`), `utility` (6 stores: changed/sample-hold/latch/counter/debounce/throttle). Each its
+own commit.
 
 **Remaining state groups, by risk tier (do NOT batch blindly):**
-- **Safe, own-file, headless:** `utility` (latch/counter/debounce/throttle), `messaging` (has an
-  `endFrame` hook — `endMessagingFrame` moves into `defineNodeState({ endFrame })`). Both have
-  `executor-gc.test.ts` coupling (it calls their gc/disposeAll directly → migrate those call sites).
+- **`messaging` is NOT a simple conversion** (handoff previously mis-said "safe"): its `receiveProcessed`
+  is keyed by **channel, not nodeId** (an inner `Map<channel, Map<nodeId, bool>>`), so it doesn't fit
+  `defineNodeState`'s nodeId-keyed model; and `disposeAllMessagingState`/`endMessagingFrame` have
+  `messageBus` side effects (`messageBus.clear()` / `clearChangeFlag`). Convert `sendPrevValues` +
+  `activeReceiveNodes` to stores but keep a bespoke path (or a non-nodeState helper) for
+  `receiveProcessed` + the messageBus calls. Has `executor-gc.test.ts` coupling.
 - **Inside `executors/index.ts` (1616 lines):** `timing`, `debug`, `input`, `RAG`, `WebLLM` — entangled
   with the monolith; convert alongside the index.ts split, and they're covered by `executor-gc.test.ts`.
 - **Heavy dispose / needs in-app verification:** `audio` (Tone), `visual` (WebGL/canvas), `ai`,
