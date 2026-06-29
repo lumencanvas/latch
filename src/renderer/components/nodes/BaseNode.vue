@@ -13,6 +13,7 @@ import { categoryIcons, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
+import { useFlowHistory } from '@/composables/useFlowHistory'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
 import ColorRampPreview from '@/components/preview/ColorRampPreview.vue'
@@ -41,6 +42,7 @@ const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const runtimeStore = useRuntimeStore()
+const { recordParamEdit } = useFlowHistory()
 
 // The node's current runtime error (cleared when it next executes successfully).
 // Drives the red border + header badge. `getNodeMetrics` is reactive via the
@@ -350,8 +352,10 @@ function getSemanticLabel(portId: string, type: string): string {
 
 
 function updateControl(controlId: string, value: unknown) {
-  flowsStore.updateNodeData(props.id, {
-    [controlId]: value,
+  recordParamEdit(props.id, `Change ${nodeLabel.value}`, () => {
+    flowsStore.updateNodeData(props.id, {
+      [controlId]: value,
+    })
   })
 }
 

@@ -14,11 +14,13 @@ import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
 import DebugPanel from '@/components/debug/DebugPanel.vue'
 import { useDeviceEnumeration, type DeviceType, type DeviceOption } from '@/composables/useDeviceEnumeration'
+import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const runtimeStore = useRuntimeStore()
+const { recordParamEdit } = useFlowHistory()
 
 // Panel tab state
 type PanelTab = 'properties' | 'info' | 'debug'
@@ -136,10 +138,13 @@ watch(
 function updateControl(controlId: string, value: unknown) {
   controlValues.value[controlId] = value
 
-  // Update node data in flow store
-  if (inspectedNode.value) {
-    flowsStore.updateNodeData(inspectedNode.value.id, {
-      [controlId]: value,
+  // Update node data in flow store, recorded (debounced) for undo.
+  const node = inspectedNode.value
+  if (node) {
+    recordParamEdit(node.id, `Change ${node.data?.label ?? node.data?.nodeType ?? 'node'}`, () => {
+      flowsStore.updateNodeData(node.id, {
+        [controlId]: value,
+      })
     })
   }
 }
