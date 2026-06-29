@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid'
 import type { Node, Edge, XYPosition } from '@vue-flow/core'
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
 import { useHistoryStore } from './history'
+import { useNodesStore, type NodeDefinition } from './nodes'
+import * as fileFormat from '@/services/fileFormat'
 
 /**
  * Resolve the Vue Flow node `type`: a node whose nodeType has a dedicated custom
@@ -10,6 +12,190 @@ import { useHistoryStore } from './history'
  */
 function resolveVueFlowType(nodeType: string): string {
   return CUSTOM_NODE_TYPE_IDS.includes(nodeType) ? nodeType : 'custom'
+}
+
+/** Structured result of an import (back-compat superset of the old shape). */
+export interface ImportReport {
+  success: boolean
+  message: string
+  count: number
+  /** Nodes upgraded by a `migrate()` during load. */
+  migrated?: number
+  /** Unknown-type nodes kept as placeholders (preserving data + wires). */
+  unknownNodes?: number
+  /** Dangling edges dropped (an endpoint did not resolve). */
+  droppedEdges?: number
+  /** Non-fatal structural problems surfaced during a best-effort import. */
+  warnings?: string[]
+}
+
+/** Resolve a node definition by type (the nodes store getter). */
+type GetDef = (type: string) => NodeDefinition | undefined
+
+// `data` keys that are NOT persisted control state. `nodeType`/`label` are
+// structural; `definition` is the stale embedded copy (resolved from the registry
+// instead); `_unknownType` is the transient placeholder flag (re-derived on load).
+// Everything else IS preserved — including `_width`/`_height` (e.g. KeyboardNode)
+// and `_dynamicInputs`/`_dynamicControls`/`_dynamicOutputs` (shader/dispatch),
+// which are real persisted state regenerated only while the engine runs
+// (ExecutionEngine.ts:461). Stripping them would lose node sizing/ports until play.
+const RESERVED_DATA_KEYS = new Set(['nodeType', 'label', 'definition', '_unknownType'])
+function isControlKey(key: string): boolean {
+  return !RESERVED_DATA_KEYS.has(key)
+}
+
+// Dynamic port/control descriptors. For a KNOWN node these are real persisted
+// state (shader/dispatch regenerate them only while running). For a PLACEHOLDER
+// they are *derived* from its surviving edges on every load — persisting those
+// would pollute the node with stale handles if its type later becomes known.
+const DYNAMIC_PORT_KEYS = new Set(['_dynamicInputs', '_dynamicOutputs', '_dynamicControls'])
+
+type DynPort = { id: string; type: string; label: string }
+
+/**
+ * Convert an in-memory `FlowState` (Vue Flow nodes/edges) into a v2 document:
+ * logic (controls) in `flow`, cosmetics (position/size/custom label) in `layout`,
+ * the stale embedded definition dropped. Inverse of {@link docToFlowState}.
+ */
+function flowStateToDoc(flow: FlowState, getDef: GetDef): fileFormat.LatchFlowDoc {
+  const nodes: fileFormat.NodeRecord[] = []
+  const layoutNodes: Record<string, fileFormat.LayoutNode> = {}
+
+  for (const n of flow.nodes) {
+    const data = (n.data ?? {}) as Record<string, unknown>
+    const type = data.nodeType as string | undefined
+    if (!type) continue
+
+    const isPlaceholder = data._unknownType === true
+    const controls: Record<string, unknown> = {}
+    for (const key of Object.keys(data)) {
+      if (!isControlKey(key)) continue
+      if (isPlaceholder && DYNAMIC_PORT_KEYS.has(key)) continue // derived from edges; never persist
+      controls[key] = data[key]
+    }
+    nodes.push({ id: n.id, type, version: 1, controls })
+
+    const layout: fileFormat.LayoutNode = { x: n.position?.x ?? 0, y: n.position?.y ?? 0 }
+    const dims = (n as { dimensions?: { width?: number; height?: number } }).dimensions
+    if (typeof dims?.width === 'number') layout.w = dims.width
+    if (typeof dims?.height === 'number') layout.h = dims.height
+    // Persist a label only when the user customized it (differs from the
+    // definition name) or the type is unknown — keeps default labels out of diffs.
+    const def = getDef(type)
+    const label = data.label as string | undefined
+    if (typeof label === 'string' && (!def || label !== def.name)) layout.label = label
+    layoutNodes[n.id] = layout
+  }
+
+  const edges: fileFormat.EdgeRecord[] = flow.edges.map((e) => ({
+    id: e.id as string,
+    from: fileFormat.endpoint(e.source, e.sourceHandle),
+    to: fileFormat.endpoint(e.target, e.targetHandle),
+  }))
+
+  const section: fileFormat.FlowSection = {
+    id: flow.id,
+    name: flow.name,
+    kind: flow.isSubflow ? 'subflow' : 'main',
+    nodes,
+    edges,
+  }
+  if (flow.description) section.description = flow.description
+  if (flow.icon) section.icon = flow.icon
+  if (flow.category) section.category = flow.category
+  if (flow.isSubflow) {
+    section.ports = { inputs: flow.subflowInputs, outputs: flow.subflowOutputs }
+  }
+
+  return { format: fileFormat.FORMAT, formatVersion: fileFormat.FORMAT_VERSION, flow: section, layout: { nodes: layoutNodes } }
+}
+
+interface DocImportResult {
+  flow: FlowState
+  migrated: number
+  unknownNodes: number
+  droppedEdges: number
+  errors: string[]
+}
+
+/**
+ * Reconstruct an in-memory `FlowState` from a v2 document: rebuild Vue Flow
+ * nodes (label from the registry, position from layout), per-node-migrate stale
+ * data, render an unknown `type` as a placeholder whose ports are derived from
+ * its surviving edges (so wires stay attached — degrade, never shatter), and
+ * drop dangling edges. Inverse of {@link flowStateToDoc}.
+ */
+function docToFlowState(doc: fileFormat.LatchFlowDoc, getDef: GetDef): DocImportResult {
+  const isKnownType = (t: string) => !!getDef(t)
+  const validation = fileFormat.validateDocument(doc, { isKnownType })
+  const resolver: fileFormat.NodeMigrationResolver = (t) => (getDef(t) ? { version: 1 } : undefined)
+  const { doc: migrated, migratedCount } = fileFormat.migrateDocumentNodes(doc, resolver)
+
+  const droppedSet = new Set(validation.droppedEdgeIds)
+  const unknownSet = new Set(validation.unknownNodeIds)
+
+  // Derive placeholder ports for unknown nodes from the edges that touch them.
+  const inPorts = new Map<string, Map<string, DynPort>>()
+  const outPorts = new Map<string, Map<string, DynPort>>()
+  if (unknownSet.size) {
+    for (const e of migrated.flow.edges) {
+      if (droppedSet.has(e.id)) continue
+      const f = fileFormat.parseEndpoint(e.from)
+      const t = fileFormat.parseEndpoint(e.to)
+      if (unknownSet.has(f.node) && f.port) {
+        if (!outPorts.has(f.node)) outPorts.set(f.node, new Map())
+        outPorts.get(f.node)!.set(f.port, { id: f.port, type: 'any', label: f.port })
+      }
+      if (unknownSet.has(t.node) && t.port) {
+        if (!inPorts.has(t.node)) inPorts.set(t.node, new Map())
+        inPorts.get(t.node)!.set(t.port, { id: t.port, type: 'any', label: t.port })
+      }
+    }
+  }
+
+  const nodes: Node[] = migrated.flow.nodes.map((nr) => {
+    const def = getDef(nr.type)
+    const ln = doc.layout.nodes[nr.id] ?? { x: 0, y: 0 }
+    const data: Record<string, unknown> = { nodeType: nr.type, ...nr.controls }
+    delete data._unknownType // never trust a persisted placeholder flag; re-derive below
+    data.label = ln.label ?? def?.name ?? `Unknown: ${nr.type}`
+    if (!def) {
+      data._unknownType = true
+      data._dynamicInputs = [...(inPorts.get(nr.id)?.values() ?? [])]
+      data._dynamicOutputs = [...(outPorts.get(nr.id)?.values() ?? [])]
+    }
+    const node: Node = { id: nr.id, type: resolveVueFlowType(nr.type), position: { x: ln.x, y: ln.y }, data }
+    if (ln.w !== undefined || ln.h !== undefined) {
+      (node as { dimensions?: { width: number; height: number } }).dimensions = { width: ln.w ?? 0, height: ln.h ?? 0 }
+    }
+    return node
+  })
+
+  const edges: Edge[] = migrated.flow.edges
+    .filter((e) => !droppedSet.has(e.id))
+    .map((e) => {
+      const f = fileFormat.parseEndpoint(e.from)
+      const t = fileFormat.parseEndpoint(e.to)
+      return { id: e.id, source: f.node, sourceHandle: f.port || undefined, target: t.node, targetHandle: t.port || undefined } as Edge
+    })
+
+  const now = new Date()
+  const flow: FlowState = {
+    id: doc.flow.id || nanoid(),
+    name: doc.flow.name,
+    description: doc.flow.description ?? '',
+    nodes,
+    edges,
+    createdAt: now,
+    updatedAt: now,
+    dirty: false,
+    isSubflow: doc.flow.kind === 'subflow',
+    subflowInputs: doc.flow.ports?.inputs ?? [],
+    subflowOutputs: doc.flow.ports?.outputs ?? [],
+    icon: doc.flow.icon,
+    category: doc.flow.category,
+  }
+  return { flow, migrated: migratedCount, unknownNodes: validation.unknownNodeIds.length, droppedEdges: validation.droppedEdgeIds.length, errors: validation.errors }
 }
 
 /**
@@ -499,42 +685,28 @@ export const useFlowsStore = defineStore('flows', {
       }
     },
 
-    // Serialization
+    // Serialization — writes the `.latch` v2 format (FILE_FORMAT_SPEC). Legacy
+    // v1.0 / v1.0.0 files remain readable via migrateToExport on import.
     exportFlow(flowId?: string): string {
       const flow = flowId ? this.flows.find((f) => f.id === flowId) : this.activeFlow
       if (!flow) return '{}'
-
-      return JSON.stringify({
-        version: '1.0',
-        name: flow.name,
-        description: flow.description,
-        nodes: flow.nodes,
-        edges: flow.edges,
-        exportedAt: new Date().toISOString(),
-      }, null, 2)
+      const getDef = useNodesStore().getDefinition
+      return fileFormat.serializeDocument(flowStateToDoc(flow, getDef))
     },
 
     importFlow(json: string): FlowState | null {
       try {
-        const data = JSON.parse(json)
-        const now = new Date()
-
-        const flow: FlowState = {
-          id: nanoid(),
-          name: data.name ?? 'Imported Flow',
-          description: data.description ?? '',
-          nodes: data.nodes ?? [],
-          edges: data.edges ?? [],
-          createdAt: now,
-          updatedAt: now,
-          dirty: false,
-          isSubflow: data.isSubflow ?? false,
-          subflowInputs: data.subflowInputs ?? [],
-          subflowOutputs: data.subflowOutputs ?? [],
-          icon: data.icon,
-          category: data.category,
+        const raw = JSON.parse(json)
+        if (!fileFormat.looksLikeLatchFile(raw)) {
+          console.error('Failed to import flow: not a LATCH flow file')
+          return null
         }
-
+        const exported = fileFormat.migrateToExport(raw)
+        const doc = exported.exportedFlows[0]
+        if (!doc) return null
+        const getDef = useNodesStore().getDefinition
+        const { flow } = docToFlowState(doc, getDef)
+        flow.id = nanoid() // single-flow import always gets a fresh id
         this.flows.push(flow)
         this.activeFlowId = flow.id
         return flow
@@ -994,21 +1166,13 @@ export const useFlowsStore = defineStore('flows', {
      * Export all flows to a JSON file and trigger download
      */
     exportAllFlows(): void {
-      const exportData = {
-        version: '1.0.0',
-        exportedAt: new Date().toISOString(),
-        activeFlowId: this.activeFlowId,
-        flows: this.flows.map(flow => ({
-          ...flow,
-          // Convert dates to ISO strings for JSON
-          createdAt: flow.createdAt instanceof Date ? flow.createdAt.toISOString() : flow.createdAt,
-          updatedAt: flow.updatedAt instanceof Date ? flow.updatedAt.toISOString() : flow.updatedAt,
-          // Mark as not dirty on export
-          dirty: false,
-        })),
-      }
-
-      const json = JSON.stringify(exportData, null, 2)
+      const getDef = useNodesStore().getDefinition
+      const json = fileFormat.serializeExport({
+        format: fileFormat.FORMAT,
+        formatVersion: fileFormat.FORMAT_VERSION,
+        activeFlowId: this.activeFlowId ?? undefined,
+        exportedFlows: this.flows.map((flow) => flowStateToDoc(flow, getDef)),
+      })
       const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
 
@@ -1026,41 +1190,28 @@ export const useFlowsStore = defineStore('flows', {
     /**
      * Import flows from a JSON file
      */
-    importFlows(jsonString: string, options: { replace?: boolean } = {}): { success: boolean; message: string; count: number } {
+    importFlows(jsonString: string, options: { replace?: boolean } = {}): ImportReport {
       try {
-        const data = JSON.parse(jsonString)
-
-        // Validate structure
-        if (!data.flows || !Array.isArray(data.flows)) {
-          return { success: false, message: 'Invalid file format: missing flows array', count: 0 }
+        const raw = JSON.parse(jsonString)
+        if (!fileFormat.looksLikeLatchFile(raw)) {
+          return { success: false, message: 'Invalid file: not a LATCH flow', count: 0 }
+        }
+        const exported = fileFormat.migrateToExport(raw)
+        if (exported.exportedFlows.length === 0) {
+          return { success: false, message: 'Invalid file: no flows found', count: 0 }
         }
 
-        // Parse and validate each flow
-        const importedFlows: FlowState[] = data.flows.map((flow: Record<string, unknown>) => ({
-          id: flow.id as string || nanoid(),
-          name: flow.name as string || 'Imported Flow',
-          description: flow.description as string || '',
-          nodes: (flow.nodes as Node[]) || [],
-          edges: (flow.edges as Edge[]) || [],
-          createdAt: flow.createdAt ? new Date(flow.createdAt as string) : new Date(),
-          updatedAt: new Date(),
-          dirty: false,
-          isSubflow: flow.isSubflow as boolean || false,
-          subflowInputs: (flow.subflowInputs as SubflowPort[]) || [],
-          subflowOutputs: (flow.subflowOutputs as SubflowPort[]) || [],
-          icon: flow.icon as string | undefined,
-          category: flow.category as string | undefined,
-        }))
+        const getDef = useNodesStore().getDefinition
+        const results = exported.exportedFlows.map((doc) => docToFlowState(doc, getDef))
+        const importedFlows = results.map((r) => r.flow)
 
         if (options.replace) {
-          // Replace all existing flows
           this.flows = importedFlows
         } else {
-          // Merge: add imported flows, skip duplicates by ID
-          const existingIds = new Set(this.flows.map(f => f.id))
+          // Merge: add imported flows, re-id duplicates.
+          const existingIds = new Set(this.flows.map((f) => f.id))
           for (const flow of importedFlows) {
             if (existingIds.has(flow.id)) {
-              // Generate new ID for duplicate
               flow.id = nanoid()
               flow.name = `${flow.name} (imported)`
             }
@@ -1068,15 +1219,37 @@ export const useFlowsStore = defineStore('flows', {
           }
         }
 
-        // Set active flow if specified and exists
-        if (data.activeFlowId && this.flows.some(f => f.id === data.activeFlowId)) {
-          this.activeFlowId = data.activeFlowId
+        // Set active flow if specified and present.
+        if (exported.activeFlowId && this.flows.some((f) => f.id === exported.activeFlowId)) {
+          this.activeFlowId = exported.activeFlowId
         } else if (this.flows.length > 0 && !this.activeFlowId) {
           this.activeFlowId = this.flows[0].id
         }
 
-        console.log(`[Flows] Imported ${importedFlows.length} flows`)
-        return { success: true, message: `Imported ${importedFlows.length} flows`, count: importedFlows.length }
+        const totals = results.reduce(
+          (a, r) => ({ migrated: a.migrated + r.migrated, unknown: a.unknown + r.unknownNodes, dropped: a.dropped + r.droppedEdges }),
+          { migrated: 0, unknown: 0, dropped: 0 }
+        )
+        const warnings = results.flatMap((r) => r.errors)
+        const nodeCount = importedFlows.reduce((a, f) => a + f.nodes.length, 0)
+        const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+        const parts = [`Imported ${plural(importedFlows.length, 'flow')} (${plural(nodeCount, 'node')})`]
+        if (totals.migrated) parts.push(`migrated ${plural(totals.migrated, 'node')}`)
+        if (totals.unknown) parts.push(`${plural(totals.unknown, 'unknown node')} kept as ${totals.unknown === 1 ? 'a placeholder' : 'placeholders'}`)
+        if (totals.dropped) parts.push(`dropped ${plural(totals.dropped, 'dangling edge')}`)
+        if (warnings.length) parts.push(`${plural(warnings.length, 'warning')}`)
+
+        console.log(`[Flows] ${parts.join(', ')}`)
+        if (warnings.length) console.warn('[Flows] Import warnings:', warnings)
+        return {
+          success: true,
+          message: parts.join(', '),
+          count: importedFlows.length,
+          migrated: totals.migrated,
+          unknownNodes: totals.unknown,
+          droppedEdges: totals.dropped,
+          ...(warnings.length ? { warnings } : {}),
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error'
         console.error('[Flows] Import failed:', message)
@@ -1135,7 +1308,7 @@ export const useFlowsStore = defineStore('flows', {
     /**
      * Trigger file picker for import
      */
-    async promptImport(options: { replace?: boolean } = {}): Promise<{ success: boolean; message: string; count: number }> {
+    async promptImport(options: { replace?: boolean } = {}): Promise<ImportReport> {
       return new Promise((resolve) => {
         const input = document.createElement('input')
         input.type = 'file'

@@ -2,7 +2,26 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useFlowsStore } from '@/stores/flows'
 import { useHistoryStore } from '@/stores/history'
+import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+import { initializeNodeRegistry } from '@/registry'
+import { readFileSync } from 'fs'
+
+/** A minimal registered definition so the store treats a type as "known". */
+function minimalDef(id: string, ports: Partial<Pick<NodeDefinition, 'inputs' | 'outputs'>> = {}): NodeDefinition {
+  return {
+    id,
+    name: id,
+    version: '1.0.0',
+    category: 'data',
+    description: '',
+    icon: 'box',
+    platforms: ['web', 'electron'],
+    inputs: ports.inputs ?? [],
+    outputs: ports.outputs ?? [],
+    controls: [],
+  }
+}
 
 describe('Flows Store', () => {
   beforeEach(() => {
@@ -98,26 +117,36 @@ describe('Flows Store', () => {
     expect(store.activeEdges).toHaveLength(0) // Edge should be removed
   })
 
-  it('should export and import flows', () => {
+  it('should export and import flows (v2 round-trip, logic/layout separated)', () => {
+    const nodes = useNodesStore()
+    nodes.register(minimalDef('constant'))
+    nodes.register(minimalDef('monitor'))
+
     const store = useFlowsStore()
     store.createFlow('Export Test')
-
     store.addNode('constant', { x: 100, y: 100 }, { label: 'Const' })
     store.addNode('monitor', { x: 300, y: 100 }, { label: 'Monitor' })
 
     const exported = store.exportFlow()
     const parsed = JSON.parse(exported)
 
-    expect(parsed.name).toBe('Export Test')
-    expect(parsed.nodes).toHaveLength(2)
+    // v2 envelope with logic under flow.* and cosmetics under layout.*
+    expect(parsed.format).toBe('latch-flow')
+    expect(parsed.formatVersion).toBe(2)
+    expect(parsed.flow.name).toBe('Export Test')
+    expect(parsed.flow.nodes).toHaveLength(2)
+    expect(parsed.flow.nodes[0]).not.toHaveProperty('position') // logic carries no layout
+    expect(Object.keys(parsed.layout.nodes)).toHaveLength(2)
 
-    // Import into fresh store
-    const store2 = useFlowsStore()
-    const imported = store2.importFlow(exported)
-
+    const imported = store.importFlow(exported)
     expect(imported).not.toBeNull()
     expect(imported!.name).toBe('Export Test')
     expect(imported!.nodes).toHaveLength(2)
+    // known types -> NOT placeholders; custom label preserved.
+    // (Nodes serialize sorted by their random id, so resolve by nodeType, not index.)
+    expect(imported!.nodes.every((n) => !(n.data as Record<string, unknown>)?._unknownType)).toBe(true)
+    const constNode = imported!.nodes.find((n) => (n.data as Record<string, unknown>).nodeType === 'constant')!
+    expect((constNode.data as Record<string, unknown>).label).toBe('Const')
   })
 
   it('should delete flows', () => {
@@ -389,8 +418,170 @@ describe('Flows Store', () => {
 
       const json = store.exportFlow(a.id)
       const parsed = JSON.parse(json)
-      expect(parsed.name).toBe('A')
-      expect(parsed.nodes).toHaveLength(1)
+      expect(parsed.flow.name).toBe('A')
+      expect(parsed.flow.nodes).toHaveLength(1)
+    })
+  })
+
+  describe('v2 file format wiring (FILE_FORMAT_SPEC)', () => {
+    it('reads a legacy v1.0.0 multi-flow envelope and reports the result', () => {
+      const nodes = useNodesStore()
+      nodes.register(minimalDef('constant'))
+      nodes.register(minimalDef('monitor', { inputs: [{ id: 'value', type: 'any', label: 'Value' }] }))
+
+      const legacy = JSON.stringify({
+        version: '1.0.0',
+        activeFlowId: 'F1',
+        flows: [
+          {
+            id: 'F1',
+            name: 'Legacy',
+            description: 'd',
+            nodes: [
+              { id: 'a', type: 'constant', position: { x: 0, y: 0 }, data: { nodeType: 'constant', label: 'C', value: 7 } },
+              { id: 'b', type: 'custom', position: { x: 200, y: 0 }, data: { nodeType: 'monitor', label: 'M' } },
+            ],
+            edges: [{ id: 'e1', source: 'a', sourceHandle: 'value', target: 'b', targetHandle: 'value' }],
+            isSubflow: false,
+            subflowInputs: [],
+            subflowOutputs: [],
+          },
+        ],
+      })
+
+      const store = useFlowsStore()
+      const report = store.importFlows(legacy, { replace: true })
+
+      expect(report.success).toBe(true)
+      expect(report.count).toBe(1)
+      expect(report.unknownNodes).toBe(0)
+      expect(report.droppedEdges).toBe(0)
+      const flow = store.flows[0]
+      expect(flow.name).toBe('Legacy')
+      expect(flow.nodes).toHaveLength(2)
+      expect(flow.edges).toHaveLength(1)
+      // control value survived; embedded definition was never carried
+      expect((flow.nodes.find((n) => n.id === 'a')!.data as Record<string, unknown>).value).toBe(7)
+      // edge reconstructed from node:port form
+      expect(flow.edges[0].source).toBe('a')
+      expect(flow.edges[0].sourceHandle).toBe('value')
+      expect(flow.edges[0].targetHandle).toBe('value')
+    })
+
+    it('loads an unknown node type as a placeholder, preserving its data and wires', () => {
+      const nodes = useNodesStore()
+      nodes.register(minimalDef('constant', { outputs: [{ id: 'value', type: 'any', label: 'Value' }] }))
+      // NOTE: 'ghost-fx' is intentionally NOT registered.
+
+      const doc = JSON.stringify({
+        format: 'latch-flow',
+        formatVersion: 2,
+        flow: {
+          id: 'F',
+          name: 'Has Ghost',
+          kind: 'main',
+          nodes: [
+            { id: 'a', type: 'constant', version: 1, controls: {} },
+            { id: 'g', type: 'ghost-fx', version: 1, controls: { intensity: 0.5 } },
+          ],
+          edges: [{ id: 'e1', from: 'a:value', to: 'g:input' }],
+        },
+        layout: { nodes: { a: { x: 0, y: 0 }, g: { x: 200, y: 0 } } },
+      })
+
+      const store = useFlowsStore()
+      const report = store.importFlows(doc, { replace: true })
+
+      expect(report.success).toBe(true)
+      expect(report.unknownNodes).toBe(1)
+      expect(report.droppedEdges).toBe(0) // wire to the placeholder is kept
+
+      const flow = store.flows[0]
+      const ghost = flow.nodes.find((n) => n.id === 'g')!.data as Record<string, unknown>
+      expect(ghost._unknownType).toBe(true)
+      expect(ghost.intensity).toBe(0.5) // controls preserved
+      expect(ghost.label).toBe('Unknown: ghost-fx')
+      // a dynamic input port was derived from the surviving edge so the wire attaches
+      expect(ghost._dynamicInputs).toEqual([{ id: 'input', type: 'any', label: 'input' }])
+      expect(flow.edges).toHaveLength(1)
+    })
+
+    it('upgrades the real bundled v1.0.0 sample flow through the full registry without loss', () => {
+      initializeNodeRegistry() // register all built-in definitions, as at app boot
+      const store = useFlowsStore()
+      const sample = readFileSync('public/sample-flow.json', 'utf-8')
+      const raw = JSON.parse(sample)
+
+      const report = store.importFlows(sample, { replace: true })
+
+      expect(report.success).toBe(true)
+      // every sample node type must be a real registered type (no placeholders) and
+      // no edge may be dropped — this catches a renamed/removed sample node type.
+      expect(report.unknownNodes).toBe(0)
+      expect(report.droppedEdges).toBe(0)
+      const flow = store.flows[0]
+      expect(flow.nodes).toHaveLength(raw.flows[0].nodes.length) // 19
+      expect(flow.edges).toHaveLength(raw.flows[0].edges.length) // 18
+      // no node carries the stale embedded definition anymore
+      expect(flow.nodes.every((n) => !(n.data as Record<string, unknown>).definition)).toBe(true)
+    })
+
+    it('preserves persisted underscore state (_width, _dynamicInputs) across a round-trip', () => {
+      const nodes = useNodesStore()
+      nodes.register(minimalDef('keyboard'))
+      const store = useFlowsStore()
+      store.createFlow('Underscore')
+      const n = store.addNode('keyboard', { x: 0, y: 0 })
+      // node-managed sizing + shader-style dynamic ports both live under `_` keys
+      store.updateNodeData(n!.id, { _width: 250, _dynamicInputs: [{ id: 'x', type: 'number', label: 'X' }] })
+
+      const imported = store.importFlow(store.exportFlow())!
+      const data = imported.nodes[0].data as Record<string, unknown>
+      expect(data._width).toBe(250)
+      expect(data._dynamicInputs).toEqual([{ id: 'x', type: 'number', label: 'X' }])
+      expect(data._unknownType).toBeUndefined() // known type, not a placeholder
+    })
+
+    it('does not persist a placeholder\'s edge-derived dynamic ports on re-export', () => {
+      const nodes = useNodesStore()
+      nodes.register(minimalDef('constant', { outputs: [{ id: 'value', type: 'any', label: 'Value' }] }))
+      const docJson = JSON.stringify({
+        format: 'latch-flow',
+        formatVersion: 2,
+        flow: {
+          id: 'F',
+          name: 'F',
+          kind: 'main',
+          nodes: [
+            { id: 'a', type: 'constant', version: 1, controls: {} },
+            { id: 'g', type: 'ghost-fx', version: 1, controls: { intensity: 0.5 } },
+          ],
+          edges: [{ id: 'e1', from: 'a:value', to: 'g:input' }],
+        },
+        layout: { nodes: { a: { x: 0, y: 0 }, g: { x: 1, y: 0 } } },
+      })
+      const store = useFlowsStore()
+      store.importFlows(docJson, { replace: true })
+
+      // The placeholder gets edge-derived dynamic ports IN MEMORY (so wires attach)...
+      const ghostNode = store.flows[0].nodes.find((n) => n.id === 'g')!
+      expect((ghostNode.data as Record<string, unknown>)._dynamicInputs).toBeDefined()
+
+      // ...but re-export must NOT bake them into the logic section (they are derived,
+      // not authored — persisting them would pollute the node if its type later loads).
+      const reexported = JSON.parse(store.exportFlow(store.flows[0].id))
+      const ghostRec = reexported.flow.nodes.find((n: { id: string }) => n.id === 'g')
+      expect(ghostRec.controls.intensity).toBe(0.5) // real control preserved
+      expect(ghostRec.controls).not.toHaveProperty('_dynamicInputs')
+      expect(ghostRec.controls).not.toHaveProperty('_dynamicOutputs')
+    })
+
+    it('rejects JSON that is not a LATCH flow file', () => {
+      const store = useFlowsStore()
+      expect(store.importFlows('{"foo":1}').success).toBe(false)
+      expect(store.importFlows('"just a string"').success).toBe(false)
+      expect(store.importFlows('42').success).toBe(false)
+      expect(store.importFlow('{"foo":1}')).toBeNull()
     })
   })
 
