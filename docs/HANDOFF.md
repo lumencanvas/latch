@@ -13,19 +13,20 @@ Executing **`docs/plans/ROADMAP_2026-06-28.md` (canonical)** Phase 0. Branch:
 attribution). License decision: **MIT confirmed** — already in `LICENSE` + `package.json`; no change
 needed. Governance/funding stays maintainer-owned (POLICIES §3), non-blocking.
 
-**▶ NEXT ACTION:** Open/next #1 (number `:min`/`:max`) and #2 (per-node error badge) are **DONE**.
-Next: the **2b** ctx-accessor factory (infra, self-contained) or **undo for param edits** (Open/next #6,
-P0). `random` (#4) and single-input-edge-replacement (#3) still need design / Vue-Flow-sync work first.
+**▶ NEXT ACTION:** Open/next #1 (number `:min`/`:max`), #2 (per-node error badge), and #6 (undo for
+param edits) are **DONE**. Next: the **2b** ctx-accessor factory (infra, self-contained). `random` (#4)
+and single-input-edge-replacement (#3) still need design / Vue-Flow-sync work first. `texture traps`
+(#5) needs in-app WebGL verification (hard to unit-test).
 
 **Landed this session** (15 commits): planning corpus · `.latch` v2 file format (+ store wiring) ·
 engine registry-resolved definitions + boundary input coercion · extensibility scaffold
 (`defineNode`/`trigger`/`defineNodeState`/`nodeRegistry`) · `power` finite-guard · import toasts ·
 engine lifecycle wiring · edge-triggered `latch`/`sample-hold` · Tone-analyser dispose · clasp
 `captureStream` stop · **number control `:min`/`:max` + blur-clamp (first component test)** ·
-**per-node error badge**. Test count **1517 → 1579**.
+**per-node error badge** · **undo for param edits (debounced)**. Test count **1517 → 1586**.
 
 **State at end of session:** `typecheck` + `lint` + `test:unit` + `build` (web) all green —
-**1579 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
+**1586 tests** (was 1517). Committed to `phase0-file-format` (no AI attribution). Every step was kept individually revertible. (One pre-existing flaky timer test,
 `adapters.test.ts > connectWithRetry`, occasionally fails in the full run and passes on retry —
 unrelated to this work.)
 
@@ -168,7 +169,18 @@ Done already: file format (Sub-task 1), scaffold 2a/2c, **engine lifecycle wirin
 5. **texture traps** (AUDIT §D P0) — shader `iChannel` + `displacement` via `resolveEffectSource`
    (`visual.ts:611-612`/`:1282`); make render-3d depth canvas-backed (copy `emulation.ts:88-110` blit).
    Hard to unit-test under happy-dom (WebGL); verify in-app.
-6. **undo for param edits** (AUDIT §G P0) — wrap `updateNodeData` control edits in history, debounced.
+6. **undo for param edits — DONE** (AUDIT §G P0). Wired at the **`updateControl` seam** (BaseNode +
+   PropertiesPanel) — NOT in `flowsStore.updateNodeData`, which is also hit by engine-driven dynamic-port
+   churn (`_dynamicInputs/_dynamicControls/_dynamicOutputs`) and would pollute history. New
+   `recordParamEdit(nodeId, desc, mutate)` in `useFlowHistory` coalesces rapid edits (typing/dragging)
+   into one debounced (500ms) entry via module-level burst state; a burst commits early when the edit
+   target changes, when any structural action snapshots (`beforeAction` now calls `flushParamEdit`), or
+   on undo/redo. GOTCHA captured in the test: `FlowSnapshot.timestamp` always differs between burst-start
+   and flush, so the no-op/changed diff compares `nodes`/`edges` content only (the legacy `afterAction`
+   full-snapshot compare is timestamp-fragile but works because its before/after are ~synchronous).
+   Tests: `tests/unit/composables/useFlowHistory.test.ts` (7). **Follow-up (non-blocking):** the
+   Code/Shader editor modals call `updateNodeData` directly and are still unrecorded — wrap them in
+   `withHistory` (they're discrete saves, not rapid) when convenient.
 7. **2b ctx accessors** — `ctx.num/bool/str/trig/level`; introduce a shared `createExecutionContext`
    factory + refactor ~25 executor-test `createContext` helpers, make accessors required. Sole runtime
    build site: `ExecutionEngine.ts` (~:378).
