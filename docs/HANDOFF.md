@@ -6,6 +6,265 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 4) — `opencv` + `ai` → `defineLifecycle` (the marker categories, done safely)
+
+Branch **`phase0-file-format`** (continuing). Applied the `(later 3)` insight: the two marker-based heavy
+categories I'd earlier flagged "unsafe to convert blind" are in fact **safe via `defineLifecycle`**,
+because that mode changes ZERO cleanup logic — it only moves WHERE the existing functions are invoked
+(explicit engine calls → generic loop, same timing). **17/23 converted; 5 heavy + `subflow`(deferred)
+remain** (audio, visual, 3d, connectivity, clasp).
+
+**Why `defineLifecycle` (not `defineNodeState`):** both have a `disposedNodes` marker Set that is
+**asymmetric** — `gc`/`disposeAll` ADD to it (so a late worker/model result for a torn-down node is
+dropped), and ONLY `onStart` (engine start) CLEARS it (stop→restart guard). A store's uniform
+`disposeAll`-clears-the-map can't express that. So each self-registers its UNCHANGED `gc`/`disposeAll` +
+`onStart: reset` functions.
+
+**Landed (all green — typecheck clean · lint 0 err · `test:unit` 1615→**1616** · `build` ok). NOT committed:**
+- **`executors/ai.ts`** + **`executors/opencv.ts`**: added `defineLifecycle({ label, gc, disposeAll,
+  onStart: reset })` at the bottom of each. All cleanup logic (incl. the marker Sets + worker teardown)
+  is **byte-for-byte unchanged**.
+- **`ExecutionEngine.ts`**: removed **8** wirings — 2 imports, `gcAIState`/`gcOpenCVState` (gc loop),
+  `disposeAllAINodes`/`disposeAllOpenCVNodes` (`stop()`), and the **explicit** `resetAINodeDisposal()`/
+  `resetOpenCVNodeDisposal()` calls in `start()` (now run via the generic `onStart` loop, which executes
+  in the same spot — before `runtimeStore.start()` and the rAF loop; resets just clear independent Sets,
+  so order-independent). gc loop + `stop()` disposeAll now hold **5 heavy** + `subflow` (+ metrics).
+- **Tests**: `engine-leak.test.ts` gets a marker self-registration guard (opencv/ai/emulation register
+  `gc`/`disposeAll`, opencv/ai also `onStart`). Existing `opencv.test.ts` + `ai-stt.test.ts` stay green
+  (behavior unchanged) — they prove the wrapped functions still work; the engine-drains-lifecycle
+  mechanism is proven by `ExecutionEngine.test.ts`'s lifecycle spy.
+
+**Safe to do blind:** like emulation, zero logic/timing change — a pure registration-mechanism refactor.
+(A *later* pass could refine opencv/ai's clean sub-maps — `opencvState`, `pendingOperations`, ai's
+`nodeCache` etc. — into `defineNodeState` stores for intra-category leak-safety, but that DOES touch
+teardown and wants in-app worker/GPU verification.)
+
+**▶ NEXT — only the 5 genuine WebGL/Tone/media restructures remain** (audio, visual, 3d, connectivity,
+clasp). These have clean-ish per-node maps but REAL resource teardown (Tone nodes, WebGL textures/geometry,
+media streams, MIDI/BLE) — `defineNodeState` with `dispose` callbacks is the right tool, but the resource
+release needs **in-app verification** (`dev:electron`). `clasp` has a websocket-shaped `nodeSubscriptions`
+unsubscribe map (`clasp.ts:63`) that's partially socket-style; `connectivity` has MIDI/BLE unsubscribe
+paths. `audio`/`visual`/`3d` are the big Tone/WebGL ones — recommend doing each WITH the maintainer
+driving verification before its commit.
+
+---
+
+## 2026-06-29 (later 3) — `emulation` → `defineLifecycle` (the asymmetric-cleanup pattern)
+
+Branch **`phase0-file-format`** (continuing). Third heavy category off the engine's hand-wired list, via
+a DIFFERENT (and important) technique. **15/23 converted; 7 heavy + `subflow`(deferred) remain** (audio,
+visual, ai, opencv, clasp, connectivity, 3d).
+
+**Why `defineLifecycle`, not `defineNodeState`:** emulation's cleanup is **asymmetric** — `gc`/node-removal
+tears down resources, removes the parked host, AND drops the registration; `disposeAll`/flow-stop tears
+down resources but **KEEPS** the registration (node components register once on mount and must survive
+stop→restart — clearing the map once orphaned them, a documented past bug). `defineNodeState`'s
+`disposeAll()` *always* clears the map, so forcing emulation into a store would reintroduce that bug.
+`defineLifecycle` (the documented escape hatch) lets the plain `emulators` Map + its **unchanged**
+`gcEmulationState`/`disposeAllEmulationNodes` self-register into the engine's generic loop.
+
+**Landed (all green — typecheck clean · lint 0 err · `test:unit` 1612→**1615** · `build` ok). NOT committed:**
+- **`executors/emulation.ts`**: added `defineLifecycle({ label: 'emulation', gc, disposeAll })` at the
+  bottom. Cleanup logic (`cleanupEntry` + the two functions) is **byte-for-byte unchanged**.
+- **`ExecutionEngine.ts`**: removed the 3 emulation wirings (import + `gcEmulationState` in the gc loop +
+  `disposeAllEmulationNodes` in `stop()`). Hand-wired set: **7 heavy** + `gcSubflowState` + `gcNodeMetrics`.
+- **`tests/unit/executors/emulation-lifecycle.test.ts`** (new, +3 — emulation's FIRST tests): self-
+  registration guard (`collectedLifecycles()` has label `emulation`), gc drops the registration, and the
+  **asymmetry regression guard** — `disposeAll` tears down resources but KEEPS the registration (this
+  test fails if anyone later "tidies" emulation into a `defineNodeState` store). Uses a mock loader; an
+  un-booted entry has no texture/audio, so no WebGL/Tone is touched.
+
+**Why this is safe to do blind (no in-app verification needed):** unlike websocket/mqtt this changed ZERO
+cleanup logic and ZERO invocation timing — the generic loop runs `gc`/`disposeAll` in the *same*
+updateGraph/`stop()` spots the explicit calls did, and emulation's teardown is order-independent of other
+categories. It is a pure registration-mechanism refactor.
+
+**KEY INSIGHT for the remaining heavy tier — two valid conversion modes:**
+1. **`defineNodeState` (ideal for clean nodeId-keyed maps):** restructure state into self-cleaning stores
+   with `dispose` callbacks. Eliminates *intra-category* leak risk too, but requires understanding +
+   restructuring the teardown (what websocket/mqtt got). Riskier; real resource release often needs in-app.
+2. **`defineLifecycle` (correct for asymmetric / marker / global state):** keep the existing map(s) +
+   `gc`/`disposeAll`/`onStart` functions UNCHANGED, just self-register. Behavior-identical, safe blind.
+   **This means `opencv` and `ai` (the marker categories I earlier flagged "unsafe blind") CAN be done
+   safely THIS way** — `defineLifecycle({ gc, disposeAll, onStart: resetOpenCVNodeDisposal })` wrapping
+   their existing functions removes the hand-wiring with zero behavior change (the `disposedNodes` marker
+   Set + worker logic stay exactly as-is). A *later* pass can refine their clean sub-maps (opencvState,
+   pendingOperations) into stores once someone can verify worker teardown in-app. The genuinely
+   restructure-needing ones are `audio` (Tone, 8 maps), `visual`/`3d` (WebGL), `clasp` (media),
+   `connectivity` (MIDI/BLE/serial) — those want defineNodeState + in-app verification.
+
+---
+
+## 2026-06-29 (later 2) — First heavy-tier conversions: `websocket` + `mqtt` → `defineNodeState`
+
+Branch **`phase0-file-format`** (continuing). Picked the **lowest-semantic-risk** heavy categories to
+break the seal on the heavy tier. Audited `opencv` (marker Set + worker-result ordering — NOT safe
+blind) and `3d` (11 maps + renderer coupling — gnarly) and rejected both; chose the **socket protocols**
+(`websocket`, then `mqtt`) because their only real resource is a subscription **`unsubscribe` closure** —
+the cleanup is a function call, so it is *meaningfully* verifiable headless (unlike GPU/WASM, which a
+mock can only stub). **14/23 groups now converted; 8 heavy + `subflow`(deferred) remain** (audio, visual,
+ai, opencv, clasp, connectivity, 3d, emulation).
+
+**`mqtt` (this session, same pattern + one real subtlety):** `mqttState` + `nodeSubscriptions` are now
+exported `defineNodeState` stores; `nodeSubscriptions` dispose = **full teardown** (`sub.unsubscribe()`
++ error-safe `getMqttAdapter(sub.connectionId)?.unsubscribe(sub.topic)`), matching the old
+`disposeMqttNode`. **The subtlety vs websocket:** mqtt has THREE release paths with DIFFERENT teardown —
+(1) *rewire to a new topic* releases only the message listener (NOT `adapter.unsubscribe`), so that path
+keeps a manual `existingSub.unsubscribe()` + relies on `.set()` overwrite (NOT `.delete()`, which would
+run the full dispose); (2) *topic cleared* and (3) *node removal* are full teardown → both route through
+`.delete()`/the dispose callback. A new **`tests/unit/executors/mqtt-teardown.test.ts`** (mqtt's first
+behavioral coverage) pins all three paths; `nodeSubscriptions` also gets a dedicated engine-gc teardown
+test in `engine-leak.test.ts`, and `mqttState` joined `CONVERTED_STORES`. Minor consistency gain: the
+topic-cleared path now `adapter.unsubscribe`s using the subscription's OWN connection (via dispose),
+matching node-removal — the old inline code used the current frame's adapter (latent edge-case bug).
+Engine wiring removed (import + `gcMqttState` + `disposeAllMqttNodes`); helpers kept store-backed.
+
+**`websocket` (earlier this session):**
+
+**Landed (all green — typecheck clean · lint 0 err / 49 pre-existing `any` · `test:unit` 1606→**1612**
+pass +11 todo · `build` ok). NOT committed:**
+- **`executors/websocket.ts`**: `wsState` + `nodeListeners` are now **exported `defineNodeState`** stores.
+  `nodeListeners` carries `dispose: (l) => l.unsubscribe()` — **moving the real teardown into the store**,
+  so engine gc / `stop()` / a rewire `.delete()` all release the adapter listener. **Rewire double-fire
+  fix:** the connection-change path used to `unsubscribe()` *and* `nodeListeners.delete()`; now `.delete()`
+  disposes (unsubscribes), so the manual unsubscribe was removed (else it would fire twice). `lastConnectAttempt`
+  stays a plain Map (keyed by **connectionId, not nodeId** — doesn't fit `defineNodeState`'s model, and
+  the original never gc'd it; behavior preserved). `disposeWebSocketNode`/`disposeAllWebSocketNodes`/
+  `gcWebSocketState` kept as **store-backed** test/compat helpers (the index barrel re-exports + 2 test
+  files import them) — the engine no longer calls them.
+- **`ExecutionEngine.ts`**: removed the 3 websocket wirings (import, `gcWebSocketState` in the updateGraph
+  gc loop, `disposeAllWebSocketNodes` in `stop()`). Same timing/guard as before — cleanup now flows
+  through the generic lifecycle loops. (After both socket conversions the updateGraph gc loop hand-wires
+  **8** heavy categories + `gcSubflowState` + `gcNodeMetrics`; `stop()`'s disposeAll loop matches.)
+- **Tests**: `wsState` added to `engine-leak.test.ts`'s `CONVERTED_STORES` ({}-seeded size check);
+  `nodeListeners` gets a **dedicated real-teardown test** (seed two listeners with `vi.fn()` unsubs,
+  remove one via `updateGraph` → its unsub fires once, the live one's doesn't; `stop()` releases the
+  rest). A **rewire regression test** added to `websocket-throttle.test.ts` (old listener released
+  exactly once on connection change). `engine-leak.test.ts` is now +8 tests.
+
+**Verification status:** the websocket executor's leak fix is **fully covered headless** — the executor's
+sole responsibility is calling `unsubscribe` at the right moments, which the tests prove; the adapter's
+unsubscribe correctness is the adapter's own contract. A 60-second in-app sanity check (add a WebSocket
+node, delete it, confirm no console error / dangling listener in `dev:electron`) is still recommended
+before commit, but the GPU/WASM "mocks insufficient" caveat does **not** bite here.
+
+**▶ NEXT (the easy socket wins are now DONE):** only the genuinely gnarly heavy categories remain —
+`audio` (Tone, 8 maps), `visual` (WebGL), `3d` (11 maps + renderer), `opencv` (worker + marker Set —
+plan in the entry below), `ai` (workers + `resetAINodeDisposal` marker), `clasp` (media; note clasp has
+its OWN `nodeSubscriptions` unsubscribe map at `clasp.ts:63` — a websocket-shaped sub-conversion is
+possible there), `connectivity` (MIDI/BLE/serial), `emulation` (EmulatorJS WebGL). These need **real
+in-app verification** (`dev:electron`) — mocks are necessary but not sufficient. Recommend doing each
+WITH the maintainer driving verification before its commit. `connectivity` is large but its MIDI/BLE
+unsubscribe paths may yield a partial socket-style win; `audio`/`visual`/`3d` are the big WebGL/Tone
+teardowns.
+
+---
+
+## 2026-06-29 (later) — Engine-level leak-test GATE + `PURE_NODE_TYPES` GATE landed (audited)
+
+Branch **`phase0-file-format`** (continuing). Two roadmap Phase-1 gates landed and an `ultrathink`
+self-audit hardened them. The **"per-type create+delete leak test"** gate is now in place — the missing
+half of the leak-class kill. Per-category unit tests (`executor-gc.test.ts`) already pin each store's
+`gc`/`disposeAll` *in isolation* (calling `store.gc(...)` directly); the new gate proves the **engine
+itself** drains them through its generic `for (const l of this.lifecycles) …` loops.
+
+**AUDIT (this session, all findings actioned):**
+- **The gate has teeth (mutation-verified):** commenting out the engine's `for (const l of this.lifecycles)
+  l.gc(validNodeIds)` line turns exactly the 4 gc-dependent leak tests + the new `ExecutionEngine` gc
+  spy test RED, while the `stop()`/disposeAll and canvas-mock tests correctly stay green (they don't
+  depend on that loop). A leak test that can't fail is worthless — this one provably can.
+- **Reconciled a stale NOTE:** `ExecutionEngine.test.ts:550` carried a NOTE that the gc-on-removal path
+  was deliberately left untested because the legacy gc path touched `canvas.getContext` ("Phase 1's
+  per-type leak tests will add a canvas mock"). That promise is now fulfilled, so the NOTE was rewritten
+  and a now-unblocked **`drains gc on updateGraph node removal`** spy test added there (asserts the loop
+  fires with the correct empty `validNodeIds`).
+- **Closed the compound-key gap:** all 28 *exported* converted stores use identity keys, so the
+  `keyToNodeId` gc path wasn't exercised end-to-end through the engine (only at the `defineNodeState`
+  unit level, `nodeState.test.ts:67`). Added a `keyToNodeId` probe to `engine-leak.test.ts` (suffixed
+  `keep:a`/`drop:a` keys, prove only the removed node's entries drop). `code`/`http` are the real
+  compound-key stores but non-exported; the probe covers the mechanism the engine drains them with.
+- **`PURE_NODE_TYPES` discrepancy was already RESOLVED — the handoff's "19" was STALE.** The live set
+  (`ExecutionEngine.ts:67`, not `:84` — that ref drifted too) is **24 ids** and already matches the docs.
+  Counted directly; no purity re-audit needed (the set is the verified source of truth from 2026-06-14).
+- **Found + closed a store with ZERO gc coverage (2nd audit pass):** `engine/trigger.ts`'s `edgeState`
+  (the `risingEdge` store) is a *converted* `defineNodeState` store but **non-exported** and uses a
+  **unique** `keyToNodeId` (`indexOf('::')` slicer — every other store splits on a single `:`), so
+  neither `trigger.test.ts` (no gc tests), `nodeState.test.ts` (`_` splitter), nor the `:`-split probe
+  exercised it. A regression in that slicer would silently leak edge state on node deletion — the exact
+  Phase-1 leak class. Closed with a **behavioral** integration test in `engine-leak.test.ts`: drive the
+  exported `risingEdge()` to seed `keep::trigger`/`drop::trigger`, remove `drop` via `updateGraph`, and
+  assert `drop` re-fires (state gc'd) while `keep` stays latched (selectivity — also catches a broken
+  splitter, which would wrongly drop `keep`'s state). `code`/`http`'s non-exported stores use the
+  `:`-splitter the probe already represents.
+- **Hardened `beforeEach`:** now resets **every** registered lifecycle via
+  `collectedLifecycles().forEach((l) => l.disposeAll())` (was only the 28 exported stores), so the
+  non-exported `edgeState`/code/http stores and any probe can't bleed state across cases.
+- **`opencv` heavy-tier conversion investigated (NOT done — needs in-app verify).** Concrete groundwork
+  for whoever picks it up: state is `opencvState` (Map, per-node canvas+texture) + `pendingOperations`
+  (Map, in-flight throttle guard) + **`disposedNodes` (Set, a late-worker-result guard that must
+  GROW on dispose and be cleared ONLY on engine start)** + module singletons `scratchCanvas`/
+  `imageDataCanvas` + the worker side (`openCVService.dispose(id)`/`.disposeAll()`). Plan:
+  `opencvState` → `defineNodeState` with `dispose(state, id)` doing `texture.dispose()` +
+  canvas 0×0 + `openCVService.dispose(id)` + `pendingOperations.delete(id)` + **`disposedNodes.add(id)`**
+  (the marker MUST be set inside dispose, and `disposedNodes` must NOT itself be a gc'd store or markers
+  vanish for removed nodes); `pendingOperations` can stay a Map cleaned in that `dispose`; the
+  `resetOpenCVNodeDisposal` (clear `disposedNodes`) + `openCVService.disposeAll()` + canvas-singleton
+  nulling go in a `defineLifecycle({ onStart, disposeAll })`. **Why it's not safe headless:** mocks can
+  verify the wiring but not that the real WASM Mats free or that the late-result drop timing holds —
+  exactly the subtle marker/ordering semantics. Verify optical-flow + MOG2 nodes in `dev:electron`
+  (add/remove/re-add; stop→restart) before committing.
+
+**Landed (all green — typecheck clean · lint 0 err / 49 pre-existing `any` · `test:unit` 1595→**1606**
+pass +11 todo · `build` ok). NOT committed (awaiting maintainer go-ahead):**
+- **`tests/unit/engine/engine-leak.test.ts`** (new, +7 tests). Wires `engine.registerLifecycles(
+  collectedLifecycles())` exactly as production, seeds all **28 exported converted stores** (the 12
+  categories' `defineNodeState` stores), then asserts: (a) `updateGraph` **removal** empties every store
+  via the engine gc loop (no direct `store.gc()` call); (b) a keep/drop graph drops only the removed
+  node; (c) `stop()` empties every store; (d) a **freshly-registered** `defineNodeState` (created after
+  the engine started) is drained AND its `dispose(state)` callback fires — the live-array guarantee that
+  a custom/user executor inherits auto-cleanup for free; (e) a **`keyToNodeId` compound-key probe**
+  (engine resolves the owning node id from suffixed keys); (f) the non-exported `::`-keyed `edgeState`
+  (`risingEdge`) is gc'd end-to-end; (g) the canvas mock sanity check. Seed value is `{}` (analyser
+  `dispose` reads `s.waveform`/`s.fft` null-safely, so it disposes cleanly).
+- **`tests/unit/engine/ExecutionEngine.test.ts`**: rewrote the stale lifecycle-gc NOTE and added the
+  now-unblocked **`drains gc on updateGraph node removal`** spy test (h.gc called once with empty set).
+- **`tests/unit/engine/pure-node-types.test.ts`** (new, +3 tests — the `PURE_NODE_TYPES` Phase-1 gate).
+  Pins the set to **exactly the canonical 24-id literal** (independent second witness; order-independent
+  equality; no dup), asserts the known-impure nodes (`gate`/`smooth`/`random`/`counter`/`metronome`/
+  `timer`) stay **excluded** (the only dangerous direction — a wrong *addition* can freeze a node in
+  dirty mode), and pins `COLOCATED_PURE_NODE_TYPES ⊆ PURE_NODE_TYPES` — the **Phase-6 derivation
+  bridge** (vacuously true today: **0 co-located `node.ts` files** exist, so the `pure:true`-derived set
+  is empty; it becomes a real check the moment Phase 6 co-locates a pure node). Full *replacement* of the
+  hand-maintained literal by the derived set waits on Phase-6 co-location; adding `pure` to the 24 legacy
+  `NodeDefinition`s now would be throwaway work Phase 6 redoes, so it was deliberately NOT done.
+- **`tests/setup.ts`**: added a safe `HTMLCanvasElement.getContext` mock (Proxy-based no-op **2D**
+  context; `getImageData`/`createImageData` return correctly-shaped buffers; **WebGL → null** so guarded
+  branches take their fallback). **Safe by construction:** happy-dom leaves `getContext` *undefined*
+  (it throws), and the whole suite was green, so **no existing test reached a real `getContext` call** —
+  the mock can only unblock new headless coverage, never change current behavior. Verified: all 89 test
+  files still pass.
+- **`executors/visual.ts` `gcVisualState`** (small production fix): the Three renderer was fetched
+  **eagerly** at the top (`getThreeShaderRenderer()`), so removing *any* node — even a non-visual one —
+  spun up a WebGL context (throws headless; wasted work in prod). Now fetched **lazily**, only inside the
+  `nodeTextures` loop right before `disposeNode`. Behavior-identical (memoized singleton, already built
+  by GC time in prod); makes `gcVisualState` a true no-op when no visual textures need disposing. This
+  was the *actual* blocker for the engine-removal test — the canvas mock alone is insufficient because
+  Three needs a real WebGL context.
+
+**▶ NEXT ACTION:** the **heavy/in-app tier** conversion is now the only remaining Phase-1 item
+(audio/visual/ai/opencv/clasp/connectivity/mqtt/websocket/3d/emulation — `subflow` deferred to Phase 7).
+Each has **real resource teardown** (Tone/WebGL/workers/sockets/media): move it into a `dispose(state)`
+callback (or `defineLifecycle` for service/global side effects), then **VERIFY IN-APP** (`npm run dev` /
+`dev:electron`) — mock-based unit tests are necessary but NOT sufficient here. One category per green
+commit. As each heavy group migrates to `defineNodeState`, **add its store(s) to
+`engine-leak.test.ts`'s `CONVERTED_STORES` list** (the regression gate) and remove its hand-wired
+`gc*`/`disposeAll*` line from `ExecutionEngine.ts`. The canvas mock (`tests/setup.ts`) + the now-lazy
+`gcVisualState` renderer fetch mean a fuller engine-removal test that seeds **visual** state is also
+unblocked. (`PURE_NODE_TYPES` is DONE — gate landed; full derive-from-`pure:true` replacement is a
+Phase-6 co-location follow-up.)
+
+---
+
 ## 2026-06-29 — Phase 1 in progress: `defineNodeState` migration (kill the leak class)
 
 Branch **`phase0-file-format`** (continuing). Phase 0's autonomous work is complete (see entry
