@@ -6,6 +6,38 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 5) — `audio` → `defineLifecycle` + first in-app smoke verification
+
+Branch **`phase0-file-format`** (continuing). **18/23 converted; 4 heavy + `subflow`(deferred) remain**
+(visual, 3d, connectivity, clasp). Also: confirmed an **in-app browser smoke harness** works and used it
+to verify this conversion end-to-end — see the [[latch-smoke-test-harness]] memory.
+
+**`audio` via `defineLifecycle` (not `defineNodeState`):** audio has 8 per-node maps, but
+`disposeAllAudioNodes` encodes a specific **Tone teardown sequence** (audioNodes first, then synth
+voices / players / filters) and `audioNodes` uses **suffixed keys** (`${id}_meter`, gc'd via
+`key.split('_')[0]`). Splitting into 8 independent stores could reorder disposal and break Tone graphs —
+a subtle audio bug a smoke test can't catch (can't hear output). So wrap the unchanged
+`gcAudioState`/`disposeAllAudioNodes` via `defineLifecycle`. Removed the 3 engine wirings; gc loop +
+`stop()` now hold **4 heavy** + `subflow` (+ metrics). `engine-leak.test.ts`'s self-registration guard
+now covers `audio` too. Tests: typecheck/lint/`test:unit` 1616 + build all green.
+
+**Smoke harness PROVEN (the verification gap is closed).** Playwright + system Chrome (`channel:'chrome'`)
+drive `npm run dev`. The first-visit Starter Flow (19 nodes, incl. Synth/Parametric-EQ/EQ/Audio-Output)
+loads, then **Play → wait → Stop** exercises every converted category's runtime AND `stop()`'s
+`disposeAll` loop. Result for the committed conversions AND this audio change: **0 real console errors**
+through boot→run→stop (after filtering headless-Chrome webcam-permission noise + a benign MediaPipe
+`INFO`). So the unit tests prove teardown FIRES; the smoke proves the conversion doesn't BREAK the app
+(incl. the cleanup path). Recipe + noise filters: [[latch-smoke-test-harness]].
+
+**Pattern now settled for the heavy tier:** `defineLifecycle`-wrap (keep the existing gc/disposeAll,
+behavior-identical, smoke-verified) is the SAFE conversion for categories with ordering-sensitive /
+asymmetric / marker teardown (emulation, opencv, ai, audio — all done). `defineNodeState` (restructure
+into self-cleaning stores) is reserved for independent-per-node state (the sockets). The remaining 4
+(visual/3d/connectivity/clasp) are WebGL/media/MIDI-BLE — `defineLifecycle`-wrap each, smoke-verify
+run→stop (3d/visual also screenshot the render). A later pass can refine wrapped categories into stores.
+
+---
+
 ## 2026-06-29 (later 4) — `opencv` + `ai` → `defineLifecycle` (the marker categories, done safely)
 
 Branch **`phase0-file-format`** (continuing). Applied the `(later 3)` insight: the two marker-based heavy
