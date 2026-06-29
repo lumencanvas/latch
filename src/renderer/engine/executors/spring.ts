@@ -2,18 +2,19 @@
  * Spring executor — damped-harmonic-oscillator physics toward a target.
  *
  * Gives physical motion (mass / tension / friction) that fixed easing curves
- * can't: natural overshoot and settle. Stateful (position + velocity per node),
- * so it registers a gc/dispose path wired into ExecutionEngine — see
- * gcSpringState / disposeAllSpringState below.
+ * can't: natural overshoot and settle. Stateful (position + velocity per node);
+ * `defineNodeState` auto-registers the gc/dispose path with the engine, so there
+ * is no bespoke gc/disposeAll function to wire in by hand.
  */
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
 
 interface SpringState {
   pos: number
   vel: number
 }
 
-const springState = new Map<string, SpringState>()
+export const springState = defineNodeState<SpringState>({ label: 'spring' })
 
 // Cap dt so a long frame (tab backgrounded, GC pause) can't blow up the integrator.
 const MAX_DT = 1 / 30
@@ -56,16 +57,4 @@ export const springExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     ['velocity', state.vel],
     ['atRest', atRest],
   ])
-}
-
-/** Drop spring state for nodes that no longer exist (per-node GC). */
-export function gcSpringState(validNodeIds: Set<string>): void {
-  for (const id of springState.keys()) {
-    if (!validNodeIds.has(id)) springState.delete(id)
-  }
-}
-
-/** Clear all spring state (engine stop / teardown). */
-export function disposeAllSpringState(): void {
-  springState.clear()
 }

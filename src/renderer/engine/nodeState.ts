@@ -24,6 +24,10 @@ export interface NodeStateStore<T> {
   getOrCreate(nodeId: string, factory: () => T): T
   /** Remove one entry, disposing it first. */
   delete(nodeId: string): void
+  /** Dispose + drop every entry whose owning node id is not in `validNodeIds` (per-node GC). */
+  gc(validNodeIds: Set<string>): void
+  /** Dispose + drop all entries (engine stop / test reset). */
+  disposeAll(): void
   entries(): IterableIterator<[string, T]>
   readonly size: number
 }
@@ -77,6 +81,16 @@ export function defineNodeState<T>(opts: DefineNodeStateOptions<T> = {}): NodeSt
     map.delete(key)
   }
 
+  const gc = (validNodeIds: Set<string>): void => {
+    for (const key of [...map.keys()]) {
+      if (!validNodeIds.has(keyToNodeId(key))) disposeEntry(key)
+    }
+  }
+
+  const disposeAll = (): void => {
+    for (const key of [...map.keys()]) disposeEntry(key)
+  }
+
   const store: NodeStateStore<T> = {
     get: (nodeId) => map.get(nodeId),
     has: (nodeId) => map.has(nodeId),
@@ -92,22 +106,20 @@ export function defineNodeState<T>(opts: DefineNodeStateOptions<T> = {}): NodeSt
       return s as T
     },
     delete: (nodeId) => disposeEntry(nodeId),
+    gc,
+    disposeAll,
     entries: () => map.entries(),
     get size() {
       return map.size
     },
   }
 
+  // The engine drains these generically; they delegate to the same store methods
+  // tests can call directly, so a category needs no bespoke gc/disposeAll function.
   lifecycles.push({
     label: opts.label ?? 'nodeState',
-    gc: (validNodeIds) => {
-      for (const key of [...map.keys()]) {
-        if (!validNodeIds.has(keyToNodeId(key))) disposeEntry(key)
-      }
-    },
-    disposeAll: () => {
-      for (const key of [...map.keys()]) disposeEntry(key)
-    },
+    gc,
+    disposeAll,
     endFrame: opts.endFrame,
     onStart: opts.onStart,
   })

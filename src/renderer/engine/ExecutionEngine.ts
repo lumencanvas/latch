@@ -20,7 +20,7 @@ import {
 } from './executors/index'
 import { disposeAllUtilityState, gcUtilityState } from './executors/utility'
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
-import { disposeAllSpringState, gcSpringState } from './executors/spring'
+// spring state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import { disposeAllSignalState, gcSignalState } from './executors/signal'
 import {
   disposeAllMessagingState,
@@ -323,7 +323,6 @@ export class ExecutionEngine {
         gcHttpState(validNodeIds)
         gcUtilityState(validNodeIds)
         gcSubflowState(validNodeIds)
-        gcSpringState(validNodeIds)
         gcSignalState(validNodeIds)
         gcMessagingState(validNodeIds)
         gcGamepadState(validNodeIds)
@@ -974,7 +973,6 @@ export class ExecutionEngine {
     disposeAllWebLLMState()
     disposeAllUtilityState()
     clearAllSubflowContexts()
-    disposeAllSpringState()
     disposeAllSignalState()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()

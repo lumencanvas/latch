@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
-import { springExecutor, disposeAllSpringState } from '@/engine/executors/spring'
+import { springExecutor, springState } from '@/engine/executors/spring'
 
 function ctx(
   inputs: Record<string, unknown> = {},
@@ -32,7 +32,7 @@ function settle(
 }
 
 describe('springExecutor', () => {
-  beforeEach(() => disposeAllSpringState())
+  beforeEach(() => springState.disposeAll())
 
   it('initialises at the target with no startup lurch', () => {
     const out = springExecutor(ctx({ target: 5 })) as Map<string, unknown>

@@ -48,6 +48,22 @@ describe('defineNodeState', () => {
     expect(dispose).toHaveBeenCalledTimes(2)
   })
 
+  it('exposes gc/disposeAll on the store, delegating to the same logic as the lifecycle', () => {
+    const dispose = vi.fn()
+    const s = defineNodeState<number>({ dispose })
+    s.set('keep', 1)
+    s.set('drop', 2)
+
+    s.gc(new Set(['keep']))
+    expect(s.has('keep')).toBe(true)
+    expect(s.has('drop')).toBe(false)
+    expect(dispose).toHaveBeenCalledWith(2, 'drop')
+
+    s.disposeAll()
+    expect(s.size).toBe(0)
+    expect(dispose).toHaveBeenCalledWith(1, 'keep')
+  })
+
   it('keyToNodeId maps suffixed keys so gc keeps the live node', () => {
     const s = defineNodeState<number>({ keyToNodeId: (k) => k.split('_')[0] })
     s.set('n1_meter', 1)

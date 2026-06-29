@@ -22,7 +22,7 @@ import {
   clearAllSubflowContexts,
   subflowContextCount,
 } from '@/engine/executors/subflow'
-import { springExecutor, gcSpringState, disposeAllSpringState } from '@/engine/executors/spring'
+import { springExecutor, springState } from '@/engine/executors/spring'
 import { sendExecutor, gcMessagingState, disposeAllMessagingState } from '@/engine/executors/messaging'
 import { messageBus } from '@/services/messaging/MessageBus'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
@@ -169,8 +169,8 @@ describe('gcSubflowState / clearAllSubflowContexts', () => {
   })
 })
 
-describe('gcSpringState', () => {
-  beforeEach(() => disposeAllSpringState())
+describe('springState gc (defineNodeState)', () => {
+  beforeEach(() => springState.disposeAll())
 
   it('drops spring state for removed nodes but keeps valid ones', () => {
     // Seed each spring at its target, then nudge so it holds non-trivial state.
@@ -179,7 +179,7 @@ describe('gcSpringState', () => {
     springExecutor(ctx('keep', { target: 1 })) // 'keep' now mid-flight (pos > 0)
     springExecutor(ctx('drop', { target: 1 }))
 
-    gcSpringState(new Set(['keep'])) // 'drop' removed
+    springState.gc(new Set(['keep'])) // 'drop' removed
 
     // 'drop' lost its state → re-initialises at the new target (no animation, value == target).
     expect((springExecutor(ctx('drop', { target: 9 })) as Map<string, unknown>).get('value')).toBe(9)
