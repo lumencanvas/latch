@@ -679,12 +679,14 @@ export const switchExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // ============================================================================
 
 // Track if start has fired for each node
-const startFiredNodes = new Set<string>()
+// Set modelled as a presence store (value is always true) so it shares the
+// auto-registered gc/dispose lifecycle with the other timing groups.
+export const startFiredNodes = defineNodeState<true>({ label: 'start' })
 
 export const startExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Fire once on first frame, then never again
   if (ctx.frameCount === 0 || !startFiredNodes.has(ctx.nodeId)) {
-    startFiredNodes.add(ctx.nodeId)
+    startFiredNodes.set(ctx.nodeId, true)
     return new Map([['trigger', 1]])
   }
   // Don't output anything after first frame
@@ -692,7 +694,7 @@ export const startExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Track interval state per node
-const intervalState = new Map<string, { lastFire: number }>()
+export const intervalState = defineNodeState<{ lastFire: number }>({ label: 'interval' })
 
 export const intervalExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const intervalMs = (ctx.controls.get('interval') as number) ?? 1000
@@ -721,7 +723,7 @@ export const intervalExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Track delay state per node (queue + last output)
-const delayState = new Map<string, { queue: Array<{ value: unknown; fireAt: number }>; lastOutput: unknown }>()
+export const delayState = defineNodeState<{ queue: Array<{ value: unknown; fireAt: number }>; lastOutput: unknown }>({ label: 'delay' })
 
 export const delayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const delayMs = (ctx.controls.get('delay') as number) ?? 500
@@ -749,7 +751,7 @@ export const delayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Track timer state per node
-const timerState = new Map<string, { running: boolean; startTime: number; pausedAt: number }>()
+export const timerState = defineNodeState<{ running: boolean; startTime: number; pausedAt: number }>({ label: 'timer' })
 
 export const timerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const start = ctx.inputs.get('start') as boolean
@@ -787,15 +789,12 @@ export const timerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Track metronome state per node
-const metronomeState = new Map<
-  string,
-  {
-    running: boolean
-    startTime: number
-    lastBeatNum: number
-    lastBarNum: number
-  }
->()
+export const metronomeState = defineNodeState<{
+  running: boolean
+  startTime: number
+  lastBeatNum: number
+  lastBarNum: number
+}>({ label: 'metronome' })
 
 export const metronomeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const startTrigger = ctx.inputs.get('start')
@@ -893,14 +892,11 @@ export const metronomeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // Track step sequencer state per node
-const stepSequencerState = new Map<
-  string,
-  {
-    currentStep: number
-    direction: 1 | -1 // For ping-pong mode
-    lastClockState: boolean
-  }
->()
+export const stepSequencerState = defineNodeState<{
+  currentStep: number
+  direction: 1 | -1 // For ping-pong mode
+  lastClockState: boolean
+}>({ label: 'step-sequencer' })
 
 export const stepSequencerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const clock = ctx.inputs.get('clock')
@@ -1144,18 +1140,6 @@ function safeStringify(value: unknown): unknown {
 // ============================================================================
 
 /**
- * Clean up state for a specific node
- */
-export function disposeTimingNode(nodeId: string): void {
-  intervalState.delete(nodeId)
-  delayState.delete(nodeId)
-  timerState.delete(nodeId)
-  metronomeState.delete(nodeId)
-  stepSequencerState.delete(nodeId)
-  startFiredNodes.delete(nodeId)
-}
-
-/**
  * Clean up state for debug nodes
  */
 export function disposeDebugNode(nodeId: string): void {
@@ -1171,21 +1155,6 @@ export function disposeDebugNode(nodeId: string): void {
   const eqState = eqAnalyzers.get(nodeId)
   if (eqState) disposeAnalyzer(eqState.fft, eqState.prevAudio)
   eqAnalyzers.delete(nodeId)
-}
-
-/**
- * Clean up state for input nodes
- */
-/**
- * Clean up all timing-related state (called when execution stops)
- */
-export function disposeAllTimingState(): void {
-  intervalState.clear()
-  delayState.clear()
-  timerState.clear()
-  metronomeState.clear()
-  stepSequencerState.clear()
-  startFiredNodes.clear()
 }
 
 /**
@@ -1205,20 +1174,10 @@ export function disposeAllDebugState(): void {
 }
 
 /**
- * GC timing/debug state for nodes no longer in the graph (per-node removal).
- * Each mirrors the wired `gc*` functions in the other executors: reuse the
- * per-node `disposeXNode` helper for ids absent from the valid set. Without these
- * the state only cleared on stop(), so deleting timer/oscilloscope/equalizer/
- * smooth nodes mid-session leaked their state (incl. heavy audio analysers).
+ * GC debug state for nodes no longer in the graph (per-node removal). Reuses
+ * disposeDebugNode for ids absent from the valid set so the heavy audio analysers
+ * (oscilloscope/equalizer) are disposed, not just dropped.
  */
-export function gcTimingState(validNodeIds: Set<string>): void {
-  const ids = new Set<string>([
-    ...intervalState.keys(), ...delayState.keys(), ...timerState.keys(),
-    ...metronomeState.keys(), ...stepSequencerState.keys(), ...startFiredNodes.keys(),
-  ])
-  for (const id of ids) if (!validNodeIds.has(id)) disposeTimingNode(id)
-}
-
 export function gcDebugState(validNodeIds: Set<string>): void {
   const ids = new Set<string>([
     ...consolePrevValues.keys(), ...monitorLastValue.keys(),

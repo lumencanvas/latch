@@ -7,13 +7,12 @@ import type { LifecycleHooks } from './nodeState'
 import { disposeAllAudioNodes, gcAudioState } from './executors/audio'
 import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
 import {
-  disposeAllTimingState,
   disposeAllDebugState,
-  gcTimingState,
   gcDebugState,
   disposeAllWebLLMState,
   gcWebLLMState,
 } from './executors/index'
+// timing state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 // input state (trigger/smooth/gate) is migrated to defineNodeState — generic lifecycle loop.
 // RAG (vector-memory) state is migrated to defineNodeState — generic lifecycle loop.
 // utility state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
@@ -308,7 +307,6 @@ export class ExecutionEngine {
         gc3DState(validNodeIds)
         gcConnectivityState(validNodeIds)
         gcAIState(validNodeIds)
-        gcTimingState(validNodeIds)
         gcDebugState(validNodeIds)
         gcClaspState(validNodeIds)
         gcWebLLMState(validNodeIds)
@@ -951,7 +949,6 @@ export class ExecutionEngine {
     // Clean up all executor state to prevent memory leaks and stop audio
     disposeAllAudioNodes()
     disposeAllVisualNodes()
-    disposeAllTimingState()
     disposeAllDebugState()
     disposeAllMessagingState()
     disposeAll3DNodes()
