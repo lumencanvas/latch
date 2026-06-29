@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { gamepadExecutor, gamepadVisualExecutor, disposeAllGamepadState } from '@/engine/executors/gamepad'
+import { gamepadExecutor, gamepadVisualExecutor, gamepadState } from '@/engine/executors/gamepad'
+
+const disposeAllGamepadState = () => gamepadState.disposeAll()
 import { emptyControllerState, type ControllerState } from '@/services/input/controllerState'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 

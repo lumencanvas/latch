@@ -8,6 +8,7 @@
  */
 
 import type { NodeExecutorFn, ExecutionContext } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
 import {
   fromWebGamepad,
   anyButtonPressed,
@@ -20,7 +21,7 @@ interface GamepadNodeState {
   prevAnyButton: boolean
 }
 
-const gamepadState = new Map<string, GamepadNodeState>()
+export const gamepadState = defineNodeState<GamepadNodeState>({ label: 'gamepad' })
 
 function readGamepads(): (Gamepad | null)[] {
   if (typeof navigator === 'undefined' || !navigator.getGamepads) return []
@@ -98,12 +99,3 @@ export const gamepadVisualExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
   return outputs
 }
 
-export function gcGamepadState(validNodeIds: Set<string>): void {
-  for (const id of gamepadState.keys()) {
-    if (!validNodeIds.has(id)) gamepadState.delete(id)
-  }
-}
-
-export function disposeAllGamepadState(): void {
-  gamepadState.clear()
-}

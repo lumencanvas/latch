@@ -20,8 +20,7 @@ import {
 } from './executors/index'
 import { disposeAllUtilityState, gcUtilityState } from './executors/utility'
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
-// spring state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
-import { disposeAllSignalState, gcSignalState } from './executors/signal'
+// spring + signal state are migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import {
   disposeAllMessagingState,
   gcMessagingState,
@@ -38,7 +37,7 @@ import { disposeAllAINodes, gcAIState, resetAINodeDisposal } from './executors/a
 import { disposeAllMqttNodes, gcMqttState } from './executors/mqtt'
 import { disposeAllWebSocketNodes, gcWebSocketState } from './executors/websocket'
 import { disposeAllHttpNodes, gcHttpState } from './executors/http'
-import { disposeAllGamepadState, gcGamepadState } from './executors/gamepad'
+// gamepad state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
 import { disposeAllEmulationNodes, gcEmulationState } from './executors/emulation'
 import { disposeAllOpenCVNodes, gcOpenCVState, resetOpenCVNodeDisposal } from './executors/opencv'
 
@@ -323,9 +322,7 @@ export class ExecutionEngine {
         gcHttpState(validNodeIds)
         gcUtilityState(validNodeIds)
         gcSubflowState(validNodeIds)
-        gcSignalState(validNodeIds)
         gcMessagingState(validNodeIds)
-        gcGamepadState(validNodeIds)
         gcEmulationState(validNodeIds)
         gcOpenCVState(validNodeIds)
         // Clean up node metrics for deleted nodes
@@ -973,11 +970,9 @@ export class ExecutionEngine {
     disposeAllWebLLMState()
     disposeAllUtilityState()
     clearAllSubflowContexts()
-    disposeAllSignalState()
     disposeAllMqttNodes()
     disposeAllWebSocketNodes()
     disposeAllHttpNodes()
-    disposeAllGamepadState()
     disposeAllEmulationNodes()
     disposeAllOpenCVNodes()
     for (const l of this.lifecycles) l.disposeAll()

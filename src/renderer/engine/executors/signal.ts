@@ -2,11 +2,12 @@
  * Signal-processing executors — stateful, deltaTime-driven scalar utilities:
  * slew limiter, derivative, integral, and tween-to-target.
  *
- * All keep per-node state in one module Map and register a gc/dispose path
- * wired into ExecutionEngine (gcSignalState / disposeAllSignalState below),
- * mirroring the spring executor.
+ * All keep per-node state via `defineNodeState`, which auto-registers each
+ * store's gc/dispose path with the engine's generic lifecycle loop — no bespoke
+ * gc/disposeAll function to hand-wire.
  */
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
 
 interface SignalState {
   current: number // slew / tween running value
@@ -15,7 +16,7 @@ interface SignalState {
   sum: number // integral accumulator
 }
 
-const signalState = new Map<string, SignalState>()
+export const signalState = defineNodeState<SignalState>({ label: 'signal' })
 
 // Cap dt so a long frame (tab backgrounded, GC pause) can't blow up a rate.
 const MAX_DT = 1 / 15
@@ -121,7 +122,7 @@ interface TapState {
   lastHigh: boolean
   bpm: number
 }
-const tapState = new Map<string, TapState>()
+export const tapState = defineNodeState<TapState>({ label: 'tap-tempo' })
 const TAP_TIMEOUT = 2 // s — a gap longer than this restarts the tempo
 const MAX_TAPS = 6
 
@@ -165,18 +166,3 @@ export const tapTempoExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   ])
 }
 
-/** Drop signal state for nodes that no longer exist (per-node GC). */
-export function gcSignalState(validNodeIds: Set<string>): void {
-  for (const id of signalState.keys()) {
-    if (!validNodeIds.has(id)) signalState.delete(id)
-  }
-  for (const id of tapState.keys()) {
-    if (!validNodeIds.has(id)) tapState.delete(id)
-  }
-}
-
-/** Clear all signal state (engine stop / teardown). */
-export function disposeAllSignalState(): void {
-  signalState.clear()
-  tapState.clear()
-}

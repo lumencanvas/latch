@@ -5,8 +5,15 @@ import {
   derivativeExecutor,
   integralExecutor,
   tweenToTargetExecutor,
-  disposeAllSignalState,
+  signalState,
+  tapState,
 } from '@/engine/executors/signal'
+
+/** Reset both signal state stores between cases (replaces disposeAllSignalState). */
+const disposeAllSignalState = () => {
+  signalState.disposeAll()
+  tapState.disposeAll()
+}
 
 function ctx(
   nodeId: string,

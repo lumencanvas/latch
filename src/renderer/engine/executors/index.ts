@@ -35,7 +35,7 @@ import { stringExecutors } from './string'
 import { messagingExecutors } from './messaging'
 import { utilityExecutors, disposeUtilityNode, disposeAllUtilityState } from './utility'
 import { dataExecutors } from './data'
-import { gamepadExecutor, gamepadVisualExecutor, gcGamepadState, disposeAllGamepadState } from './gamepad'
+import { gamepadExecutor, gamepadVisualExecutor } from './gamepad'
 import { emulatorExecutor, gcEmulationState, disposeAllEmulationNodes } from './emulation'
 import { opencvExecutors } from './opencv'
 
@@ -46,9 +46,6 @@ export { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus 
 export { disposeMqttNode, disposeAllMqttNodes, gcMqttState }
 export { disposeWebSocketNode, disposeAllWebSocketNodes, gcWebSocketState }
 export { disposeHttpNode, disposeAllHttpNodes, gcHttpState }
-
-// Re-export gamepad executor state cleanup
-export { gcGamepadState, disposeAllGamepadState }
 
 // Re-export emulation executor state cleanup
 export { gcEmulationState, disposeAllEmulationNodes }
