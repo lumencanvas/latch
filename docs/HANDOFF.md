@@ -6,6 +6,55 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 16) — step A continued: runModelInference + AI executor migrations
+
+Built the shared `runModelInference()` helper (top of `engine/executors/ai.ts`) and
+migrated the AI executors whose shape fits it — discrete request→single-result
+inference. Every migration deletes the copied model-gate + preamble + the
+**silently-swallowed catch**, so an inference exception now surfaces on the public
+`error` port (→ node badge via A1), and declares the standardized
+`progress`/`done`/`error` ports. All authored Moheeb Zara, no AI attribution.
+
+**Helper contract.** `runModelInference(ctx, outputs, { task, infer, shouldRun,
+notLoadedMessage? }) → { result, state, started }`. Resolves the `model` control,
+gates on load, dedups in-flight ops via `pendingOperations`, latches loading/progress/
+done/error into `outputs`, returns the cached result for domain mapping. `started`
+lets interval/text-change executors update their throttle bookkeeping. Per §3 it now
+distinguishes a **downloading** model (spinner via `loading`, no error — the Q3
+transient) from a not-loaded one (needs-user-action error) — generalizing VLA's old
+bespoke logic to every node. State lives in the existing `nodeCache`/`pendingOperations`
+(keyed `${nodeId}:…`), so `disposeAINode`/`gcAIState` clean it up unchanged.
+
+**Migrated (8), one cluster-commit each:** `4c67ef4` text-generation (+ helper) · `fa18a06`
+image-classification + sentiment + image-captioning (+ `started`, + an `ImageData`
+polyfill in tests/setup for happy-dom) · `0a95293` VLA + feature-extraction + text2text
+(+ downloading-transient + `notLoadedMessage`; updated pre-existing vla.test.ts `_error`→
+`error`) · `c291d28` object-detection.
+
+**NOT migrated (don't fit the discrete-inference helper — documented in c291d28):**
+`object-detection-live`, `object-detection-yolo`, `depth-estimation` are continuous
+**texture-render** nodes (per-frame redraw into a held THREE.Texture; depth has no
+model-loaded gate). The 7 **MediaPipe** executors + **text-to-speech** use different
+services entirely. **STT** (speech-recognition) is real-time streaming audio with
+VAD/manual/continuous modes and stateful `fullText` accumulation — not a single result.
+ALL of these still benefit from A1's badge latch for their existing `_error` states; only
+their swallowed *inference* catches remain unsurfaced.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1708 → 1729** (+21, +4 test
+files) · build ok · boot→Play→Stop smoke 0 errors. Mutation-verified per cluster
+(error-latch, downloading-transient, input-error precedence) by hand-edit (never
+`git checkout`).
+
+**▶ NEXT (maintainer-gated).** (a) Optional: bespoke transcribe-error surfacing for STT
+(its §G swallowed catch) without the misfit helper — small, behavior-preserving. (b) The
+texture-render nodes' swallowed catches, if wanted, need a separate pattern. (c) A2's
+`model` select auto-population from the model registry (still empty placeholder) +
+co-locating an AI node through `defineNode({models})` end-to-end (needs version bump +
+migrate for the new control). (d) The model-derive (MODEL_REGISTRY 5 decisions) and
+connection-security 2–6 remain sign-off-gated.
+
+---
+
 ## 2026-06-30 (later 15) — Phase 2 committed + step A (auto AI loading/error outputs) A1+A2-core
 
 **Committed the whole Phase-2 changeset** (was dirty across sessions 10–14) as a dependency-ordered
