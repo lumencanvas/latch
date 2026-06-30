@@ -6,6 +6,36 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 10) — Audit checkpoint: Phase 1 verified COMPLETE (no code change)
+
+Stepped back to adversarially audit the `(later 9)` heavy-tier migration + `_`-split fix. **All checks
+pass; Phase 1 is complete** (modulo `subflow`, deferred to Phase 7). No code changed this entry.
+
+**Critical check — is the migration genuinely wired, or silently leaking?** A `defineLifecycle`-wrap
+removes the explicit engine `disposeAll*` call and relies on the generic loop; a smoke test catches a
+*throwing* teardown but NOT a *missing-but-silent* one. Confirmed the production path: `useExecutionEngine.ts:26`
+calls `engine.registerLifecycles(collectedLifecycles())` with the **live array by reference**, so every
+self-registered lifecycle (incl. visual/3d/connectivity/clasp) is genuinely drained by the engine's
+gc/disposeAll/onStart loops. Wired, not leaking. ✓
+
+**Other audit results:**
+- **Only `subflow` remains hand-wired** in `ExecutionEngine` (`gcSubflowState` + `clearAllSubflowContexts`);
+  every other category is on the generic loop. ✓
+- **Audio `_`-split fix — suffix set is COMPLETE.** Full re-grep of every `audioNodes`/`getOrCreateNode`
+  key: bare id + exactly `_{input,fft,gain,meter,output}`; the multiline comp/dist/crusher calls use the
+  bare id. `audioNodeBaseId`'s regex covers all five. ✓
+- **Node ids are 21-char `nanoid()`** (`flows.ts`), fixed-length → `shaderCacheKeyOwned`'s `${id}_` prefix
+  match is unambiguous; and the fix degrades gracefully (worst case a rare false-keep, never the old
+  false-DELETE of live state). ✓
+- **Both GC helpers mutation-verified** — reverting either to the old `split('_')[0]` reds the regression
+  test (audio: 3 cases; visual: 3 cases, incl. the bare-id-with-underscore case the old code also broke). ✓
+
+**State:** typecheck clean · lint 0 err · `test:unit` 1682 + 11 todo · build ok · tree clean. **Phase 1
+DONE; next is Phase 2** (register-once subsystems — `defineProtocol`/`defineModel`/connection security).
+See `docs/handoff/NEXT_SESSION_KICKOFF.md` for the Phase-2 entry.
+
+---
+
 ## 2026-06-29 (later 9) — Heavy-tier migration FINISHED (22/23) + `_`-split GC bug fixed
 
 Branch **`phase0-file-format`** (continuing). Completed the leak-class kill: the 4 remaining heavy
