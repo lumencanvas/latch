@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 9) — Heavy-tier migration FINISHED (22/23) + `_`-split GC bug fixed
+
+Branch **`phase0-file-format`** (continuing). Completed the leak-class kill: the 4 remaining heavy
+categories converted, and the latent `_`-split GC bug fixed. **Phase 1 is now ~95% — only `subflow`
+(deferred to Phase 7) is still engine-hand-wired.** Three commits, each verified + in-app smoke'd.
+
+**(1) `780e46b` — visual/3d/connectivity/clasp → `defineLifecycle`** (the last 4 hand-wired categories).
+Each self-registers its UNCHANGED `gc`/`disposeAll` (behavior-identical wrap, no marker/onStart needed —
+none have asymmetric teardown). `ExecutionEngine` now hand-wires **only `subflow`** (+ node-metrics)
+alongside the generic gc/disposeAll loops; removed 4 imports + 4 gc calls + 4 disposeAll calls + the stale
+comment block. `engine-leak.test`'s self-registration guard now asserts all **8** heavy-tier labels.
+State-group migration: **18/23 → 22/23.**
+
+**(2) `04e2cd0` — fix GC disposing LIVE audio/visual state for underscore node ids**
+(the [[latch-nanoid-underscore-split]] latent bug, now RESOLVED). `gcAudioState`/`gcVisualState` derived
+the owning id via `key.split('_')[0]`, but ~26% of nanoid ids contain `_` → live node truncated → its
+Tone graph / compiled shader material disposed on ANY unrelated node removal (self-healed next frame, but
+glitched). Fix: `audioNodeBaseId()` strips the complete known suffix set (meter/gain/input/fft/output);
+`shaderCacheKeyOwned()` keeps a key when a valid id owns it (exact or `${id}_` prefix, mirroring
+`disposeVisualNode`). New regression test (7 cases, mutation-verified). Other gc maps keyed on the bare id
+— unaffected.
+
+**Verification.** typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **1675 → 1682**
+(+7 regression) · build ok. In-app smoke (Playwright + system Chrome, boot→Play→4s→Stop): **0 real console
+errors** after both the conversions and the GC fix; screenshot confirms 3D/scope/EQ/webcam/output render
+identically to the pre-change baseline. Smoke recipe + reusable `smoke.mjs`: [[latch-smoke-test-harness]].
+
+**Phase-1 status now:** de-monolith split DONE · all 4 CI gates DONE (incl. export gate) · heavy-tier
+migration **22/23** (only `subflow` deferred) · `_`-split bug RESOLVED. **Remaining for Phase 1 close-out:**
+`subflow` migration is intentionally deferred to its Phase-7 rebuild — so Phase 1 is effectively complete
+pending that decision. A *later* refinement pass could convert the `defineLifecycle`-wrapped categories
+into per-map `defineNodeState` stores for intra-category leak-safety (touches teardown; wants in-app
+worker/GPU verification) — optional, not blocking.
+
+---
+
 ## 2026-06-29 (later 8) — De-monolith split FINISHED (`executors/index.ts` 1482 → 241 lines)
 
 Branch **`phase0-file-format`** (continuing). Completed Phase-1 deliverable (4): the remaining inline
