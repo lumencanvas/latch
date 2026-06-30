@@ -18,7 +18,7 @@
  */
 
 import type { Component } from 'vue'
-import type { NodeDefinition } from '@/stores/nodes'
+import type { NodeDefinition, PortDefinition, ControlDefinition } from '@/stores/nodes'
 import type { NodeExecutorFn } from './ExecutionEngine'
 import type { NodeRequirement } from '@/utils/platform'
 import type { NodeConnectionRequirement } from '@/services/connections/types'
@@ -48,9 +48,67 @@ export interface NodeSpec {
 }
 
 /**
- * Identity function that brands a `NodeSpec`. Exists for inference + a single,
- * stable authoring surface (so every node folder exports the same shape).
+ * The standardized outputs every model-backed node gets, in this fixed canonical
+ * order. Appended by the `models` derivation, but only for ids the author hasn't
+ * already declared — so a node hand-rolling `loading`/`done` (the historical AI
+ * shape) is not duplicated. Order is stable so the derived port array is
+ * deterministic across rebuilds and saved-flow edges re-attach by id.
+ *
+ * `error` is a public, wireable port (the read-side latch in ExecutionEngine
+ * surfaces it on the node badge); `_error` stays the internal-only channel for
+ * non-model nodes.
+ */
+const MODEL_OUTPUT_PORTS: readonly PortDefinition[] = [
+  { id: 'loading', type: 'boolean', label: 'Loading' },
+  { id: 'progress', type: 'number', label: 'Progress' },
+  { id: 'done', type: 'trigger', label: 'Done' },
+  { id: 'error', type: 'string', label: 'Error' },
+]
+
+/**
+ * Derive the standardized model UI from a node's `models` declaration: append the
+ * loading/progress/done/error outputs and (when some task is `selectable`) a
+ * `model` select. Pure and idempotent — re-running it on its own output is a
+ * no-op, since every append is guarded on the id already being present. Options
+ * for the `model` select are populated from the model registry at a later phase;
+ * the derived control carries an empty placeholder for now.
+ */
+function deriveModelDefinition(
+  def: NodeDefinition,
+  models: readonly ModelRequirement[],
+): NodeDefinition {
+  const existingOutputs = new Set(def.outputs.map((p) => p.id))
+  const outputs: PortDefinition[] = [
+    ...def.outputs,
+    ...MODEL_OUTPUT_PORTS.filter((p) => !existingOutputs.has(p.id)),
+  ]
+
+  const wantsSelect = models.some((m) => m.selectable !== false)
+  const hasModelControl = def.controls.some((c) => c.id === 'model')
+  let controls = def.controls
+  if (wantsSelect && !hasModelControl) {
+    const modelControl: ControlDefinition = {
+      id: 'model',
+      type: 'select',
+      label: 'Model',
+      // Resolves to the task default at runtime; options come from the model
+      // registry once catalogs are authored (inert today).
+      default: '',
+      props: { options: [] },
+    }
+    controls = [...def.controls, modelControl]
+  }
+
+  return { ...def, outputs, controls }
+}
+
+/**
+ * Brand a `NodeSpec` and apply the `models` derivation. A strict no-op (returns
+ * the spec object unchanged) unless `models` is non-empty, so the entire non-AI
+ * node library is byte-identical to before. Every authored node flows through
+ * here, which is why the derivation lives at this single authoring surface.
  */
 export function defineNode(spec: NodeSpec): NodeSpec {
-  return spec
+  if (!spec.models?.length) return spec
+  return { ...spec, definition: deriveModelDefinition(spec.definition, spec.models) }
 }
