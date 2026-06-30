@@ -15,6 +15,9 @@ export const textGenerationNode: NodeDefinition = {
   outputs: [
     { id: 'text', type: 'string', label: 'Generated Text' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'progress', type: 'number', label: 'Progress' },
+    { id: 'done', type: 'trigger', label: 'Done' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     { id: 'prompt', type: 'text', label: 'Prompt', default: 'Once upon a time' },

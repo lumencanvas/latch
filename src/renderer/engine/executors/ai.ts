@@ -63,6 +63,100 @@ function hasTriggerValue(trigger: unknown): boolean {
   return trigger !== undefined && trigger !== null && trigger !== false && trigger !== 0 && trigger !== ''
 }
 
+/** Coarse lifecycle state of a model-backed node, for callers that branch on it. */
+type InferenceState = 'not-loaded' | 'idle' | 'running' | 'ready'
+
+interface InferenceOutcome<T> {
+  /** Latest successful result, cached across frames (undefined until the first run). */
+  result: T | undefined
+  state: InferenceState
+}
+
+/**
+ * Shared inference lifecycle for model-backed AI executors (the §8 `runModelInference`).
+ *
+ * Resolves the node's selected `model` control, gates on the model being loaded,
+ * runs `infer` as a per-node deduped async op (via `pendingOperations`), and latches
+ * the standardized `loading`/`progress`/`done`/`error` outputs into `outputs`. Returns
+ * the latest cached result for the caller to map onto its domain output ports.
+ *
+ * This replaces the ~50-line preamble each AI executor copied — and crucially the
+ * silently-swallowed `catch` (it only `console.error`'d): an inference exception now
+ * surfaces on the public `error` output, which the engine routes to the node badge.
+ *
+ * State is held in the existing module-level `nodeCache`/`pendingOperations` keyed by
+ * `${nodeId}:…`, so the existing `disposeAINode`/`gcAIState` cleanup covers it with no
+ * new teardown path. `done` is a one-frame rising edge after a successful resolve.
+ * Transient/connecting states are NOT this function's concern — those belong on
+ * `loading`, never `error` (a model that needs loading is a user-action error, kept).
+ */
+function runModelInference<T>(
+  ctx: ExecutionContext,
+  outputs: Map<string, unknown>,
+  opts: { task: string; infer: (modelId: string | undefined) => Promise<T>; shouldRun: boolean },
+): InferenceOutcome<T> {
+  const nodeId = ctx.nodeId
+  const modelId = ctx.controls.get('model') as string | undefined
+  const resultKey = `${nodeId}:lastResult`
+  const errorKey = `${nodeId}:lastError`
+  const doneKey = `${nodeId}:done`
+  const result = getCached<T | undefined>(resultKey, undefined)
+
+  // Write the standardized ports. `error` is '' (not absent) when clear so the badge
+  // latch clears; `done` is read-once so it pulses for a single frame.
+  const emit = (loading: boolean, error: string | null) => {
+    outputs.set('loading', loading)
+    outputs.set('progress', aiInference.getModelInfo(opts.task, modelId)?.progress ?? 0)
+    const done = getCached(doneKey, false)
+    if (done) setCached(doneKey, false)
+    outputs.set('done', done)
+    outputs.set('error', error ?? '')
+  }
+
+  // Model must be pre-loaded via the AI Model Manager — a needs-user-action error
+  // (matches the prior `_error` behavior), not a transient.
+  if (!aiInference.isModelLoaded(opts.task, modelId)) {
+    emit(false, 'Model not loaded. Open AI Model Manager to load.')
+    return { result, state: 'not-loaded' }
+  }
+
+  // An op is already in flight: hold `loading` until it resolves (no new op).
+  if (pendingOperations.has(nodeId)) {
+    emit(true, null)
+    return { result, state: 'running' }
+  }
+
+  // Nothing to run this frame: reflect the last latched error (if any) and idle.
+  if (!opts.shouldRun) {
+    emit(false, getCached<string | null>(errorKey, null))
+    return { result, state: result !== undefined ? 'ready' : 'idle' }
+  }
+
+  // Kick off a fresh tracked inference. result/error/done land in cache and are read
+  // on subsequent frames (the executor runs every frame). The disposed guard prevents
+  // a late resolve from writing stale state after the node is gone.
+  const operation = (async () => {
+    try {
+      const value = await opts.infer(modelId)
+      if (isNodeDisposed(nodeId)) return
+      setCached(resultKey, value)
+      setCached(errorKey, null)
+      setCached(doneKey, true)
+    } catch (err) {
+      if (isNodeDisposed(nodeId)) return
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[AI Executor] ${opts.task} error:`, err)
+      setCached(errorKey, message)
+    } finally {
+      pendingOperations.delete(nodeId)
+    }
+  })()
+  pendingOperations.set(nodeId, operation)
+
+  emit(true, null)
+  return { result, state: 'running' }
+}
+
 // ============================================================================
 // Image Input Type Conversion
 // ============================================================================
@@ -283,63 +377,23 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
     prompt = (ctx.controls.get('prompt') as string) ?? ''
   }
 
-  // Check if model is loaded
-  const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('text-generation', modelId)
-
-  if (!isLoaded) {
-    outputs.set('text', getCached(`${ctx.nodeId}:lastOutput`, ''))
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
-  }
-
-  // Only run on explicit trigger
-  if (!hasTriggerValue(trigger)) {
-    outputs.set('text', getCached(`${ctx.nodeId}:lastOutput`, ''))
-    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
-    return outputs
-  }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('text', getCached(`${ctx.nodeId}:lastOutput`, ''))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  if (!prompt.trim()) {
-    outputs.set('text', '')
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Start async generation - runs in web worker, non-blocking
-  setCached(`${ctx.nodeId}:loading`, true)
-
   const maxTokens = (ctx.controls.get('maxTokens') as number) ?? 50
   const temperature = (ctx.controls.get('temperature') as number) ?? 0.7
 
-  const operation = (async () => {
-    try {
-      const result = await aiInference.generateText(prompt, {
-        maxLength: maxTokens,
-        temperature,
-      }, modelId)
-      setCached(`${ctx.nodeId}:lastOutput`, result)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI Executor] Text generation error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Generate only on an explicit trigger carrying a non-empty prompt; the shared
+  // helper owns the model-loaded gate, the in-flight dedup, and the loading/progress/
+  // done/error latching (previously open-coded here, with the error swallowed).
+  const triggered = hasTriggerValue(trigger)
+  const shouldRun = triggered && !!prompt.trim()
+  const { result } = runModelInference<string>(ctx, outputs, {
+    task: 'text-generation',
+    shouldRun,
+    infer: (modelId) => aiInference.generateText(prompt, { maxLength: maxTokens, temperature }, modelId),
+  })
 
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('text', getCached(`${ctx.nodeId}:lastOutput`, ''))
-  outputs.set('loading', true)
+  // Preserve prior behavior: an explicit empty-prompt trigger clears the text;
+  // otherwise serve the latest generation.
+  outputs.set('text', triggered && !prompt.trim() ? '' : (result ?? ''))
   return outputs
 }
 
