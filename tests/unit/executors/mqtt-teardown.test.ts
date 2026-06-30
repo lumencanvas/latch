@@ -31,23 +31,27 @@ vi.mock('@/stores/connections', () => {
   return { useConnectionsStore: () => store }
 })
 
-import { mqttExecutor, disposeAllMqttNodes, gcMqttState } from '@/engine/executors/mqtt'
+import { mqttExecutor, disposeAllMqttNodes, gcMqttState, nodeSubscriptions } from '@/engine/executors/mqtt'
 import { useConnectionsStore } from '@/stores/connections'
+import { createExecutionContext } from '@/engine/ExecutionEngine'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const adapter = (useConnectionsStore() as any).__adapter
 
+// Build the context through the real factory so `ctx.connection()` resolves the mocked
+// store → mocked adapter → no-secret MqttHandle (exercises the step-6b wiring end to end).
 function frame(nodeId: string, topic: string): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
-    nodeType: 'mqtt',
     inputs: new Map(),
     controls: new Map<string, unknown>([['connectionId', 'conn-1'], ['topic', topic], ['qos', 0]]),
-    totalTime: 0,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    definition: { inputs: [], outputs: [], controls: [] } as any,
     deltaTime: 16,
-    frame: 0,
-  } as unknown as ExecutionContext
+    totalTime: 0,
+    frameCount: 0,
+  })
 }
 
 describe('MQTT subscription teardown', () => {
@@ -92,5 +96,6 @@ describe('MQTT subscription teardown', () => {
 
     expect(unsubs[0]).toHaveBeenCalledTimes(1)
     expect(adapter.unsubscribe).toHaveBeenCalledWith('topic/a')
+    expect(nodeSubscriptions.size).toBe(0) // no residual subscription left behind
   })
 })

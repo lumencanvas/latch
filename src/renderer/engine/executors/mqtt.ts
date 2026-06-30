@@ -6,8 +6,7 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
-import { useConnectionsStore } from '@/stores/connections'
-import type { MqttAdapterImpl } from '@/services/connections/adapters/MqttAdapter'
+import type { MqttHandle } from '@/services/connections/ConnectionHandle'
 import { defineNodeState } from '../nodeState'
 
 // State cache for subscribed values per node. Auto-gc'd via the generic lifecycle loop.
@@ -17,74 +16,26 @@ export const mqttState = defineNodeState<{
 }>({ label: 'mqtt' })
 
 // Active subscription per node. The dispose callback is the FULL teardown — release the
-// message listener AND unsubscribe the adapter from the topic (matching the old
+// message listener AND unsubscribe the broker from the topic (matching the old
 // disposeMqttNode) — so engine gc / stop() / the topic-cleared .delete() all run it.
+// `releaseTopic` is the handle.unsubscribe(topic) closure captured at subscribe time,
+// so teardown needs no live ctx / adapter re-lookup.
 export const nodeSubscriptions = defineNodeState<{
   connectionId: string
   topic: string
   unsubscribe: () => void
+  releaseTopic: () => void
 }>({
   label: 'mqtt-subscriptions',
   dispose: (sub) => {
     sub.unsubscribe()
     try {
-      getMqttAdapter(sub.connectionId)?.unsubscribe(sub.topic)
+      sub.releaseTopic()
     } catch {
       // Ignore errors during cleanup
     }
   },
 })
-
-/**
- * Get MQTT adapter from ConnectionManager
- */
-function getMqttAdapter(connectionId: string): MqttAdapterImpl | null {
-  if (!connectionId) return null
-
-  try {
-    const connectionsStore = useConnectionsStore()
-    const adapter = connectionsStore.getAdapter(connectionId)
-
-    if (adapter && adapter.protocol === 'mqtt') {
-      return adapter as MqttAdapterImpl
-    }
-  } catch (e) {
-    console.warn('[MQTT] Could not get adapter:', e)
-  }
-
-  return null
-}
-
-// Throttle auto-connect attempts per connection so a persistently-failing
-// connection isn't re-dialed every frame (~60×/s). Reset on success.
-const lastConnectAttempt = new Map<string, number>()
-const RECONNECT_THROTTLE_MS = 2000
-
-/**
- * Ensure connection is established
- */
-async function ensureConnected(connectionId: string): Promise<MqttAdapterImpl | null> {
-  const adapter = getMqttAdapter(connectionId)
-  if (!adapter) return null
-
-  if (adapter.status !== 'connected') {
-    const now = Date.now()
-    if (now - (lastConnectAttempt.get(connectionId) ?? 0) >= RECONNECT_THROTTLE_MS) {
-      lastConnectAttempt.set(connectionId, now)
-      try {
-        const connectionsStore = useConnectionsStore()
-        await connectionsStore.connect(connectionId)
-      } catch (e) {
-        console.warn('[MQTT] Auto-connect failed:', e)
-        return null
-      }
-    }
-  } else {
-    lastConnectAttempt.delete(connectionId)
-  }
-
-  return adapter
-}
 
 /**
  * MQTT Node Executor
@@ -113,10 +64,11 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Get adapter
-  const adapter = await ensureConnected(connectionId)
+  // Resolve the no-secret MQTT handle (broker holds the credential); auto-connects
+  // with a shared throttle. Null when the connection is unavailable or not MQTT.
+  const conn = ctx.connection<MqttHandle>({ protocol: 'mqtt' })
 
-  if (!adapter) {
+  if (!conn) {
     outputs.set('message', state.lastMessage)
     outputs.set('topic', state.lastTopic)
     outputs.set('connected', false)
@@ -124,7 +76,7 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const isConnected = adapter.status === 'connected'
+  const isConnected = conn.status === 'connected'
 
   if (!isConnected) {
     outputs.set('message', state.lastMessage)
@@ -138,19 +90,19 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const existingSub = nodeSubscriptions.get(ctx.nodeId)
 
   if (topic && (!existingSub || existingSub.connectionId !== connectionId || existingSub.topic !== topic)) {
-    // Release only the old message listener — the adapter subscription is replaced by
-    // subscribe() below, so we deliberately do NOT adapter.unsubscribe here (preserves
+    // Release only the old message listener — the broker subscription is replaced by
+    // subscribe() below, so we deliberately do NOT unsubscribe the topic here (preserves
     // the original rewire behavior). NOT .delete(): that would run the full-teardown
-    // dispose (adapter.unsubscribe too); the .set() below overwrites the stale entry.
+    // dispose (releaseTopic too); the .set() below overwrites the stale entry.
     if (existingSub) {
       existingSub.unsubscribe()
     }
 
     // Subscribe to new topic
-    adapter.subscribe(topic, qos)
+    conn.subscribe(topic, qos)
 
     // Set up message listener
-    const unsubscribe = adapter.onMessage((message) => {
+    const unsubscribe = conn.onMessage((message) => {
       if (message.topic === topic || (topic.includes('#') || topic.includes('+'))) {
         // For wildcard topics, check if the message matches the pattern
         const matches = matchMqttTopic(topic, message.topic ?? '')
@@ -164,12 +116,16 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       }
     })
 
-    nodeSubscriptions.set(ctx.nodeId, { connectionId, topic, unsubscribe })
+    // Capture the topic-release so teardown (gc / stop / topic-clear) can unsubscribe
+    // the broker without a live ctx — the handle forwards to the broker-held adapter.
+    const releaseTopic = () => conn.unsubscribe(topic)
+
+    nodeSubscriptions.set(ctx.nodeId, { connectionId, topic, unsubscribe, releaseTopic })
   }
 
   // Handle unsubscribe when topic is cleared — full teardown via the dispose callback
-  // (.delete() runs unsubscribe + adapter.unsubscribe for the subscription's own
-  // connection, consistent with node-removal teardown).
+  // (.delete() runs unsubscribe + releaseTopic for the subscription's own connection,
+  // consistent with node-removal teardown).
   if (!topic && existingSub) {
     nodeSubscriptions.delete(ctx.nodeId)
   }
@@ -177,7 +133,7 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   // Publish message when triggered
   if (trigger && publishData !== undefined && topic && isConnected) {
     try {
-      adapter.publish(topic, publishData, { qos })
+      conn.publish(topic, publishData, { qos })
     } catch (e) {
       console.error('[MQTT] Publish error:', e)
     }
@@ -224,10 +180,10 @@ function matchMqttTopic(pattern: string, topic: string): boolean {
 }
 
 // The engine drains both stores through its generic lifecycle loop (the
-// `nodeSubscriptions` dispose callback does the full unsubscribe + adapter.unsubscribe);
+// `nodeSubscriptions` dispose callback does the full unsubscribe + releaseTopic);
 // the helpers below are thin store-backed wrappers kept for tests + the index re-export.
 
-/** Dispose one MQTT node's subscription (unsubscribe + adapter.unsubscribe) + cache. */
+/** Dispose one MQTT node's subscription (unsubscribe + broker releaseTopic) + cache. */
 export function disposeMqttNode(nodeId: string): void {
   nodeSubscriptions.delete(nodeId) // dispose callback does the full teardown
   mqttState.delete(nodeId)
