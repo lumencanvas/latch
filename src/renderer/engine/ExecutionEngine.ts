@@ -4,24 +4,12 @@ import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { risingEdge, isHigh } from './trigger'
 import type { LifecycleHooks } from './nodeState'
-// audio state self-registers via defineLifecycle (ordering-sensitive Tone teardown) — generic loop.
-import { disposeAllVisualNodes, gcVisualState } from './executors/visual'
-// Migrated to defineNodeState (cleaned up via the generic lifecycle loop below):
-// utility, spring, signal, gamepad, code, RAG, input, timing, debug, and WebLLM
-// (its webLLMService side effects via defineLifecycle).
+// Every stateful executor category now self-registers its cleanup with the engine's
+// generic lifecycle loop — via defineNodeState (auto gc/dispose) or defineLifecycle
+// (audio, visual, 3d, connectivity, clasp, ai, opencv, emulation, webllm: ordering-
+// sensitive / marker / asymmetric teardown, wrapped behavior-identically). The engine
+// hand-wires no category except subflow, which is deferred to its Phase-7 rebuild.
 import { clearAllSubflowContexts, gcSubflowState } from './executors/subflow'
-// messaging + code state are migrated to defineNodeState/defineLifecycle — generic lifecycle loop.
-import { gc3DState, disposeAll3DNodes } from './executors/3d'
-import { disposeAllConnectivityNodes, gcConnectivityState } from './executors/connectivity'
-import { disposeAllClaspConnections, gcClaspState } from './executors/clasp'
-// ai state self-registers via defineLifecycle (asymmetric marker Set + onStart reset) — generic loop.
-// mqtt/websocket/http executors override the legacy connectivity ones for those
-// node types, so their per-node state (live WebSockets, fetch caches) needs its
-// own GC + teardown — gcConnectivityState only covers OSC/Serial/MIDI/BLE.
-// mqtt + websocket state migrated to defineNodeState — drained via the generic lifecycle loop.
-// http cache state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
-// gamepad state is migrated to defineNodeState — cleaned up via the generic lifecycle loop.
-// emulation state self-registers via defineLifecycle (asymmetric gc/disposeAll) — generic loop.
 // opencv state self-registers via defineLifecycle (asymmetric marker Set + onStart reset) — generic loop.
 
 /**
@@ -287,15 +275,13 @@ export class ExecutionEngine {
       const hasRemovedNodes = [...previousNodeIds].some(id => !validNodeIds.has(id))
 
       if (hasRemovedNodes) {
-        // Run garbage collection for orphaned state
-        gcVisualState(validNodeIds)
-        gc3DState(validNodeIds)
-        gcConnectivityState(validNodeIds)
-        gcClaspState(validNodeIds)
+        // Run garbage collection for orphaned state. subflow is the last hand-wired
+        // category (deferred to Phase 7); every other category is drained by the
+        // generic lifecycle loop below.
         gcSubflowState(validNodeIds)
         // Clean up node metrics for deleted nodes
         this.runtimeStore.gcNodeMetrics(validNodeIds)
-        // Generic defineNodeState cleanup (additive to the legacy gc* calls above).
+        // Generic defineNodeState / defineLifecycle cleanup.
         for (const l of this.lifecycles) l.gc(validNodeIds)
         // Drop dirty-mode / async tracking for removed nodes
         for (const id of this.prevControlSnapshots.keys()) {
@@ -917,11 +903,10 @@ export class ExecutionEngine {
     this.pendingAsyncChange.clear()
     this.frameCount = 0
 
-    // Clean up all executor state to prevent memory leaks and stop audio
-    disposeAllVisualNodes()
-    disposeAll3DNodes()
-    disposeAllConnectivityNodes()
-    disposeAllClaspConnections()
+    // Clean up all executor state to prevent memory leaks and stop audio. subflow is
+    // the last hand-wired category (deferred to Phase 7); everything else (audio,
+    // visual, 3d, connectivity, clasp, ai, opencv, emulation, webllm, and every
+    // defineNodeState store) is disposed by the generic lifecycle loop.
     clearAllSubflowContexts()
     for (const l of this.lifecycles) l.disposeAll()
   }

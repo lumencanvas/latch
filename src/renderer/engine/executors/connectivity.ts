@@ -8,6 +8,7 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { BleAdapter, type BleDataFormat, type BleServiceInfo } from '@/services/connections/adapters/BleAdapter'
 import { parseCharacteristicValue, getServiceName, getCharacteristicName } from '@/services/ble/BleProfileRegistry'
 
@@ -1872,3 +1873,13 @@ export const connectivityExecutors: Record<string, NodeExecutorFn> = {
   'ble-device': bleDeviceExecutor,
   'ble-characteristic': bleCharacteristicExecutor,
 }
+
+// Connectivity state cleanup self-registers with the engine's generic lifecycle loop
+// (was hand-wired as gcConnectivityState / disposeAllConnectivityNodes calls in
+// ExecutionEngine). defineLifecycle-wrap: the OSC/Serial/MIDI/BLE/legacy-WS teardown
+// (handler-nulling + close) is unchanged, only invoked generically.
+defineLifecycle({
+  label: 'connectivity',
+  gc: gcConnectivityState,
+  disposeAll: disposeAllConnectivityNodes,
+})

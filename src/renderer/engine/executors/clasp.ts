@@ -21,6 +21,7 @@
 import { Clasp, ClaspBuilder, type Value } from '@clasp-to/core'
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { useConnectionsStore } from '@/stores/connections'
 import type { ClaspConnectionConfig } from '@/services/connections/types'
 import {
@@ -1602,3 +1603,14 @@ export const claspExecutors: Record<string, NodeExecutorFn> = {
   'clasp-video-send': claspVideoSendExecutor,
   'clasp-gesture': claspGestureExecutor,
 }
+
+// CLASP state cleanup self-registers with the engine's generic lifecycle loop
+// (was hand-wired as gcClaspState / disposeAllClaspConnections calls in
+// ExecutionEngine). defineLifecycle-wrap: the connection + video/gesture media
+// teardown is unchanged, only invoked generically. disposeClaspNode /
+// getClaspConnectionStatus stay exported for external/engine use.
+defineLifecycle({
+  label: 'clasp',
+  gc: gcClaspState,
+  disposeAll: disposeAllClaspConnections,
+})

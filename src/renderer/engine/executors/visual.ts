@@ -7,6 +7,7 @@
 
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import {
   getThreeShaderRenderer,
   type CompiledShaderMaterial,
@@ -2140,3 +2141,14 @@ export const visualExecutors: Record<string, NodeExecutorFn> = {
   'image-loader': imageLoaderExecutor,
   'video-player': videoPlayerExecutor,
 }
+
+// Visual state cleanup self-registers with the engine's generic lifecycle loop
+// (was hand-wired as gcVisualState / disposeAllVisualNodes calls in ExecutionEngine).
+// defineLifecycle-wrap, NOT defineNodeState: the WebGL/texture/video teardown spans
+// many module-level maps with their own dispose order; the cleanup logic is unchanged,
+// only WHERE it is invoked (explicit engine calls → generic loop, same timing).
+defineLifecycle({
+  label: 'visual',
+  gc: gcVisualState,
+  disposeAll: disposeAllVisualNodes,
+})

@@ -5,6 +5,7 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineLifecycle } from '../nodeState'
 import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
 
 // Store for managing 3D objects per node
@@ -1088,3 +1089,13 @@ export const threeExecutors: Record<string, NodeExecutorFn> = {
   // Advanced
   'gltf-loader': gltfLoader3DExecutor,
 }
+
+// 3D state cleanup self-registers with the engine's generic lifecycle loop
+// (was hand-wired as gc3DState / disposeAll3DNodes calls in ExecutionEngine).
+// defineLifecycle-wrap: the Three.js scene/geometry/texture teardown is unchanged,
+// only invoked generically instead of by an explicit engine call.
+defineLifecycle({
+  label: '3d',
+  gc: gc3DState,
+  disposeAll: disposeAll3DNodes,
+})

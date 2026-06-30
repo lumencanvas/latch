@@ -118,8 +118,8 @@ describe('engine leak gate', () => {
   })
 
   it('mocks canvas.getContext(2d) for headless visual-gc paths', () => {
-    // Prerequisite for exercising the still-hand-wired gcVisualState (heavy tier) once
-    // visual is converted — happy-dom leaves getContext undefined. See tests/setup.ts.
+    // Prerequisite for exercising gcVisualState, which now runs in the engine's generic
+    // lifecycle loop (visual converted) — happy-dom leaves getContext undefined. See tests/setup.ts.
     const ctx = document.createElement('canvas').getContext('2d')
     expect(ctx).not.toBeNull()
     expect(() => (ctx as CanvasRenderingContext2D).save()).not.toThrow()
@@ -261,14 +261,15 @@ describe('engine leak gate', () => {
     expect(nodeSubscriptions.size).toBe(0)
   })
 
-  it('defineLifecycle categories self-register their cleanup (opencv, ai, emulation, audio)', () => {
+  it('defineLifecycle categories self-register their cleanup (heavy tier)', () => {
     // These don't fit defineNodeState — marker Sets that survive gc and clear only
-    // onStart (opencv/ai), an asymmetric keep-on-stop map (emulation), or an
-    // ordering-sensitive multi-map Tone teardown (audio). They self-register their
-    // existing functions so the engine's generic loop drives them. Guard that the
-    // registration is present and fully wired (the engine drains gc/disposeAll/onStart
-    // generically — see ExecutionEngine.test.ts's lifecycle spy).
-    for (const label of ['opencv', 'ai', 'emulation', 'audio']) {
+    // onStart (opencv/ai), an asymmetric keep-on-stop map (emulation), an ordering-
+    // sensitive multi-map Tone teardown (audio), or multi-map WebGL/media/connection
+    // teardown (visual/3d/connectivity/clasp). They self-register their existing
+    // functions so the engine's generic loop drives them. Guard that the registration
+    // is present and fully wired (the engine drains gc/disposeAll/onStart generically —
+    // see ExecutionEngine.test.ts's lifecycle spy).
+    for (const label of ['opencv', 'ai', 'emulation', 'audio', 'visual', '3d', 'connectivity', 'clasp']) {
       const hook = collectedLifecycles().find((l) => l.label === label)
       expect(hook, `${label} lifecycle not registered`).toBeDefined()
       expect(typeof hook!.gc).toBe('function')
