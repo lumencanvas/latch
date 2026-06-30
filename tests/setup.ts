@@ -34,6 +34,31 @@ if (typeof Worker === 'undefined') {
   (globalThis as unknown as { Worker: typeof MockWorker }).Worker = MockWorker
 }
 
+// Mock ImageData — happy-dom does not provide the browser global, but the AI image
+// executors' `convertToImageData` guards on `input instanceof ImageData` (and may
+// construct one). Without this, any code path touching that guard throws
+// ReferenceError in headless tests. Real-browser behavior is unaffected.
+if (typeof globalThis.ImageData === 'undefined') {
+  class MockImageData {
+    data: Uint8ClampedArray
+    width: number
+    height: number
+    constructor(dataOrWidth: Uint8ClampedArray | number, widthOrHeight: number, height?: number) {
+      if (typeof dataOrWidth === 'number') {
+        this.width = dataOrWidth
+        this.height = widthOrHeight
+        this.data = new Uint8ClampedArray(this.width * this.height * 4)
+      } else {
+        this.data = dataOrWidth
+        this.width = widthOrHeight
+        this.height = height ?? 0
+      }
+    }
+  }
+  (globalThis as unknown as { ImageData: typeof ImageData }).ImageData =
+    MockImageData as unknown as typeof ImageData
+}
+
 // Mock HTMLCanvasElement.getContext — happy-dom does not implement it (the method
 // is undefined and throws when called). The engine's still-hand-wired gcVisualState
 // and the canvas-backed visual seeding paths call getContext('2d'); without this they

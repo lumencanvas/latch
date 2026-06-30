@@ -70,6 +70,9 @@ interface InferenceOutcome<T> {
   /** Latest successful result, cached across frames (undefined until the first run). */
   result: T | undefined
   state: InferenceState
+  /** True only on the frame a fresh inference op was kicked off — lets interval/
+   *  change-gated executors update their own throttle bookkeeping (lastFrame/lastText). */
+  started: boolean
 }
 
 /**
@@ -117,19 +120,19 @@ function runModelInference<T>(
   // (matches the prior `_error` behavior), not a transient.
   if (!aiInference.isModelLoaded(opts.task, modelId)) {
     emit(false, 'Model not loaded. Open AI Model Manager to load.')
-    return { result, state: 'not-loaded' }
+    return { result, state: 'not-loaded', started: false }
   }
 
   // An op is already in flight: hold `loading` until it resolves (no new op).
   if (pendingOperations.has(nodeId)) {
     emit(true, null)
-    return { result, state: 'running' }
+    return { result, state: 'running', started: false }
   }
 
   // Nothing to run this frame: reflect the last latched error (if any) and idle.
   if (!opts.shouldRun) {
     emit(false, getCached<string | null>(errorKey, null))
-    return { result, state: result !== undefined ? 'ready' : 'idle' }
+    return { result, state: result !== undefined ? 'ready' : 'idle', started: false }
   }
 
   // Kick off a fresh tracked inference. result/error/done land in cache and are read
@@ -154,7 +157,7 @@ function runModelInference<T>(
   pendingOperations.set(nodeId, operation)
 
   emit(true, null)
-  return { result, state: 'running' }
+  return { result, state: 'running', started: true }
 }
 
 // ============================================================================
@@ -405,84 +408,38 @@ export const imageClassificationExecutor: NodeExecutorFn = (ctx: ExecutionContex
   const outputs = new Map<string, unknown>()
   const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
-
-  // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('image-classification', modelId)
+  const topK = (ctx.controls.get('topK') as number) ?? 5
 
-  if (!isLoaded) {
-    outputs.set('labels', [])
-    outputs.set('topLabel', '')
-    outputs.set('topScore', 0)
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
-  }
+  // Defer the (potentially expensive — e.g. WebGL texture readback) image conversion
+  // until the model is loaded, matching the prior gate ordering.
+  const imageData = aiInference.isModelLoaded('image-classification', modelId)
+    ? convertToImageData(imageInput)
+    : null
 
-  // Convert image input to ImageData (handles WebGLTexture, HTMLVideoElement, etc.)
-  const imageData = convertToImageData(imageInput)
-
-  if (!imageData) {
-    outputs.set('labels', getCached(`${ctx.nodeId}:labels`, []))
-    outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
-    outputs.set('topScore', getCached(`${ctx.nodeId}:topScore`, 0))
-    outputs.set('loading', false)
-    if (imageInput) {
-      outputs.set('_error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
-    }
-    return outputs
-  }
-
-  // Run on explicit trigger or frame interval
-  const hasTrigger = hasTriggerValue(trigger)
+  // Run on an explicit trigger or after a frame interval, only with valid image data.
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
   const interval = (ctx.controls.get('interval') as number) ?? 60
+  const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
+  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
 
-  if (!hasTrigger && lastFrame && (currentFrame - lastFrame) < interval) {
-    outputs.set('labels', getCached(`${ctx.nodeId}:labels`, []))
-    outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
-    outputs.set('topScore', getCached(`${ctx.nodeId}:topScore`, 0))
-    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
-    return outputs
+  const { result, started, state } = runModelInference<Array<{ label: string; score: number }>>(ctx, outputs, {
+    task: 'image-classification',
+    shouldRun,
+    infer: (modelId) => aiInference.classifyImage(imageData as ImageData, topK, modelId),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  const labels = result ?? []
+  outputs.set('labels', labels)
+  outputs.set('topLabel', labels[0]?.label ?? '')
+  outputs.set('topScore', labels[0]?.score ?? 0)
+  // A present-but-unconvertible image is a node input error (distinct from "no input").
+  // Only when the model is loaded — otherwise "model not loaded" takes precedence.
+  if (state !== 'not-loaded' && imageInput && !imageData) {
+    outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
   }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('labels', getCached(`${ctx.nodeId}:labels`, []))
-    outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
-    outputs.set('topScore', getCached(`${ctx.nodeId}:topScore`, 0))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
-
-  const topK = (ctx.controls.get('topK') as number) ?? 5
-
-  const operation = (async () => {
-    try {
-      const results = await aiInference.classifyImage(imageData, topK, modelId)
-      setCached(`${ctx.nodeId}:labels`, results)
-      const topResult = results[0]
-      setCached(`${ctx.nodeId}:topLabel`, topResult?.label ?? '')
-      setCached(`${ctx.nodeId}:topScore`, topResult?.score ?? 0)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Image classification error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
-
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('labels', getCached(`${ctx.nodeId}:labels`, []))
-  outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
-  outputs.set('topScore', getCached(`${ctx.nodeId}:topScore`, 0))
-  outputs.set('loading', true)
   return outputs
 }
 
@@ -495,91 +452,28 @@ export const sentimentAnalysisExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   const text = (ctx.inputs.get('text') as string) ?? ''
   const trigger = ctx.inputs.get('trigger')
 
-  // Check if model is loaded
-  const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('sentiment-analysis', modelId)
+  // Run on an explicit trigger or when the (non-empty) text changes.
+  const textChanged = text !== getCached<string>(`${ctx.nodeId}:lastText`, '')
+  const shouldRun = !!text.trim() && (hasTriggerValue(trigger) || textChanged)
 
-  if (!isLoaded) {
-    outputs.set('sentiment', '')
-    outputs.set('score', 0)
-    outputs.set('positive', 0)
-    outputs.set('negative', 0)
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
+  const { result, started } = runModelInference<Array<{ label: string; score: number }>>(ctx, outputs, {
+    task: 'sentiment-analysis',
+    shouldRun,
+    infer: (modelId) => aiInference.analyzeSentiment(text, modelId),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastText`, text)
+
+  const results = result ?? []
+  let positive = 0
+  let negative = 0
+  for (const r of results) {
+    if (r.label.toLowerCase().includes('positive')) positive = r.score
+    else if (r.label.toLowerCase().includes('negative')) negative = r.score
   }
-
-  if (!text.trim()) {
-    outputs.set('sentiment', '')
-    outputs.set('score', 0)
-    outputs.set('positive', 0)
-    outputs.set('negative', 0)
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Run on explicit trigger or text change
-  const hasTrigger = hasTriggerValue(trigger)
-  const lastText = getCached<string>(`${ctx.nodeId}:lastText`, '')
-  const textChanged = text !== lastText
-
-  if (!hasTrigger && !textChanged) {
-    outputs.set('sentiment', getCached(`${ctx.nodeId}:sentiment`, ''))
-    outputs.set('score', getCached(`${ctx.nodeId}:score`, 0))
-    outputs.set('positive', getCached(`${ctx.nodeId}:positive`, 0))
-    outputs.set('negative', getCached(`${ctx.nodeId}:negative`, 0))
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('sentiment', getCached(`${ctx.nodeId}:sentiment`, ''))
-    outputs.set('score', getCached(`${ctx.nodeId}:score`, 0))
-    outputs.set('positive', getCached(`${ctx.nodeId}:positive`, 0))
-    outputs.set('negative', getCached(`${ctx.nodeId}:negative`, 0))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastText`, text)
-
-  const operation = (async () => {
-    try {
-      const results = await aiInference.analyzeSentiment(text, modelId)
-
-      let positive = 0
-      let negative = 0
-      for (const result of results) {
-        if (result.label.toLowerCase().includes('positive')) {
-          positive = result.score
-        } else if (result.label.toLowerCase().includes('negative')) {
-          negative = result.score
-        }
-      }
-
-      const topResult = results[0]
-      setCached(`${ctx.nodeId}:sentiment`, topResult?.label ?? '')
-      setCached(`${ctx.nodeId}:score`, topResult?.score ?? 0)
-      setCached(`${ctx.nodeId}:positive`, positive)
-      setCached(`${ctx.nodeId}:negative`, negative)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Sentiment analysis error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
-
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('sentiment', getCached(`${ctx.nodeId}:sentiment`, ''))
-  outputs.set('score', getCached(`${ctx.nodeId}:score`, 0))
-  outputs.set('positive', getCached(`${ctx.nodeId}:positive`, 0))
-  outputs.set('negative', getCached(`${ctx.nodeId}:negative`, 0))
-  outputs.set('loading', true)
+  outputs.set('sentiment', results[0]?.label ?? '')
+  outputs.set('score', results[0]?.score ?? 0)
+  outputs.set('positive', positive)
+  outputs.set('negative', negative)
   return outputs
 }
 
@@ -591,69 +485,32 @@ export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const outputs = new Map<string, unknown>()
   const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
-
-  // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('image-to-text', modelId)
 
-  if (!isLoaded) {
-    outputs.set('caption', getCached(`${ctx.nodeId}:caption`, ''))
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
-  }
+  // Defer the (potentially expensive) image conversion until the model is loaded.
+  const imageData = aiInference.isModelLoaded('image-to-text', modelId)
+    ? convertToImageData(imageInput)
+    : null
 
-  // Convert image input to ImageData (handles WebGLTexture, HTMLVideoElement, etc.)
-  const imageData = convertToImageData(imageInput)
-
-  if (!imageData) {
-    outputs.set('caption', '')
-    outputs.set('loading', false)
-    if (imageInput) {
-      outputs.set('_error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
-    }
-    return outputs
-  }
-
-  // Run on explicit trigger or frame interval
-  const hasTrigger = hasTriggerValue(trigger)
+  // Run on an explicit trigger or after a frame interval, only with valid image data.
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
   const interval = (ctx.controls.get('interval') as number) ?? 120
+  const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
+  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
 
-  if (!hasTrigger && lastFrame && (currentFrame - lastFrame) < interval) {
-    outputs.set('caption', getCached(`${ctx.nodeId}:caption`, ''))
-    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
-    return outputs
+  const { result, started, state } = runModelInference<string>(ctx, outputs, {
+    task: 'image-to-text',
+    shouldRun,
+    infer: (modelId) => aiInference.captionImage(imageData as ImageData, modelId),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  outputs.set('caption', result ?? '')
+  // Only flag a bad image once the model is loaded — "model not loaded" wins otherwise.
+  if (state !== 'not-loaded' && imageInput && !imageData) {
+    outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
   }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('caption', getCached(`${ctx.nodeId}:caption`, ''))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
-
-  const operation = (async () => {
-    try {
-      const caption = await aiInference.captionImage(imageData, modelId)
-      setCached(`${ctx.nodeId}:caption`, caption)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Image captioning error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
-
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('caption', getCached(`${ctx.nodeId}:caption`, ''))
-  outputs.set('loading', true)
   return outputs
 }
 

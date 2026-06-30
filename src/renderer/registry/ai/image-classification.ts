@@ -17,6 +17,9 @@ export const imageClassificationNode: NodeDefinition = {
     { id: 'topLabel', type: 'string', label: 'Top Label' },
     { id: 'topScore', type: 'number', label: 'Top Score' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'progress', type: 'number', label: 'Progress' },
+    { id: 'done', type: 'trigger', label: 'Done' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     { id: 'topK', type: 'number', label: 'Top K', default: 5, props: { min: 1, max: 10 } },

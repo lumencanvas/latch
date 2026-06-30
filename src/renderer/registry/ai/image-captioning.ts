@@ -15,6 +15,9 @@ export const imageCaptioningNode: NodeDefinition = {
   outputs: [
     { id: 'caption', type: 'string', label: 'Caption' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'progress', type: 'number', label: 'Progress' },
+    { id: 'done', type: 'trigger', label: 'Done' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     { id: 'interval', type: 'number', label: 'Frame Interval', default: 60, props: { min: 1, max: 300 } },
