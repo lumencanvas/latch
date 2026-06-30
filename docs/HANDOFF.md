@@ -6,6 +6,57 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 17) — adversarial audit of step A (no code change)
+
+Ran a 5-reviewer → adversarial-verify → synthesize audit workflow over the step-A diff
+(`3dbd413..e0fda5a`, A1 + A2-core + the 8 `runModelInference` migrations + STT).
+**Bottom line: step A is structurally sound — no critical/high, no blocker.** 7 findings
+confirmed (all medium/low), 4 candidate claims refuted as not-bugs. One reviewer
+(test-adequacy) failed its schema retries, so those gaps are filled from author knowledge
+below — treat that dimension as un-audited by the workflow.
+
+**REGRESSIONS I INTRODUCED (must-fix — my "behavior-preserving" claim was wrong here).**
+Three migrated executors dropped the original's *clear-outputs-on-empty/invalid-input*
+contract that text-generation/text2text kept (`triggered && !input ? <zero> : result`):
+- **sentiment-analysis** (`ai.ts:481-484`) — empty-text trigger emits the *cached* sentiment/
+  score/positive/negative instead of zeroing. Fix: gate on `hasTriggerValue(trigger) && !text.trim()`.
+- **feature-extraction** (`ai.ts:~575`) — empty-text trigger emits cached embedding, not `[]`.
+- **image-captioning** (`ai.ts:517`) — unsupported/invalid image keeps the stale caption
+  (old code set `caption:''`). Note `image-classification`/`object-detection` are CORRECT —
+  their originals *also* served cached on bad image (refuted claim), so don't "fix" those.
+
+**ROBUSTNESS (should-fix, cheap).**
+- **A1 soft-error coercion** (`ExecutionEngine.ts:~512`) — `String(softErrorValue)` turns a
+  non-string `error`/`_error` (`0`/`false`/`{}`) into `'0'`/`'[object Object]'` on the badge.
+  Harden to `typeof softErrorValue === 'string' && softErrorValue !== '' ? … : null`.
+- **`FakeImageData` test mocks** (`tests/unit/executors/live-detection.test.ts`,
+  `opencv.test.ts`) only accept `(w,h)`, diverging from setup.ts's dual-signature
+  `MockImageData`; latent footgun if those paths gain 3-arg coverage.
+
+**PRE-EXISTING latent (NOT from step A — fix opportunistically).**
+- **`disposeAINode` prefix bug** (`ai.ts:~2265`) — `k.startsWith(nodeId)` (no `':'`) can wipe a
+  sibling node `abcd` when disposing `abc`. Same class as the resolved [[latch-nanoid-underscore-split]]
+  bug; `gcAIState` already does it right (`split(':')[0]`). `disposeAINode` is dead code today.
+- **`disposeAINode` misses `liveDetectState` cleanup** (THREE.Texture GPU leak if ever wired).
+
+**TEST GAPS (test-adequacy reviewer failed; from author knowledge).** Image-executor *success*
+paths (image-classification/captioning/object-detection/VLA valid-image → output mapping) are
+NOT unit-tested (happy-dom ImageData fragility) → labels/caption/objects/count mapping is
+unverified (simple, low-risk, but unproven). `progress` is asserted nowhere; interval-throttle /
+`started`→lastFrame is untested (tests use `frameCount:0`); STT continuous/vad error paths untested.
+
+**Verified CLEAN (so coverage is known):** new `runModelInference` cache keys are properly
+`${nodeId}:`-prefixed and covered by `gcAIState`/`disposeAllAINodes`; STT error read-ordering
+(after early returns) is correct; no orphaned pre-migration cache keys; object-detection
+cached-value handling matches the original.
+
+**▶ Recommended first actions next session:** fix the 3 regressions + the A1 coercion guard in
+one commit, add a regression test asserting each empty/invalid-input trigger zeroes its
+executor's outputs, then mutation-verify. The pre-existing `disposeAINode` items + the image
+success-path tests are lower priority.
+
+---
+
 ## 2026-06-30 (later 16) — step A continued: runModelInference + AI executor migrations
 
 Built the shared `runModelInference()` helper (top of `engine/executors/ai.ts`) and
