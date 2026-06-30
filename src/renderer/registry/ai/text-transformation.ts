@@ -15,6 +15,9 @@ export const textTransformationNode: NodeDefinition = {
   outputs: [
     { id: 'result', type: 'string', label: 'Transformed Text' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'progress', type: 'number', label: 'Progress' },
+    { id: 'done', type: 'trigger', label: 'Done' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     { id: 'text', type: 'text', label: 'Input Text', default: '' },

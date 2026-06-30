@@ -96,7 +96,13 @@ interface InferenceOutcome<T> {
 function runModelInference<T>(
   ctx: ExecutionContext,
   outputs: Map<string, unknown>,
-  opts: { task: string; infer: (modelId: string | undefined) => Promise<T>; shouldRun: boolean },
+  opts: {
+    task: string
+    infer: (modelId: string | undefined) => Promise<T>
+    shouldRun: boolean
+    /** Overrides the default 'Model not loaded…' error text (e.g. a task-specific hint). */
+    notLoadedMessage?: string
+  },
 ): InferenceOutcome<T> {
   const nodeId = ctx.nodeId
   const modelId = ctx.controls.get('model') as string | undefined
@@ -116,10 +122,12 @@ function runModelInference<T>(
     outputs.set('error', error ?? '')
   }
 
-  // Model must be pre-loaded via the AI Model Manager — a needs-user-action error
-  // (matches the prior `_error` behavior), not a transient.
+  // Model isn't ready. Distinguish two cases (per §3): a model actively downloading
+  // (e.g. from the Model Manager) is a transient — show the spinner, no error; an
+  // unloaded model is a needs-user-action error (matches the prior `_error`).
   if (!aiInference.isModelLoaded(opts.task, modelId)) {
-    emit(false, 'Model not loaded. Open AI Model Manager to load.')
+    const downloading = aiInference.getModelInfo(opts.task, modelId)?.state === 'loading'
+    emit(downloading, downloading ? null : (opts.notLoadedMessage ?? 'Model not loaded. Open AI Model Manager to load.'))
     return { result, state: 'not-loaded', started: false }
   }
 
@@ -533,72 +541,31 @@ export const vlaExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     (ctx.inputs.get('instruction') as string) || (ctx.controls.get('instruction') as string) || ''
   const maxTokens = Math.floor((ctx.controls.get('maxTokens') as number) ?? 64)
 
-  // Emit action/loading + a one-frame `done` when the result version advances.
-  const emit = (action: string, loading: boolean): Map<string, unknown> => {
-    const version = getCached<number>(`${ctx.nodeId}:version`, 0)
-    const lastDone = getCached<number>(`${ctx.nodeId}:lastDone`, 0)
-    const done = version !== lastDone
-    if (done) setCached(`${ctx.nodeId}:lastDone`, version)
-    outputs.set('action', action)
-    outputs.set('loading', loading)
-    outputs.set('done', done)
-    return outputs
-  }
+  // Defer the image conversion until the model is loaded (VLA models are heavy).
+  const imageData = aiInference.isModelLoaded('image-text-to-text', modelId)
+    ? convertToImageData(imageInput)
+    : null
 
-  if (!aiInference.isModelLoaded('image-text-to-text', modelId)) {
-    // While the model is downloading/loading (e.g. from the Model Manager), report
-    // `loading` so the node shows its spinner instead of only a "not loaded" error.
-    const modelLoading = aiInference.getModelInfo('image-text-to-text', modelId)?.state === 'loading'
-    emit(getCached(`${ctx.nodeId}:action`, ''), modelLoading)
-    if (!modelLoading) {
-      outputs.set('_error', 'Model not loaded. Open AI Model Manager → Vision-Language (VLA) → Load.')
-    }
-    return outputs
-  }
-
-  const imageData = convertToImageData(imageInput)
-  if (!imageData) {
-    emit('', false)
-    if (imageInput) {
-      outputs.set('_error', 'Unsupported image input. Use Webcam Snapshot or Texture to Data.')
-    }
-    return outputs
-  }
-
-  // Run on explicit trigger or every `interval` frames (VLA is expensive).
-  const hasTrigger = hasTriggerValue(trigger)
+  // Run on an explicit trigger or every `interval` frames (VLA is expensive).
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
   const interval = (ctx.controls.get('interval') as number) ?? 120
+  const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
+  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
 
-  if (!hasTrigger && lastFrame && currentFrame - lastFrame < interval) {
-    return emit(getCached(`${ctx.nodeId}:action`, ''), getCached(`${ctx.nodeId}:loading`, false))
+  const { result, started, state } = runModelInference<string>(ctx, outputs, {
+    task: 'image-text-to-text',
+    shouldRun,
+    notLoadedMessage: 'Model not loaded. Open AI Model Manager → Vision-Language (VLA) → Load.',
+    infer: (m) => aiInference.visionAction(imageData as ImageData, instruction, { modelId: m, maxNewTokens: maxTokens }),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  outputs.set('action', result ?? '')
+  if (state !== 'not-loaded' && imageInput && !imageData) {
+    outputs.set('error', 'Unsupported image input. Use Webcam Snapshot or Texture to Data.')
   }
-  if (pendingOperations.has(ctx.nodeId)) {
-    return emit(getCached(`${ctx.nodeId}:action`, ''), true)
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
-
-  const operation = (async () => {
-    try {
-      const action = await aiInference.visionAction(imageData, instruction, {
-        modelId,
-        maxNewTokens: maxTokens,
-      })
-      setCached(`${ctx.nodeId}:action`, action)
-      setCached(`${ctx.nodeId}:version`, getCached<number>(`${ctx.nodeId}:version`, 0) + 1)
-    } catch (error) {
-      console.error('[AI] VLA error:', error)
-    } finally {
-      setCached(`${ctx.nodeId}:loading`, false)
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
-  pendingOperations.set(ctx.nodeId, operation)
-
-  return emit(getCached(`${ctx.nodeId}:action`, ''), true)
+  return outputs
 }
 
 // ============================================================================
@@ -610,67 +577,20 @@ export const featureExtractionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   const text = (ctx.inputs.get('text') as string) ?? ''
   const trigger = ctx.inputs.get('trigger')
 
-  // Check if model is loaded
-  const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('feature-extraction', modelId)
+  // Run on an explicit trigger or when the (non-empty) text changes.
+  const textChanged = text !== getCached<string>(`${ctx.nodeId}:lastText`, '')
+  const shouldRun = !!text.trim() && (hasTriggerValue(trigger) || textChanged)
 
-  if (!isLoaded) {
-    outputs.set('embedding', [])
-    outputs.set('dimensions', 0)
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
-  }
+  const { result, started } = runModelInference<number[]>(ctx, outputs, {
+    task: 'feature-extraction',
+    shouldRun,
+    infer: (modelId) => aiInference.extractFeatures(text, modelId),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastText`, text)
 
-  if (!text.trim()) {
-    outputs.set('embedding', [])
-    outputs.set('dimensions', 0)
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Run on explicit trigger or text change
-  const hasTrigger = hasTriggerValue(trigger)
-  const lastText = getCached<string>(`${ctx.nodeId}:lastText`, '')
-  const textChanged = text !== lastText
-
-  if (!hasTrigger && !textChanged) {
-    outputs.set('embedding', getCached(`${ctx.nodeId}:embedding`, []))
-    outputs.set('dimensions', getCached(`${ctx.nodeId}:dimensions`, 0))
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('embedding', getCached(`${ctx.nodeId}:embedding`, []))
-    outputs.set('dimensions', getCached(`${ctx.nodeId}:dimensions`, 0))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastText`, text)
-
-  const operation = (async () => {
-    try {
-      const embedding = await aiInference.extractFeatures(text, modelId)
-      setCached(`${ctx.nodeId}:embedding`, embedding)
-      setCached(`${ctx.nodeId}:dimensions`, embedding.length)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Feature extraction error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
-
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('embedding', getCached(`${ctx.nodeId}:embedding`, []))
-  outputs.set('dimensions', getCached(`${ctx.nodeId}:dimensions`, 0))
-  outputs.set('loading', true)
+  const embedding = result ?? []
+  outputs.set('embedding', embedding)
+  outputs.set('dimensions', embedding.length)
   return outputs
 }
 
@@ -915,45 +835,12 @@ export const textTransformationExecutor: NodeExecutorFn = (ctx: ExecutionContext
     text = (ctx.controls.get('text') as string) ?? ''
   }
 
-  // Check if model is loaded
-  const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('text2text-generation', modelId)
-
-  if (!isLoaded) {
-    outputs.set('result', getCached(`${ctx.nodeId}:result`, ''))
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
-  }
-
-  if (!text.trim()) {
-    outputs.set('result', '')
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Only run on explicit trigger
-  if (!hasTriggerValue(trigger)) {
-    outputs.set('result', getCached(`${ctx.nodeId}:result`, ''))
-    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
-    return outputs
-  }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('result', getCached(`${ctx.nodeId}:result`, ''))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-
-  const task = (ctx.controls.get('task') as string) ?? 'summarize'
+  const taskName = (ctx.controls.get('task') as string) ?? 'summarize'
   const maxTokens = (ctx.controls.get('maxTokens') as number) ?? 100
 
-  // Prepend task instruction for T5/Flan models
+  // Prepend the task instruction for T5/Flan models.
   let taskPrompt: string
-  switch (task) {
+  switch (taskName) {
     case 'summarize':
       taskPrompt = `summarize: ${text}`
       break
@@ -967,23 +854,17 @@ export const textTransformationExecutor: NodeExecutorFn = (ctx: ExecutionContext
       taskPrompt = text
   }
 
-  const operation = (async () => {
-    try {
-      const result = await aiInference.text2text(taskPrompt, { maxLength: maxTokens }, modelId)
-      setCached(`${ctx.nodeId}:result`, result)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Text transformation error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
+  // Transform only on an explicit trigger carrying non-empty text.
+  const triggered = hasTriggerValue(trigger)
+  const shouldRun = triggered && !!text.trim()
+  const { result } = runModelInference<string>(ctx, outputs, {
+    task: 'text2text-generation',
+    shouldRun,
+    infer: (modelId) => aiInference.text2text(taskPrompt, { maxLength: maxTokens }, modelId),
+  })
 
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('result', getCached(`${ctx.nodeId}:result`, ''))
-  outputs.set('loading', true)
+  // Preserve prior behavior: an explicit empty-text trigger clears the result.
+  outputs.set('result', triggered && !text.trim() ? '' : (result ?? ''))
   return outputs
 }
 

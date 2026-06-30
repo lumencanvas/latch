@@ -22,7 +22,9 @@ export const vlaNode: NodeDefinition = {
   outputs: [
     { id: 'action', type: 'string', label: 'Action' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'progress', type: 'number', label: 'Progress' },
     { id: 'done', type: 'trigger', label: 'Done' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     {

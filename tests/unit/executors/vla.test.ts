@@ -58,6 +58,7 @@ describe('vlaExecutor', () => {
     expect(out.get('loading')).toBe(false)
     expect(out.get('done')).toBe(false)
     expect(out.get('action')).toBe('')
-    expect(out.get('_error')).toMatch(/not loaded/i)
+    // Migrated to runModelInference: the soft error is now the public `error` port.
+    expect(out.get('error')).toMatch(/not loaded/i)
   })
 })
