@@ -3,6 +3,8 @@ import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { risingEdge, isHigh } from './trigger'
+import { resolveConnectionHandle } from './connection'
+import type { ConnectionHandle } from '@/services/connections/ConnectionHandle'
 import type { LifecycleHooks } from './nodeState'
 // Every stateful executor category now self-registers its cleanup with the engine's
 // generic lifecycle loop — via defineNodeState (auto gc/dispose) or defineLifecycle
@@ -90,12 +92,20 @@ export interface ExecutionContext {
   trig(id: string): boolean
   /** Whether an input/control is currently high (= isHigh). */
   level(id: string): boolean
+  /**
+   * Resolve the no-secret {@link ConnectionHandle} for this node's selected
+   * connection (the broker holds the credential), auto-connecting with a shared
+   * throttle. Returns `null` when unselected / unavailable / protocol mismatch.
+   */
+  connection<T extends ConnectionHandle = ConnectionHandle>(
+    opts?: { controlId?: string; protocol?: string }
+  ): T | null
 }
 
 /** The plain data fields of a context; the typed accessors are added by the factory. */
 export type ExecutionContextData = Omit<
   ExecutionContext,
-  'num' | 'bool' | 'str' | 'trig' | 'level'
+  'num' | 'bool' | 'str' | 'trig' | 'level' | 'connection'
 >
 
 /**
@@ -141,6 +151,12 @@ export function createExecutionContext(data: ExecutionContextData): ExecutionCon
     },
     level(id) {
       return isHigh(read(id))
+    },
+    connection<T extends ConnectionHandle = ConnectionHandle>(opts?: {
+      controlId?: string
+      protocol?: string
+    }): T | null {
+      return resolveConnectionHandle<T>(read, opts)
     },
   }
 }
