@@ -17,6 +17,7 @@ export const speechRecognitionNode: NodeDefinition = {
     { id: 'partial', type: 'string', label: 'Partial Text' },
     { id: 'speaking', type: 'boolean', label: 'Speaking' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     {

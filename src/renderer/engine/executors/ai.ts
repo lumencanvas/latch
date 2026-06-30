@@ -717,6 +717,10 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   const vadState = state.audioBufferService.getVadState()
   const isSpeaking = vadState.speaking
   outputs.set('speaking', isSpeaking)
+  // Surface a previously-swallowed transcription failure on the public error port
+  // (badge via the engine latch); cleared by the next successful transcribe. The
+  // transient connecting/no-audio states stay on the internal `_error` channel.
+  outputs.set('error', getCached<string | null>(`${ctx.nodeId}:sttError`, null) ?? '')
 
   // Determine if we should transcribe based on mode
   let shouldTranscribe = false
@@ -796,9 +800,11 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
       }
 
       setCached(`${ctx.nodeId}:loading`, false)
+      setCached(`${ctx.nodeId}:sttError`, null)
     } catch (error) {
       console.error('[STT] Speech recognition error:', error)
       setCached(`${ctx.nodeId}:loading`, false)
+      setCached(`${ctx.nodeId}:sttError`, error instanceof Error ? error.message : String(error))
     } finally {
       pendingOperations.delete(ctx.nodeId)
     }
