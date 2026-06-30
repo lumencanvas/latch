@@ -1,0 +1,66 @@
+import { describe, it, expect } from 'vitest'
+import {
+  modelSpecs,
+  colocatedModelIds,
+  colocatedModelSpecs,
+} from '@/services/ai/modelRegistry'
+import { AI_MODELS } from '@/services/ai/AIInference'
+import { WEBLLM_MODELS } from '@/registry/ai/llm'
+
+/**
+ * Guard tests for the AI-model auto-discovery glob (EXTENSIBILITY §8, POLICIES §1).
+ *
+ * While zero `*.model.ts` files are co-located the collected set is empty and the
+ * count / orphan / prompt-format checks pass vacuously; once models are co-located
+ * (and the catalogs become derived) they are the real gates. The dup-id and
+ * default-export guards run at module load (the import above would throw). Mirrors
+ * `protocolRegistry` / `nodeRegistry`.
+ */
+
+// The model-id universe the catalogs ship today (transformers `AI_MODELS` defaults +
+// alternates, and `WEBLLM_MODELS`). Derived live so it can't drift. MediaPipe asset
+// ids join this set when those models are co-located (the derive step).
+const legacyModelIds = new Set<string>()
+for (const def of AI_MODELS) {
+  legacyModelIds.add(def.defaultModel)
+  for (const alt of def.alternateModels) legacyModelIds.add(alt.id)
+}
+for (const m of WEBLLM_MODELS) legacyModelIds.add(m.id)
+
+const VALID_FAMILIES = new Set(['transformers', 'webllm', 'mediapipe'])
+
+describe('modelRegistry auto-glob', () => {
+  it('imports without throwing (no duplicate ids, no missing default exports)', () => {
+    // Reaching here means the module-load guards in modelRegistry.ts passed.
+    expect(typeof modelSpecs).toBe('object')
+    expect(Array.isArray(colocatedModelSpecs)).toBe(true)
+  })
+
+  it('has no duplicate co-located model ids', () => {
+    expect(new Set(colocatedModelIds).size).toBe(colocatedModelIds.length)
+  })
+
+  it('every co-located spec has a valid family + a task', () => {
+    for (const spec of colocatedModelSpecs) {
+      expect(VALID_FAMILIES.has(spec.family)).toBe(true)
+      expect(typeof spec.task).toBe('string')
+      expect(spec.task.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('prompt-format contract: every co-located text-generation spec declares load.promptFormat', () => {
+    for (const spec of colocatedModelSpecs) {
+      if (spec.task === 'text-generation') {
+        expect(spec.load?.promptFormat).toBeDefined()
+      }
+    }
+  })
+
+  it('count guard: co-located models never exceed the catalogs union (no orphans)', () => {
+    expect(colocatedModelIds.length).toBeLessThanOrEqual(legacyModelIds.size)
+    for (const id of colocatedModelIds) expect(legacyModelIds.has(id)).toBe(true)
+    // TODO(derive): tighten to set-equality once every catalog model is co-located and
+    // AI_MODELS/WEBLLM_MODELS/MediaPipe are derived from modelSpecs (add MediaPipe ids
+    // to the universe then) — that is the POLICIES derived-deep-equal gate.
+  })
+})

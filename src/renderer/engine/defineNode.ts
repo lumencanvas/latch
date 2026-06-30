@@ -22,6 +22,7 @@ import type { NodeDefinition } from '@/stores/nodes'
 import type { NodeExecutorFn } from './ExecutionEngine'
 import type { NodeRequirement } from '@/utils/platform'
 import type { NodeConnectionRequirement } from '@/services/connections/types'
+import type { ModelRequirement } from '@/services/ai/defineModel'
 
 export interface NodeSpec {
   /** Ports / controls / metadata. */
@@ -42,6 +43,8 @@ export interface NodeSpec {
   readonly requires?: NodeRequirement[]
   /** Connection protocols this node needs. */
   readonly connections?: NodeConnectionRequirement[]
+  /** AI model/task needs (a `model` select + standardized load/error outputs derive from these; §8). */
+  readonly models?: ModelRequirement[]
 }
 
 /**

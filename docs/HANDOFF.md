@@ -6,6 +6,185 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 14) — Phase 2: `defineModel` + `modelRegistry` scaffold (step 7 foundation)
+
+Pivoted to step 7 (Phase C, parallel to step 6 which is at a natural stopping point — its leftovers are
+maintainer-sensitive/hardware-bound/Phase-E). Built the **additive, inert** model-registry scaffold,
+mirroring the 6a protocol scaffold exactly. **NOT committed.**
+
+**What landed:**
+- **`services/ai/defineModel.ts`** — `ModelSpec` (`id`/`name`/`family:'transformers'|'webllm'|'mediapipe'`/
+  `task`/`size`/`license?`/`supportsWebGPU?`/`load?.promptFormat?`) + `defineModel` identity fn. Frozen
+  public contract; metadata-only (never imports the heavy runtime).
+- **`services/ai/modelRegistry.ts`** — globs `models/**/*.model.ts` (eager, default-export, dup-id +
+  missing-default + structural throws). Files are free-slug-named (model ids contain `/`); keyed by
+  `spec.id`. Exports `modelSpecs`/`colocatedModelIds`/`colocatedModelSpecs`. **Inert** (zero files) — the
+  three catalogs stay authoritative.
+- **`tests/unit/services/ai/modelRegistry.test.ts`** (5) — count guard + no-orphans vs the live catalogs
+  union (`AI_MODELS` defaults+alternates ∪ `WEBLLM_MODELS`), valid-family/task structural check, and the
+  **prompt-format contract** (every co-located `text-generation` spec declares `load.promptFormat`).
+  Mutation-verified (4 cases via a temp `models/` dir, removed with `rm` — not `git checkout`): orphan id →
+  count/orphan red; text-gen missing `promptFormat` → contract red; duplicate id → dup throw; valid → green.
+- **`defineModel.ts` + `defineNode.ts`** — added `ModelRequirement` (`{task, selectable?}`) and the
+  `NodeSpec.models?: ModelRequirement[]` field (the §3 declarative-capability surface a node uses to declare
+  a model need — the analogue of `connections?`). Additive/inert (the auto `model` select + load/error
+  outputs derive from it later); `defineNode.test.ts` +1 (preserves connections + models). Type-only import,
+  no cycle (`defineModel.ts` imports nothing).
+
+**Verification.** typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **1692 → 1698** (+6,
++1 file) · build ok. Additive/inert → no runtime path touched, no smoke needed (as with 6a).
+
+**▶ NEXT (sign-off-gated derive — `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`).** The per-model→per-task
+rollup has real forks (task-wrapper metadata location, default/order reproduction for the deep-equal gate,
+MediaPipe's weak fit, whether the auto loading/error-output `defineNode` work lands here or separately,
+first-PR scope). Surfaced for maintainer decision before deriving `AI_MODELS`/`WEBLLM_MODELS`. The
+higher-value half — auto `loading/progress/done/error` outputs + `runModelInference` latching the real error
+(fixing the dead-`_error` for every AI node) — is independent of the catalog derive.
+
+---
+
+## 2026-06-30 (later 13) — Phase 2: ws + http migrated to `ctx.connection()` (6b complete for the three protocols)
+
+Applied the proven mqtt pattern to WebSocket + HTTP (the approved typed-handle design; no new sign-off
+needed). **NOT committed.**
+
+**What landed:**
+- **`ConnectionHandle.ts`** — added `createWebSocketHandle` (forwards `send`/`onMessage`) and
+  `createHttpHandle` (forwards `request`/`executeTemplate`, signatures matched to `HttpAdapterImpl`); wired
+  both into `createConnectionHandle`'s switch. This closes the latent footgun where ws/http fell through to
+  the capability-less base handle. `baseUrl`/auth-headers/url/token never reachable.
+- **`executors/websocket.ts`** — migrated to `ctx.connection<WebSocketHandle>({ protocol:'websocket' })`;
+  deleted `getWebSocketAdapter`/`ensureConnected`/local throttle/`useConnectionsStore`+adapter imports. The
+  `nodeListeners` store (dispose = unsubscribe) is unchanged — ws has no topic-level sub, so no `releaseTopic`.
+- **`executors/http.ts`** — connection path migrated to `ctx.connection<HttpHandle>({ protocol:'http' })`;
+  deleted the same helper block. **The no-connection direct-`fetch` fallback (`executeDirectRequest`) + the
+  rising-edge/in-flight gating + `httpCache` are untouched.**
+- The auto-connect throttle now lives once in `engine/connection.ts`, shared across mqtt/ws/http.
+
+**Tests.** `ConnectionHandle.test.ts` +2 (ws: send/onMessage forward, config/token hidden; http:
+request/executeTemplate forward, auth headers hidden). `websocket-throttle.test.ts` rebuilt to route through
+`createExecutionContext` so it validates the *relocated* shared throttle via the real `ctx.connection` (3
+cases: ≤once/2s while down, stops when connected, rewire releases old listener once — all preserved).
+`http.test.ts` unchanged behavior (its cases only hit the direct-fetch/no-connection paths, so
+`ctx.connection` is never reached; added a `connection: () => null` stub for shape safety).
+
+**Verification.** typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **1690 → 1692** (+2) ·
+build ok · **smoke** boot→Play→Stop **0 real errors**, 5 protocols register, canvas identical.
+
+**▶ NEXT.** The three persistent/request protocols are now on `ctx.connection()`. Remaining Phase-2
+connection work: deferred SECURITY_MODEL steps 2–6 (capability-declaration enforcement, trust-tier tagging
+beyond the handle, Community approval + CSP `connect-src`); adapter physical co-location into
+`protocols/<name>/`; BLE/Serial/MIDI drift fix (register + add adapters). Or pivot to step 7 (`defineModel`).
+
+---
+
+## 2026-06-30 (later 12) — Phase 2: `ctx.connection()` + no-secret `ConnectionHandle` — mqtt slice (6b)
+
+Maintainer signed off the impl memo (`docs/plans/CONNECTION_HANDLE_IMPL_2026-06-29.md`): **typed
+per-protocol handles**, **HTTP gets a handle too**, **mqtt-first**. Built the mqtt slice. **NOT committed.**
+
+**What landed:**
+- **`services/connections/ConnectionHandle.ts`** — `ConnectionHandle` base (protocol/status/onStatusChange)
+  + `MqttHandle`/`WebSocketHandle`/`HttpHandle` interfaces; `createConnectionHandle(adapter)` returns the
+  protocol's no-secret wrapper (mqtt concrete; ws/http fall back to base until their executors migrate). The
+  adapter is closed over, never returned; **no `config`/url/token/adapter reachable**.
+- **`engine/connection.ts`** — `resolveConnectionHandle(read, opts)`: the one shared connection lookup
+  (replaces the ~50-line `getXAdapter`/`ensureConnected` block the three executors each copied). Resolves the
+  id from control/input (default `connectionId`), optional protocol assert, **shared auto-connect throttle**
+  (2s), WeakMap handle cache. Synchronous + fire-and-forget connect (the old awaited connect could block a
+  frame; this no longer does — executors already serve last-value until `status==='connected'`).
+- **`ExecutionEngine.ts`** — added `ctx.connection<T>(opts?)` to `ExecutionContext` (+ `'connection'` to the
+  `ExecutionContextData` Omit) wired in `createExecutionContext`. The engine already imports Pinia stores, so
+  the connection-store dependency is consistent (no purity regression).
+- **`executors/mqtt.ts`** — migrated to `ctx.connection<MqttHandle>({ protocol:'mqtt' })`; deleted
+  `getMqttAdapter`/`ensureConnected`/the local throttle. Sub entry gains `releaseTopic` (captured
+  `handle.unsubscribe(topic)` closure) so teardown needs no live ctx; rewire/clear/gc semantics preserved
+  verbatim (`set()` doesn't dispose the overwritten entry — verified in `nodeState.ts`). **CLASP/ws/http
+  untouched.**
+
+**Tests.** New `ConnectionHandle.test.ts` (3): no-secret invariant (no config/credentials/adapter reachable,
+JSON has no secret), curated-op forwarding, live status getter. `mqtt-teardown.test.ts` rebuilt to route
+through `createExecutionContext` (exercises `ctx.connection` end-to-end against the mocked store) + a
+`nodeSubscriptions.size===0`-after-gc leak assertion. **Both gates mutation-verified** (leaking `config`
+through the handle → no-secret red; dropping `releaseTopic` from dispose → clear/gc teardown red).
+
+> Process note: a `git checkout` during mutation-verify reverted the *tracked* `mqtt.ts` to HEAD (wiped the
+> migration) and couldn't touch the *untracked* `ConnectionHandle.ts` (left the mutation in). Both repaired +
+> re-verified. Lesson: never `git checkout` files with uncommitted work to undo a mutation — edit it back.
+
+**Verification.** typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **1687 → 1690** (+3,
++1 file) · build ok · **smoke** boot→Play→Stop **0 real errors**, 5 protocols register, canvas identical.
+
+**▶ NEXT.** ws + http migrate to `WebSocketHandle`/`HttpHandle` against this proven pattern (http keeps its
+no-connection `fetch` fallback). Then the deferred SECURITY_MODEL steps 2–6 (capability enforcement, Community
+approval + CSP), adapter physical co-location, BLE/Serial/MIDI drift fix.
+
+---
+
+## 2026-06-29 (later 11) — Phase 2 START: `defineProtocol` scaffold (6a) + glob-authoritative registration (6b registration half)
+
+Branch **`phase0-file-format`** (maintainer chose to continue here, not merge→`main`+rebranch — recorded
+for the eventual merge). Began Phase 2 (register-once subsystems) with the **additive, zero-behavior-change**
+protocol-registry scaffold (EXTENSIBILITY §7, ROADMAP step 6a), mirroring exactly how Phase 0 added
+`defineNode`/`nodeRegistry`. Read the real `ConnectionTypeDefinition` (`types.ts:203-224`) +
+`mqttConnectionType` shape (`MqttAdapter.ts:228-379`) + `registerBuiltInTypes()` (`index.ts:79-93`) FIRST so
+the type matches. **NOT committed.**
+
+**What landed (3 new files, additive — nothing imports them yet, so production behavior is unchanged):**
+- **`services/connections/defineProtocol.ts`** — identity function that brands the existing
+  `ConnectionTypeDefinition` as the single authored unit (the `defineNode` analogue for protocols).
+  Generic over `TConfig extends BaseConnectionConfig`. Frozen-public-contract doc (POLICIES §2); notes the
+  capability/trust-tier metadata (SECURITY_MODEL) arrives in a later, sign-off-gated step.
+- **`services/connections/protocolRegistry.ts`** — globs `./protocols/<name>/protocol.ts`
+  (eager, `import:'default'`), dup-id throw + missing-default throw at module load. Exports `protocolSpecs`,
+  `colocatedProtocolIds`, `colocatedProtocolTypes` (the array `registerBuiltInTypes()` will loop over in 6b).
+  Mirrors `registry/nodeRegistry.ts` line-for-line. **Inert today** — zero `protocol.ts` files exist, so the
+  hand-wired `registerBuiltInTypes()` list stays authoritative.
+- **`tests/unit/services/connections/protocolRegistry.test.ts`** — the protocol-count gate (5 cases),
+  mirroring `nodeRegistry.test.ts`: dup-id/missing-default (meaningful immediately, run at load), no-orphans
+  vs the built-in id set (derived live from the 5 `*ConnectionType` objects, can't drift), and the count
+  guard `≤` built-in count with a `TODO(6b)` to tighten to `toBe` once protocols are co-located.
+
+**Gate mutation-verified (4 cases, dir created+removed under `protocols/`):** (A) a valid
+`protocols/mqtt/protocol.ts` re-exporting `mqttConnectionType` → collects, count+orphan pass (proves the glob
+is live, not vacuous); (B) orphan id → no-orphans case red; (C) named-only export → missing-default throw with
+actionable message; (D) two folders, same id → dup throw with actionable message. `protocols/` dir deleted
+after; tree is exactly the 3 new files.
+
+**Then — step 6b registration conversion (the security-INDEPENDENT half; "audit and proceed").** Made the
+glob authoritative so the scaffold is no longer inert:
+- **5 new `protocols/<name>/protocol.ts`** (clasp/websocket/mqtt/osc/http) — each a thin unit re-declaring the
+  existing `*ConnectionType` through `defineProtocol`, importing from `adapters/<Name>Adapter.ts`. The adapter
+  class + config stay put (physical co-location into the folder deferred to the Phase-E move). CLASP is
+  co-located for *registration* (it stays exempt from the future `ctx.connection()` helper).
+- **`connections/index.ts` `registerBuiltInTypes()`** now loops over `colocatedProtocolTypes` from the glob
+  instead of 5 hardcoded `registerType` calls (dropped the second `*ConnectionType` import block; the public
+  barrel re-export block is untouched). One folder = one protocol; no edit here.
+- **Gate tightened** to set-equality (`new Set(colocatedProtocolIds)` === built-in id set, derived live from
+  the 5 `*ConnectionType` objects) + a new integration case asserting the manager actually registers every
+  co-located protocol (proves the loop is wired, not just that the glob collects). Mutation-verified: removing
+  one `protocol.ts` reds the count gate; restore → green.
+- **Contained/low-risk (verified):** the `*ConnectionType` objects are imported ONLY in `connections/index.ts`;
+  `ConnectionManager.test.ts` uses the RAW `getConnectionManager` (no built-ins) so it's insulated. Only
+  visible change is protocol-picker order (now glob-sorted: clasp/http/mqtt/osc/websocket) — cosmetic.
+
+**Verification (whole entry).** typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit`
+**1682 → 1687** (+5, +1 file; net unchanged across the 6b rework — replaced the orphan case with the
+registration-wiring case) · build ok. **Smoke (Playwright + system Chrome, boot→Play→Stop):** all 5 protocols
+registered at runtime via the glob (`["clasp","http","mqtt","osc","websocket"]`), log "initialized with 5
+built-in types", **0 real console errors**, canvas renders identically to baseline. **NOT committed.**
+
+**▶ NEXT — step 6b `ctx.connection()` + the security mechanism (GATED on maintainer sign-off).** Implement the
+context helper once at `ExecutionEngine.ts:378` (resolves id from control/input, auto-connects, shared
+throttle), replacing the ~50-line `getMqttAdapter`/`ensureConnected` block in `mqtt.ts`/ws/http. **Decision to
+settle first (SECURITY_MODEL):** `ctx.connection()` should return a no-secret `ConnectionHandle`
+(`send`/`subscribe`/`status`, broker holds the credential), NOT a raw adapter — the kickoff's "returns the
+adapter" framing conflicts with SECURITY_MODEL step 1. Confirm that shape (+ trust-tier tagging,
+Community-tier CSP `connect-src`) before wiring. Gate: subscribe/unsubscribe leak test. Adapter physical
+co-location + BLE/Serial/MIDI drift fix are separate follow-ups once the folder pattern is blessed.
+
+---
+
 ## 2026-06-29 (later 10) — Audit checkpoint: Phase 1 verified COMPLETE (no code change)
 
 Stepped back to adversarially audit the `(later 9)` heavy-tier migration + `_`-split fix. **All checks
