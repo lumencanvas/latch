@@ -16,6 +16,9 @@ export const objectDetectionNode: NodeDefinition = {
     { id: 'objects', type: 'data', label: 'Objects' },
     { id: 'count', type: 'number', label: 'Count' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'progress', type: 'number', label: 'Progress' },
+    { id: 'done', type: 'trigger', label: 'Done' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     { id: 'threshold', type: 'slider', label: 'Threshold', default: 0.5, props: { min: 0.1, max: 1, step: 0.05 } },

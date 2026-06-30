@@ -876,77 +876,34 @@ export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const outputs = new Map<string, unknown>()
   const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
-
-  // Check if model is loaded
   const modelId = ctx.controls.get('model') as string | undefined
-  const isLoaded = aiInference.isModelLoaded('object-detection', modelId)
+  const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
 
-  if (!isLoaded) {
-    outputs.set('objects', [])
-    outputs.set('count', 0)
-    outputs.set('loading', false)
-    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
-    return outputs
-  }
+  // Defer the (potentially expensive) image conversion until the model is loaded.
+  const imageData = aiInference.isModelLoaded('object-detection', modelId)
+    ? convertToImageData(imageInput)
+    : null
 
-  // Convert image input to ImageData (handles WebGLTexture, HTMLVideoElement, etc.)
-  const imageData = convertToImageData(imageInput)
-
-  if (!imageData) {
-    outputs.set('objects', getCached(`${ctx.nodeId}:objects`, []))
-    outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
-    outputs.set('loading', false)
-    if (imageInput) {
-      outputs.set('_error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
-    }
-    return outputs
-  }
-
-  // Run on explicit trigger or frame interval
-  const hasTrigger = hasTriggerValue(trigger)
+  // Run on an explicit trigger or after a frame interval, only with valid image data.
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
   const interval = (ctx.controls.get('interval') as number) ?? 60
+  const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
+  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
 
-  if (!hasTrigger && lastFrame && (currentFrame - lastFrame) < interval) {
-    outputs.set('objects', getCached(`${ctx.nodeId}:objects`, []))
-    outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
-    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
-    return outputs
+  const { result, started, state } = runModelInference<unknown[]>(ctx, outputs, {
+    task: 'object-detection',
+    shouldRun,
+    infer: (m) => aiInference.detectObjects(imageData as ImageData, threshold, m),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  const objects = result ?? []
+  outputs.set('objects', objects)
+  outputs.set('count', objects.length)
+  if (state !== 'not-loaded' && imageInput && !imageData) {
+    outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
   }
-
-  // Check if already processing
-  if (pendingOperations.has(ctx.nodeId)) {
-    outputs.set('objects', getCached(`${ctx.nodeId}:objects`, []))
-    outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
-    outputs.set('loading', true)
-    return outputs
-  }
-
-  setCached(`${ctx.nodeId}:loading`, true)
-  setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
-
-  const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
-
-  const operation = (async () => {
-    try {
-      const objects = await aiInference.detectObjects(imageData, threshold, modelId)
-      setCached(`${ctx.nodeId}:objects`, objects)
-      setCached(`${ctx.nodeId}:count`, objects.length)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } catch (error) {
-      console.error('[AI] Object detection error:', error)
-      setCached(`${ctx.nodeId}:loading`, false)
-    } finally {
-      pendingOperations.delete(ctx.nodeId)
-    }
-  })()
-
-  pendingOperations.set(ctx.nodeId, operation)
-
-  outputs.set('objects', getCached(`${ctx.nodeId}:objects`, []))
-  outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
-  outputs.set('loading', true)
   return outputs
 }
 
