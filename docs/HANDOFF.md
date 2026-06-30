@@ -6,6 +6,47 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 15) — Phase 2 committed + step A (auto AI loading/error outputs) A1+A2-core
+
+**Committed the whole Phase-2 changeset** (was dirty across sessions 10–14) as a dependency-ordered
+5-commit split on `phase0-file-format`, then built the first two slices of step A. All commits authored
+Moheeb Zara, no AI attribution.
+
+**Phase-2 commits (5):** `c03a850` protocol+ConnectionHandle scaffold (defineProtocol/protocolRegistry +
+no-secret handle + `ctx.connection()`) · `be45ad5` co-locate built-ins into the glob registry (index.ts →
+`colocatedProtocolTypes`, set-equality gate) · `c518efc` mqtt on handle · `fd7c945` ws+http on handle
+(shared throttle now in `engine/connection.ts`; http keeps its no-connection fetch fallback) · `3dbd413`
+inert `defineModel` scaffold + the two decision memos + this handoff.
+
+**Step A — design pass first** (multi-agent workflow mapped 4 surfaces). Load-bearing finding: `defineNode`
+was identity and **no AI node flows through it** (all are plain `NodeDefinition` in `allNodes`), and `_error`
+is set in ~25 ai.ts sites but read nowhere — the badge only reflected *thrown* errors. So A splits into a
+runtime latch (A1) + declarative derivation (A2). Maintainer chose **A1 first, public wireable `error` port**.
+
+- **A1 `5ea7fe6` — soft-error badge latch.** `ExecutionEngine.executeNode` now latches
+  `outputs.get('error') ?? outputs.get('_error')` into `lastError` via `updateNodeMetrics({softError})`
+  (runtime.ts). Public `error` wins over legacy `_error`; does NOT push to `errors[]` or inflate
+  `errorCount` (steady-state status, not a crash); clears on the next clean frame. Lights up every existing
+  `_error` writer across **all** executor families with zero per-executor change. +5 tests
+  (`ExecutionEngine.test.ts`), mutation-verified (hand-edit, not checkout), browser smoke boot→Play→Stop 0
+  errors.
+- **A2-core `8df2900` — `defineNode` model derivation.** A spec declaring `models` gets the canonical
+  `loading`/`progress`/`done`/`error` outputs + a `model` select appended (dedup by id, idempotent,
+  order-stable). Strict no-op without `models` → non-AI library byte-identical; **inert** (no node sets
+  `models` yet). +5 tests, mutation-verified, build ok. Select options populate from the model registry later.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1698 → 1708** (+10) · build ok · A1 smoked.
+
+**▶ NEXT — step A continuation (A2 migrations), maintainer-gated.** Build `runModelInference()` (the shared
+inference preamble: model resolution + loading/progress/done/error latching, per
+`MODEL_REGISTRY_IMPL` design §3) then migrate the ~12 ai.ts executors one green, smoked commit at a time.
+**Open design fork (Q3):** transient states ("Connecting to audio source…", ai.ts:880,2317) → route to
+`loading`+status, NOT `error` (recommended). Each migration also surfaces the currently-swallowed inference
+`catch` blocks as real `error`. The model-derive (MODEL_REGISTRY 5 decisions) and connection-security 2–6
+remain separately sign-off-gated.
+
+---
+
 ## 2026-06-30 (later 14) — Phase 2: `defineModel` + `modelRegistry` scaffold (step 7 foundation)
 
 Pivoted to step 7 (Phase C, parallel to step 6 which is at a natural stopping point — its leftovers are
