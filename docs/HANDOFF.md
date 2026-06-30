@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-29 (later 8) — De-monolith split FINISHED (`executors/index.ts` 1482 → 241 lines)
+
+Branch **`phase0-file-format`** (continuing). Completed Phase-1 deliverable (4): the remaining inline
+groups in `executors/index.ts` are extracted into their own category files; `index.ts` is now a thin
+**barrel + registry** (241 lines: preamble imports, the documented re-exports, the `builtinExecutors`
+map). Guarded by the `(later 7)` export gate the whole way. Tests: typecheck clean · lint 0 err (49
+pre-existing warns) · `test:unit` **1675** (unchanged — no test lost; the gate + math/timing/console/leak
+tests all pass against the new structure, proving the barrel contract survived) · build ok.
+
+**What landed (NOT committed):** 7 new files, all **verbatim slices** of the inline code (no logic change),
+each with its own imports:
+- `input.ts` (constant/trigger/textbox/slider/knob/xy-pad/keyboard/time/lfo)
+- `math.ts` (arithmetic + advanced: add…modulo, lerp…wrap; `smoothState`)
+- `logic.ts` (compare/and/or/not/gate/select/switch; `gateLastValue`)
+- `timing.ts` (start/interval/delay/timer/metronome/step-sequencer + their state stores)
+- `debug.ts` (monitor/oscilloscope/graph/equalizer/console; Tone analysers + `disposeAnalyzer`)
+- `rag.ts` (retrieve/vector-memory; `VectorStore`/`cosineSimilarity`)
+- `webllm.ts` (llm; `webLLMService` + its `defineLifecycle` cleanup)
+
+`index.ts` now: drops the 7 imports that were only used by the moved code (Tone, `defineNodeState`/
+`defineLifecycle`, `cosineSimilarity`/`VectorStore`, `webLLMService`, `DEFAULT_WEBLLM_MODEL`, and the
+value-side `ExecutionContext`); imports the executors the registry references from the new files;
+`export *`s each group so the public barrel keeps exposing their executors + state stores. `builtinExecutors`
+is unchanged (still references every executor by name; the already-extracted categories still spread in).
+
+**Why one commit:** the slices are behavior-identical and the split is revertible as a unit (revert →
+monolith). Pattern mirrors the 24 categories extracted earlier. `defineNodeState`/`defineLifecycle`
+registrations still fire at barrel load (same timing as before — they were always module-level).
+
+**Phase-1 status now:** de-monolith split **DONE**; export gate **DONE**; leak gate / pure-set gate DONE.
+Remaining Phase-1 work: the **4 heavy state-group conversions** (visual/3d/connectivity/clasp via
+`defineLifecycle`-wrap, smoke-verified) + the latent `_`-split fix (fold into visual + patch audio).
+`subflow` stays deferred to Phase 7.
+
+---
+
 ## 2026-06-29 (later 7) — Must-not-break export-list gate BUILT (closes the headline Phase-1 gap)
 
 Branch **`phase0-file-format`** (continuing). Built the CI gate the `(later 6)` audit flagged as the
