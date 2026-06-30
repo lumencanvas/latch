@@ -113,17 +113,19 @@ export const useRuntimeStore = defineStore('runtime', {
       this.frameCount++
     },
 
-    updateNodeMetrics(nodeId: string, data: { lastExecutionTime?: number; outputValues?: Record<string, unknown> }) {
+    updateNodeMetrics(nodeId: string, data: { lastExecutionTime?: number; outputValues?: Record<string, unknown>; softError?: string | null }) {
       const existing = this.nodeMetrics.get(nodeId)
       this.nodeMetrics.set(nodeId, {
         nodeId,
         executionTime: data.lastExecutionTime ?? existing?.executionTime ?? 0,
         lastExecuted: new Date(),
         errorCount: existing?.errorCount ?? 0,
-        // A successful execution clears the node's current error so the per-node
-        // error badge reflects live state, not a stale failure. The cumulative
-        // errorCount and the errors[] history are preserved.
-        lastError: null,
+        // A successful execution clears any stale thrown-error so the per-node
+        // badge reflects live state. An executor MAY instead report a soft error
+        // via an `error`/`_error` output (e.g. "Model not loaded") — that surfaces
+        // on the badge without inflating errorCount or the errors[] history, since
+        // it's a steady-state status rather than a crash. Absence clears it.
+        lastError: data.softError ?? null,
         outputValues: data.outputValues ?? existing?.outputValues,
       })
       // Trigger reactivity by incrementing version

@@ -502,10 +502,21 @@ export class ExecutionEngine {
       // These allow executors to signal node data changes (e.g., shader preset selection)
       this.handleSpecialOutputs(node.id, outputs)
 
+      // Surface a soft error (an `error`/`_error` output) on the node badge.
+      // Executors report recoverable/steady-state failures this way — e.g. a model
+      // that isn't loaded yet — instead of throwing. The public `error` port wins
+      // over the legacy internal `_error` channel. Unlike a thrown error this does
+      // not push to the errors[] log or bump errorCount; it only drives the badge
+      // and clears on the next frame that reports none.
+      const softErrorValue = outputs.get('error') ?? outputs.get('_error')
+      const softError =
+        softErrorValue != null && softErrorValue !== '' ? String(softErrorValue) : null
+
       // Update runtime metrics
       this.runtimeStore.updateNodeMetrics(node.id, {
         lastExecutionTime: performance.now() - startTime,
         outputValues: Object.fromEntries(outputs),
+        softError,
       })
 
       return {

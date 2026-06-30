@@ -198,6 +198,65 @@ describe('ExecutionEngine', () => {
   })
 })
 
+describe('soft error → node badge (A1: the dead-_error latch)', () => {
+  let engine: ExecutionEngine
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    engine = new ExecutionEngine()
+  })
+
+  it('routes a legacy `_error` output to the node badge (lastError)', async () => {
+    const rt = useRuntimeStore()
+    engine.registerExecutor('soft', () => new Map<string, unknown>([['_error', 'Model not loaded']]))
+    engine.updateGraph([node('n', 'soft')], [])
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBe('Model not loaded')
+  })
+
+  it('prefers the public `error` port over the legacy internal `_error` channel', async () => {
+    const rt = useRuntimeStore()
+    engine.registerExecutor('both', () =>
+      new Map<string, unknown>([['error', 'public'], ['_error', 'legacy']]))
+    engine.updateGraph([node('n', 'both')], [])
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBe('public')
+  })
+
+  it('clears the badge on the next frame that reports no error', async () => {
+    const rt = useRuntimeStore()
+    let fail = true
+    engine.registerExecutor('flap', () =>
+      fail ? new Map<string, unknown>([['_error', 'boom']]) : new Map<string, unknown>([['out', 1]]))
+    engine.updateGraph([node('n', 'flap')], [])
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBe('boom')
+
+    fail = false
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBeNull()
+  })
+
+  it('does not inflate errorCount for a steady-state soft error', async () => {
+    const rt = useRuntimeStore()
+    engine.registerExecutor('soft', () => new Map<string, unknown>([['_error', 'persistent']]))
+    engine.updateGraph([node('n', 'soft')], [])
+    await engine.executeFrame()
+    await engine.executeFrame()
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBe('persistent')
+    expect(rt.getNodeMetrics('n')?.errorCount).toBe(0) // soft errors are status, not crashes
+  })
+
+  it('treats an empty-string error as no error (badge stays clear)', async () => {
+    const rt = useRuntimeStore()
+    engine.registerExecutor('empty', () => new Map<string, unknown>([['error', '']]))
+    engine.updateGraph([node('n', 'empty')], [])
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBeNull()
+  })
+})
+
 describe('dirty execution mode', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
