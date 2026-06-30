@@ -1,10 +1,11 @@
 /**
  * WebSocket auto-connect throttle
  *
- * The executor calls ensureConnected() every frame. For a connection that is
- * down, it must NOT re-dial ~60×/s — RECONNECT_THROTTLE_MS gates retries to at
- * most once per 2s, and a successful connect resets the gate. This is timing
- * logic with no other coverage, so it's tested through the public executor.
+ * The executor calls ctx.connection() every frame. For a connection that is down,
+ * it must NOT re-dial ~60×/s — the shared throttle in engine/connection.ts gates
+ * retries to at most once per 2s, and a successful connect resets the gate. This is
+ * timing logic with no other coverage, so it's tested through the public executor
+ * (which now resolves the handle via the real ctx.connection wiring).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
@@ -25,21 +26,24 @@ vi.mock('@/stores/connections', () => {
 
 import { websocketExecutor, disposeAllWebSocketNodes } from '@/engine/executors/websocket'
 import { useConnectionsStore } from '@/stores/connections'
+import { createExecutionContext } from '@/engine/ExecutionEngine'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const store = useConnectionsStore() as any
 
+// Build via the real factory so ctx.connection() drives the shared throttle.
 function frame(connectionId: string): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId: `ws-${connectionId}`,
-    nodeType: 'websocket',
     inputs: new Map(),
-    controls: new Map([['connectionId', connectionId]]),
-    totalTime: 0,
+    controls: new Map<string, unknown>([['connectionId', connectionId]]),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    definition: { inputs: [], outputs: [], controls: [] } as any,
     deltaTime: 16,
-    frame: 0,
-  } as unknown as ExecutionContext
+    totalTime: 0,
+    frameCount: 0,
+  })
 }
 
 describe('WebSocket auto-connect throttle', () => {

@@ -6,8 +6,7 @@
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
-import { useConnectionsStore } from '@/stores/connections'
-import type { WebSocketAdapterImpl } from '@/services/connections/adapters/WebSocketAdapter'
+import type { WebSocketHandle } from '@/services/connections/ConnectionHandle'
 import { defineNodeState } from '../nodeState'
 
 // Per-node received-message cache. Auto-gc'd via the engine's generic lifecycle loop.
@@ -21,57 +20,6 @@ export const nodeListeners = defineNodeState<{
   connectionId: string
   unsubscribe: () => void
 }>({ label: 'websocket-listeners', dispose: (l) => l.unsubscribe() })
-
-/**
- * Get WebSocket adapter from ConnectionManager
- */
-function getWebSocketAdapter(connectionId: string): WebSocketAdapterImpl | null {
-  if (!connectionId) return null
-
-  try {
-    const connectionsStore = useConnectionsStore()
-    const adapter = connectionsStore.getAdapter(connectionId)
-
-    if (adapter && adapter.protocol === 'websocket') {
-      return adapter as WebSocketAdapterImpl
-    }
-  } catch (e) {
-    console.warn('[WebSocket] Could not get adapter:', e)
-  }
-
-  return null
-}
-
-/**
- * Ensure connection is established
- */
-// Throttle auto-connect attempts per connection so a persistently-failing
-// connection isn't re-dialed every frame (~60×/s). Reset on success.
-const lastConnectAttempt = new Map<string, number>()
-const RECONNECT_THROTTLE_MS = 2000
-
-async function ensureConnected(connectionId: string): Promise<WebSocketAdapterImpl | null> {
-  const adapter = getWebSocketAdapter(connectionId)
-  if (!adapter) return null
-
-  if (adapter.status !== 'connected') {
-    const now = Date.now()
-    if (now - (lastConnectAttempt.get(connectionId) ?? 0) >= RECONNECT_THROTTLE_MS) {
-      lastConnectAttempt.set(connectionId, now)
-      try {
-        const connectionsStore = useConnectionsStore()
-        await connectionsStore.connect(connectionId)
-      } catch (e) {
-        console.warn('[WebSocket] Auto-connect failed:', e)
-        return null
-      }
-    }
-  } else {
-    lastConnectAttempt.delete(connectionId)
-  }
-
-  return adapter
-}
 
 /**
  * WebSocket Node Executor
@@ -97,17 +45,18 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
     return outputs
   }
 
-  // Get adapter
-  const adapter = await ensureConnected(connectionId)
+  // Resolve the no-secret WebSocket handle (broker holds the credential); auto-connects
+  // with a shared throttle. Null when the connection is unavailable or not WebSocket.
+  const conn = ctx.connection<WebSocketHandle>({ protocol: 'websocket' })
 
-  if (!adapter) {
+  if (!conn) {
     outputs.set('message', state.lastMessage)
     outputs.set('connected', false)
     outputs.set('error', 'Connection not found or not available')
     return outputs
   }
 
-  const isConnected = adapter.status === 'connected'
+  const isConnected = conn.status === 'connected'
 
   if (!isConnected) {
     outputs.set('message', state.lastMessage)
@@ -127,7 +76,7 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
     }
 
     // Set up new message listener
-    const unsubscribe = adapter.onMessage((message) => {
+    const unsubscribe = conn.onMessage((message) => {
       const nodeState = wsState.get(ctx.nodeId)
       if (nodeState) {
         nodeState.lastMessage = message.data
@@ -140,7 +89,7 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
   // Send data when triggered
   if (trigger && sendData !== undefined && isConnected) {
     try {
-      await adapter.send(sendData)
+      await conn.send(sendData)
     } catch (e) {
       console.error('[WebSocket] Send error:', e)
     }

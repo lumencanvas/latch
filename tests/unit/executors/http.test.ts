@@ -18,7 +18,9 @@ vi.mock('@/stores/connections', () => ({
 import { httpExecutor, disposeHttpNode, disposeAllHttpNodes, gcHttpState } from '@/engine/executors/http'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
-// Helper to create mock execution context
+// Helper to create mock execution context. These cases exercise the direct-fetch /
+// no-connection paths only (the mocked store's getAdapter returns null), so
+// ctx.connection() is never reached; the stub keeps the shape valid regardless.
 function createMockContext(overrides: Partial<ExecutionContext> = {}): ExecutionContext {
   return {
     nodeId: 'test-http-node',
@@ -28,8 +30,9 @@ function createMockContext(overrides: Partial<ExecutionContext> = {}): Execution
     totalTime: 0,
     deltaTime: 16,
     frame: 0,
+    connection: () => null,
     ...overrides,
-  }
+  } as unknown as ExecutionContext
 }
 
 describe('HTTP Executor', () => {

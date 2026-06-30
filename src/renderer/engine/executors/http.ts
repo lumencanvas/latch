@@ -10,8 +10,7 @@
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState } from '../nodeState'
-import { useConnectionsStore } from '@/stores/connections'
-import type { HttpAdapterImpl } from '@/services/connections/adapters/HttpAdapter'
+import type { HttpHandle } from '@/services/connections/ConnectionHandle'
 
 // Cache for HTTP request state. Compound `nodeId:…` keys (node ids never contain
 // ':'), so keyToNodeId splits on it; defineNodeState auto-registers the gc/dispose
@@ -34,57 +33,6 @@ function getCached<T>(key: string, defaultValue: T): T {
     return httpCache.get(key) as T
   }
   return defaultValue
-}
-
-/**
- * Get HTTP adapter from ConnectionManager
- */
-function getHttpAdapter(connectionId: string): HttpAdapterImpl | null {
-  if (!connectionId) return null
-
-  try {
-    const connectionsStore = useConnectionsStore()
-    const adapter = connectionsStore.getAdapter(connectionId)
-
-    if (adapter && adapter.protocol === 'http') {
-      return adapter as HttpAdapterImpl
-    }
-  } catch (e) {
-    console.warn('[HTTP] Could not get adapter:', e)
-  }
-
-  return null
-}
-
-/**
- * Ensure connection is established
- */
-// Throttle auto-connect attempts per connection so a persistently-failing
-// connection isn't re-dialed every frame (~60×/s). Reset on success.
-const lastConnectAttempt = new Map<string, number>()
-const RECONNECT_THROTTLE_MS = 2000
-
-async function ensureConnected(connectionId: string): Promise<HttpAdapterImpl | null> {
-  const adapter = getHttpAdapter(connectionId)
-  if (!adapter) return null
-
-  if (adapter.status !== 'connected') {
-    const now = Date.now()
-    if (now - (lastConnectAttempt.get(connectionId) ?? 0) >= RECONNECT_THROTTLE_MS) {
-      lastConnectAttempt.set(connectionId, now)
-      try {
-        const connectionsStore = useConnectionsStore()
-        await connectionsStore.connect(connectionId)
-      } catch (e) {
-        console.warn('[HTTP] Auto-connect failed:', e)
-        return null
-      }
-    }
-  } else {
-    lastConnectAttempt.delete(connectionId)
-  }
-
-  return adapter
 }
 
 /**
@@ -142,10 +90,11 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Get adapter
-  const adapter = await ensureConnected(connectionId)
+  // Resolve the no-secret HTTP handle (broker holds baseUrl + auth headers); auto-connects
+  // with a shared throttle. Null when the connection is unavailable or not HTTP.
+  const conn = ctx.connection<HttpHandle>({ protocol: 'http' })
 
-  if (!adapter) {
+  if (!conn) {
     outputs.set('response', null)
     outputs.set('status', 0)
     outputs.set('error', 'Connection not found or not available')
@@ -160,7 +109,7 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
     if (hasTemplate) {
       // Mode 1: Template mode
-      response = await adapter.executeTemplate(
+      response = await conn.executeTemplate(
         templateId,
         params,
         Object.keys(headers).length > 0 || body !== undefined
@@ -170,7 +119,7 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     } else {
       // Mode 2: Inline mode with connection
       const path = url || '/'
-      response = await adapter.request({
+      response = await conn.request({
         method: method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
         path,
         headers,
