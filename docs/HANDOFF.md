@@ -31,23 +31,27 @@ polyfill in tests/setup for happy-dom) · `0a95293` VLA + feature-extraction + t
 (+ downloading-transient + `notLoadedMessage`; updated pre-existing vla.test.ts `_error`→
 `error`) · `c291d28` object-detection.
 
-**NOT migrated (don't fit the discrete-inference helper — documented in c291d28):**
+**NOT migrated to the helper (don't fit discrete inference — documented in c291d28):**
 `object-detection-live`, `object-detection-yolo`, `depth-estimation` are continuous
 **texture-render** nodes (per-frame redraw into a held THREE.Texture; depth has no
 model-loaded gate). The 7 **MediaPipe** executors + **text-to-speech** use different
 services entirely. **STT** (speech-recognition) is real-time streaming audio with
-VAD/manual/continuous modes and stateful `fullText` accumulation — not a single result.
-ALL of these still benefit from A1's badge latch for their existing `_error` states; only
-their swallowed *inference* catches remain unsurfaced.
+VAD/manual/continuous modes and stateful `fullText` accumulation. ALL still benefit from
+A1's badge latch for their existing `_error` states.
 
-**Verification.** typecheck clean · lint 0 err · `test:unit` **1708 → 1729** (+21, +4 test
+**STT — targeted fix (`800451b`).** Since STT doesn't fit the helper, its swallowed
+transcription catch was surfaced directly: cache the message → new public `error` port
+(cleared on next success), audio/VAD/mode logic untouched, transient connecting/no-audio
+left on `_error` (status-not-error split). The texture-render nodes' swallowed catches
+remain the only unsurfaced ones.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1708 → 1731** (+23, +5 test
 files) · build ok · boot→Play→Stop smoke 0 errors. Mutation-verified per cluster
-(error-latch, downloading-transient, input-error precedence) by hand-edit (never
-`git checkout`).
+(error-latch, downloading-transient, input-error precedence, STT catch) by hand-edit
+(never `git checkout`).
 
-**▶ NEXT (maintainer-gated).** (a) Optional: bespoke transcribe-error surfacing for STT
-(its §G swallowed catch) without the misfit helper — small, behavior-preserving. (b) The
-texture-render nodes' swallowed catches, if wanted, need a separate pattern. (c) A2's
+**▶ NEXT (maintainer-gated).** (a) The texture-render nodes' swallowed catches, if wanted,
+need a separate pattern (they have no fire-and-latch result). (b) A2's
 `model` select auto-population from the model registry (still empty placeholder) +
 co-locating an AI node through `defineNode({models})` end-to-end (needs version bump +
 migrate for the new control). (d) The model-derive (MODEL_REGISTRY 5 decisions) and
