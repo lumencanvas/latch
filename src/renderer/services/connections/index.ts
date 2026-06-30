@@ -63,33 +63,30 @@ export type { ClaspValue, HttpRequestOptions } from './adapters'
 // ============================================================================
 
 import { getConnectionManager as getManagerInstance, resetConnectionManager } from './ConnectionManager'
-import {
-  claspConnectionType,
-  websocketConnectionType,
-  mqttConnectionType,
-  oscConnectionType,
-  httpConnectionType,
-} from './adapters'
+import { colocatedProtocolTypes } from './protocolRegistry'
 
 let initialized = false
 
 /**
- * Register built-in connection types with the manager
+ * Register built-in connection types with the manager.
+ *
+ * Authoritative source is now the `protocolRegistry` glob over
+ * `protocols/<name>/protocol.ts` (step 6b) — adding a protocol is one folder, no
+ * edit here. The protocol-count gate asserts the glob set equals the built-in set.
  */
 function registerBuiltInTypes(): void {
   if (initialized) return
 
   const manager = getManagerInstance()
 
-  // Register built-in protocol types
-  manager.registerType(claspConnectionType)
-  manager.registerType(websocketConnectionType)
-  manager.registerType(mqttConnectionType)
-  manager.registerType(oscConnectionType)
-  manager.registerType(httpConnectionType)
+  for (const type of colocatedProtocolTypes) {
+    manager.registerType(type)
+  }
 
   initialized = true
-  console.log('[Connections] Connection manager initialized with built-in types')
+  console.log(
+    `[Connections] Connection manager initialized with ${colocatedProtocolTypes.length} built-in types`
+  )
 }
 
 /**
