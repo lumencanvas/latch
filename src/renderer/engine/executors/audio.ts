@@ -806,14 +806,25 @@ export function disposePitchDetect(nodeId: string): void {
 }
 
 /**
+ * Recover the owning nodeId from an `audioNodes` map key. Keys are either a bare
+ * nodeId or `${nodeId}_${suffix}` for a fixed suffix set. Splitting on '_' is WRONG:
+ * nanoid ids contain '_' (~26% of the time), so `key.split('_')[0]` truncates the id —
+ * `gcAudioState` would then fail to match a live node and dispose its Tone graph on any
+ * unrelated node removal (self-heals next frame, but glitches audio). Strip a known
+ * suffix instead; a bare id (no suffix) is returned unchanged.
+ */
+export function audioNodeBaseId(key: string): string {
+  return key.replace(/_(meter|gain|input|fft|output)$/, '')
+}
+
+/**
  * Garbage collect orphaned audio state entries.
  * Call this with the set of currently valid node IDs.
  */
 export function gcAudioState(validNodeIds: Set<string>): void {
   // Clean audioNodes
   for (const key of audioNodes.keys()) {
-    // Extract base nodeId (may have suffixes like _meter, _input, _fft)
-    const baseId = key.split('_')[0]
+    const baseId = audioNodeBaseId(key)
     if (!validNodeIds.has(baseId)) {
       const node = audioNodes.get(key)
       if (node) {

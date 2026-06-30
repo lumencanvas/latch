@@ -240,6 +240,23 @@ export function disposeAllVisualNodes(): void {
 }
 
 /**
+ * True if a shader-cache key is owned by a still-valid node. Keys are either a bare
+ * nodeId or a cacheKey `${nodeId}_${hash}_${hash}_${bool}_${num}`. Recovering the id
+ * by `key.split('_')[0]` is WRONG: nanoid ids contain '_' (~26% of the time), so the
+ * split truncates the id and gcVisualState disposed a LIVE node's compiled material on
+ * any unrelated node removal (it recompiled next frame, but stutters the render).
+ * Mirrors disposeVisualNode's `${nodeId}_` ownership test; with fixed-length nanoid
+ * ids the `${id}_` prefix match is unambiguous.
+ */
+export function shaderCacheKeyOwned(key: string, validNodeIds: Set<string>): boolean {
+  if (validNodeIds.has(key)) return true
+  for (const id of validNodeIds) {
+    if (key.startsWith(`${id}_`)) return true
+  }
+  return false
+}
+
+/**
  * Garbage collect orphaned visual state entries.
  * Call this with the set of currently valid node IDs.
  */
@@ -251,8 +268,7 @@ export function gcVisualState(validNodeIds: Set<string>): void {
   // Clean compiledShaderMaterials
   for (const key of compiledShaderMaterials.keys()) {
     if (key.startsWith('_')) continue
-    const baseId = key.includes('_') ? key.split('_')[0] : key
-    if (baseId && !validNodeIds.has(baseId)) {
+    if (!shaderCacheKeyOwned(key, validNodeIds)) {
       const material = compiledShaderMaterials.get(key)
       if (material) material.material.dispose()
       compiledShaderMaterials.delete(key)
@@ -262,8 +278,7 @@ export function gcVisualState(validNodeIds: Set<string>): void {
   // Clean legacy compiledShaders
   for (const key of compiledShaders.keys()) {
     if (key.startsWith('_')) continue
-    const baseId = key.includes('_') ? key.split('_')[0] : key
-    if (baseId && !validNodeIds.has(baseId)) {
+    if (!shaderCacheKeyOwned(key, validNodeIds)) {
       compiledShaders.delete(key)
     }
   }
