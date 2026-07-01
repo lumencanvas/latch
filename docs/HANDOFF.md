@@ -6,6 +6,57 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-01 (later 27) — SECURITY_MODEL steps 2-6: the capability-enforcement spine (+ derives committed)
+
+Maintainer picked the SECURITY_MODEL design proposal, then "do this and then act on it… the whole goal is a
+better architecture for modularity; the code works, restructure per plan; don't worry if you can't verify
+serial/BLE headlessly — the code is the code." So: designed steps 2-6 grounded in a 5-agent code map, then
+implemented the buildable enforcement spine.
+
+**First, committed the model derives** (earlier work, uncommitted): WebLLM derive, transformers `AI_MODELS`
+derive, docs, and the count-guard tightening — commits `33ba64c` / `6238b75` / `6e4e551` / `4343942`.
+
+**Design (`docs/plans/SECURITY_MODEL_IMPL_2026-07-01.md`).** The map found step 2 is 90% pre-wired (one
+choke point `resolveConnectionHandle`; `NodeSpec.connections` already declares; a tested-but-dead
+`ConnectionValidator`), no provenance signal exists, and no CSP + no executor isolation (`new Function` is
+NOT a sandbox). So the buildable spine is **steps 3→2→4**; steps 5-6 hit hard limits (per-node egress needs
+Worker isolation; install disclosure needs a manifest system) — documented honestly, not faked.
+
+**Implemented (all dormant for existing nodes — every built-in is `core` → bypass; zero regression).**
+- **Step 3 — trust tiers** (`services/security/trust.ts`): `TrustTier` on `NodeDefinition`, assigned by
+  ORIGIN at load (built-in→`core`, `CustomNodeLoader` stamps `local`/`community`), never author-declared.
+- **Step 2 — capability gate** in `resolveConnectionHandle`: a `community` node may only obtain a handle
+  for a protocol it DECLARED; trust + declarations come from the AUTHORITATIVE registry def (not the
+  spoofable embedded copy).
+- **Step 4 — approval grants** (`services/security/capabilityGrants.ts`): deny-by-default; the sync gate
+  fires the async approval once and denies until granted (injected resolver → UI-agnostic); grants keyed
+  per (nodeType, protocol, **connection id**).
+- **Step 6 core** (`services/security/capabilities.ts`): `describeCapabilities`/`formatCapabilityConsent`
+  render the consent list an install dialog shows.
+
+**Adversarial red-team (13 agents) → 6 confirmed, fixed (commit `a3b6071`).**
+- **CRITICAL:** the capability context was a property on the executor-facing `ctx` → a community executor
+  could `ctx.capabilityContext.trust = 'core'` to bypass. Now passed as a closed-over arg to
+  `createExecutionContext` (never on ctx) + frozen. Mutation-verified (re-exposing it reds the anti-spoof test).
+- The validator STRIPPED `connections`/`requires` (rebuilds from a whitelist) → the declare→approve path
+  was dead for the only tier it gates. Now whitelisted + validated (still strips author `trust`).
+- Grant key omitted the connection id → one approval unlocked every same-protocol broker. Now per-connection.
+- `compiler.ts` falsely claimed `new Function` sandboxes → corrected; the honest boundary is documented.
+- **Honest limit (no overclaim):** without isolation, a malicious community node can still `fetch`/reach
+  credentials via ambient access; the spine stops accidental/undeclared misuse and becomes a real boundary
+  only once community executors run in a Worker + credentials move off the adapter (the priority follow-on).
+  Trust/provenance is the mitigation until then. There is no marketplace/install flow yet, so this is dormant.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1778 → 1806** · boot→Play→Stop smoke 0 errors.
+Committed as logical units.
+
+**▶ NEXT.** Security follow-on: Worker-isolate `community` executors + move adapter credentials to a
+broker-private WeakMap (the real step-5 boundary), then the install/manifest UX (step 6 full). Otherwise:
+Serial/MIDI adapter drift (MIDI is a poor fit for the connection-adapter model — flag), MediaPipe derive
+(deferred, poor fit), BLE picker + desktop BLE check.
+
+---
+
 ## 2026-06-30 (later 26) — second catalog DERIVE: transformers `AI_MODELS` now derived (per-task rollup); audit clean
 
 The hard fork from `MODEL_REGISTRY_IMPL` (maintainer: "continue"). Turned the per-task `AI_MODELS`
