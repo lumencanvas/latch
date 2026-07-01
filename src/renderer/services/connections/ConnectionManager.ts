@@ -17,6 +17,7 @@ import type {
   Platform,
 } from './types'
 import { getPlatform } from '@/utils/platform'
+import { redactConfig, mergePreservingSecrets } from './redactSecrets'
 
 type EventMap = {
   [K in keyof ConnectionManagerEvents]: Set<ConnectionManagerEventHandler<K>>
@@ -29,8 +30,12 @@ class ConnectionManagerImpl implements IConnectionManager {
   /** Registered connection type definitions */
   private types = new Map<string, ConnectionTypeDefinition>()
 
-  /** Saved connection configurations */
-  private connections = new Map<string, BaseConnectionConfig>()
+  /**
+   * Saved connection configurations, INCLUDING secrets. `#`-private (not TS `private`,
+   * which is erased at runtime) so node/community code can't reach the raw configs via
+   * `(manager as any).connections`. The public getters + events expose only redacted copies.
+   */
+  #connections = new Map<string, BaseConnectionConfig>()
 
   /** Active runtime adapters */
   private adapters = new Map<string, ConnectionAdapter>()
@@ -72,7 +77,7 @@ class ConnectionManagerImpl implements IConnectionManager {
     }
 
     // Remove all connections of this type
-    for (const [connId, config] of this.connections) {
+    for (const [connId, config] of this.#connections) {
       if (config.protocol === typeId) {
         this.removeConnection(connId)
       }
@@ -99,7 +104,7 @@ class ConnectionManagerImpl implements IConnectionManager {
   // =========================================================================
 
   addConnection(config: BaseConnectionConfig): void {
-    if (this.connections.has(config.id)) {
+    if (this.#connections.has(config.id)) {
       console.warn(`[ConnectionManager] Connection '${config.id}' already exists, use updateConnection`)
       return
     }
@@ -110,9 +115,9 @@ class ConnectionManagerImpl implements IConnectionManager {
       return
     }
 
-    this.connections.set(config.id, config)
+    this.#connections.set(config.id, config)
     this.statusCache.set(config.id, { status: 'disconnected' })
-    this.emit('connection-added', config)
+    this.emit('connection-added', redactConfig(config, typeDef))
 
     // Auto-connect if configured
     if (config.autoConnect) {
@@ -123,7 +128,7 @@ class ConnectionManagerImpl implements IConnectionManager {
   }
 
   removeConnection(connectionId: string): void {
-    const config = this.connections.get(connectionId)
+    const config = this.#connections.get(connectionId)
     if (!config) {
       return
     }
@@ -131,12 +136,12 @@ class ConnectionManagerImpl implements IConnectionManager {
     // Disconnect and dispose adapter
     this.disposeAdapter(connectionId)
 
-    this.connections.delete(connectionId)
+    this.#connections.delete(connectionId)
     this.emit('connection-removed', connectionId)
   }
 
   updateConnection(connectionId: string, updates: Partial<BaseConnectionConfig>): void {
-    const existing = this.connections.get(connectionId)
+    const existing = this.#connections.get(connectionId)
     if (!existing) {
       console.warn(`[ConnectionManager] Connection '${connectionId}' not found`)
       return
@@ -148,9 +153,12 @@ class ConnectionManagerImpl implements IConnectionManager {
       return
     }
 
-    const updated = { ...existing, ...updates, id: connectionId }
-    this.connections.set(connectionId, updated)
-    this.emit('connection-updated', updated)
+    // Merge, but a secret field still at the redaction placeholder means "unchanged" — so a
+    // UI that round-trips a redacted config can't erase a saved secret (Node-RED's __PWRD__).
+    const typeDef = this.types.get(existing.protocol)
+    const updated = { ...mergePreservingSecrets(existing, updates, typeDef), id: connectionId }
+    this.#connections.set(connectionId, updated)
+    this.emit('connection-updated', redactConfig(updated, typeDef))
 
     // If adapter exists and key config changed, reconnect
     const adapter = this.adapters.get(connectionId)
@@ -170,11 +178,12 @@ class ConnectionManagerImpl implements IConnectionManager {
   }
 
   getConnection(connectionId: string): BaseConnectionConfig | undefined {
-    return this.connections.get(connectionId)
+    const config = this.#connections.get(connectionId)
+    return config ? redactConfig(config, this.types.get(config.protocol)) : undefined
   }
 
   getConnections(): BaseConnectionConfig[] {
-    return Array.from(this.connections.values())
+    return Array.from(this.#connections.values()).map((c) => redactConfig(c, this.types.get(c.protocol)))
   }
 
   getConnectionsByProtocol(protocol: string): BaseConnectionConfig[] {
@@ -190,7 +199,7 @@ class ConnectionManagerImpl implements IConnectionManager {
   }
 
   async connect(connectionId: string): Promise<void> {
-    const config = this.connections.get(connectionId)
+    const config = this.#connections.get(connectionId)
     if (!config) {
       throw new Error(`Connection '${connectionId}' not found`)
     }
@@ -257,7 +266,7 @@ class ConnectionManagerImpl implements IConnectionManager {
   async connectAll(): Promise<void> {
     const promises: Promise<void>[] = []
 
-    for (const config of this.connections.values()) {
+    for (const config of this.#connections.values()) {
       if (config.autoConnect) {
         promises.push(
           this.connect(config.id).catch(err => {
@@ -346,7 +355,7 @@ class ConnectionManagerImpl implements IConnectionManager {
     }
 
     // Clear all state
-    this.connections.clear()
+    this.#connections.clear()
     this.statusCache.clear()
     this.types.clear()
 
@@ -365,7 +374,11 @@ class ConnectionManagerImpl implements IConnectionManager {
    * Export connections for persistence
    */
   exportConnections(): BaseConnectionConfig[] {
-    return this.getConnections()
+    // Persistence needs the REAL secrets (the flow round-trips them on load), so this returns
+    // raw configs — unlike the redacted public getConnections(). Honest at-rest limit: a
+    // browser can't encrypt the flow-embedded secret (redactSecrets.ts). Electron could route
+    // these through the safeStorage-backed CredentialStore — a documented follow-on.
+    return Array.from(this.#connections.values()).map((c) => ({ ...c }))
   }
 
   /**
@@ -373,7 +386,7 @@ class ConnectionManagerImpl implements IConnectionManager {
    */
   importConnections(configs: BaseConnectionConfig[]): void {
     for (const config of configs) {
-      if (!this.connections.has(config.id)) {
+      if (!this.#connections.has(config.id)) {
         this.addConnection(config)
       }
     }
@@ -384,7 +397,7 @@ class ConnectionManagerImpl implements IConnectionManager {
    */
   replaceConnections(configs: BaseConnectionConfig[]): void {
     // Disconnect and remove all existing
-    for (const connectionId of Array.from(this.connections.keys())) {
+    for (const connectionId of Array.from(this.#connections.keys())) {
       this.removeConnection(connectionId)
     }
 

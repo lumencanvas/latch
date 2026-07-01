@@ -135,7 +135,35 @@ configs into **reactive Pinia state**; (4) the adapter retains `this.config`/`mq
 (readable off a `getAdapter(id)` ref). The no-secret *handle* (step 1) is correct, but these
 side channels bypass it.
 
-**Recommended next effort — credential hardening (bounded but MULTI-SURFACE + entangled):**
+**What Node-RED does (for reference).** Flows (`flows.json`) contain **no** secrets; credentials
+live in a **separate, encrypted** `flows_cred.json` keyed by a `credentialSecret` (user-set or
+auto-generated); password-typed fields are masked (`__PWRD__`) and never exposed in normal
+operations or to the editor; the runtime recombines them. Its safety = **secret/flow separation +
+encryption-at-rest + never handing secrets to the client.** A browser app can't fully match the
+encryption-at-rest half (no secure key store outside Electron `safeStorage`), but the *don't hand
+secrets around* half is very achievable — and is the higher-value, no-regression piece.
+
+**DONE (2026-07-01) — public-API secret redaction (the achievable, Node-RED-aligned half).**
+`ConnectionManager` now (`redactSecrets.ts`): (1) holds configs in a `#`-private map — not
+reachable via `(mgr as any).connections`; (2) `getConnection*` + `connection-added/updated` events
+return configs with secret fields (declared `props.type:'password'`, or secret-named) masked to a
+placeholder — so node/community code and the reactive UI store never receive a real secret; (3)
+`connect()` + `exportConnections()` read the raw private map, so auth + flow persistence are
+unchanged; (4) `updateConnection` merge-preserves a masked field (Node-RED's `__PWRD__`) so a UI
+round-trip can't erase a saved secret. Clasp's `token` is now a masked password field. Bounded
+(one service + a helper), unit-tested + mutation-verified, zero regression.
+
+**Residual (deliberately NOT over-engineered) — the honest limits:**
+- The flow file still embeds the real secret (persistence). A browser can't encrypt-at-rest; Electron
+  *could* route these through the `safeStorage`-backed `CredentialStore` (dead scaffolding today) — a
+  follow-on, gated on whether flow-sharing-leaks-passwords is a real concern for the target users.
+- The connected adapter still holds the secret on `this.config` (readable via `getAdapter(id)`), and a
+  community executor has ambient `import()`/`fetch` — so **full** confinement still needs Worker
+  isolation of pure-compute community nodes (per the map above). The redaction closes the broad,
+  casual path; it is defense-in-depth, not a wall — which, per the "not perfectly hardened is OK"
+  call, is the right stopping point until community distribution actually exists.
+
+**Superseded recommendation (kept for context) — credential hardening (multi-surface):**
 1. Store secrets in a truly-private structure (a `#`-private field or a module-private
    `Map`/`WeakMap`), never on the instance-reachable config or the adapter's enumerable props.
 2. `getConnection*` + the store's reactive state expose only a **secret-redacted DTO**; the

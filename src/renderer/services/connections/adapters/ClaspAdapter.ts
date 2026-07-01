@@ -241,6 +241,7 @@ export const claspConnectionType: ConnectionTypeDefinition<ClaspConnectionConfig
       label: 'Auth Token',
       description: 'Optional authentication token',
       default: '',
+      props: { type: 'password' }, // mask + mark as a secret (redacted from the public API)
     },
     {
       id: 'autoConnect',
