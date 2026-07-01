@@ -223,6 +223,32 @@ export const AI_MODELS: ModelDefinition[] = [
   },
 ]
 
+export interface ModelSelectOption {
+  value: string
+  label: string
+}
+
+/**
+ * Build the `model` select options for an AI task from `AI_MODELS`: an "auto"
+ * entry (value `''`) followed by each alternate model. Value `''` resolves to the
+ * task default at inference time — every service method keys on
+ * `modelId || getDefaultModel(task)` — so a node whose select is left on the
+ * default behaves exactly as it did before a select existed (and old saved flows,
+ * which have no `model` control, resolve the same way). Pure over the catalog, so
+ * it's cheap to call at node-definition time and trivially testable. The source
+ * swaps to the model registry once models are co-located; the hand-authored
+ * catalog stays authoritative until the sign-off-gated derive.
+ */
+export function getModelSelectOptions(task: string): ModelSelectOption[] {
+  const def = AI_MODELS.find((m) => m.task === task)
+  if (!def) return []
+  const defaultName = def.defaultModel.split('/').pop() ?? def.defaultModel
+  return [
+    { value: '', label: `Default — ${defaultName} (${def.defaultSize})` },
+    ...def.alternateModels.map((m) => ({ value: m.id, label: `${m.name} (${m.size})` })),
+  ]
+}
+
 // Progress callback type
 type ProgressCallback = (progress: number) => void
 

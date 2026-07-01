@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { defineNode } from '@/engine/defineNode'
+import { defineNode, deriveModelDefinition } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 
 const def: NodeDefinition = {
@@ -116,5 +116,45 @@ describe('defineNode model derivation (A2)', () => {
     const twice = defineNode({ ...once, definition: once.definition })
     expect(twice.definition.outputs).toEqual(once.definition.outputs)
     expect(twice.definition.controls).toEqual(once.definition.controls)
+  })
+})
+
+describe('deriveModelDefinition — injected catalog resolver', () => {
+  it('populates the model select options + default from the resolver (first selectable task)', () => {
+    const out = deriveModelDefinition(def, [{ task: 'text-generation' }], (task) => ({
+      options: [
+        { value: '', label: `Default (${task})` },
+        { value: 'a/b', label: 'B' },
+      ],
+      default: '',
+    }))
+    const model = out.controls.find((c) => c.id === 'model')
+    expect(model?.default).toBe('')
+    expect(model?.props?.options).toEqual([
+      { value: '', label: 'Default (text-generation)' },
+      { value: 'a/b', label: 'B' },
+    ])
+  })
+
+  it('leaves options empty when no resolver is supplied (the inert defineNode path)', () => {
+    const out = deriveModelDefinition(def, [{ task: 'text-generation' }])
+    const model = out.controls.find((c) => c.id === 'model')
+    expect(model?.props?.options).toEqual([])
+    expect(model?.default).toBe('')
+  })
+
+  it('does not consult the resolver when the model select is suppressed or already authored', () => {
+    let called = false
+    const resolver = () => {
+      called = true
+      return { options: [{ value: 'x', label: 'X' }], default: 'x' }
+    }
+    deriveModelDefinition(def, [{ task: 't', selectable: false }], resolver)
+    const authored: NodeDefinition = {
+      ...def,
+      controls: [{ id: 'model', type: 'select', label: 'Model', default: 'mine' }],
+    }
+    deriveModelDefinition(authored, [{ task: 't' }], resolver)
+    expect(called).toBe(false)
   })
 })

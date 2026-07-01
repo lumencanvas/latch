@@ -6,6 +6,50 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 20) — A2 model-select population: first registry-populated `model` select (text-generation)
+
+Self-driven Phase-2 step (maintainer authorized forward progress). Mapped the models sub-stream with a
+5-agent Understand workflow first (defineNode derivation, catalogs, model-registry scaffold, versioning,
+co-location target), which surfaced the exact architecture and one contradiction to resolve by reading the
+real code.
+
+**Load-bearing facts (verified, not assumed).** (1) `AI_MODELS` DOES have a `task:'text-generation'` entry
+(a map agent's "not in AI_MODELS" claim was wrong). (2) `AIInference.ts` statically imports only light modules
+(no transformers runtime — that's in the worker), so the catalog is cheap to import. (3) **Every** infer
+method + `isModelLoaded`/`getModelInfo` resolve `modelId || getDefaultModel(task)` — they use the task
+default, NOT `getSelectedModel` — so an absent/empty modelId falls back to the default *everywhere*. That makes
+adding a `model` control purely additive: default `''` = "auto → task default", old saved flows (no control)
+resolve identically, **no `migrate()` needed**. (4) AI nodes are bare `NodeDefinition`s with executors in a
+separate map, so full `defineNode`+executor co-location is **Phase 6** — not attempted here.
+
+**What changed (well-architected, minimal).**
+- `services/ai/AIInference.ts`: pure `getModelSelectOptions(task)` — an "auto" entry (`value:''`) + every
+  alternate, mapped from `AI_MODELS`. Trivially testable, cheap at node-def time; source swaps to the model
+  registry after the derive.
+- `engine/defineNode.ts`: exported `deriveModelDefinition` + added an optional injected `ModelSelectResolver`.
+  The engine stays **catalog-agnostic** (it never imports the AI service); the AI registry injects catalog
+  knowledge. `defineNode` still calls it with no resolver (the non-AI library stays byte-identical / inert).
+- `registry/ai/text-generation.ts`: routed its definition through `deriveModelDefinition(..., resolver)` — it
+  gains a registry-populated `model` select; its already-declared loading/progress/done/error outputs dedup to
+  no-ops. First AI node with a populated select.
+
+**Tests (+9), mutation-verified.** `defineNode.test.ts`: resolver populates options+default, empty without a
+resolver (inert path preserved), resolver not consulted when the select is suppressed/authored. `ai-catalog.test.ts`:
+`getModelSelectOptions` shape/auto-entry/unknown-task/every-task, and the text-generation node's populated select
++ no output/control duplication. Mutations (ignore the resolver / drop the auto entry) red exactly the right tests.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1740 → 1749** · **boot→Play→Stop smoke 0 real
+errors** (registry/def change + new registry→service import at module load). Architecture note: engine↔AI
+decoupling preserved via dependency injection; the same seam serves the post-derive source swap unchanged.
+
+**▶ NEXT (self-drivable).** Adopt the populated select on the other transformers AI nodes (sentiment,
+feature-extraction, image-captioning, text2text, object-detection — all already read `ctx.controls.get('model')`
+via `runModelInference`), one green+smoked step. Still maintainer-gated: the catalog **derive**
+(`MODEL_REGISTRY_IMPL`, 5 forks), `SECURITY_MODEL` 2–6, BLE/Serial/MIDI drift. Phase-6 executor co-location is
+the larger separate effort.
+
+---
+
 ## 2026-06-30 (later 19) — texture-render swallowed-catch surfacing + A1 empty-error shadow fix (Phase 2)
 
 Plan check first (ROADMAP is canonical for this branch): we're mid **Phase 2** — connections sub-stream

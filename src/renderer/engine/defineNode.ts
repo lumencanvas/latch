@@ -66,16 +66,29 @@ const MODEL_OUTPUT_PORTS: readonly PortDefinition[] = [
 ]
 
 /**
+ * Resolves a task's `model` select options + default value. Injected by the caller
+ * that owns catalog knowledge (the AI registry, backed by `AI_MODELS` today, the
+ * model registry after the derive) so this engine module stays catalog-agnostic —
+ * `defineNode`/`deriveModelDefinition` never import the AI service.
+ */
+export type ModelSelectResolver = (task: string) => {
+  options: readonly { value: string; label: string }[]
+  default: string
+}
+
+/**
  * Derive the standardized model UI from a node's `models` declaration: append the
  * loading/progress/done/error outputs and (when some task is `selectable`) a
  * `model` select. Pure and idempotent — re-running it on its own output is a
- * no-op, since every append is guarded on the id already being present. Options
- * for the `model` select are populated from the model registry at a later phase;
- * the derived control carries an empty placeholder for now.
+ * no-op, since every append is guarded on the id already being present. When a
+ * `resolveModelSelect` is supplied, the select's options + default are populated
+ * from it (the first selectable task); without one the control carries an empty
+ * placeholder (the inert `defineNode` path until per-node co-location).
  */
-function deriveModelDefinition(
+export function deriveModelDefinition(
   def: NodeDefinition,
   models: readonly ModelRequirement[],
+  resolveModelSelect?: ModelSelectResolver,
 ): NodeDefinition {
   const existingOutputs = new Set(def.outputs.map((p) => p.id))
   const outputs: PortDefinition[] = [
@@ -87,14 +100,15 @@ function deriveModelDefinition(
   const hasModelControl = def.controls.some((c) => c.id === 'model')
   let controls = def.controls
   if (wantsSelect && !hasModelControl) {
+    const task = models.find((m) => m.selectable !== false)?.task
+    const resolved = task && resolveModelSelect ? resolveModelSelect(task) : undefined
     const modelControl: ControlDefinition = {
       id: 'model',
       type: 'select',
       label: 'Model',
-      // Resolves to the task default at runtime; options come from the model
-      // registry once catalogs are authored (inert today).
-      default: '',
-      props: { options: [] },
+      // '' resolves to the task default at inference time; a non-empty pick overrides.
+      default: resolved?.default ?? '',
+      props: { options: resolved ? [...resolved.options] : [] },
     }
     controls = [...def.controls, modelControl]
   }

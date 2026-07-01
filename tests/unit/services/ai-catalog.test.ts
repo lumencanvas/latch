@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { AI_MODELS, type ModelDefinition, type ModelOption } from '@/services/ai/AIInference'
+import {
+  AI_MODELS,
+  getModelSelectOptions,
+  type ModelDefinition,
+  type ModelOption,
+} from '@/services/ai/AIInference'
+import { textGenerationNode } from '@/registry/ai/text-generation'
 
 /**
  * Guards the in-browser AI model catalog (AIInference.ts:AI_MODELS) against
@@ -100,5 +106,60 @@ describe('AI_MODELS catalog', () => {
   it('does not reference the unresolvable mobilenet_v3 repo (removed in refresh)', () => {
     const all = AI_MODELS.flatMap(repoIds).join(' ')
     expect(/mobilenet_v3/i.test(all)).toBe(false)
+  })
+})
+
+describe('getModelSelectOptions', () => {
+  it('leads with an "auto" default entry (value "") then every alternate, for a known task', () => {
+    const opts = getModelSelectOptions('text-generation')
+    const def = AI_MODELS.find((m) => m.task === 'text-generation')!
+    expect(opts).toHaveLength(1 + def.alternateModels.length)
+    expect(opts[0].value).toBe('') // '' → resolves to the task default at inference time
+    expect(opts[0].label.toLowerCase()).toContain('default')
+    // Every alternate is present as an explicit, selectable option.
+    for (const alt of def.alternateModels) {
+      expect(opts.some((o) => o.value === alt.id)).toBe(true)
+    }
+    // No option value is a bare-empty duplicate of another (only the single auto entry).
+    expect(opts.filter((o) => o.value === '')).toHaveLength(1)
+  })
+
+  it('returns an empty list for an unknown task (no throw, no phantom options)', () => {
+    expect(getModelSelectOptions('not-a-task')).toEqual([])
+  })
+
+  it('covers every catalog task', () => {
+    for (const m of AI_MODELS) {
+      const opts = getModelSelectOptions(m.task)
+      expect(opts.length).toBeGreaterThanOrEqual(1)
+      expect(opts[0].value).toBe('')
+    }
+  })
+})
+
+describe('text-generation node — registry-populated model select (A2 follow-through)', () => {
+  const model = textGenerationNode.controls.find((c) => c.id === 'model')
+
+  it('gains a populated model select whose options match the catalog, default "" (auto)', () => {
+    expect(model).toBeDefined()
+    expect(model!.type).toBe('select')
+    expect(model!.default).toBe('') // preserves prior behavior: '' → task default
+    expect(model!.props?.options).toEqual(getModelSelectOptions('text-generation'))
+  })
+
+  it('keeps the standardized model outputs without duplication', () => {
+    const outIds = textGenerationNode.outputs.map((p) => p.id)
+    for (const id of ['loading', 'progress', 'done', 'error']) {
+      expect(outIds.filter((o) => o === id)).toHaveLength(1)
+    }
+    expect(outIds).toContain('text')
+  })
+
+  it('does not duplicate the authored prompt/maxTokens/temperature controls', () => {
+    const ctrlIds = textGenerationNode.controls.map((c) => c.id)
+    expect(ctrlIds.filter((c) => c === 'model')).toHaveLength(1)
+    for (const id of ['prompt', 'maxTokens', 'temperature']) {
+      expect(ctrlIds).toContain(id)
+    }
   })
 })
