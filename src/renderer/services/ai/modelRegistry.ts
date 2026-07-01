@@ -7,10 +7,15 @@
  * This is that collector, added NOW (the scaffold) alongside the three hand-authored
  * catalogs so the count + prompt-format gates exist from the first commit.
  *
- * Today the glob matches ZERO files, so this is inert — the hand-authored catalogs stay
- * authoritative. The collector becomes authoritative only once models are co-located
- * and `AI_MODELS`/`WEBLLM_MODELS`/MediaPipe URLs are derived from `modelSpecs` (the
- * sign-off-gated derive — `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`).
+ * The glob is now LIVE for the webllm family: 25 co-located `models/webllm/*.model.ts`
+ * specs are collected here and `WEBLLM_MODELS` is derived from them (see
+ * `models/webllm/derive.ts`; the sign-off-gated first derive —
+ * `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`). `AI_MODELS` (transformers) and the
+ * MediaPipe URLs remain hand-authored pending their own derives.
+ *
+ * This collector stays SHAPE-AGNOSTIC — it just gathers `ModelSpec`s by id. Each
+ * catalog's per-family rollup (order, task grouping, projection) lives beside its
+ * specs, e.g. `models/webllm/derive.ts` + `order.ts`, not here.
  *
  * Mirrors `services/connections/protocolRegistry.ts`; lives under `src/renderer` so
  * Vite's `import.meta.glob` and `vite/client` types resolve and the relative glob is correct.

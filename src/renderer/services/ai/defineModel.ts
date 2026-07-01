@@ -11,11 +11,12 @@
  * **Frozen public contract** (POLICIES §2): additive-only within a major version,
  * like `defineNode`/`defineProtocol`.
  *
- * Additive: nothing is derived through this yet. The `modelRegistry` glob is inert
- * until models are co-located (a `*.model.ts` per model), at which point the count +
- * prompt-format gates become live and `AI_MODELS`/`WEBLLM_MODELS`/MediaPipe URLs are
- * derived from `modelSpecs`. The derive (per-model rollup to the per-task `AI_MODELS`
- * shape) is a sign-off-gated step — see `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`.
+ * Live for webllm: the 25 `models/webllm/*.model.ts` specs are collected by
+ * `modelRegistry` and `WEBLLM_MODELS` is derived from them (`models/webllm/derive.ts`),
+ * so the count + prompt-format gates are real for that family. `AI_MODELS`
+ * (transformers, a per-task rollup) and the MediaPipe URLs are still hand-authored,
+ * pending their own sign-off-gated derives — see
+ * `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`.
  */
 
 /** Which in-browser runtime loads + runs the model. */

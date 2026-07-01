@@ -48,10 +48,10 @@ describe('modelRegistry auto-glob', () => {
     }
   })
 
-  it('prompt-format contract: every co-located text-generation spec declares load.promptFormat', () => {
+  it('prompt-format contract: every co-located text-generation spec declares a valid load.promptFormat', () => {
     for (const spec of colocatedModelSpecs) {
       if (spec.task === 'text-generation') {
-        expect(spec.load?.promptFormat).toBeDefined()
+        expect(['chat', 'completion']).toContain(spec.load?.promptFormat)
       }
     }
   })
@@ -59,8 +59,23 @@ describe('modelRegistry auto-glob', () => {
   it('count guard: co-located models never exceed the catalogs union (no orphans)', () => {
     expect(colocatedModelIds.length).toBeLessThanOrEqual(legacyModelIds.size)
     for (const id of colocatedModelIds) expect(legacyModelIds.has(id)).toBe(true)
-    // TODO(derive): tighten to set-equality once every catalog model is co-located and
-    // AI_MODELS/WEBLLM_MODELS/MediaPipe are derived from modelSpecs (add MediaPipe ids
-    // to the universe then) — that is the POLICIES derived-deep-equal gate.
+    // TODO(derive): tighten to whole-catalog set-equality once transformers `AI_MODELS`
+    // and MediaPipe are also co-located + derived (add MediaPipe ids to the universe
+    // then). WebLLM is already there — see the set-equality block below.
+  })
+
+  // WebLLM is the first fully co-located + derived family (POLICIES §1). Compare full
+  // {id,name,size} tuples in BOTH directions so the derive can never silently gain,
+  // drop, or mis-project a WebLLM model relative to the shipped `WEBLLM_MODELS`
+  // catalog — this guards that `deriveWebllmCatalog` keeps copying name+size faithfully
+  // from the specs, not just the ids.
+  it('WebLLM set-equality: co-located webllm specs exactly match the derived catalog (id, name, size)', () => {
+    const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id)
+    const colocatedWebllm = colocatedModelSpecs
+      .filter((s) => s.family === 'webllm')
+      .map((s) => ({ id: s.id, name: s.name, size: s.size }))
+      .sort(byId)
+    const catalog = WEBLLM_MODELS.map((m) => ({ id: m.id, name: m.name, size: m.size })).sort(byId)
+    expect(colocatedWebllm).toEqual(catalog)
   })
 })
