@@ -122,6 +122,62 @@ describe('BaseNode number controls', () => {
   })
 })
 
+describe('BaseNode conditional visibility (when / visibleWhen)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  // `vis` is the visibility declaration on the dependent 'extra' control — either the canonical
+  // `when` or the legacy `visibleWhen`; both route through the same evaluator.
+  function mountWith(modeValue: string, vis: Record<string, unknown>) {
+    const nodesStore = useNodesStore()
+    nodesStore.register({
+      id: 'vis-test',
+      name: 'Vis',
+      version: '1.0.0',
+      category: 'data',
+      description: '',
+      icon: 'box',
+      platforms: ['web', 'electron'],
+      inputs: [],
+      outputs: [],
+      controls: [
+        { id: 'mode', type: 'select', label: 'Mode', default: 'a', props: { options: ['a', 'b'] } },
+        { id: 'extra', type: 'text', label: 'Extra', default: '', ...vis },
+      ],
+    })
+    return mount(BaseNode as unknown as Record<string, unknown>, {
+      props: {
+        id: 'n1',
+        type: 'vis-test',
+        data: { nodeType: 'vis-test', mode: modeValue, extra: '' },
+        selected: false,
+        connectable: true,
+        position: { x: 0, y: 0 },
+        dimensions: { width: 100, height: 50 },
+        dragging: false,
+        resizing: false,
+        zIndex: 0,
+        events: {},
+      },
+      global: { stubs: { Handle: true, NodeConnectionStatus: true } },
+    })
+  }
+
+  // 'extra' (the only text input) is filtered out of inlineControls when its condition is unmet.
+  const textCount = (w: ReturnType<typeof mountWith>) => w.findAll('input[type="text"]').length
+
+  it('honors the canonical `when` (hidden when the sibling mismatches, shown when it matches)', () => {
+    expect(textCount(mountWith('a', { when: { mode: 'b' } }))).toBe(0)
+    expect(textCount(mountWith('b', { when: { mode: 'b' } }))).toBe(1)
+  })
+
+  it('still honors the legacy `visibleWhen`', () => {
+    expect(textCount(mountWith('a', { visibleWhen: { controlId: 'mode', value: 'b' } }))).toBe(0)
+    expect(textCount(mountWith('b', { visibleWhen: { controlId: 'mode', value: 'b' } }))).toBe(1)
+  })
+})
+
 describe('BaseNode error badge', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

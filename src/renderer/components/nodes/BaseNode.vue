@@ -8,7 +8,8 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-vue-next'
-import { categoryMeta, dataTypeMeta, type NodeDefinition, useNodesStore } from '@/stores/nodes'
+import { categoryMeta, dataTypeMeta, type NodeDefinition, type WhenSchema, useNodesStore } from '@/stores/nodes'
+import { evaluateWhen } from '@/composables/useControlHelpers'
 import { categoryIcons, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
@@ -144,6 +145,7 @@ const controls = computed(() => {
     label: string
     default: unknown
     props?: Record<string, unknown>
+    when?: WhenSchema
     visibleWhen?: { controlId: string; value: unknown }
   }>) ?? []
 
@@ -229,15 +231,14 @@ const hasInlineControls = computed(() => {
   )
 })
 
-// Filter controls to show inline (not code type, respects visibleWhen)
+// Filter controls to show inline (not code type, respects the unified `when` — or the legacy
+// `visibleWhen`, mapped onto it. Canvas honors visibleWhen; other legacy schemas map at their
+// own call sites so cross-consumer behavior is unchanged).
 const inlineControls = computed(() => {
   return controls.value.filter(c => {
     if (c.type === 'code') return false
-    if (c.visibleWhen) {
-      const otherValue = controlValues.value[c.visibleWhen.controlId]
-      if (otherValue !== c.visibleWhen.value) return false
-    }
-    return true
+    const when = c.when ?? (c.visibleWhen ? { [c.visibleWhen.controlId]: c.visibleWhen.value } : undefined)
+    return evaluateWhen(when, controlValues.value)
   })
 })
 

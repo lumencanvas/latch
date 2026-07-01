@@ -8,7 +8,8 @@
  */
 
 import { computed } from 'vue'
-import type { ControlDefinition } from '@/stores/nodes'
+import type { ControlDefinition, WhenSchema } from '@/stores/nodes'
+import { evaluateWhen } from '@/composables/useControlHelpers'
 
 // Extended control definition for connection forms with conditional visibility
 interface ConnectionFormControl extends Omit<ControlDefinition, 'props'> {
@@ -59,19 +60,20 @@ function isWide(control: ConnectionFormControl): boolean {
   return /url/i.test(control.id)
 }
 
-const visibleControls = computed(() => {
-  return props.controls.filter((control) => {
-    // Check visibility conditions if defined
-    if (control.showIf) {
-      const conditionValue = props.values[control.showIf.field]
-      if (Array.isArray(control.showIf.values)) {
-        return control.showIf.values.includes(conditionValue)
-      }
-      return conditionValue === control.showIf.value
-    }
-    return true
-  })
-})
+// Map the legacy `showIf` onto the unified `when` schema: an array → the `{ in }` membership
+// operator, otherwise a single-key equality. The canonical `when` wins when present.
+function resolveWhen(control: ConnectionFormControl): WhenSchema | undefined {
+  if (control.when) return control.when
+  if (control.showIf) {
+    const { field, value, values } = control.showIf
+    return { [field]: Array.isArray(values) ? { in: values } : value }
+  }
+  return undefined
+}
+
+const visibleControls = computed(() =>
+  props.controls.filter((control) => evaluateWhen(resolveWhen(control), props.values)),
+)
 </script>
 
 <template>
