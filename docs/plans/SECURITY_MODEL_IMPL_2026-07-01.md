@@ -65,6 +65,27 @@ declare + the user didn't approve — the n8n credential-theft class.
 
 ## Design — steps 5 & 6: HONEST LIMITS (scaffold + document, don't fake)
 
+### The boundary is isolation — the spine is defense-in-depth, not a wall (audit)
+
+An adversarial red-team of the spine confirmed the honest limit up front: **without
+execution isolation, the gate is not a boundary against actively malicious community
+code.** Community executors run inline on the main thread with full ambient authority
+(`compiler.ts` `new Function` is NOT a sandbox), so a malicious community node can:
+- call `fetch` / `navigator.*` directly (never touching `ctx.connection`), and
+- reach the credential-bearing adapter through ambient access (e.g. the connections
+  store's `getAdapter`, whose adapter still holds `config`/`mqttConfig` with the
+  password/token as readable properties).
+
+So the accurate claim (strategy/05 don't-overclaim): the capability gate + no-secret
+handle **stop accidental/undeclared misuse and are the enforcement layer that becomes a
+real boundary once community executors are isolated** — they do **not** today confine a
+malicious community node. The **priority follow-on** is therefore: (a) move adapter
+credentials off enumerable properties into a broker-private `WeakMap` (so even the direct
+`getAdapter` path can't read a secret), and (b) run `community`-tier executors in a Worker
+with a message-port-only surface. Until both land, the honest posture is: **don't install
+community nodes you don't trust** — the spine reduces damage, provenance/trust is the real
+mitigation.
+
 ### Step 5 — Community `connect-src` egress: blocked on isolation
 - **Web is a single document with one global CSP and community code shares the main-thread
   realm** — a CSP cannot tell which node issued a `fetch`, so per-node/per-tier egress is

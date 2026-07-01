@@ -84,8 +84,9 @@ export function resolveConnectionHandle<T extends ConnectionHandle = ConnectionH
     // Step 4 — and the user must have APPROVED it. The prompt is async and this gate is
     // synchronous, so fire the approval request once and deny until it's granted (the
     // next frame after approval allows). Default resolver denies, so nothing is granted
-    // without an explicit approval.
-    const capability = `connection:${adapter.protocol}`
+    // without an explicit approval. The grant is keyed on the specific connection id, so
+    // approving one broker does NOT unlock a different same-protocol broker (audit finding).
+    const capability = `connection:${adapter.protocol}:${id}`
     if (!isGranted(cap.nodeType, capability)) {
       ensureRequested(cap.nodeType, capability)
       return null

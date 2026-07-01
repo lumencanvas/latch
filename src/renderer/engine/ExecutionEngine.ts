@@ -83,12 +83,6 @@ export interface ExecutionContext {
   deltaTime: number
   totalTime: number
   frameCount: number
-  /**
-   * The node's resolved capability context (SECURITY_MODEL step 2), computed by the
-   * engine from the authoritative registry definition. Consumed by `connection()`;
-   * optional so direct/test contexts default to ungated (core) behavior.
-   */
-  capabilityContext?: ConnectionCapabilityContext
   /** input ?? control ?? fallback, coerced to a finite number (NaN/±Infinity → fallback). */
   num(id: string, fallback?: number): number
   /** input ?? control ?? fallback, coerced to a boolean. */
@@ -122,7 +116,13 @@ export type ExecutionContextData = Omit<
  * Accessors read `input ?? control` for the given id, then fall back to the
  * supplied default. Additive: raw `ctx.inputs.get()` keeps working unchanged.
  */
-export function createExecutionContext(data: ExecutionContextData): ExecutionContext {
+export function createExecutionContext(
+  data: ExecutionContextData,
+  cap?: ConnectionCapabilityContext
+): ExecutionContext {
+  // `cap` is CLOSED OVER, never placed on the returned ctx — so an executor (esp. an
+  // untrusted community one) can't reach or mutate its own trust tier to spoof `core`
+  // and bypass the capability gate (SECURITY_MODEL step 2; audit finding).
   const read = (id: string): unknown => {
     const fromInput = data.inputs.get(id)
     return fromInput !== undefined ? fromInput : data.controls.get(id)
@@ -163,7 +163,7 @@ export function createExecutionContext(data: ExecutionContextData): ExecutionCon
       controlId?: string
       protocol?: string
     }): T | null {
-      return resolveConnectionHandle<T>(read, opts, data.capabilityContext)
+      return resolveConnectionHandle<T>(read, opts, cap)
     },
   }
 }
@@ -469,22 +469,24 @@ export class ExecutionEngine {
     // definition — never the node's embedded copy — so a community node can't spoof its
     // trust tier or fabricate protocol declarations via its saved flow.
     const registryDef = this.nodesStore.getDefinition(nodeType)
-    const capabilityContext: ConnectionCapabilityContext = {
+    const capabilityContext: ConnectionCapabilityContext = Object.freeze({
       nodeType,
       trust: nodeTrust(registryDef),
-      declaredProtocols: (registryDef?.connections ?? []).map((c) => c.protocol),
-    }
-
-    const context = createExecutionContext({
-      nodeId: node.id,
-      inputs: this.getNodeInputs(node.id),
-      controls: controlMap,
-      definition: definition!,
-      capabilityContext,
-      deltaTime,
-      totalTime: (performance.now() - this.startTime) / 1000,
-      frameCount: this.frameCount,
+      declaredProtocols: Object.freeze((registryDef?.connections ?? []).map((c) => c.protocol)),
     })
+
+    const context = createExecutionContext(
+      {
+        nodeId: node.id,
+        inputs: this.getNodeInputs(node.id),
+        controls: controlMap,
+        definition: definition!,
+        deltaTime,
+        totalTime: (performance.now() - this.startTime) / 1000,
+        frameCount: this.frameCount,
+      },
+      capabilityContext
+    )
 
     try {
       const isDeferred = this.deferredNodeTypes.has(nodeType)

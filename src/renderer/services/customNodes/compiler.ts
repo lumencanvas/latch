@@ -73,8 +73,12 @@ export function compileExecutor(code: string, nodeId: string): NodeExecutorFn {
   }
 
   try {
-    // Create a factory function that returns the executor
-    // Using Function constructor to sandbox the code
+    // Create a factory function that returns the executor.
+    // NOTE: `new Function` is NOT a sandbox — the executor runs on the main thread with
+    // full ambient authority (fetch, WebSocket, navigator, dynamic import). It only isolates
+    // the LEXICAL scope, not capabilities. True confinement of community executors (a Worker
+    // with a message-port-only surface) is the SECURITY_MODEL step-5 follow-on; the capability
+    // gate protects broker CREDENTIALS, not arbitrary egress by community code.
     const factory = new Function(transformedCode)
     const executor = factory()
 

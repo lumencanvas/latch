@@ -1,6 +1,10 @@
 import type { NodeDefinition, PortDefinition, ControlDefinition, NodeCategory, DataType, Platform } from '@/stores/nodes'
+import type { NodeConnectionRequirement } from '@/services/connections/types'
+import type { NodeRequirement } from '@/utils/platform'
 
 // Valid values for validation
+const VALID_REQUIREMENTS: NodeRequirement[] = ['serial', 'midi', 'bluetooth', 'webgpu', 'camera']
+
 const VALID_CATEGORIES: NodeCategory[] = [
   'debug', 'inputs', 'outputs', 'math', 'logic', 'audio', 'video',
   'visual', 'shaders', 'data', 'ai', 'code', '3d', 'connectivity', 'subflows', 'custom'
@@ -236,6 +240,48 @@ export function validateDefinition(definition: unknown): NodeDefinition {
     }
 
     result.info = nodeInfo
+  }
+
+  // Declared capabilities (SECURITY_MODEL) — these DRIVE the capability gate + disclosure,
+  // so they must survive validation. `trust` is deliberately NOT copied: it is assigned by
+  // origin at load, never author-declared (a community node must not be able to claim `core`).
+  if (def.connections !== undefined) {
+    const raw = validateArray<unknown>(def.connections, 'connections')
+    result.connections = raw.map((c, i): NodeConnectionRequirement => {
+      if (typeof c !== 'object' || c === null) {
+        throw new ValidationError(`connections[${i}] must be an object`, `connections[${i}]`, c)
+      }
+      const entry = c as Record<string, unknown>
+      const conn: NodeConnectionRequirement = {
+        protocol: validateString(entry.protocol, `connections[${i}].protocol`),
+        controlId: validateString(entry.controlId, `connections[${i}].controlId`),
+      }
+      if (entry.required !== undefined) {
+        if (typeof entry.required !== 'boolean') {
+          throw new ValidationError(
+            `connections[${i}].required must be a boolean`,
+            `connections[${i}].required`,
+            entry.required
+          )
+        }
+        conn.required = entry.required
+      }
+      return conn
+    })
+  }
+  if (def.requires !== undefined) {
+    const raw = validateArray<unknown>(def.requires, 'requires')
+    result.requires = raw.map((r, i): NodeRequirement => {
+      const s = validateString(r, `requires[${i}]`)
+      if (!VALID_REQUIREMENTS.includes(s as NodeRequirement)) {
+        throw new ValidationError(
+          `requires[${i}] must be one of: ${VALID_REQUIREMENTS.join(', ')}`,
+          `requires[${i}]`,
+          r
+        )
+      }
+      return s as NodeRequirement
+    })
   }
 
   return result

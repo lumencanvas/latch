@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { makeContext } from '../_helpers/executionContext'
+import { createExecutionContext } from '@/engine/ExecutionEngine'
+import type { ConnectionCapabilityContext } from '@/engine/connection'
+import type { NodeDefinition } from '@/stores/nodes'
 
 /**
  * Typed input accessors on ExecutionContext (EXTENSIBILITY §5.2). Each reads
@@ -68,5 +71,28 @@ describe('createExecutionContext typed accessors', () => {
       expect(ctx({ g: 0 }, {}, id).trig('g')).toBe(false) // falling
       expect(ctx({ g: 1 }, {}, id).trig('g')).toBe(true) // rising again
     })
+  })
+})
+
+describe('capability context is not executor-reachable (SECURITY_MODEL anti-spoof)', () => {
+  it('never exposes the capability context on the returned ctx', () => {
+    const cap: ConnectionCapabilityContext = { nodeType: 'evil', trust: 'community', declaredProtocols: [] }
+    const context = createExecutionContext(
+      {
+        nodeId: 'n',
+        inputs: new Map(),
+        controls: new Map(),
+        definition: {} as NodeDefinition,
+        deltaTime: 0,
+        totalTime: 0,
+        frameCount: 0,
+      },
+      cap
+    )
+    // The executor receives `context`; the capability context must be CLOSED OVER, not a
+    // property on it — else a community executor could do `ctx.x.trust = 'core'` to bypass
+    // the gate. Assert no enumerable ctx value leaks the cap object.
+    expect('capabilityContext' in context).toBe(false)
+    expect(Object.values(context).some((v) => v === cap)).toBe(false)
   })
 })

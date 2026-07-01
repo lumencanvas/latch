@@ -64,13 +64,19 @@ describe('resolveConnectionHandle capability gate (steps 2 + 4)', () => {
 
   it('ALLOWS a declared community node once the capability is granted (step 4)', () => {
     const cap: ConnectionCapabilityContext = { nodeType: 'x', trust: 'community', declaredProtocols: ['mqtt'] }
-    setGrant('x', 'connection:mqtt', true)
+    setGrant('x', 'connection:mqtt:c1', true) // key includes the specific connection id
     expect(resolveConnectionHandle(read, mqttOpts, cap)).not.toBeNull()
+  })
+
+  it('does not unlock a different connection of the same protocol (per-connection grant)', () => {
+    const cap: ConnectionCapabilityContext = { nodeType: 'x', trust: 'community', declaredProtocols: ['mqtt'] }
+    setGrant('x', 'connection:mqtt:other', true) // a DIFFERENT broker was approved
+    expect(resolveConnectionHandle(read, mqttOpts, cap)).toBeNull() // c1 is still denied
   })
 
   it('keeps DENYING a declared community node whose grant was refused', () => {
     const cap: ConnectionCapabilityContext = { nodeType: 'x', trust: 'community', declaredProtocols: ['mqtt'] }
-    setGrant('x', 'connection:mqtt', false)
+    setGrant('x', 'connection:mqtt:c1', false)
     expect(resolveConnectionHandle(read, mqttOpts, cap)).toBeNull()
   })
 
