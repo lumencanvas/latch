@@ -28,6 +28,29 @@ mutation-verified, zero regression.
 
 ---
 
+## 2026-07-01 (later 31) — Phase 3 START: shared control-rendering helpers (dedup)
+
+Phase 2 effectively complete → moved to **Phase 3 (Control system + declarative UI)**. Mapped the three
+control renderers (`BaseNode` on-canvas · `PropertiesPanel` panel · `ProtocolFormFields` config form) for
+the eventual unified `<ControlRenderer>`; the map found real divergence (types, value sourcing, number
+commit, boolean widget, THREE different visibility schemas — `visibleWhen`/`showWhen`/`showIf`) so
+full unification is medium-risk and staged.
+
+**First bounded increment (commit `a7481ee`).** `BaseNode` + `PropertiesPanel` carried byte-identical copies
+of the select-option resolver + `isDeviceOptions` + the number clamp. Extracted to `useControlHelpers.ts`
+(pure `isDeviceOptions`/`clampControlNumber` + a `useControlSelectOptions` composable for the device-coupled
+part); each component keeps its thin clamp wrapper so behavior is exact. Near-zero risk, guarded by the
+existing BaseNode clamp test. typecheck · lint 0 err · `test:unit` **1813 → 1818** · smoke 0 errors.
+
+**▶ NEXT (Phase 3).** Step B: introduce `components/controls/ControlRenderer.vue` (the shared primitives +
+delegation to ConnectionSelect/TemplateSelect/AssetPickerControl/code-preview, with a `context:
+canvas|panel|config` hint for the behavioral forks — mousedown.stop, ON/OFF vs checkbox, clamp-vs-Number).
+Migrate PropertiesPanel first (superset, already store-wired), then BaseNode, then ProtocolFormFields
+(disjoint vocab — separate track). Add a PropertiesPanel clamp test before migrating it. Unify the three
+visibility schemas is its own later task. Full map in the later-31 agent output / this entry.
+
+---
+
 ## 2026-07-01 (later 30) — security verified AT Node-RED parity; declared good-enough
 
 Maintainer set the bar: "if we are as secure as Node-RED then that is good enough." Verified LATCH's posture
