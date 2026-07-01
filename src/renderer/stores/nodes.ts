@@ -59,6 +59,20 @@ export interface PortDefinition {
   default?: unknown
 }
 
+/**
+ * A single condition in a {@link WhenSchema}: a bare value tests strict equality against the
+ * sibling control's current value; `{ in: [...] }` tests membership.
+ */
+export type WhenCondition = unknown | { in: unknown[] }
+
+/**
+ * Unified conditional-visibility schema (Phase 3). Keys are sibling control ids; the control
+ * shows only when EVERY entry matches (AND). Subsumes the three legacy schemas — `visibleWhen`
+ * (single-key equality), the panel's `props.showWhen` (multi-key equality), and the connection
+ * form's `showIf` (equality or array membership → `{ in }`). Evaluate with `evaluateWhen`.
+ */
+export type WhenSchema = Record<string, WhenCondition>
+
 export interface ControlDefinition {
   id: string
   type: string
@@ -67,7 +81,9 @@ export interface ControlDefinition {
   default?: unknown
   exposable?: boolean
   bindable?: boolean
-  /** Show this control only when another control has a specific value. */
+  /** Unified conditional-visibility (preferred). Show only when these sibling values match. */
+  when?: WhenSchema
+  /** @deprecated Legacy single-key form; use {@link when}. Still honored on-canvas. */
   visibleWhen?: { controlId: string; value: unknown }
   props?: Record<string, unknown>
 }

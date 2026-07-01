@@ -10,8 +10,34 @@
  */
 
 import { useDeviceEnumeration, type DeviceType, type DeviceOption } from './useDeviceEnumeration'
+import type { WhenSchema } from '@/stores/nodes'
 
 export type { DeviceOption, DeviceType }
+
+/** Type-guard for the `{ in: [...] }` membership operator inside a {@link WhenSchema}. */
+function isInOperator(cond: unknown): cond is { in: unknown[] } {
+  return typeof cond === 'object' && cond !== null && 'in' in cond && Array.isArray((cond as { in: unknown }).in)
+}
+
+/**
+ * Evaluate the unified conditional-visibility schema (Phase 3). Returns true when EVERY key
+ * matches the corresponding value in `values` (AND); a bare condition tests strict equality,
+ * `{ in: [...] }` tests membership. An absent/undefined schema is always visible. Pure — this is
+ * the single source of truth the three legacy schemas (`visibleWhen`/`showWhen`/`showIf`) each map
+ * onto at their call site, so their semantics stay identical.
+ */
+export function evaluateWhen(when: WhenSchema | undefined, values: Record<string, unknown>): boolean {
+  if (!when) return true
+  for (const [key, cond] of Object.entries(when)) {
+    const actual = values[key]
+    if (isInOperator(cond)) {
+      if (!cond.in.includes(actual)) return false
+    } else if (actual !== cond) {
+      return false
+    }
+  }
+  return true
+}
 
 /** Options are device options (objects with value/label) rather than a plain `string[]`. */
 export function isDeviceOptions(options: DeviceOption[] | string[]): options is DeviceOption[] {

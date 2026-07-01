@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampControlNumber, isDeviceOptions } from '@/composables/useControlHelpers'
+import { clampControlNumber, isDeviceOptions, evaluateWhen } from '@/composables/useControlHelpers'
 
 /**
  * The pure control-rendering helpers shared by BaseNode + PropertiesPanel (Phase 3 dedup).
@@ -31,5 +31,38 @@ describe('isDeviceOptions', () => {
     expect(isDeviceOptions([{ value: 'a', label: 'A' }])).toBe(true)
     expect(isDeviceOptions(['a', 'b'])).toBe(false)
     expect(isDeviceOptions([])).toBe(false)
+  })
+})
+
+/**
+ * The unified conditional-visibility evaluator (Phase 3). It is the single semantics the three
+ * legacy schemas map onto; these cases pin each mapping so a future refactor can't drift them.
+ */
+describe('evaluateWhen', () => {
+  it('an absent schema is always visible', () => {
+    expect(evaluateWhen(undefined, {})).toBe(true)
+    expect(evaluateWhen({}, { a: 1 })).toBe(true)
+  })
+
+  it('single-key equality (subsumes visibleWhen / showIf value)', () => {
+    expect(evaluateWhen({ mode: 'binary' }, { mode: 'binary' })).toBe(true)
+    expect(evaluateWhen({ mode: 'binary' }, { mode: 'adaptive' })).toBe(false)
+    // a missing sibling value is undefined !== the target → hidden
+    expect(evaluateWhen({ mode: 'binary' }, {})).toBe(false)
+  })
+
+  it('multi-key is AND (subsumes props.showWhen)', () => {
+    expect(evaluateWhen({ a: 1, b: 2 }, { a: 1, b: 2 })).toBe(true)
+    expect(evaluateWhen({ a: 1, b: 2 }, { a: 1, b: 9 })).toBe(false)
+  })
+
+  it('the { in } operator tests membership (subsumes showIf values)', () => {
+    expect(evaluateWhen({ role: { in: ['admin', 'root'] } }, { role: 'root' })).toBe(true)
+    expect(evaluateWhen({ role: { in: ['admin', 'root'] } }, { role: 'guest' })).toBe(false)
+  })
+
+  it('uses strict equality (no coercion) and matches empty-string targets', () => {
+    expect(evaluateWhen({ templateId: '' }, { templateId: '' })).toBe(true)
+    expect(evaluateWhen({ n: 1 }, { n: '1' })).toBe(false)
   })
 })
