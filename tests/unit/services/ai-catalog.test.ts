@@ -6,6 +6,12 @@ import {
   type ModelOption,
 } from '@/services/ai/AIInference'
 import { textGenerationNode } from '@/registry/ai/text-generation'
+import { sentimentAnalysisNode } from '@/registry/ai/sentiment-analysis'
+import { featureExtractionNode } from '@/registry/ai/feature-extraction'
+import { imageCaptioningNode } from '@/registry/ai/image-captioning'
+import { imageClassificationNode } from '@/registry/ai/image-classification'
+import { objectDetectionNode } from '@/registry/ai/object-detection'
+import { textTransformationNode } from '@/registry/ai/text-transformation'
 
 /**
  * Guards the in-browser AI model catalog (AIInference.ts:AI_MODELS) against
@@ -137,29 +143,40 @@ describe('getModelSelectOptions', () => {
   })
 })
 
-describe('text-generation node — registry-populated model select (A2 follow-through)', () => {
-  const model = textGenerationNode.controls.find((c) => c.id === 'model')
+describe('AI nodes — registry-populated model select (A2 follow-through)', () => {
+  // Each transformers AI node whose executor routes through runModelInference gains a
+  // catalog-populated `model` select via the shared `withModelSelect` seam. `task` must
+  // match the string its executor passes to runModelInference so the default resolves right.
+  const CASES = [
+    { node: textGenerationNode, task: 'text-generation', keep: ['prompt', 'maxTokens', 'temperature'] },
+    { node: sentimentAnalysisNode, task: 'sentiment-analysis', keep: [] as string[] },
+    { node: featureExtractionNode, task: 'feature-extraction', keep: [] as string[] },
+    { node: imageCaptioningNode, task: 'image-to-text', keep: [] as string[] },
+    { node: imageClassificationNode, task: 'image-classification', keep: [] as string[] },
+    { node: objectDetectionNode, task: 'object-detection', keep: [] as string[] },
+    { node: textTransformationNode, task: 'text2text-generation', keep: [] as string[] },
+  ]
 
-  it('gains a populated model select whose options match the catalog, default "" (auto)', () => {
-    expect(model).toBeDefined()
+  it.each(CASES)('$task: populated model select (default "" = task default) matching the catalog', ({ node, task }) => {
+    const model = node.controls.find((c) => c.id === 'model')
+    expect(model, `${task} missing model select`).toBeDefined()
     expect(model!.type).toBe('select')
-    expect(model!.default).toBe('') // preserves prior behavior: '' → task default
-    expect(model!.props?.options).toEqual(getModelSelectOptions('text-generation'))
+    expect(model!.default).toBe('')
+    expect(model!.props?.options).toEqual(getModelSelectOptions(task))
+    // A live catalog task → at least the auto entry; guards against a task-string typo.
+    expect((model!.props?.options as unknown[]).length).toBeGreaterThan(0)
   })
 
-  it('keeps the standardized model outputs without duplication', () => {
-    const outIds = textGenerationNode.outputs.map((p) => p.id)
+  it.each(CASES)('$task: standardized model outputs present, none duplicated', ({ node }) => {
+    const outIds = node.outputs.map((p) => p.id)
     for (const id of ['loading', 'progress', 'done', 'error']) {
       expect(outIds.filter((o) => o === id)).toHaveLength(1)
     }
-    expect(outIds).toContain('text')
   })
 
-  it('does not duplicate the authored prompt/maxTokens/temperature controls', () => {
-    const ctrlIds = textGenerationNode.controls.map((c) => c.id)
+  it.each(CASES)('$task: single model control, authored controls preserved', ({ node, keep }) => {
+    const ctrlIds = node.controls.map((c) => c.id)
     expect(ctrlIds.filter((c) => c === 'model')).toHaveLength(1)
-    for (const id of ['prompt', 'maxTokens', 'temperature']) {
-      expect(ctrlIds).toContain(id)
-    }
+    for (const id of keep) expect(ctrlIds).toContain(id)
   })
 })

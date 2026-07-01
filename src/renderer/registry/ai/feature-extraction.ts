@@ -1,6 +1,7 @@
 import type { NodeDefinition } from '../types'
+import { withModelSelect } from './modelSelect'
 
-export const featureExtractionNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'feature-extraction',
   name: 'Text Embed',
   version: '1.0.0',
@@ -31,3 +32,6 @@ export const featureExtractionNode: NodeDefinition = {
     pairsWith: ['sentiment-analysis', 'string-template', 'text-generation', 'monitor'],
   },
 }
+
+// Registry-populated model select via the shared AI seam (default '' = task default).
+export const featureExtractionNode: NodeDefinition = withModelSelect(definition, 'feature-extraction')

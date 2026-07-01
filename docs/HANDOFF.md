@@ -42,11 +42,35 @@ resolver (inert path preserved), resolver not consulted when the select is suppr
 errors** (registry/def change + new registry→service import at module load). Architecture note: engine↔AI
 decoupling preserved via dependency injection; the same seam serves the post-derive source swap unchanged.
 
-**▶ NEXT (self-drivable).** Adopt the populated select on the other transformers AI nodes (sentiment,
-feature-extraction, image-captioning, text2text, object-detection — all already read `ctx.controls.get('model')`
-via `runModelInference`), one green+smoked step. Still maintainer-gated: the catalog **derive**
-(`MODEL_REGISTRY_IMPL`, 5 forks), `SECURITY_MODEL` 2–6, BLE/Serial/MIDI drift. Phase-6 executor co-location is
-the larger separate effort.
+**▶ NEXT — done same session (later 21).**
+
+---
+
+## 2026-06-30 (later 21) — model-select adopted across all transformers AI nodes + DRY seam
+
+Continued self-driven forward. Extracted the wiring into one shared AI-registry seam and adopted the
+catalog-populated `model` select on every remaining applicable node.
+
+- **`registry/ai/modelSelect.ts`** — `withModelSelect(definition, task)`: the single place the AI registry
+  wires the engine's catalog-agnostic `deriveModelDefinition` to the catalog (injects
+  `getModelSelectOptions`). DRY — replaces the per-file resolver; text-generation refactored onto it too.
+- **6 more nodes adopted:** sentiment-analysis, feature-extraction, image-captioning (`image-to-text`),
+  image-classification, object-detection, text-transformation (`text2text-generation`). Each executor already
+  reads `ctx.controls.get('model')` via `runModelInference`; the `task` passed to `withModelSelect` is exactly
+  the string that executor uses (verified against `AI_MODELS.task`), so the select's `''` default resolves to
+  the model the node actually runs. All additive — no `migrate()`. vla/llm keep their bespoke selects
+  (SmolVLM / WebLLM catalogs).
+
+**Tests.** `ai-catalog.test.ts` node block **parameterized over all 7 nodes** (`it.each`): each has a populated
+select whose options equal `getModelSelectOptions(task)` (guards against a task-string typo — a wrong task
+would yield `[]`), default `''`, the 4 standardized outputs present without duplication, and a single model
+control. **Verification:** typecheck clean · lint 0 err · `test:unit` **1749 → 1767** · boot→Play→Stop smoke
+0 real errors.
+
+**▶ NEXT (self-drivable / gated).** The AI model-select feature is now uniform. Remaining Phase-2, all
+maintainer-gated: the catalog **derive** (`MODEL_REGISTRY_IMPL`, 5 forks — the deep-equal gate wants explicit
+order/default decisions); `SECURITY_MODEL` steps 2–6; BLE/Serial/MIDI protocol drift. Phase-6 executor
+co-location (folding these defs + executors through `defineNode`) is the larger separate effort.
 
 ---
 

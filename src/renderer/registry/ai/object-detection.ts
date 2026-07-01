@@ -1,6 +1,7 @@
 import type { NodeDefinition } from '../types'
+import { withModelSelect } from './modelSelect'
 
-export const objectDetectionNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'object-detection',
   name: 'Detect Objects',
   version: '1.0.0',
@@ -34,3 +35,6 @@ export const objectDetectionNode: NodeDefinition = {
     pairsWith: ['webcam', 'image-classification', 'mediapipe-object', 'gate'],
   },
 }
+
+// Registry-populated model select via the shared AI seam (default '' = task default).
+export const objectDetectionNode: NodeDefinition = withModelSelect(definition, 'object-detection')

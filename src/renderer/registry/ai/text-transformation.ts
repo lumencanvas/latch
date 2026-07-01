@@ -1,6 +1,7 @@
 import type { NodeDefinition } from '../types'
+import { withModelSelect } from './modelSelect'
 
-export const textTransformationNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'text-transformation',
   name: 'Text Transform',
   version: '1.0.0',
@@ -40,3 +41,6 @@ export const textTransformationNode: NodeDefinition = {
     pairsWith: ['string-template', 'text-generation', 'sentiment-analysis', 'speech-recognition'],
   },
 }
+
+// Registry-populated model select via the shared AI seam (default '' = task default).
+export const textTransformationNode: NodeDefinition = withModelSelect(definition, 'text2text-generation')

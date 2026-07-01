@@ -1,6 +1,7 @@
 import type { NodeDefinition } from '../types'
+import { withModelSelect } from './modelSelect'
 
-export const sentimentAnalysisNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'sentiment-analysis',
   name: 'Sentiment',
   version: '1.0.0',
@@ -33,3 +34,6 @@ export const sentimentAnalysisNode: NodeDefinition = {
     pairsWith: ['speech-recognition', 'text-generation', 'string-template', 'expression'],
   },
 }
+
+// Registry-populated model select via the shared AI seam (default '' = task default).
+export const sentimentAnalysisNode: NodeDefinition = withModelSelect(definition, 'sentiment-analysis')

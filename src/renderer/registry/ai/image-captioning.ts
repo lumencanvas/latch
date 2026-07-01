@@ -1,6 +1,7 @@
 import type { NodeDefinition } from '../types'
+import { withModelSelect } from './modelSelect'
 
-export const imageCaptioningNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-captioning',
   name: 'Caption Image',
   version: '1.0.0',
@@ -32,3 +33,6 @@ export const imageCaptioningNode: NodeDefinition = {
     pairsWith: ['webcam', 'image-classification', 'text-generation', 'sentiment-analysis'],
   },
 }
+
+// Registry-populated model select via the shared AI seam (default '' = task default).
+export const imageCaptioningNode: NodeDefinition = withModelSelect(definition, 'image-to-text')
