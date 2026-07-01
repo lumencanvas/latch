@@ -19,7 +19,7 @@ export { OscAdapterImpl, oscConnectionType } from './OscAdapter'
 export { HttpAdapterImpl, httpConnectionType } from './HttpAdapter'
 export type { HttpRequestOptions } from './HttpAdapter'
 
-export { BleAdapter, BLE_STANDARD_SERVICES, BLE_STANDARD_CHARACTERISTICS } from './BleAdapter'
+export { BleAdapter, bleConnectionType, BLE_STANDARD_SERVICES, BLE_STANDARD_CHARACTERISTICS } from './BleAdapter'
 export type {
   BleDeviceInfo,
   BleServiceInfo,

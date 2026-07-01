@@ -10,7 +10,7 @@
  */
 
 import { BaseAdapter } from './BaseAdapter'
-import type { BleConnectionConfig, SendOptions } from '../types'
+import type { BleConnectionConfig, ConnectionTypeDefinition, SendOptions } from '../types'
 
 // ============================================================================
 // Types
@@ -603,4 +603,63 @@ export class BleAdapter extends BaseAdapter {
     this.characteristics.clear()
     this.notificationHandlers.clear()
   }
+}
+
+/**
+ * Connection-type definition for BLE — the metadata + factory that registers the
+ * (already-implemented) BleAdapter as a first-class connection type. Co-located
+ * with the adapter, mirroring `mqttConnectionType` in MqttAdapter.ts; picked up by
+ * the `protocolRegistry` glob via `protocols/ble/protocol.ts`.
+ *
+ * `autoConnect` defaults to false: Web Bluetooth requires a user gesture to pick a
+ * device, so a connection can't silently dial on flow start without a prior pairing.
+ */
+export const bleConnectionType: ConnectionTypeDefinition<BleConnectionConfig> = {
+  id: 'ble',
+  name: 'Bluetooth LE',
+  icon: 'bluetooth',
+  color: '#2563EB',
+  category: 'protocol',
+  description: 'Connect to a Bluetooth Low Energy device over Web Bluetooth (GATT)',
+  platforms: ['web', 'electron'],
+  configControls: [
+    {
+      id: 'serviceUUID',
+      type: 'text',
+      label: 'Service UUID',
+      description: 'GATT service to connect to (a 16-bit id like 0x180d, or a full UUID)',
+      default: '',
+    },
+    {
+      id: 'autoConnect',
+      type: 'checkbox',
+      label: 'Auto Connect',
+      description: 'Connect on flow start (only works after the device has been paired via a gesture)',
+      default: false,
+    },
+    {
+      id: 'autoReconnect',
+      type: 'checkbox',
+      label: 'Auto Reconnect',
+      description: 'Reconnect automatically if the device drops',
+      default: true,
+    },
+    {
+      id: 'reconnectDelay',
+      type: 'number',
+      label: 'Reconnect Delay (ms)',
+      description: 'Delay before a reconnection attempt',
+      default: 5000,
+      props: { min: 1000, max: 60000, step: 1000 },
+    },
+  ],
+  defaultConfig: {
+    serviceUUID: '',
+    autoConnect: false,
+    autoReconnect: true,
+    reconnectDelay: 5000,
+    maxReconnectAttempts: 0,
+  },
+  // BleAdapter's ctor is (connectionId, config); the id travels on the config.
+  createAdapter: (config) => new BleAdapter(config.id, config),
 }

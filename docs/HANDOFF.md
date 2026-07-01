@@ -46,6 +46,43 @@ decoupling preserved via dependency injection; the same seam serves the post-der
 
 ---
 
+## 2026-06-30 (later 22) — register BLE as a first-class connection protocol (Phase 2 drift fix)
+
+Self-driven (maintainer: "do what you think is best"). Mapped the BLE/Serial/MIDI drift with a 5-agent
+Understand workflow, then scoped to the **complete, fully headlessly-testable subset**: the full drift fix
+(new Serial/MIDI adapters + migrating the legacy `navigator.*` executors to `ctx.connection`) is large and
+hardware-bound, but **BLE was already a complete, tested adapter** (`adapters/BleAdapter.ts`, listener-leak
+test passing) that was simply **never registered as a protocol**.
+
+**What changed (mirrors the mqtt/ws/http registration exactly).** Added `bleConnectionType`
+(`ConnectionTypeDefinition<BleConnectionConfig>`) co-located in `BleAdapter.ts` — metadata + configControls
+(serviceUUID/autoConnect/autoReconnect/reconnectDelay) + `createAdapter: (c) => new BleAdapter(c.id, c)`
+(BleAdapter's ctor is `(connectionId, config)`, unlike the one-arg impls — the id travels on the config).
+`autoConnect` defaults **false** (Web Bluetooth needs a user gesture to pick a device). Exported it from the
+`adapters/` barrel and added `protocols/ble/protocol.ts` (`export default defineProtocol(bleConnectionType)`).
+The `protocolRegistry` glob auto-discovers it and `registerBuiltInTypes()` loops the glob — **so `index.ts`
+needed no edit**; the manager goes 5→6 types. BLE falls through `createConnectionHandle`'s default to the
+no-secret **base handle** (a typed `BleHandle` is YAGNI until an executor consumes it — the legacy BLE
+executor still uses `navigator.bluetooth` directly and is untouched, so zero regression).
+
+**Tests (+4), mutation-verified.** `protocolRegistry.test.ts`: added `bleConnectionType` to the
+drift-proof `builtInProtocolIds` set (5→6, so the set-equality gate now asserts BLE is co-located AND
+registered); a BLE-included assertion; and a `bleConnectionType` block — well-formed + autoConnect-off,
+`createAdapter` builds a `ble` adapter carrying the config id without touching hardware, and the resolved
+handle leaks no `serviceUUID`/config/adapter. Mutation: moving `protocols/ble/protocol.ts` out of the glob
+reds the gate + BLE-included test; restored → green.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1767 → 1771** · boot→Play→Stop smoke 0 real
+errors (connection manager now initializes 6 types).
+
+**▶ NEXT (self-drivable / gated).** The larger drift remainder: write `SerialAdapter`/`MidiAdapter` classes +
+migrate the 4 legacy `navigator.*` executors (serial/midi-in/midi-out/ble) to `ctx.connection` +
+`defineNodeState` (hardware-bound — plumbing testable, I/O manual); fix the `midiInputNode` export gap
+(one-line bug — defined but not exported/registered). Still maintainer-gated: the catalog **derive**
+(`MODEL_REGISTRY_IMPL`, 5 forks), `SECURITY_MODEL` steps 2–6. Phase-6 executor co-location is separate.
+
+---
+
 ## 2026-06-30 (later 21) — model-select adopted across all transformers AI nodes + DRY seam
 
 Continued self-driven forward. Extracted the wiring into one shared AI-registry seam and adopted the
