@@ -15,10 +15,9 @@
  * metadata named in SECURITY_MODEL arrives in a later Phase-2 step (it is
  * maintainer-sign-off-gated); being optional, adding it later is non-breaking.
  *
- * Additive: nothing is auto-discovered through this yet — the `protocolRegistry`
- * glob is inert until protocols are co-located into `protocols/<name>/protocol.ts`
- * folders (ROADMAP Phase 2 step 6b). The hand-wired `registerBuiltInTypes()` list
- * stays authoritative until then.
+ * Live: all 6 built-in protocols are co-located as `protocols/<name>/protocol.ts` and
+ * auto-discovered by the `protocolRegistry` glob, which is authoritative — the manager
+ * loops the glob output in `registerBuiltInTypes()`.
  */
 
 import type { BaseConnectionConfig, ConnectionTypeDefinition } from './types'

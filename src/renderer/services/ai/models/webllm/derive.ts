@@ -1,7 +1,7 @@
 /**
  * Derives the `WEBLLM_MODELS` catalog from the co-located `*.model.ts` specs.
  *
- * The 25 WebLLM models are authored one-file-per-model under this directory and
+ * The WebLLM models are authored one-file-per-model under this directory and
  * collected by `modelRegistry`'s glob; `WEBLLM_MODEL_ORDER` pins the curated display
  * order (tiny → large, families grouped) that a glob sort can't reproduce. This is
  * the first catalog turned into derived data (EXTENSIBILITY §8, POLICIES §1); the

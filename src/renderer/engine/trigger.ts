@@ -6,9 +6,9 @@
  * and trigger *values* that are sometimes `true`, sometimes `1`, sometimes a
  * timestamp. This standardizes all three.
  *
- * Additive: nothing consumes this yet. Migrating `latch`/`sample-hold` to
- * `risingEdge` (the documented-edge-but-actually-level bug) is a Phase-0
- * quick-win owned separately. See EXTENSIBILITY_ARCHITECTURE §5.1.
+ * `risingEdge` is consumed by `latch`/`sample-hold` (the documented-edge-but-actually-
+ * level Phase-0 fix) and by the engine's `ctx.trig` accessor. See
+ * EXTENSIBILITY_ARCHITECTURE §5.1.
  */
 
 import { defineNodeState } from './nodeState'

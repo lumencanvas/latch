@@ -9,11 +9,10 @@
  * hand-wired `registerBuiltInTypes()` list so the count guard exists from the
  * first commit (EXTENSIBILITY_ARCHITECTURE §7, POLICIES §1).
  *
- * Today the glob matches ZERO files (protocols still live as `adapters/<Name>Adapter.ts`
- * exporting a `*ConnectionType` object), so this is inert — the manager continues
- * to use the hand-wired list. The collector becomes authoritative only once step
- * 6b co-locates protocols into `protocols/<name>/protocol.ts` folders and
- * `registerBuiltInTypes()` collapses to a loop over `colocatedProtocolTypes`.
+ * The glob is now AUTHORITATIVE: all 6 built-in protocols are co-located as
+ * `protocols/<name>/protocol.ts` (mqtt/ws/http/osc/clasp/ble), and
+ * `registerBuiltInTypes()` loops `colocatedProtocolTypes` (the glob output) rather than a
+ * hand-wired list. The set-equality gate pins the collected id set.
  *
  * Mirrors `registry/nodeRegistry.ts`; lives under `src/renderer` so Vite's
  * `import.meta.glob` and `vite/client` types resolve and the relative glob is correct.

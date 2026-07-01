@@ -471,7 +471,10 @@ export class ExecutionEngine {
     const registryDef = this.nodesStore.getDefinition(nodeType)
     const capabilityContext: ConnectionCapabilityContext = Object.freeze({
       nodeType,
-      trust: nodeTrust(registryDef),
+      // Fail CLOSED: a running node whose registry definition is missing is treated as
+      // `community` (most restrictive), never `core` — so the invariant "executor exists ⇒
+      // trusted registry def" can't be inverted into a trust-escalation if it's ever broken.
+      trust: registryDef ? nodeTrust(registryDef) : 'community',
       declaredProtocols: Object.freeze((registryDef?.connections ?? []).map((c) => c.protocol)),
     })
 
