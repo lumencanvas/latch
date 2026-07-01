@@ -6,6 +6,33 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-01 (later 29) — credential redaction (Node-RED-style), pragmatically scoped
+
+Maintainer: "do it, but it's not the worst thing if it's not perfectly hardened — don't over-engineer;
+elegant if we can. What does Node-RED do?" Researched Node-RED (flows/`flows_cred.json` separation +
+encryption-at-rest + password masking + `this.credentials` per-node scoping) and mapped the LATCH credential
+flow: `ConnectionManager.getConnection*` returns configs **with `password`**, copied into reactive UI state,
+saved plaintext into the `.latch` flow; `CredentialStore` (encrypted) is dead scaffolding; and a browser has
+no secure at-rest store. So the achievable, no-regression, Node-RED-aligned half is "never hand secrets out."
+
+**Done (commit `8fc2562`).** `redactSecrets.ts` + `ConnectionManager`: (1) configs held in a `#`-private map
+(not reachable via `(mgr as any).connections`); (2) public `getConnection*` + `connection-added/updated`
+events return configs with secret fields (declared `props.type:'password'` — clasp `token` now marked — or
+secret-named) masked to a placeholder; (3) `connect()`/`exportConnections()` read the raw map, so auth +
+flow persistence are **unchanged**; (4) `updateConnection` merge-preserves a masked field (Node-RED's
+`__PWRD__`) so a UI round-trip can't erase a saved secret. Bounded (one service + helper), unit-tested +
+mutation-verified, zero regression.
+
+**Deliberately NOT done (per "don't over-engineer" — documented in `SECURITY_MODEL_IMPL`):** flow-file
+at-rest encryption (browser can't; Electron `CredentialStore` is the follow-on), moving adapter secrets off
+`this.config`, and Worker-isolating pure-compute community nodes (the only *full* boundary — visual/3d/audio
+are main-thread-bound and can't be isolated). The redaction closes the broad casual path; it's defense-in-
+depth, honestly not a wall until community distribution exists.
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1806 → 1813** · boot→Play→Stop smoke 0 errors.
+
+---
+
 ## 2026-07-01 (later 28) — deep audit of the whole plan-so-far (Phases 0-2); everything verified
 
 Maintainer: "what are the remaining phases… audit everything deeply… full thorough check on everything
