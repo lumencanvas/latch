@@ -6,6 +6,53 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 18) — corrected the empty/invalid-input clear regressions (the later-17 fix was wrong)
+
+Ran a second adversarial-audit workflow (8 executor comparisons vs their **true git originals** →
+adversarial refute → 3 cross-cutting dimensions) over the later-17 regression fixes **before**
+committing. It found the fixes — and the later-17 audit that prescribed them — targeted the **wrong
+contract**. later-17 pattern-matched every executor to text-generation's `triggered && !input ? zero :
+cached` shape without reading each executor's actual pre-migration code. Reading the real originals
+(`git show <migrate-commit>^`) proves the truth: sentiment / feature-extraction / text2text / image-
+captioning / VLA all cleared their domain ports **unconditionally on empty/invalid input** (gated on
+model-*loaded*, never on a trigger). So the later-17 fixes only restored the *with-trigger* half and left
+the common **no-trigger** path serving stale.
+
+**Corrected (all 5, `src/renderer/engine/executors/ai.ts`), each verified against its git original:**
+- **sentiment-analysis** (fa18a06^) & **feature-extraction** (0a95293^) — original clears domain ports on
+  BOTH not-loaded and empty text. Fix: `!text.trim() ? zero : (result ?? …)` (dropped the trigger gate).
+- **text2text / textTransformationExecutor** (0a95293^) — **missed entirely by later-17.** Original clears
+  `result` on empty text after the model-loaded gate. Fix: `!text.trim() ? '' : (result ?? '')`.
+- **image-captioning** (fa18a06^) — original cleared `caption` on ANY `!imageData` (absent AND unsupported);
+  later-17's `imageInput && !imageData` missed the **absent-image** case. Fix: clear on `state !==
+  'not-loaded' && !imageData`, flag `error` only when `imageInput` is present.
+- **VLA** (0a95293^) — an **unfound regression** (I never touched it; the migration introduced it). Original
+  cleared `action` via `emit('', false)` on bad image; migrated code served a **stale action** — audit rated
+  HIGH (a VLM-as-policy node could drive an action off a frame that no longer exists). Fix mirrors captioning.
+
+**Confirmed NOT regressed (leave alone):** **text-generation** — its original genuinely IS trigger-gated
+(without-trigger serves cached, with-trigger+empty clears); current preserves it. **image-classification** &
+**object-detection** — both original and current SERVE cached on bad image, trigger-agnostic; no domain-port
+change. **A1 coercion guard** (`typeof softErrorValue === 'string' …`) — audit dimension rated clean (no
+executor emits a non-string `error`/`_error`; the `error:0` ?? shadow is latent-only, unreachable today).
+
+**Tests reworked** (`ai-vision-text.test.ts`, `ai-text-vla.test.ts`) — the later-17 tests *encoded the bug*
+(they asserted "blank text without trigger serves cached"). Now assert **unconditional clear** (with AND
+without trigger), plus new **absent-image** (captioning) and **VLA bad/absent-image** coverage.
+**Mutation-verified 5/5** (each fix reverted → exactly its own test reds → restored via `perl`, never `git
+checkout`).
+
+**Verification.** typecheck clean · lint 0 err (49 warns) · `test:unit` **1735 → 1737** · smoke skipped
+(logic-only output-mapping; no lifecycle/registration/render change). **Meta-lesson:** an audit that reasons
+from a *sibling's* contract instead of reading the subject's own original will confidently prescribe the
+wrong fix — read the real pre-migration code per executor.
+
+**▶ Deferred (out of scope, unchanged):** model-NOT-loaded now serves cached instead of hard-clearing domain
+ports (intentional step-A `runModelInference` behavior; practically unreachable since models don't unload) ·
+`disposeAINode` prefix bug (dead code) · the `error:0` coercion shadow.
+
+---
+
 ## 2026-06-30 (later 17) — adversarial audit of step A (no code change)
 
 Ran a 5-reviewer → adversarial-verify → synthesize audit workflow over the step-A diff

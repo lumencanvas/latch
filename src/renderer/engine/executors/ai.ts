@@ -471,7 +471,9 @@ export const sentimentAnalysisExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   })
   if (started) setCached(`${ctx.nodeId}:lastText`, text)
 
-  const results = result ?? []
+  // Empty/whitespace text clears the outputs to zero — the original cleared these ports
+  // unconditionally on empty text (independent of any trigger). Otherwise serve the latest.
+  const results = !text.trim() ? [] : (result ?? [])
   let positive = 0
   let negative = 0
   for (const r of results) {
@@ -515,9 +517,14 @@ export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
 
   outputs.set('caption', result ?? '')
-  // Only flag a bad image once the model is loaded — "model not loaded" wins otherwise.
-  if (state !== 'not-loaded' && imageInput && !imageData) {
-    outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
+  // A bad/absent image (once the model is loaded) clears the stale caption — the original
+  // cleared caption unconditionally on any `!imageData`. The error only flags a *present*
+  // unsupported input; an absent image is not an error ("model not loaded" wins while unloaded).
+  if (state !== 'not-loaded' && !imageData) {
+    outputs.set('caption', '')
+    if (imageInput) {
+      outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
+    }
   }
   return outputs
 }
@@ -562,8 +569,13 @@ export const vlaExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
 
   outputs.set('action', result ?? '')
-  if (state !== 'not-loaded' && imageInput && !imageData) {
-    outputs.set('error', 'Unsupported image input. Use Webcam Snapshot or Texture to Data.')
+  // A bad/absent image (model loaded) clears the stale action — the original cleared it via
+  // emit('', false). Leaving it latched could drive a policy off a frame that no longer exists.
+  if (state !== 'not-loaded' && !imageData) {
+    outputs.set('action', '')
+    if (imageInput) {
+      outputs.set('error', 'Unsupported image input. Use Webcam Snapshot or Texture to Data.')
+    }
   }
   return outputs
 }
@@ -588,7 +600,9 @@ export const featureExtractionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   })
   if (started) setCached(`${ctx.nodeId}:lastText`, text)
 
-  const embedding = result ?? []
+  // Empty/whitespace text clears the embedding to [] — the original cleared unconditionally
+  // on empty text (independent of any trigger). Otherwise serve the latest.
+  const embedding = !text.trim() ? [] : (result ?? [])
   outputs.set('embedding', embedding)
   outputs.set('dimensions', embedding.length)
   return outputs
@@ -869,8 +883,9 @@ export const textTransformationExecutor: NodeExecutorFn = (ctx: ExecutionContext
     infer: (modelId) => aiInference.text2text(taskPrompt, { maxLength: maxTokens }, modelId),
   })
 
-  // Preserve prior behavior: an explicit empty-text trigger clears the result.
-  outputs.set('result', triggered && !text.trim() ? '' : (result ?? ''))
+  // Preserve prior behavior: empty/whitespace text clears the result unconditionally
+  // (the original cleared on empty text regardless of trigger). Otherwise serve the latest.
+  outputs.set('result', !text.trim() ? '' : (result ?? ''))
   return outputs
 }
 

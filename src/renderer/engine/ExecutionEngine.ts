@@ -510,7 +510,7 @@ export class ExecutionEngine {
       // and clears on the next frame that reports none.
       const softErrorValue = outputs.get('error') ?? outputs.get('_error')
       const softError =
-        softErrorValue != null && softErrorValue !== '' ? String(softErrorValue) : null
+        typeof softErrorValue === 'string' && softErrorValue !== '' ? softErrorValue : null
 
       // Update runtime metrics
       this.runtimeStore.updateNodeMetrics(node.id, {

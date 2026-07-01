@@ -255,6 +255,18 @@ describe('soft error → node badge (A1: the dead-_error latch)', () => {
     await engine.executeFrame()
     expect(rt.getNodeMetrics('n')?.lastError).toBeNull()
   })
+
+  it('ignores a non-string error value instead of stringifying it onto the badge', async () => {
+    // A node that names a data port `error` (e.g. a numeric/object payload) must not
+    // render `0`/`false`/`[object Object]` as badge text — only real string messages.
+    const rt = useRuntimeStore()
+    for (const [id, val] of [['z', 0], ['f', false], ['o', {}]] as const) {
+      engine.registerExecutor(`nonstr-${id}`, () => new Map<string, unknown>([['error', val]]))
+      engine.updateGraph([node(id, `nonstr-${id}`)], [])
+      await engine.executeFrame()
+      expect(rt.getNodeMetrics(id)?.lastError).toBeNull()
+    }
+  })
 })
 
 describe('dirty execution mode', () => {

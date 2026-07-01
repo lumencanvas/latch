@@ -88,6 +88,26 @@ describe('textTransformationExecutor (runModelInference migration)', () => {
     expect(out.get('result')).toBe('SUMMARY')
     expect(out.get('done')).toBe(true)
   })
+
+  it('empty text clears the result unconditionally — with or without trigger (regression)', async () => {
+    // Seed a cached SUMMARY.
+    textTransformationExecutor(ctx('t2-clr', { trigger: true }, { text: 'hello', task: 'summarize' }))
+    await flush()
+    const seeded = textTransformationExecutor(ctx('t2-clr', {}, { text: 'hello' })) as Map<string, unknown>
+    expect(seeded.get('result')).toBe('SUMMARY')
+
+    // Empty text, NO trigger → cleared (previously served the stale SUMMARY).
+    const cleared = textTransformationExecutor(ctx('t2-clr', {}, { text: '' })) as Map<string, unknown>
+    expect(cleared.get('result')).toBe('')
+
+    // A trigger doesn't change it — empty is empty.
+    const clearedTrig = textTransformationExecutor(ctx('t2-clr', { trigger: true }, { text: '   ' })) as Map<string, unknown>
+    expect(clearedTrig.get('result')).toBe('')
+
+    // Non-empty text still serves the cached result.
+    const held = textTransformationExecutor(ctx('t2-clr', {}, { text: 'hello' })) as Map<string, unknown>
+    expect(held.get('result')).toBe('SUMMARY')
+  })
 })
 
 describe('vlaExecutor (runModelInference migration)', () => {
