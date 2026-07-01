@@ -110,6 +110,47 @@ mitigation.
   `loadFromCode`/`loadNode` that surfaces it before `register`. The manifest + install UX
   layer on top later.
 
+## Follow-on design (from the isolation-feasibility map, 2026-07-01)
+
+A code map of the community-executor execution path + the credential flow settled two things:
+
+**Worker isolation is only partial — by physics, not effort.** ~9 executor categories
+(visual/3d/shaders/video/audio/opencv/emulation/ai) are **fundamentally main-thread-bound**
+(non-portable WebGL contexts, AudioContext, live `THREE.Texture`s — see the 3-WebGL-contexts
+memory), so a community node in those categories **cannot** run in a Worker. Only the
+~pure-compute half (math/logic/data/timing/string/…, ~100 nodes) is isolable, and even a
+Worker keeps `fetch`/`WebSocket`/`importScripts` — you must *also* blank those inside the
+worker + a `connect-src 'none'` CSP to stop egress, and `ctx.connection()` becomes an async
+RPC back to the gated main-thread resolver (a real API change). So: Worker isolation is a
+**partial** mitigation covering the low-value pure subset; the marquee categories are
+structurally excluded and rely on trust/provenance. Don't advertise "sandboxed".
+
+**The concrete credential leak is `getConnection`, not the adapter.** `ConnectionManager`
+holds `connections: Map<id, BaseConnectionConfig>` where the config *is* the secret
+(`MqttConnectionConfig.password`, `ClaspConnectionConfig.token`). Leak surfaces, all reachable
+by ambient community code today: (1) `getConnection(id)`/`getConnections()` return the config
+**with the secret**; (2) the field is TS-`private`, not runtime-private, so
+`(getConnectionManager() as any).connections` reads it; (3) `stores/connections.ts` copies
+configs into **reactive Pinia state**; (4) the adapter retains `this.config`/`mqttConfig`
+(readable off a `getAdapter(id)` ref). The no-secret *handle* (step 1) is correct, but these
+side channels bypass it.
+
+**Recommended next effort — credential hardening (bounded but MULTI-SURFACE + entangled):**
+1. Store secrets in a truly-private structure (a `#`-private field or a module-private
+   `Map`/`WeakMap`), never on the instance-reachable config or the adapter's enumerable props.
+2. `getConnection*` + the store's reactive state expose only a **secret-redacted DTO**; the
+   internal `connect()`/`createAdapter` path reads the real secret from the private store.
+3. Adapter secrets (`MqttAdapter` username/password, clasp token) move to the private store too.
+**Caveat that makes this a careful effort, not a quick one:** the UI add/edit flow round-trips
+configs through the store — redaction must not drop a secret on save (credential *persistence*
+regression), and the auth paths are hardware/broker-bound (verify by reasoning from the code +
+unit-testing the redaction/private-storage seams, not headlessly). Residual after all this: the
+browser `MemoryCredentialStore` still holds plaintext in memory — unavoidable without a backend.
+
+Net: credential hardening first (it closes the real exfiltration path, independent of egress);
+Worker-isolate pure community nodes second (partial, and gated behind a real want for community
+distribution — no marketplace exists yet).
+
 ## Sequencing
 1. Step 3 trust field (additive, testable). 2. Step 2 gate (dormant for Core/Local).
 3. Step 4 grant store + resolver. 4. `capabilities-of` helper (step-6 core). 5. Document
