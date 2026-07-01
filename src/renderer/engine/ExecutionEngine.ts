@@ -3,7 +3,8 @@ import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { risingEdge, isHigh } from './trigger'
-import { resolveConnectionHandle } from './connection'
+import { resolveConnectionHandle, type ConnectionCapabilityContext } from './connection'
+import { nodeTrust } from '@/services/security/trust'
 import type { ConnectionHandle } from '@/services/connections/ConnectionHandle'
 import type { LifecycleHooks } from './nodeState'
 // Every stateful executor category now self-registers its cleanup with the engine's
@@ -82,6 +83,12 @@ export interface ExecutionContext {
   deltaTime: number
   totalTime: number
   frameCount: number
+  /**
+   * The node's resolved capability context (SECURITY_MODEL step 2), computed by the
+   * engine from the authoritative registry definition. Consumed by `connection()`;
+   * optional so direct/test contexts default to ungated (core) behavior.
+   */
+  capabilityContext?: ConnectionCapabilityContext
   /** input ?? control ?? fallback, coerced to a finite number (NaN/±Infinity → fallback). */
   num(id: string, fallback?: number): number
   /** input ?? control ?? fallback, coerced to a boolean. */
@@ -156,7 +163,7 @@ export function createExecutionContext(data: ExecutionContextData): ExecutionCon
       controlId?: string
       protocol?: string
     }): T | null {
-      return resolveConnectionHandle<T>(read, opts)
+      return resolveConnectionHandle<T>(read, opts, data.capabilityContext)
     },
   }
 }
@@ -458,11 +465,21 @@ export class ExecutionEngine {
       }
     }
 
+    // Capability context (SECURITY_MODEL step 2) resolved from the AUTHORITATIVE registry
+    // definition — never the node's embedded copy — so a community node can't spoof its
+    // trust tier or fabricate protocol declarations via its saved flow.
+    const registryDef = this.nodesStore.getDefinition(nodeType)
+    const capabilityContext: ConnectionCapabilityContext = {
+      trust: nodeTrust(registryDef),
+      declaredProtocols: (registryDef?.connections ?? []).map((c) => c.protocol),
+    }
+
     const context = createExecutionContext({
       nodeId: node.id,
       inputs: this.getNodeInputs(node.id),
       controls: controlMap,
       definition: definition!,
+      capabilityContext,
       deltaTime,
       totalTime: (performance.now() - this.startTime) / 1000,
       frameCount: this.frameCount,

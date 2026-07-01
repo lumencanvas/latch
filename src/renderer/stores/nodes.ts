@@ -3,6 +3,7 @@ import type { Component } from 'vue'
 import { fuzzySearch } from '@/utils/fuzzySearch'
 import type { NodeConnectionRequirement } from '@/services/connections/types'
 import type { NodeRequirement } from '@/utils/platform'
+import type { TrustTier } from '@/services/security/trust'
 
 export type NodeCategory =
   | 'debug'
@@ -102,6 +103,13 @@ export interface NodeDefinition {
    * can show an "unavailable here" badge, honoring the native-or-web duality.
    */
   requires?: NodeRequirement[]
+  /**
+   * Trust tier (SECURITY_MODEL step 3). Assigned by HOW the node reached the runtime,
+   * never self-declared — built-ins leave it unset (→ `core` via `nodeTrust`); the
+   * custom-node loader stamps `local` (file drop) or `community` (imported share). The
+   * capability gate keys off this: only `community` nodes are capability-gated.
+   */
+  trust?: TrustTier
   /** Additional info displayed in the Info tab of the properties panel. */
   info?: NodeInfo
 }

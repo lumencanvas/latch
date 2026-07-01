@@ -140,7 +140,10 @@ class CustomNodeLoaderService {
       this.unloadNode(definition.id)
     }
 
-    // Register with stores
+    // Register with stores. Stamp the trust tier by ORIGIN (SECURITY_MODEL step 3):
+    // file-dropped custom nodes are user-authored-local (trusted, not gated). Assigned
+    // here — never read from the author's definition.json (the validator strips it).
+    definition.trust = 'local'
     const nodesStore = useNodesStore()
     nodesStore.register(definition)
 
@@ -334,7 +337,10 @@ class CustomNodeLoaderService {
       this.unloadNode(definition.id)
     }
 
-    // Register
+    // Register. Code loaded from an imported string is community-tier (SECURITY_MODEL
+    // step 3) — code you did NOT write, so its capability access is gated. Assigned by
+    // origin here, never trusted from the author's definition.json.
+    definition.trust = 'community'
     const nodesStore = useNodesStore()
     nodesStore.register(definition)
 

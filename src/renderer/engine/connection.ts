@@ -18,12 +18,26 @@ import { useConnectionsStore } from '@/stores/connections'
 import { createConnectionHandle } from '@/services/connections/ConnectionHandle'
 import type { ConnectionHandle } from '@/services/connections/ConnectionHandle'
 import type { ConnectionAdapter } from '@/services/connections/types'
+import { isPreTrusted, type TrustTier } from '@/services/security/trust'
 
 export interface ConnectionResolveOptions {
   /** Control/input id holding the selected connection (default `'connectionId'`). */
   controlId?: string
   /** If set, the resolved adapter's protocol must match (else `null`). */
   protocol?: string
+}
+
+/**
+ * The requesting node's capability context (SECURITY_MODEL step 2). Resolved by the
+ * engine from the AUTHORITATIVE registry definition (never the node's embedded copy, so
+ * a community node can't spoof its tier or declarations via its flow file). Omitted →
+ * no gating (the pre-step-2 behavior; kept for direct/test callers).
+ */
+export interface ConnectionCapabilityContext {
+  /** The node's trust tier. Only `community` is gated; `core`/`local` bypass. */
+  readonly trust: TrustTier
+  /** Protocols the node DECLARED in its manifest (`definition.connections[].protocol`). */
+  readonly declaredProtocols: readonly string[]
 }
 
 // Throttle auto-connect attempts per connection (~once / 2s) instead of every frame.
@@ -41,7 +55,8 @@ const handleCache = new WeakMap<ConnectionAdapter, ConnectionHandle>()
  */
 export function resolveConnectionHandle<T extends ConnectionHandle = ConnectionHandle>(
   read: (id: string) => unknown,
-  opts?: ConnectionResolveOptions
+  opts?: ConnectionResolveOptions,
+  cap?: ConnectionCapabilityContext
 ): T | null {
   const id = (read(opts?.controlId ?? 'connectionId') as string) || ''
   if (!id) return null
@@ -56,6 +71,14 @@ export function resolveConnectionHandle<T extends ConnectionHandle = ConnectionH
   const adapter = store.getAdapter(id)
   if (!adapter) return null
   if (opts?.protocol && adapter.protocol !== opts.protocol) return null
+
+  // SECURITY_MODEL step 2: a community node may only reach a connection whose protocol it
+  // DECLARED in its manifest. Core/local nodes are pre-trusted and bypass. Undeclared →
+  // deny (null) BEFORE auto-connecting; executors already surface a null handle on an
+  // error port. (Step 4 will additionally require user approval for declared protocols.)
+  if (cap && !isPreTrusted(cap.trust) && !cap.declaredProtocols.includes(adapter.protocol)) {
+    return null
+  }
 
   if (adapter.status !== 'connected') {
     const now = Date.now()
