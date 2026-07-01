@@ -6,6 +6,155 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-01 (later 36) — Phase 3 committed + audited (this session's ledger)
+
+Phase 3 (control system + declarative UI) landed as 5 logical, individually-revertible commits on
+`phase0-file-format`, author **Moheeb Zara**, **no AI attribution** (verified):
+- `33f4892` — unified `when` control-visibility schema + `evaluateWhen` (foundation; independently green)
+- `05afd6a` — PropertiesPanel → `<ControlRenderer>` panel context (+ panel visibility via `evaluateWhen`)
+- `7a46782` — route BaseNode + ProtocolFormFields visibility through the shared evaluator
+- `cb97d6f` — migrate built-in nodes (cv-threshold / clasp-video-receive / http-request) to `when`
+- *(docs)* — this HANDOFF + ROADMAP update
+
+**Audit.** Dependency-ordered so each cumulative tree builds; the foundation commit checks out green in
+isolation (composable tests + typecheck). Authorship + message scan clean (no `claude`/`co-authored`/🤖).
+Full gate on HEAD: typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **1846** · build
+exit 0. Details in later-33→35.
+
+**Scope correction (don't overclaim).** This completes only **Phase-3 bullet 1** (unify the control
+renderers + the `when` visibility schema). ROADMAP Phase 3 has **two more bullets, NOT started:**
+(2) a declarative `ui` schema + one `NodeView` interpreter (+ closed widget registry, `validateUISchema`,
+first-class `component?` escape hatch); (3) new control types (`xy`/`range`/`curve`/`gradient`),
+custom controls first-class, drag-to-scrub, control keyboard + ARIA. Verified absent in code
+(no `NodeView`/`validateUISchema`, no `ui`/`component` field on `NodeDefinition`). So the real next
+step is the Phase-3 remainder — **not** Phase 4.
+
+---
+
+## 2026-07-01 (later 35) — Phase 3: `when` migration (3b) — registry moved off legacy, honoring harmonized
+
+Completed the visibility unification: migrated the **8 built-in producers** off the three legacy schemas
+onto the canonical `when`, which — because every consumer already honors `when` (3a) — makes panel and
+canvas **consistent** for the first time. This deliberately *changes which controls render*.
+
+**Migrated (behavior-preserving semantics, `evaluateWhen(when) ≡ old check`):**
+- `cv-threshold` ×3 `visibleWhen: {controlId:'mode',value}` → `when: {mode: value}`.
+- `clasp-video-receive` ×3 `visibleWhen: {controlId:'videoMode',…}` → `when: {videoMode: …}`.
+- `http-request` ×2 — `showWhen` lifted OUT of `props` into top-level `when: {templateId:''}`.
+- No `showIf` producer exists (that adapter stays dormant for external/custom connection defs).
+
+**The intended harmonization (new behavior, verified correct):** the **panel** previously ignored
+`visibleWhen`, so it showed clasp/cv's conditional controls unconditionally; now it hides
+room/peerId/address by `videoMode` and the threshold/adaptive params by `mode`. The **canvas**
+previously ignored `props.showWhen`, so http-request's url/method showed inline always; now they hide
+when a template is selected. No data loss — hidden values persist in node data.
+
+**Verification.** New `tests/unit/registry/when-migration.test.ts` pins each migrated control's `when`
++ that no legacy field remains (mutation-verified: regress one control to `visibleWhen` → red).
+Parametrized the BaseNode + PropertiesPanel visibility tests to cover BOTH the canonical `when` and the
+legacy field — the panel's `when` case is the harmonization guard (mutation-verified: make the panel
+ignore `control.when` → only that case reds). typecheck clean · lint 0 err · `test:unit` **1843 →
+1846** (+3) · build exit 0 · standard boot→inspect→Play→Stop smoke **0 real errors** (registry defs
+load + run clean). NOTE: an end-to-end *visual* smoke of the toggle via store-injection was infeasible
+— injecting a node into the shared store doesn't register it with Vue Flow, whose selection-sync then
+clears `inspectedNode` (harness artifact, 0 errors). The panel/canvas visibility logic is instead
+covered by **real component-mount** tests exercising the exact production code path (Vue Flow isn't in
+that path).
+
+**▶ NEXT.** The renderer + visibility unification (Phase-3 bullet 1) is done. The Phase-3 REMAINDER is
+the real next step (see later-36 correction): (2) the declarative `ui` schema + `NodeView` interpreter
++ `validateUISchema` + `component?` escape hatch; (3) new control types (`xy`/`range`/`curve`/`gradient`)
++ drag-to-scrub + control keyboard/ARIA. Optional micro-polish: a deprecation lint for the legacy
+visibility fields. Commit the session's units when the maintainer asks.
+
+---
+
+## 2026-07-01 (later 34) — Phase 3: unified `when` visibility schema (3a); ProtocolFormFields kept separate
+
+**Step 2 decision (ProtocolFormFields — NOT force-migrated).** Read it closely: it shares little with
+`<ControlRenderer>` — 2 widgets it lacks (`textarea`, `checkbox`; its `toggle` is a switch not a
+checkbox), `text` needs `props.type` password, `number` uses `Number()` with **no** blur-clamp (vs
+ControlRenderer's `parseFloat||0` + clamp), and an entirely separate grid/label/description CSS. A
+real `context='config'` branch would ~double ControlRenderer to absorb ~one cleanly-shared widget —
+the opposite of the phase goal. Maintainer chose **skip → do Step 3**; ProtocolFormFields stays its
+own config-form path (documented). The genuine unification win is the visibility schema, below.
+
+**Step 3a — one `when`, behavior-preserving (the three schemas map onto a single evaluator).** The
+repo had three divergent visibility schemas that *disagreed*: `visibleWhen` (honored only on-canvas),
+`props.showWhen` (only in the panel), `showIf` (only in the connection form). Introduced the canonical
+**`when: Record<key, value | { in: [...] }>`** (multi-key AND, `in` = membership) on `ControlDefinition`
+(`WhenSchema`/`WhenCondition` in `stores/nodes.ts`) + one pure **`evaluateWhen(when, values)`** in
+`useControlHelpers`. All three consumers now compute visibility via `evaluateWhen(control.when ?? <its
+own legacy field mapped>, values)` — so each honors the new canonical schema OR exactly its prior
+legacy field. **Zero registry churn, zero behavior change** (the cross-consumer disagreement is
+deliberately preserved for now — see 3b). Legacy `visibleWhen` marked `@deprecated`.
+
+**Verification.** TDD evaluator (equality · multi-key AND · `{in}` · strict-eq/empty-string · absent
+→visible). Added **consumer-wiring** tests per the later-33 audit lesson (pure fn ≠ wiring): BaseNode
+`visibleWhen` filters an inline control (×2); PropertiesPanel `props.showWhen` toggles a control's
+v-show `display:none` (×2). **Mutation-verified** the evaluator (always-true → 4 unit reds) AND both
+consumer mappings (drop BaseNode's visibleWhen map → BaseNode red; drop panel's showWhen map → panel
+red; restore → green). typecheck clean · lint 0 err · `test:unit` **1834 → 1843** (+9) · build exit 0
+· boot→Play→Stop smoke 0 real errors.
+
+**▶ NEXT — Step 3b (deliberate, behavior-changing; visual-verify).** Migrate the registry producers
+to `when` (`clasp-video-receive` ×3, `cv-threshold` ×3 `visibleWhen`; `http-request` ×2 `showWhen`;
+any connection-def `showIf`) and **harmonize cross-consumer honoring** — once a control declares
+`when`, every consumer honors it, so the panel starts hiding conditionally-irrelevant controls
+(e.g. clasp room/peerId/address by `videoMode`) and canvas honors `showWhen`. This is the intended
+consistency fix but it *changes which controls render* → verify with the smoke screenshot + a manual
+panel check before/after. Keep the legacy adapters for back-compat/custom nodes.
+
+---
+
+## 2026-07-01 (later 33) — Phase 3: PropertiesPanel migrated to `<ControlRenderer>` (panel context)
+
+Second consumer folded onto the shared control component. `<ControlRenderer>` gained a
+`context='panel'` branch; **PropertiesPanel** now delegates its six primitive widgets
+(number/slider/toggle/select/text/color) to it, keeping its own delegates + chrome.
+
+**The `context` seam.** One prop drives three things: (1) a `ctx-canvas`/`ctx-panel` class on each
+widget root, with the CSS **fully qualified per context** (canvas values kept byte-identical; panel
+values lifted verbatim from PropertiesPanel's original `.control-input`/`.control-slider`/… blocks —
+roomier sizing, `font-size-sm`, 36×20 toggle, 36×28 color); (2) `@mousedown.stop` → a
+`onControlMousedown` method that stops propagation only when **not** panel (canvas still guards Vue
+Flow's node-drag; panel opts out, matching its original which had no guard); (3) the toggle's ON/OFF
+caption `v-if`'d off in panel. Clamp-on-blur is context-independent and identical (panel's
+`modelValue` == its old `controlValues[id]` fallback).
+
+**PropertiesPanel slimmed.** Replaced the 6 inline widget branches with a single guarded
+`<ControlRenderer context="panel" v-if="usesRenderer(control.type)">`; removed the now-dead script
+(`useControlSelectOptions`/`getSelectOptions`, `isDeviceOptions`, `clampControlNumber` +
+`clampNumberControl`) and the 6 primitives' CSS (kept `.control-code`/`.code-preview` + all chrome:
+`.control-item`/`.control-header`/`.expose-btn`, `v-show="shouldShowControl"`). Connection/
+template-select/asset-picker/code delegates unchanged.
+
+**TDD + verification.** Wrote the panel-context tests first (toggle omits ON/OFF · clamp-on-blur ·
+`ctx-panel` class) → watched red → implemented → green. **Mutation-verified** both forks (break
+label fork / ctx class → their tests red; restore via `.bak` → green). typecheck clean · lint 0 err
+(49 pre-existing warns) · `test:unit` **1824 → 1828** (+4) · build exit 0 · boot→Play→Stop smoke: 6
+nodes inspected, **25 panel widgets rendered via the new path**, slider round-trip, **0 real
+errors**; screenshot confirms panel keeps its roomy styling while on-canvas nodes are unchanged.
+
+**Ultracode adversarial test audit (5-agent workflow: efficacy · byte-fidelity · coverage-gap →
+serial 13-mutant battery → synthesis).** Verdict: tests **genuinely good, not cosmetic** — 10/13
+mutants killed by the specific test pinning each behavior; the fidelity audit confirmed every
+`ctx-panel` CSS value matches the pre-migration original verbatim. Found + **closed 3 real holes**
+(each mutation-proven): (1) the `onControlMousedown` drag-guard fork was unpinned both ways (mutant
+survived) → added canvas-stops / panel-passes tests via a bubbling mousedown to a parent listener;
+(2) select `@change` emitted-value contract was untested (only option rendering) → added a
+change-emits-value test; (3) **PropertiesPanel was mounted by zero tests** → new
+`PropertiesPanel.test.ts` guards the delegation (primitive→`<ControlRenderer context="panel">` with
+bound value, code control does NOT delegate) + the recorded `updateNodeData` write path. The 1
+surviving CSS-pixel mutant is an **expected** survivor (jsdom has no layout → guarded by the fidelity
+audit + smoke, deliberately not unit-tested). `test:unit` **1828 → 1834** (+6), 112 files.
+
+**▶ NEXT (Phase 3).** (2) **ProtocolFormFields** — disjoint vocab (checkbox/textarea, `props.type`
+password, `showIf`); already emit-only, lowest risk → likely a `context='config'` branch or its own
+path. (3) Unify the three visibility schemas (`visibleWhen`/`showWhen`/`showIf`) into one `when`.
+
+---
+
 ## 2026-07-01 (later 29) — credential redaction (Node-RED-style), pragmatically scoped
 
 Maintainer: "do it, but it's not the worst thing if it's not perfectly hardened — don't over-engineer;
