@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-01 (later 28) — deep audit of the whole plan-so-far (Phases 0-2); everything verified
+
+Maintainer: "what are the remaining phases… audit everything deeply… full thorough check on everything
+so far in plan vs what it was, then proceed." Ran a 5-agent parallel audit (Phase 0/1 · connections ·
+model derives · security spine · docs-vs-code+regressions), each adversarially verifying the ROADMAP/HANDOFF
+CLAIMS against the real code + git.
+
+**Verdict: the plan's claimed state matches reality.** Every substantive Phase-0/1/2 claim verified —
+- Phase 0/1: file format + all primitives + every quick-win fix (commit-evidenced); de-monolith `index.ts`
+  is exactly 241 lines; 22/23 state-group migration (engine hand-wires only `subflow`); leak/pure-set(24)/
+  export-list gates real + green; `_`-split GC fix confirmed.
+- Phase 2 connections: `defineProtocol`+glob-authoritative registry (set-equality gate, 6 types); no-secret
+  handle leaks nothing; mqtt/ws/http on `ctx.connection`; BLE registered + Electron pairing.
+- Phase 2 models: **independent git-diffs** confirm derived `AI_MODELS` is byte-identical to the c534c53
+  original and `WEBLLM_MODELS` is set+order-identical minus the removed DeepSeek id; exact set-equality gate;
+  24/35 file counts; 13/13 text-gen `promptFormat`.
+- Phase 2 security: anti-spoof holds (cap closed-over, never on ctx); trust sourced from the authoritative
+  registry def; per-connection grants; validator whitelists declarations + strips `trust`; **no new holes**
+  from the hardening. The `getAdapter`/ambient-`fetch` residual is honestly documented, not concealed.
+- Baseline: typecheck clean · lint 0 err · `test:unit` **1806 / 0 fail** · **build exit 0**. Git clean, all 9
+  session commits authored Moheeb Zara, **no AI attribution**.
+
+**Fixes applied (commit `66ac9ce`).** The only findings were 4 stale in-file doc-comments (protocolRegistry/
+defineProtocol "glob inert", trigger "nothing consumes this yet", webllm derive "25 models") — corrected —
+plus a LOW/unreachable latent: a missing registry def would default trust to `core`. Now **fails closed**
+(→ `community`) so the fail-safe invariant is explicit. All green.
+
+**Phase map (canonical: `ROADMAP_2026-06-28.md`).** 0 ✅ · 1 ✅ (~95%, subflow → P7) · **2 🔄 in progress** ·
+3 Control system + declarative UI (`<ControlRenderer>` + `ui`/`NodeView`) · 4 Canvas + onboarding + a11y ·
+5 Node functionality + modulation gap · 6 Full per-node co-location (largest tail) · 7 Subflow rebuild ·
+8 Live/VJ + installation · 9 Multiplayer. Phase-2 remainder: version-resolve+lazy-load models, Serial adapter
+(MIDI is a poor fit), the security Worker-isolation + credential-WeakMap follow-on, MediaPipe (deferred), BLE
+picker + desktop check.
+
+---
+
 ## 2026-07-01 (later 27) — SECURITY_MODEL steps 2-6: the capability-enforcement spine (+ derives committed)
 
 Maintainer picked the SECURITY_MODEL design proposal, then "do this and then act on it… the whole goal is a
