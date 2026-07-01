@@ -36,7 +36,7 @@ const NODE_PREVIEWS: Record<string, Component> = {
   spring: SpringPreview,
 }
 import NodeConnectionStatus from '@/components/connections/NodeConnectionStatus.vue'
-import { useDeviceEnumeration, type DeviceType, type DeviceOption } from '@/composables/useDeviceEnumeration'
+import { useControlSelectOptions, isDeviceOptions, clampControlNumber, type DeviceOption } from '@/composables/useControlHelpers'
 
 const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
@@ -51,8 +51,8 @@ const nodeError = computed<string | null>(
   () => runtimeStore.getNodeMetrics(props.id)?.lastError ?? null,
 )
 
-// Device enumeration for audio/video selects
-const { audioInputDevices, audioOutputDevices, videoInputDevices } = useDeviceEnumeration()
+// Select-option resolution (device enumeration + static options), shared with the panel
+const { getSelectOptions } = useControlSelectOptions()
 
 const isCollapsed = ref(false)
 const hoveredPort = ref<string | null>(null)
@@ -284,31 +284,6 @@ const controlValues = computed(() => {
   return values
 })
 
-// Get options for a select control, supporting dynamic device enumeration
-function getSelectOptions(control: { props?: Record<string, unknown> }): DeviceOption[] | string[] {
-  const deviceType = control.props?.deviceType as DeviceType | undefined
-
-  if (deviceType) {
-    // Dynamic device enumeration based on deviceType
-    switch (deviceType) {
-      case 'audio-input':
-        return audioInputDevices.value
-      case 'audio-output':
-        return audioOutputDevices.value
-      case 'video-input':
-        return videoInputDevices.value
-    }
-  }
-
-  // Static options from control definition
-  return (control.props?.options as string[] | DeviceOption[]) ?? []
-}
-
-// Check if options are device options (objects with value/label)
-function isDeviceOptions(options: DeviceOption[] | string[]): options is DeviceOption[] {
-  return options.length > 0 && typeof options[0] === 'object' && 'value' in options[0]
-}
-
 // Calculate handle positions - evenly distributed along the node height
 const maxPorts = computed(() => Math.max(inputs.value.length, outputs.value.length, 1))
 const portSpacing = 20 // pixels between ports
@@ -369,15 +344,8 @@ function clampNumberControl(
   control: { id: string; props?: Record<string, unknown>; default?: unknown },
   raw: string,
 ) {
-  let value = parseFloat(raw)
-  if (!Number.isFinite(value)) {
-    value = (controlValues.value[control.id] as number) ?? (control.default as number) ?? 0
-  }
-  const min = control.props?.min
-  const max = control.props?.max
-  if (typeof min === 'number' && value < min) value = min
-  if (typeof max === 'number' && value > max) value = max
-  updateControl(control.id, value)
+  const fallback = (controlValues.value[control.id] as number) ?? (control.default as number) ?? 0
+  updateControl(control.id, clampControlNumber(raw, { min: control.props?.min, max: control.props?.max, fallback }))
 }
 
 function toggleCollapse() {

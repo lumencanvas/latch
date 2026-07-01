@@ -13,7 +13,7 @@ import HttpTemplateEditor from '@/components/connections/HttpTemplateEditor.vue'
 import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
 import DebugPanel from '@/components/debug/DebugPanel.vue'
-import { useDeviceEnumeration, type DeviceType, type DeviceOption } from '@/composables/useDeviceEnumeration'
+import { useControlSelectOptions, isDeviceOptions, clampControlNumber, type DeviceOption } from '@/composables/useControlHelpers'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const uiStore = useUIStore()
@@ -37,30 +37,8 @@ watch(() => uiStore.inspectedNode, (nodeId) => {
   }
 })
 
-// Device enumeration for audio/video selects
-const { audioInputDevices, audioOutputDevices, videoInputDevices } = useDeviceEnumeration()
-
-// Get options for a select control, supporting dynamic device enumeration
-function getSelectOptions(control: { props?: Record<string, unknown> }): DeviceOption[] | string[] {
-  const deviceType = control.props?.deviceType as DeviceType | undefined
-
-  if (deviceType) {
-    switch (deviceType) {
-      case 'audio-input':
-        return audioInputDevices.value
-      case 'audio-output':
-        return audioOutputDevices.value
-      case 'video-input':
-        return videoInputDevices.value
-    }
-  }
-
-  return (control.props?.options as string[] | DeviceOption[]) ?? []
-}
-
-function isDeviceOptions(options: DeviceOption[] | string[]): options is DeviceOption[] {
-  return options.length > 0 && typeof options[0] === 'object' && 'value' in options[0]
-}
+// Select-option resolution (device enumeration + static options), shared with the node
+const { getSelectOptions } = useControlSelectOptions()
 
 // Get the inspected node
 const inspectedNode = computed(() => {
@@ -159,15 +137,8 @@ function clampNumberControl(
   control: { id: string; props?: Record<string, unknown>; default?: unknown },
   raw: string,
 ) {
-  let value = parseFloat(raw)
-  if (!Number.isFinite(value)) {
-    value = (controlValues.value[control.id] as number) ?? (control.default as number) ?? 0
-  }
-  const min = control.props?.min
-  const max = control.props?.max
-  if (typeof min === 'number' && value < min) value = min
-  if (typeof max === 'number' && value > max) value = max
-  updateControl(control.id, value)
+  const fallback = (controlValues.value[control.id] as number) ?? (control.default as number) ?? 0
+  updateControl(control.id, clampControlNumber(raw, { min: control.props?.min, max: control.props?.max, fallback }))
 }
 
 // Open shader editor
