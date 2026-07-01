@@ -56,12 +56,13 @@ describe('modelRegistry auto-glob', () => {
     }
   })
 
-  it('count guard: co-located models never exceed the catalogs union (no orphans)', () => {
-    expect(colocatedModelIds.length).toBeLessThanOrEqual(legacyModelIds.size)
-    for (const id of colocatedModelIds) expect(legacyModelIds.has(id)).toBe(true)
-    // TODO(derive): tighten to whole-catalog set-equality once transformers `AI_MODELS`
-    // and MediaPipe are also co-located + derived (add MediaPipe ids to the universe
-    // then). WebLLM is already there — see the set-equality block below.
+  it('count guard: the co-located id set EXACTLY equals the derived catalogs union', () => {
+    // Both id-catalogs (webllm + transformers) are now fully co-located and derived, so the
+    // co-located set must EQUAL the WEBLLM_MODELS ∪ AI_MODELS id union — not merely be a subset.
+    // MediaPipe is intentionally excluded (deferred — it is a per-task URL builder, not an id
+    // catalog); co-locating a mediapipe spec without folding it into a derived catalog would trip
+    // this gate, which is the intent — it keeps the "every co-located model is derived" story honest.
+    expect(new Set(colocatedModelIds)).toEqual(legacyModelIds)
   })
 
   // WebLLM is the first fully co-located + derived family (POLICIES §1). Compare full
