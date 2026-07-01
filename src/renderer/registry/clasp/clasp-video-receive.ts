@@ -27,9 +27,9 @@ export const claspVideoReceiveNode: NodeDefinition = {
   controls: [
     { id: 'connectionId', type: 'connection', label: 'Connection', default: '', props: { protocol: 'clasp', placeholder: 'Select CLASP connection...' } },
     { id: 'videoMode', type: 'select', label: 'Mode', default: 'room', props: { options: [{ label: 'Room', value: 'room' }, { label: 'Direct Address', value: 'direct' }] } },
-    { id: 'room', type: 'text', label: 'Room', default: 'default', visibleWhen: { controlId: 'videoMode', value: 'room' }, props: { placeholder: 'default' } },
-    { id: 'peerId', type: 'text', label: 'Peer ID', default: '', visibleWhen: { controlId: 'videoMode', value: 'room' }, props: { placeholder: 'Auto-select first broadcaster' } },
-    { id: 'address', type: 'text', label: 'Address', default: '', visibleWhen: { controlId: 'videoMode', value: 'direct' }, props: { placeholder: '/video/relay/myroom/stream/abc123' } },
+    { id: 'room', type: 'text', label: 'Room', default: 'default', when: { videoMode: 'room' }, props: { placeholder: 'default' } },
+    { id: 'peerId', type: 'text', label: 'Peer ID', default: '', when: { videoMode: 'room' }, props: { placeholder: 'Auto-select first broadcaster' } },
+    { id: 'address', type: 'text', label: 'Address', default: '', when: { videoMode: 'direct' }, props: { placeholder: '/video/relay/myroom/stream/abc123' } },
     { id: 'enabled', type: 'toggle', label: 'Enabled', default: true },
   ],
   tags: ['clasp', 'video', 'receive', 'stream', 'relay'],

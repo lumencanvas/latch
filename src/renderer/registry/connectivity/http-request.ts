@@ -43,14 +43,16 @@ export const httpRequestNode: NodeDefinition = {
       type: 'text',
       label: 'URL',
       default: '',
-      props: { placeholder: '/path or https://...', showWhen: { templateId: '' } },
+      when: { templateId: '' },
+      props: { placeholder: '/path or https://...' },
     },
     {
       id: 'method',
       type: 'select',
       label: 'Method',
       default: 'GET',
-      props: { options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], showWhen: { templateId: '' } },
+      when: { templateId: '' },
+      props: { options: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] },
     },
     {
       id: 'timeout',

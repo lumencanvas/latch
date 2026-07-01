@@ -35,7 +35,7 @@ export const cvThresholdNode: NodeDefinition = {
       label: 'Threshold',
       default: 127,
       props: { min: 0, max: 255, step: 1 },
-      visibleWhen: { controlId: 'mode', value: 'binary' },
+      when: { mode: 'binary' },
     },
     {
       id: 'blockSize',
@@ -43,7 +43,7 @@ export const cvThresholdNode: NodeDefinition = {
       label: 'Block Size',
       default: 11,
       props: { min: 3, max: 99 },
-      visibleWhen: { controlId: 'mode', value: 'adaptive' },
+      when: { mode: 'adaptive' },
     },
     {
       id: 'c',
@@ -51,7 +51,7 @@ export const cvThresholdNode: NodeDefinition = {
       label: 'Constant',
       default: 2,
       props: { min: -20, max: 20 },
-      visibleWhen: { controlId: 'mode', value: 'adaptive' },
+      when: { mode: 'adaptive' },
     },
     { id: 'invert', type: 'toggle', label: 'Invert', default: false },
     { id: 'interval', type: 'number', label: 'Frame Interval', default: 2, props: { min: 1, max: 60 } },
