@@ -11,9 +11,10 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 Maintainer: "do it, but it's not the worst thing if it's not perfectly hardened — don't over-engineer;
 elegant if we can. What does Node-RED do?" Researched Node-RED (flows/`flows_cred.json` separation +
 encryption-at-rest + password masking + `this.credentials` per-node scoping) and mapped the LATCH credential
-flow: `ConnectionManager.getConnection*` returns configs **with `password`**, copied into reactive UI state,
-saved plaintext into the `.latch` flow; `CredentialStore` (encrypted) is dead scaffolding; and a browser has
-no secure at-rest store. So the achievable, no-regression, Node-RED-aligned half is "never hand secrets out."
+flow: `ConnectionManager.getConnection*` returned configs **with `password`**, copied into reactive UI state.
+So the achievable, no-regression, Node-RED-aligned fix is "never hand secrets out." (Correction to an
+earlier note: the shareable `.latch` file does NOT contain connection configs — see later-30 — so nothing
+was leaking via flow-sharing; the gap was the runtime/UI-facing public API, which this closes.)
 
 **Done (commit `8fc2562`).** `redactSecrets.ts` + `ConnectionManager`: (1) configs held in a `#`-private map
 (not reachable via `(mgr as any).connections`); (2) public `getConnection*` + `connection-added/updated`
@@ -23,13 +24,30 @@ flow persistence are **unchanged**; (4) `updateConnection` merge-preserves a mas
 `__PWRD__`) so a UI round-trip can't erase a saved secret. Bounded (one service + helper), unit-tested +
 mutation-verified, zero regression.
 
-**Deliberately NOT done (per "don't over-engineer" — documented in `SECURITY_MODEL_IMPL`):** flow-file
-at-rest encryption (browser can't; Electron `CredentialStore` is the follow-on), moving adapter secrets off
-`this.config`, and Worker-isolating pure-compute community nodes (the only *full* boundary — visual/3d/audio
-are main-thread-bound and can't be isolated). The redaction closes the broad casual path; it's defense-in-
-depth, honestly not a wall until community distribution exists.
-
 **Verification.** typecheck clean · lint 0 err · `test:unit` **1806 → 1813** · boot→Play→Stop smoke 0 errors.
+
+---
+
+## 2026-07-01 (later 30) — security verified AT Node-RED parity; declared good-enough
+
+Maintainer set the bar: "if we are as secure as Node-RED then that is good enough." Verified LATCH's posture
+against the real code and confirmed we are **at or above** it:
+- **Shareable `.latch` file carries NO connection configs or secrets** — `fileFormat.ts`/`flowStateToDoc`
+  serialize only nodes/edges/layout; connections live solely in local IndexedDB (`PersistedFlow`,
+  `usePersistence`), and nothing exports that store to a file. So **sharing a flow never leaks a credential**
+  (matches Node-RED's flows/`flows_cred.json` split; arguably better — no exported cred file to mis-share).
+  Corrects an earlier note that wrongly said the flow file embeds the secret.
+- **Runtime STRONGER:** nodes get a no-secret handle, never `this.credentials` (Node-RED hands over the
+  decrypted credential).
+- **Public API PAR:** secret fields masked (later-29).
+- **At-rest:** local IndexedDB is plaintext on web (browsers have no secure key store — same local-access
+  class as Node-RED's locally-keyed file); Electron *could* add `safeStorage` encryption but that's
+  beyond-parity on web.
+
+**Conclusion: security is DONE at the accepted bar.** No further hardening warranted. Optional, explicitly
+gated beyond-parity items (Worker-isolating community executors; Electron at-rest encryption) wait on a real
+need — community-node distribution doesn't exist yet. Full comparison in `SECURITY_MODEL_IMPL_2026-07-01.md`.
+Docs corrected in `redactSecrets.ts` + the impl plan. No code change; verification only.
 
 ---
 

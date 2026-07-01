@@ -153,15 +153,32 @@ unchanged; (4) `updateConnection` merge-preserves a masked field (Node-RED's `__
 round-trip can't erase a saved secret. Clasp's `token` is now a masked password field. Bounded
 (one service + a helper), unit-tested + mutation-verified, zero regression.
 
-**Residual (deliberately NOT over-engineered) — the honest limits:**
-- The flow file still embeds the real secret (persistence). A browser can't encrypt-at-rest; Electron
-  *could* route these through the `safeStorage`-backed `CredentialStore` (dead scaffolding today) — a
-  follow-on, gated on whether flow-sharing-leaks-passwords is a real concern for the target users.
-- The connected adapter still holds the secret on `this.config` (readable via `getAdapter(id)`), and a
-  community executor has ambient `import()`/`fetch` — so **full** confinement still needs Worker
-  isolation of pure-compute community nodes (per the map above). The redaction closes the broad,
-  casual path; it is defense-in-depth, not a wall — which, per the "not perfectly hardened is OK"
-  call, is the right stopping point until community distribution actually exists.
+**Verified: at/above Node-RED parity — this is the accepted security bar (2026-07-01).**
+Comparison, checked against the real code:
+- **Shareable artifact: PAR / STRONGER.** The `.latch` file (`fileFormat.ts` / `flowStateToDoc`)
+  carries ONLY nodes/edges/layout — **no connection configs, no secrets**. Connection configs (with
+  secrets) live solely in local IndexedDB (`PersistedFlow.connections`, `usePersistence`), and nothing
+  exports that store to a file/clipboard. So **sharing a flow never leaks a credential** — matching
+  Node-RED's flows/`flows_cred.json` split, and arguably better (Node-RED's cred file is a file you
+  could mis-share; LATCH's secrets are in no exported artifact at all).
+- **Runtime: STRONGER.** Node-RED hands a node its decrypted `this.credentials`; LATCH hands a node a
+  no-secret handle (the broker keeps the credential). A LATCH node never possesses the credential.
+- **Public API / editor exposure: PAR.** Both mask secret fields (Node-RED `__PWRD__`; LATCH the
+  redaction above).
+- **At-rest encryption: web slightly below, Electron at par-able.** Node-RED encrypts `flows_cred.json`
+  with a locally-stored key; LATCH's local IndexedDB is plaintext on web (a browser has no secure key
+  store — the same class of local-access exposure), and Electron *could* encrypt via the
+  `safeStorage`-backed `CredentialStore` (dead scaffolding) if desired. This is the only sub-parity
+  nuance and it's a browser limitation, not a design gap.
+
+**Conclusion: security is at the accepted bar (Node-RED). No further hardening is warranted** per the
+maintainer's "as secure as Node-RED = good enough" call. Remaining items are explicitly OPTIONAL,
+beyond-parity, and gated on a real need:
+- Worker-isolate pure-compute community nodes + move adapter secrets off `this.config` — the only path
+  to confining a *malicious* community executor (ambient `fetch`/`getAdapter`). Not needed until
+  community-node distribution exists (it doesn't).
+- Electron `safeStorage` encryption of the local IndexedDB credential store — a web app can't, and it's
+  beyond Node-RED's practical guarantee on web.
 
 **Superseded recommendation (kept for context) — credential hardening (multi-surface):**
 1. Store secrets in a truly-private structure (a `#`-private field or a module-private

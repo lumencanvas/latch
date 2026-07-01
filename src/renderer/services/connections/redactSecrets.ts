@@ -10,10 +10,11 @@
  * placeholder means "leave the stored secret unchanged" — so a UI that round-trips a
  * redacted config can't accidentally erase a saved secret.
  *
- * Honest limit (a browser can't fully fix): this stops the credential from flowing through
- * the public API + reactive UI state, but the config is still persisted into the flow file
- * and a Worker-isolated executor is the only true boundary against ambient access. See
- * `docs/plans/SECURITY_MODEL_IMPL_2026-07-01.md`.
+ * Scope: this stops the credential flowing through the public API + reactive UI state. Note
+ * the shareable `.latch` file already carries NO connection configs (only local IndexedDB
+ * does), so sharing a flow never leaks a secret. The remaining residual is that a
+ * Worker-isolated executor is the only true boundary against ambient access by a malicious
+ * community node. See `docs/plans/SECURITY_MODEL_IMPL_2026-07-01.md`.
  */
 
 import type { BaseConnectionConfig, ConnectionTypeDefinition } from './types'
