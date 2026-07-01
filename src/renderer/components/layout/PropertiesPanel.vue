@@ -3,7 +3,7 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { X, Code, ChevronRight, Crosshair, Check, Trash2, Pencil, Settings, Bug, Info } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
-import { useNodesStore, categoryMeta, type NodeDefinition } from '@/stores/nodes'
+import { useNodesStore, categoryMeta, type NodeDefinition, type WhenSchema } from '@/stores/nodes'
 import { useConnectionsStore } from '@/stores/connections'
 import { useRuntimeStore } from '@/stores/runtime'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
@@ -11,9 +11,10 @@ import ConnectionSelect from '@/components/connections/ConnectionSelect.vue'
 import TemplateSelect from '@/components/connections/TemplateSelect.vue'
 import HttpTemplateEditor from '@/components/connections/HttpTemplateEditor.vue'
 import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
+import ControlRenderer from '@/components/controls/ControlRenderer.vue'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
 import DebugPanel from '@/components/debug/DebugPanel.vue'
-import { useControlSelectOptions, isDeviceOptions, clampControlNumber, type DeviceOption } from '@/composables/useControlHelpers'
+import { evaluateWhen } from '@/composables/useControlHelpers'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const uiStore = useUIStore()
@@ -37,8 +38,12 @@ watch(() => uiStore.inspectedNode, (nodeId) => {
   }
 })
 
-// Select-option resolution (device enumeration + static options), shared with the node
-const { getSelectOptions } = useControlSelectOptions()
+// Primitive control types the shared <ControlRenderer> owns (panel context). Non-primitive
+// types (connection/template-select/asset-picker/code) keep their bespoke panel delegates.
+const RENDERER_TYPES = new Set(['number', 'slider', 'toggle', 'select', 'text', 'color'])
+function usesRenderer(type: string): boolean {
+  return RENDERER_TYPES.has(type)
+}
 
 // Get the inspected node
 const inspectedNode = computed(() => {
@@ -125,20 +130,6 @@ function updateControl(controlId: string, value: unknown) {
       })
     })
   }
-}
-
-/**
- * Clamp a number control to its declared min/max — on blur only. We bind
- * :min/:max for spinner + validation affordances but deliberately do NOT clamp
- * per keystroke (that breaks typing intermediate values, e.g. "1" before "10").
- * Controls without a min/max stay unbounded.
- */
-function clampNumberControl(
-  control: { id: string; props?: Record<string, unknown>; default?: unknown },
-  raw: string,
-) {
-  const fallback = (controlValues.value[control.id] as number) ?? (control.default as number) ?? 0
-  updateControl(control.id, clampControlNumber(raw, { min: control.props?.min, max: control.props?.max, fallback }))
 }
 
 // Open shader editor
@@ -331,17 +322,11 @@ function searchForNode(nodeId: string) {
   }
 }
 
-// Check if a control should be shown based on showWhen condition
-function shouldShowControl(control: { props?: Record<string, unknown> }): boolean {
-  const showWhen = control.props?.showWhen as Record<string, unknown> | undefined
-  if (!showWhen) return true
-
-  for (const [key, value] of Object.entries(showWhen)) {
-    if (controlValues.value[key] !== value) {
-      return false
-    }
-  }
-  return true
+// Whether a control is visible, via the unified `when` evaluator. The panel honors the canonical
+// `when` or the legacy `props.showWhen` (multi-key equality) mapped onto it — behavior unchanged.
+function shouldShowControl(control: { when?: WhenSchema; props?: Record<string, unknown> }): boolean {
+  const when = control.when ?? (control.props?.showWhen as WhenSchema | undefined)
+  return evaluateWhen(when, controlValues.value)
 }
 </script>
 
@@ -620,99 +605,14 @@ function shouldShowControl(control: { props?: Record<string, unknown> }): boolea
                   </button>
                 </div>
 
-                <!-- Number input -->
-                <input
-                  v-if="control.type === 'number'"
-                  type="number"
-                  class="control-input"
-                  :value="(controlValues[control.id] as number) ?? 0"
-                  :min="control.props?.min as number"
-                  :max="control.props?.max as number"
-                  :step="(control.props?.step as number) ?? 1"
-                  @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value) || 0)"
-                  @blur="clampNumberControl(control, ($event.target as HTMLInputElement).value)"
-                >
-
-                <!-- Slider -->
-                <div
-                  v-else-if="control.type === 'slider'"
-                  class="control-slider"
-                >
-                  <input
-                    type="range"
-                    :value="(controlValues[control.id] as number) ?? 0"
-                    :min="(control.props?.min as number) ?? 0"
-                    :max="(control.props?.max as number) ?? 1"
-                    :step="(control.props?.step as number) ?? 0.01"
-                    @input="updateControl(control.id, parseFloat(($event.target as HTMLInputElement).value))"
-                  >
-                  <span class="slider-value">{{ ((controlValues[control.id] as number) ?? 0).toFixed(2) }}</span>
-                </div>
-
-                <!-- Toggle -->
-                <label
-                  v-else-if="control.type === 'toggle'"
-                  class="control-toggle"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="controlValues[control.id] as boolean"
-                    @change="updateControl(control.id, ($event.target as HTMLInputElement).checked)"
-                  >
-                  <span class="toggle-track">
-                    <span class="toggle-thumb" />
-                  </span>
-                </label>
-
-                <!-- Select -->
-                <select
-                  v-else-if="control.type === 'select'"
-                  class="control-select"
-                  :value="controlValues[control.id]"
-                  @change="updateControl(control.id, ($event.target as HTMLSelectElement).value)"
-                >
-                  <template v-if="isDeviceOptions(getSelectOptions(control))">
-                    <option
-                      v-for="option in getSelectOptions(control) as DeviceOption[]"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </template>
-                  <template v-else>
-                    <option
-                      v-for="option in getSelectOptions(control) as string[]"
-                      :key="option"
-                      :value="option"
-                    >
-                      {{ option }}
-                    </option>
-                  </template>
-                </select>
-
-                <!-- Text input -->
-                <input
-                  v-else-if="control.type === 'text'"
-                  type="text"
-                  class="control-input"
-                  :value="controlValues[control.id]"
-                  :placeholder="(control.props?.placeholder as string) ?? ''"
-                  @input="updateControl(control.id, ($event.target as HTMLInputElement).value)"
-                >
-
-                <!-- Color picker -->
-                <div
-                  v-else-if="control.type === 'color'"
-                  class="control-color"
-                >
-                  <input
-                    type="color"
-                    :value="(controlValues[control.id] as string) ?? '#808080'"
-                    @input="updateControl(control.id, ($event.target as HTMLInputElement).value)"
-                  >
-                  <span class="color-value">{{ controlValues[control.id] }}</span>
-                </div>
+                <!-- Primitive widgets (number/slider/toggle/select/text/color) -->
+                <ControlRenderer
+                  v-if="usesRenderer(control.type)"
+                  :control="control"
+                  :model-value="controlValues[control.id]"
+                  context="panel"
+                  @update="(v) => updateControl(control.id, v)"
+                />
 
                 <!-- Connection selector -->
                 <ConnectionSelect
@@ -1163,138 +1063,10 @@ function shouldShowControl(control: { props?: Record<string, unknown> }): boolea
   border-color: var(--color-primary-600);
 }
 
-.control-input {
-  padding: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-xs);
-  background: var(--color-neutral-50);
-}
-
-.control-input:focus {
-  outline: none;
-  border-color: var(--color-primary-400);
-  background: var(--color-neutral-0);
-}
-
-.control-slider {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.control-slider input[type="range"] {
-  flex: 1;
-  height: 4px;
-  -webkit-appearance: none;
-  background: var(--color-neutral-200);
-  border-radius: 2px;
-}
-
-.control-slider input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--color-primary-400);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.slider-value {
-  min-width: 40px;
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-neutral-600);
-  text-align: right;
-}
-
-.control-toggle {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.control-toggle input {
-  display: none;
-}
-
-.toggle-track {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  background: var(--color-neutral-200);
-  border-radius: 10px;
-  transition: background var(--transition-fast);
-}
-
-.control-toggle input:checked + .toggle-track {
-  background: var(--color-primary-400);
-}
-
-.toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  background: white;
-  border-radius: 50%;
-  transition: transform var(--transition-fast);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
-.control-toggle input:checked + .toggle-track .toggle-thumb {
-  transform: translateX(16px);
-}
-
-.control-select {
-  padding: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-xs);
-  background: var(--color-neutral-50);
-  cursor: pointer;
-}
-
-.control-select:focus {
-  outline: none;
-  border-color: var(--color-primary-400);
-}
-
-.control-color {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.control-color input[type="color"] {
-  width: 36px;
-  height: 28px;
-  padding: 2px;
-  border: 1px solid var(--color-neutral-200);
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  -webkit-appearance: none;
-}
-
-.control-color input[type="color"]::-webkit-color-swatch-wrapper {
-  padding: 2px;
-}
-
-.control-color input[type="color"]::-webkit-color-swatch {
-  border: none;
-  border-radius: 2px;
-}
-
-.color-value {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-neutral-500);
-  text-transform: uppercase;
-}
-
+/*
+ * The primitive widgets (number/slider/toggle/select/text/color) + their styling now live in
+ * the shared <ControlRenderer> (panel context). Only the code-preview widget stays inline.
+ */
 .control-code {
   padding: var(--space-2);
   background: var(--color-neutral-800);
