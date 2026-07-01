@@ -7,11 +7,12 @@
  * This is that collector, added NOW (the scaffold) alongside the three hand-authored
  * catalogs so the count + prompt-format gates exist from the first commit.
  *
- * The glob is now LIVE for the webllm family: 25 co-located `models/webllm/*.model.ts`
- * specs are collected here and `WEBLLM_MODELS` is derived from them (see
- * `models/webllm/derive.ts`; the sign-off-gated first derive —
- * `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`). `AI_MODELS` (transformers) and the
- * MediaPipe URLs remain hand-authored pending their own derives.
+ * The glob is now LIVE for the webllm AND transformers families: the co-located
+ * `models/webllm/*.model.ts` + `models/transformers/*.model.ts` specs are collected here,
+ * and both `WEBLLM_MODELS` and `AI_MODELS` are derived from them (see
+ * `models/webllm/derive.ts` + `models/transformers/derive.ts`;
+ * `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md`). Only the MediaPipe URLs remain
+ * hand-authored pending their own derive.
  *
  * This collector stays SHAPE-AGNOSTIC — it just gathers `ModelSpec`s by id. Each
  * catalog's per-family rollup (order, task grouping, projection) lives beside its

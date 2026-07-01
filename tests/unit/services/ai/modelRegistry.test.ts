@@ -78,4 +78,19 @@ describe('modelRegistry auto-glob', () => {
     const catalog = WEBLLM_MODELS.map((m) => ({ id: m.id, name: m.name, size: m.size })).sort(byId)
     expect(colocatedWebllm).toEqual(catalog)
   })
+
+  // transformers is the second fully co-located + derived family. Assert the co-located
+  // spec ids exactly match AI_MODELS' full model set (each default + every alternate),
+  // so the derive can never silently gain/drop a transformers model relative to the catalog.
+  it('transformers set-equality: co-located transformers specs exactly match AI_MODELS (default + alternates)', () => {
+    const colocated = new Set(
+      colocatedModelSpecs.filter((s) => s.family === 'transformers').map((s) => s.id)
+    )
+    const catalog = new Set<string>()
+    for (const def of AI_MODELS) {
+      catalog.add(def.defaultModel)
+      for (const a of def.alternateModels) catalog.add(a.id)
+    }
+    expect(colocated).toEqual(catalog)
+  })
 })

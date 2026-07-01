@@ -1,0 +1,155 @@
+// FROZEN BASELINE — the hand-authored AI_MODELS array copied VERBATIM from
+// `git show c534c53:src/renderer/services/ai/AIInference.ts` (lines 77-224), the
+// pre-derive catalog. Independent of the per-model *.model.ts generation: this is the
+// whole original object, not reconstructed from split specs. deriveAiModels() must
+// deep-equal this. Do NOT edit by hand except to intentionally rebaseline the catalog.
+/* eslint-disable */
+export const AI_MODELS_BASELINE = [
+  {
+    id: 'text-generation',
+    name: 'Text Generation',
+    task: 'text-generation',
+    description: 'Generate and complete text',
+    defaultModel: 'Xenova/TinyLlama-1.1B-Chat-v1.0',
+    defaultSize: '~640 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'text',
+    alternateModels: [
+      // Modern, ungated, permissive small decoders — recommended picks.
+      { id: 'onnx-community/Qwen2.5-0.5B-Instruct', name: 'Qwen2.5 0.5B Instruct', size: '~0.3 GB', license: 'apache-2.0' },
+      { id: 'onnx-community/Qwen2.5-1.5B-Instruct', name: 'Qwen2.5 1.5B Instruct', size: '~0.9 GB', license: 'apache-2.0' },
+      { id: 'onnx-community/Qwen3-0.6B-ONNX', name: 'Qwen3 0.6B', size: '~0.4 GB', license: 'apache-2.0' },
+      { id: 'onnx-community/Qwen3-1.7B-ONNX', name: 'Qwen3 1.7B', size: '~1 GB', license: 'apache-2.0' },
+      { id: 'HuggingFaceTB/SmolLM2-360M-Instruct', name: 'SmolLM2 360M', size: '~0.3 GB', license: 'apache-2.0' },
+      { id: 'HuggingFaceTB/SmolLM2-1.7B-Instruct', name: 'SmolLM2 1.7B', size: '~1 GB', license: 'apache-2.0' },
+      // Gated (license click-through) — Llama / Gemma.
+      { id: 'onnx-community/Llama-3.2-1B-Instruct-ONNX', name: 'Llama 3.2 1B', size: '~0.8 GB (q4f16)', license: 'llama3.2' },
+      { id: 'onnx-community/Llama-3.2-3B-Instruct-ONNX', name: 'Llama 3.2 3B', size: '~1.8 GB (q4f16)', license: 'llama3.2' },
+      { id: 'onnx-community/gemma-3-1b-it-ONNX', name: 'Gemma 3 1B', size: '~0.8 GB', license: 'gemma' },
+      { id: 'onnx-community/gemma-3-270m-it-ONNX', name: 'Gemma 3 270M', size: '~0.2 GB', license: 'gemma' },
+      // Larger / specialty.
+      { id: 'onnx-community/Phi-4-mini-instruct-ONNX', name: 'Phi-4 Mini', size: '~2.4 GB (q4f16)', license: 'mit' },
+      { id: 'onnx-community/Qwen3-0.6B-heretic-abliterated-uncensored-ONNX', name: 'Qwen3 0.6B Abliterated', size: '~0.4 GB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'text2text-generation',
+    name: 'Text Transformation',
+    task: 'text2text-generation',
+    description: 'Summarize, translate, or rewrite text',
+    defaultModel: 'Xenova/flan-t5-small',
+    defaultSize: '~300 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: false,
+    category: 'text',
+    alternateModels: [
+      { id: 'Xenova/flan-t5-base', name: 'Flan-T5 Base', size: '~900 MB', license: 'apache-2.0' },
+      { id: 'Xenova/t5-small', name: 'T5 Small', size: '~240 MB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'image-classification',
+    name: 'Image Classification',
+    task: 'image-classification',
+    description: 'Classify images into categories',
+    defaultModel: 'Xenova/vit-base-patch16-224',
+    defaultSize: '~350 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'vision',
+    alternateModels: [
+      { id: 'Xenova/resnet-50', name: 'ResNet-50', size: '~100 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/mobilenetv4_conv_small.e2400_r224_in1k', name: 'MobileNetV4 Small', size: '~20 MB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'object-detection',
+    name: 'Object Detection',
+    task: 'object-detection',
+    description: 'Detect and locate objects in images',
+    defaultModel: 'Xenova/detr-resnet-50',
+    defaultSize: '~160 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'vision',
+    alternateModels: [
+      { id: 'Xenova/yolos-tiny', name: 'YOLOS Tiny', size: '~27 MB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'automatic-speech-recognition',
+    name: 'Speech Recognition',
+    task: 'automatic-speech-recognition',
+    description: 'Transcribe audio to text',
+    defaultModel: 'Xenova/whisper-tiny.en',
+    defaultSize: '~150 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'audio',
+    alternateModels: [
+      { id: 'onnx-community/whisper-base.en', name: 'Whisper Base', size: '~145 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/whisper-small.en', name: 'Whisper Small', size: '~480 MB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'sentiment-analysis',
+    name: 'Sentiment Analysis',
+    task: 'sentiment-analysis',
+    description: 'Analyze text sentiment and emotion',
+    defaultModel: 'Xenova/distilbert-base-uncased-finetuned-sst-2-english',
+    defaultSize: '~270 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: false,
+    category: 'text',
+    alternateModels: [
+      { id: 'Xenova/bert-base-multilingual-uncased-sentiment', name: 'Multilingual BERT', size: '~700 MB', license: 'mit' },
+    ],
+  },
+  {
+    id: 'feature-extraction',
+    name: 'Text Embeddings',
+    task: 'feature-extraction',
+    description: 'Convert text to vector embeddings',
+    defaultModel: 'Xenova/all-MiniLM-L6-v2',
+    defaultSize: '~90 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: false,
+    category: 'text',
+    alternateModels: [
+      { id: 'Xenova/bge-small-en-v1.5', name: 'BGE Small (384-dim)', size: '~130 MB', license: 'mit' },
+      { id: 'Xenova/gte-small', name: 'GTE Small (384-dim)', size: '~130 MB', license: 'mit' },
+      { id: 'nomic-ai/nomic-embed-text-v1.5', name: 'Nomic Embed v1.5 (768-dim)', size: '~550 MB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'image-to-text',
+    name: 'Image Captioning',
+    task: 'image-to-text',
+    description: 'Generate captions for images',
+    defaultModel: 'Xenova/blip-image-captioning-base',
+    defaultSize: '~990 MB',
+    defaultLicense: 'bsd-3-clause',
+    supportsWebGPU: true,
+    category: 'multimodal',
+    alternateModels: [
+      { id: 'Xenova/blip-image-captioning-large', name: 'BLIP Large', size: '~1.8 GB', license: 'bsd-3-clause' },
+      { id: 'Xenova/trocr-base-handwritten', name: 'TrOCR Handwritten', size: '~1.2 GB', license: 'mit' },
+    ],
+  },
+  {
+    id: 'vision-language',
+    name: 'Vision-Language (VLA)',
+    task: 'image-text-to-text',
+    description: 'Image + instruction → an answer or action (SmolVLM, vision-language-action style)',
+    defaultModel: 'HuggingFaceTB/SmolVLM-256M-Instruct',
+    defaultSize: '~300 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'multimodal',
+    alternateModels: [
+      { id: 'HuggingFaceTB/SmolVLM-500M-Instruct', name: 'SmolVLM 500M', size: '~600 MB', license: 'apache-2.0' },
+    ],
+  },
+]
+
