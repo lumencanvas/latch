@@ -1,47 +1,44 @@
-# Next-session kickoff — Phase 2 (continuing: connection security / model derive)
+# Next-session kickoff — Phase 2 (models + connections substreams landed; remainder gated/hardware-bound)
 
 Copy everything in the block below as your first message to a fresh Claude Code
 session to continue LATCH Phase-2 work with full context.
-(Last updated 2026-06-30 — Phase 2 core landed, uncommitted; three decision memos pending.)
+(Last updated 2026-06-30 — HEAD `c534c53`; tree clean & green; 6 commits this session, all committed.)
 
 ---
 
-ultrathink You're continuing **Phase 2** of LATCH — a free/open web+desktop node-based creative-coding tool (Vue 3 + TS + Vite, Electron Forge) at `/Users/obsidian/Projects/lumencanvas/latch`. **Phases 0 & 1 are DONE; Phase 2 is well underway but its whole changeset is UNCOMMITTED on branch `phase0-file-format`.** Get fully up to speed before touching code.
+ultrathink You're continuing **Phase 2** of LATCH — a free/open web+desktop node-based creative-coding tool (Vue 3 + TS + Vite, Electron Forge) at `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format` (HEAD `c534c53`). **Phases 0 & 1 done; Phase 2 well underway. Tree is CLEAN and green.** Get oriented before touching code.
+
+Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing any-warns ok) · `test:unit` **1771 pass + 11 todo** · `build` ok.
 
 ## STEP 1 — Read, in order
-1. `CLAUDE.md` — rules. **NO AI attribution in git, ever** (history/PRs read as Moheeb Zara's). **Commit only when asked.** Stay on the branch. Each step ends green. Never assume — read the code/verify in-app. Honor `strategy/05` DON'T-OVERCLAIM.
-2. `docs/HANDOFF.md` TOP entries `(later 14 → 10)` — `(later 14)` `defineModel`+`modelRegistry` scaffold; `(later 13)` ws+http→`ctx.connection()`; `(later 12)` mqtt slice + `ConnectionHandle`; `(later 11)` `defineProtocol` scaffold + glob-authoritative registration; `(later 10)` Phase-1 completion audit.
-3. `docs/plans/ROADMAP_2026-06-28.md` — progress snapshot (top).
-4. **The three decision memos (READ — work is gated on these):**
-   - `docs/plans/CONNECTION_HANDLE_IMPL_2026-06-29.md` — the no-secret `ConnectionHandle` design (largely realized for mqtt/ws/http; the record of decisions made).
-   - `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md` — the `defineModel` **derive** fork (5 decisions: task-wrapper metadata location, default/order reproduction, MediaPipe scope, whether auto error-outputs land here or separately, first-PR scope). **Awaits maintainer sign-off.**
-   - `docs/plans/SECURITY_MODEL_2026-06-28.md` — connection security steps **2–6** (capability enforcement, trust-tier tagging, Community approval + CSP egress) are NOT built; step 1 (no-secret handle) IS. Maintainer-sensitive — surface design before building.
-   - Plus `EXTENSIBILITY_ARCHITECTURE_2026-06-28.md` §7 (`defineProtocol`), §8 (`defineModel`), §11; `POLICIES_2026-06-28.md` §1 (gates).
-5. Recall memories: `latch-smoke-test-harness` (reusable `smoke.mjs`: boot→Play→Stop, 0 real errors; system Chrome), `latch-component-test-gotchas`, `latch-nanoid-underscore-split` (RESOLVED), `latch-webgl-contexts`, `latch-subflows-broken`.
+1. `CLAUDE.md` — rules. **NO AI attribution in git, ever** (history/PRs read as Moheeb Zara's). **Commit only when asked.** Stay on the branch. Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor `strategy/05` DON'T-OVERCLAIM.
+2. `docs/HANDOFF.md` TOP entries **(later 23 → 18)** — this session's arc, newest first: (23) adversarial audit of the model-select + BLE commits + an Electron BLE pairing fix; (22) BLE protocol registration; (21) model-select adopted across all transformers AI nodes via the `withModelSelect` seam; (20) model-select population (`getModelSelectOptions` + an injected resolver); (19) texture-render swallowed-catch surfacing + A1 empty-error shadow fix; (18) corrected the empty/invalid-input clear regressions (the later-17 "fix" was wrong — each executor was re-verified vs its true pre-migration git original).
+3. `docs/plans/ROADMAP_2026-06-28.md` — **the canonical sequencing doc**; read the progress snapshot at the top (Phase 0/1 done, Phase 2 in progress).
+4. The gated memos (work depends on these): `docs/plans/MODEL_REGISTRY_IMPL_2026-06-30.md` (the model **derive** — 5 forks, AWAITING SIGN-OFF, has a recommendation for each); `docs/plans/SECURITY_MODEL_2026-06-28.md` (connection security steps 2–6, NOT built; step 1 no-secret handle IS). Plus `EXTENSIBILITY_ARCHITECTURE_2026-06-28.md` §7/§8, `POLICIES_2026-06-28.md` §1.
+5. Recall memories: `audit-against-true-original` (the meta-lesson that bit twice this session), `latch-smoke-test-harness`, `latch-component-test-gotchas`, `latch-nanoid-underscore-split`.
 
-Then baseline: `typecheck` (clean) · `lint` (0 err; 49 pre-existing any-warns ok) · `test:unit` (**1698** pass + 11 todo) · `build` (ok). Tree is **dirty** (the Phase-2 changeset) — `git status` to see it.
+## WHERE WE ARE — Phase 2 (Register-once subsystems), on `phase0-file-format`
+- **Connections sub-stream:** `defineProtocol` + `protocolRegistry` (glob-authoritative; set-equality gate) + no-secret `ConnectionHandle` via `ctx.connection<T>({protocol})`; **mqtt/ws/http** migrated; **BLE registered** (`bleConnectionType` + `protocols/ble/protocol.ts`) + an **Electron `select-bluetooth-device` pairing handler** (`src/main/index.ts`) so desktop BLE actually pairs (needs a 1× desktop-build check — can't be verified headless).
+- **Models sub-stream:** **A1** per-node soft-error badge latch (`ExecutionEngine` prefers a non-empty-string public `error` over `_error`); **A2-core** `defineNode({models})` derivation; **`runModelInference`** + 8 AI executors migrated (swallowed inference catches now surface on a public `error` port) + a targeted STT catch fix; the migration's clear-on-empty regressions found & fixed (verified vs git originals); the 3 **texture-render** nodes' catches surfaced; **model-select** populated from `AI_MODELS` (`getModelSelectOptions` + an injected resolver so the engine stays catalog-agnostic) and adopted across **all 7 transformers AI nodes** via one seam `registry/ai/modelSelect.ts` — `withModelSelect(def, task)`. Select default `''` = task default → additive, no migration.
 
-## WHERE WE ARE
-- **Phase 0 & 1 DONE.** Engine's generic lifecycle loop is authoritative for cleanup (only `subflow` hand-wired, deferred to Phase 7).
-- **Phase 2 — landed but UNCOMMITTED on `phase0-file-format`** (all green throughout):
-  - **6a** `defineProtocol` + `protocolRegistry` (globs `services/connections/protocols/<name>/protocol.ts`), **glob-authoritative** registration (`registerBuiltInTypes` loops the glob), count gate at **set-equality**.
-  - **6b** mqtt/ws/http migrated to a **no-secret `ConnectionHandle`** via `ctx.connection<T>({protocol})` (`engine/connection.ts` — shared auto-connect throttle + WeakMap handle cache; `ExecutionEngine.createExecutionContext` wires it). Broker holds the credential; handle exposes only safe ops. **CLASP exempt.** Behavior note: auto-connect is now fire-and-forget (was awaited) — benign except an HTTP request fired in the 1–2 connecting frames gets "Not connected" until re-triggered.
-  - **7 scaffold** `defineModel` + `modelRegistry` (globs `services/ai/models/**/*.model.ts`, **inert** — 0 files; the 3 catalogs `AI_MODELS`/`WEBLLM_MODELS`/MediaPipe stay authoritative) + count/prompt-format gates + `NodeSpec.models?` field.
-- **The three register-once subsystems all follow the same pattern:** one declarative unit (`defineNode`/`defineProtocol`/`defineModel`), `import.meta.glob`, dup-id/missing-default throw at load, a count gate from commit 1. **Keep that pattern.**
+## WHAT'S NEXT — all gated or hardware-bound; ASK the maintainer which (or confirm "do what you think is best"):
+- **(A) Model derive** (`MODEL_REGISTRY_IMPL`, 5 forks — AWAITING SIGN-OFF). Turn `AI_MODELS`/`WEBLLM_MODELS` into data derived from co-located `*.model.ts` specs; deep-equal gate. Recommend **WebLLM-first** (flat array = simplest deep-equal, avoids the task-metadata fork). Architecturally consequential — the memo has a recommendation for each fork.
+- **(B) Serial/MIDI drift.** Unlike BLE (existing tested adapter → just register), these need **NEW `SerialAdapter`/`MidiAdapter`** (~300–500 LOC each) + migrating the **working** `navigator.*` executors (serial/midi-in/midi-out/ble) to `ctx.connection` + `defineNodeState`. Plumbing is unit-testable; hardware I/O needs a manual desktop check. Higher regression risk (refactors working code).
+- **(C) `SECURITY_MODEL` 2–6** — capability-scoped, user-approved connection access + trust tier + CSP egress. Maintainer-sensitive UX/policy — surface design first.
+- **(D) BLE renderer device-picker** (`TODO(ble-ux)` in `src/main/index.ts`) — forward `deviceList` to a renderer picker so the user chooses among matches (today: auto-picks the first UUID-filtered device). Electron UI, untestable headless.
+- Also: a real **desktop-build check** that the Electron BLE pairing handler (`c534c53`) works.
 
-## DECISIONS PENDING (ask the maintainer FIRST)
-1. **Commit the Phase-2 changeset?** It's large and spans two subsystems. Suggested logical split (each green, revertible): (a) protocol scaffold, (b) glob-authoritative registration, (c) mqtt `ctx.connection`, (d) ws+http, (e) `defineModel` scaffold + `NodeSpec.models?`, plus the three memos. No AI attribution.
-2. **Branch:** still on `phase0-file-format` (Phases 0/1/2). §11 says branch per phase off `main` — merge+rebranch, or continue? (Deferred each session so far.)
-3. **What next** — pick one:
-   - **(A) Auto AI loading/progress/done/error outputs + `runModelInference`** — the audit's dead-`_error` fix for every AI node. HIGH value, but entangles node-schema changes (→ node-data versioning/migration §10) + the `defineNode` post-process pipeline (AI nodes aren't co-located yet) OR per-node hand-wiring. Needs a design pass; not a clean drop-in.
-   - **(B) Model derive** (`MODEL_REGISTRY_IMPL` §decisions) — make `AI_MODELS`/`WEBLLM_MODELS` derived from `*.model.ts`; deep-equal gate. Needs the 5 memo decisions.
-   - **(C) Connection security 2–6** (`SECURITY_MODEL`) — capability enforcement + trust tiers + Community approval/CSP. Maintainer-sensitive (UX/policy); surface design first.
-   - **(D) BLE/Serial/MIDI drift** (§7) — now ~one folder each since the registry is glob-authoritative: BLE = author a `bleConnectionType` + register the existing adapter; Serial/MIDI = write Web Serial / Web MIDI adapters (real hardware APIs, hard to smoke).
-   - **(E) Adapter physical co-location** into `protocols/<name>/` (Phase-E mechanical; touches the export barrel).
+## HOW TO WORK
+- Each step ends green: `typecheck` + `lint` + `test:unit` (build for production-source changes; `tsconfig.json` includes `src/**`, so typecheck DOES cover the Electron main process).
+- **Smoke runtime/registry changes** with the boot→Play→Stop harness: write `smoke.mjs` to the repo root (Playwright, `chromium.launch({channel:'chrome', headless:true, args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']})`, `permissions:['camera','microphone']`; goto `localhost:5173`, click `button[title="Play"]`, wait ~4s, `button[title="Stop"]`; filter benign `NotAllowedError`/`[WebcamCapture]`/`XNNPACK`/`TensorFlow Lite`), run `npm run dev` in background, then `NODE_PATH="$(pwd)/node_modules" node smoke.mjs`, then `rm smoke.mjs`. Clean = 0 real console errors.
+- **Mutation-verify** every fix: hand-edit the fix to a no-op → its test reds → restore. **NEVER `git checkout` to undo** (wipes uncommitted/untracked work) — restore with `perl`/`mv`/hand-edit.
+- **Use adversarial-audit workflows** (ultracode) before committing risky/refactor work: fan out reviewers that verify claims against the *real code + git originals*, then adversarially verify findings. This caught two real bugs this session (the clear-on-empty "fix" was wrong; the Electron BLE `['web','electron']` claim was actually broken). Escape `${...}` as `\${...}` inside workflow prompt template literals.
+- **Commit only when asked**; logical, individually-revertible commits; no AI attribution (author stays Moheeb Zara). Update `docs/HANDOFF.md` + the `ROADMAP` snapshot at close.
 
-## HOW TO WORK (unchanged)
-Each step ends green (typecheck + lint + test:unit; build for production-source changes). Logical, individually-revertible commits; **commit only when asked.** Smoke-verify runtime changes with `smoke.mjs` (boot→`button[title="Play"]`→wait→`button[title="Stop"]`; system Chrome `channel:'chrome'`; launch args `--use-fake-ui-for-media-stream` + `--use-fake-device-for-media-stream` + camera/mic permissions; filter benign MediaPipe INFO; clean = 0 real console errors; copy the script INTO the repo to run so ESM resolves `node_modules`, then `rm` it). Update `docs/HANDOFF.md` at the close. Mutation-verify every new gate.
-
-**Hard-won lesson:** NEVER `git checkout <file>` to undo a mutation-verify edit — it reverts *tracked* files to HEAD (wiping uncommitted work) and can't restore *untracked* ones. For untracked temp files use `rm`; for tracked files, edit the mutation back out by hand.
-
-The single most important inherited fact: **the engine's generic lifecycle loop is authoritative for cleanup**, and every register-once subsystem (node/protocol/model) is **glob-collected with a count gate**. `ctx.connection()` returns a **no-secret `ConnectionHandle`** — that return type is a frozen public contract; don't regress it to a raw adapter.
+## INHERITED INVARIANTS (don't regress)
+- The engine's **generic lifecycle loop is authoritative for cleanup**; every register-once subsystem (node/protocol/model) is glob-collected with a count/set-equality gate — keep that pattern.
+- `ctx.connection()` returns a **frozen no-secret `ConnectionHandle`** (the broker holds the credential) — don't regress to a raw adapter.
+- **`deriveModelDefinition` (engine) stays catalog-agnostic** — the AI registry injects options via `withModelSelect` / an injected resolver; the engine never imports the AI service. The `model` select default `''` resolves to the task default because every AIInference method keys on `modelId || getDefaultModel(task)`.
+- **`runModelInference` fits only discrete request→single-result inference** — not streaming (STT/WebLLM) or texture-render (live/yolo/depth) nodes.
+- **Per-executor empty/invalid-input clear behavior VARIES** — verify each against its true pre-migration original (`git show <migrate-commit>^`), never assume uniformity (`audit-against-true-original`).
+- BLE is registered but its **executor still uses `navigator.bluetooth` directly** (not `ctx.connection`) — fine and consistent with OSC/CLASP (also self-contained, picker-registered but not `ctx.connection`-consumed); executor migration is later work, not a bug.
