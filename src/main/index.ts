@@ -53,6 +53,21 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Web Bluetooth pairing bridge. The BLE nodes + the 'ble' connection call
+  // navigator.bluetooth.requestDevice(); Electron CANCELS every such request unless a
+  // 'select-bluetooth-device' listener exists (electronjs.org/docs → web-contents), so
+  // without this the desktop build's BLE — which we advertise as electron-supported —
+  // silently never pairs. Each request is already scoped by service UUID in the
+  // renderer, so pick the first matching device. The event re-fires as devices are
+  // discovered, so wait for a non-empty list rather than cancelling early.
+  // TODO(ble-ux): forward deviceList to a renderer picker so the user chooses among matches.
+  mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
+    event.preventDefault()
+    const device = deviceList[0]
+    if (device) callback(device.deviceId)
+    // else: no match yet — don't cancel; the event fires again as more are found.
+  })
+
   // Load the app
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])

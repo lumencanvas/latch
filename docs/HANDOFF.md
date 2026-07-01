@@ -46,6 +46,44 @@ decoupling preserved via dependency injection; the same seam serves the post-der
 
 ---
 
+## 2026-06-30 (later 23) — adversarial audit of the model-select + BLE commits; fix Electron BLE pairing
+
+Ran a 7-agent adversarial audit (5 dimensions → verify) over the un-audited commits (39ed9f3, cc07f01,
+0fb7971) before continuing.
+
+**Model-select work (39ed9f3 + cc07f01): CLEAN — all claims hold.** (a) "Additive, no migrate()" confirmed —
+`fileFormat` persists only explicit control *values*, definition defaults merge at runtime, so an old flow
+without the `model` control reads `undefined` → `modelId || getDefaultModel(task)` → the same default. (b)
+**Zero output ports added** — all 6 adopted nodes already declared loading/progress/done/error (verified per
+node via `git show cc07f01^:…`), so `deriveModelDefinition` deduped to a pure no-op. (c) All 7 task strings
+match executor↔`AI_MODELS`; `selectedModels`/`getSelectedModel` are UI-only, never read by executors.
+
+**BLE (0fb7971): one finding real, one refuted.**
+- **Orphaned-registration → REFUTED.** OSC and CLASP are *also* registered connection types with
+  self-contained executors (no `ctx.connection`), so BLE registered-but-not-yet-consumed matches the
+  deliberate existing architecture — not a defect. A "hide BLE" patch would inconsistently single it out.
+- **`platforms: ['web','electron']` over-claim → REAL, FIXED.** The audit claimed Electron BLE is broken;
+  before touching code I checked the **actual Electron docs** (WebFetch) — with **no `select-bluetooth-device`
+  listener, requestDevice() is cancelled**, so my recollection was wrong and the audit was right. This is a
+  *pre-existing, project-wide* gap (all 4 BLE nodes + `bleConnectionType` + `connectivity.md` claim electron),
+  so the honest fix is to make the claim TRUE, not to strip `electron` from one line (which would single out
+  BLE and abandon desktop BLE). **Added a `select-bluetooth-device` handler in `src/main/index.ts`** (canonical
+  documented form: preventDefault, pick the first UUID-filtered device, wait through the incremental re-fires) —
+  unbreaking desktop BLE for the whole feature. Left `platforms` as-is (now honest + consistent with the 4
+  BLE nodes).
+
+**Verification.** typecheck clean (`tsconfig.json` covers `src/**`, so the main-process handler IS typechecked
+against Electron's types) · lint 0 err · `test:unit` **1771** (unchanged — Electron main isn't unit-testable
+headlessly). **Not runtime-verified in this harness** (no Electron); needs a 1× desktop-build check that BLE
+now pairs — consistent with the repo's other "needs a runtime check" caveats.
+
+**▶ NEXT / follow-ups surfaced by the audit.** (1) `TODO(ble-ux)`: forward `deviceList` to a renderer device
+picker so the user chooses among matches (today: auto-first). (2) `docs/nodes/connectivity.md` "full BLE
+support" in Electron is now true *with* the handler. Otherwise unchanged: Serial/MIDI adapters + executor
+migration; catalog **derive** + `SECURITY_MODEL` (maintainer-gated).
+
+---
+
 ## 2026-06-30 (later 22) — register BLE as a first-class connection protocol (Phase 2 drift fix)
 
 Self-driven (maintainer: "do what you think is best"). Mapped the BLE/Serial/MIDI drift with a 5-agent
