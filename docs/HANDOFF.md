@@ -28,6 +28,29 @@ mutation-verified, zero regression.
 
 ---
 
+## 2026-07-01 (later 32) — Phase 3: `<ControlRenderer>` extracted; BaseNode migrated
+
+Built the unified control component via an ultracode workflow (spec → build → 6 parallel adversarial
+fidelity checks, one per control type, each diffing the result against `git show HEAD:BaseNode.vue`).
+**0 drift found; independently re-verified.**
+
+**Landed (commit `16b8ae2`).** `components/controls/ControlRenderer.vue` — presentational, props
+`{ control, modelValue, context }`, emits `update`; owns the 6-type widget dispatch
+(slider/toggle/select/number/text/color) + their CSS, lifted byte-faithful from BaseNode (markup, classes,
+`@mousedown.stop`, number `@input(parseFloat||0)`+`@blur`-clamp, slider parseFloat, ON/OFF text, `#808080`
+default). BaseNode now delegates (`−274/+7` lines), keeping its `.inline-control` wrapper + label. The
+existing BaseNode test guards it end-to-end (mutation-verified: break ControlRenderer's `:min` → red); a new
+`ControlRenderer.test.ts` (+6) pins each type. typecheck · lint 0 · `test:unit` **1818** · smoke green.
+
+**▶ NEXT (Phase 3).** Migrate **PropertiesPanel** to `<ControlRenderer>` — needs a `context='panel'` branch
+(no `@mousedown.stop`, no ON/OFF text, normal styling) + it keeps its delegates (connection/template-select/
+asset-picker/code-preview) and the expose-to-panel chrome. Then **ProtocolFormFields** (disjoint vocab:
+checkbox/textarea + `props.type` password + `showIf` — likely a `context='config'` branch or its own path).
+Then unify the three visibility schemas (`visibleWhen`/`showWhen`/`showIf`) into one `when` (ROADMAP Phase 3).
+The `context` prop is the scaffold; currently only `'canvas'` behavior is implemented.
+
+---
+
 ## 2026-07-01 (later 31) — Phase 3 START: shared control-rendering helpers (dedup)
 
 Phase 2 effectively complete → moved to **Phase 3 (Control system + declarative UI)**. Mapped the three
