@@ -15,6 +15,7 @@ export const depthEstimationNode: NodeDefinition = {
   outputs: [
     { id: 'texture', type: 'texture', label: 'Depth' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     {

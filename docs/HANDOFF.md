@@ -6,6 +6,44 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-06-30 (later 19) — texture-render swallowed-catch surfacing + A1 empty-error shadow fix (Phase 2)
+
+Plan check first (ROADMAP is canonical for this branch): we're mid **Phase 2** — connections sub-stream
+(defineProtocol/ConnectionHandle/ctx.connection + mqtt/ws/http) done; models sub-stream runtime foundation
+(runModelInference + A1 + A2-core + scaffold) done and regression-clean. Corrected the stale ROADMAP progress
+snapshot (it still said "Phases 2–9 not started"). Maintainer chose **texture-render catch surfacing** as the
+next thread.
+
+**What changed.** The 3 continuous **texture-render** AI nodes — `object-detection-live` + `-yolo` (both via the
+shared `runLiveDetection` loop) and `depth-estimation` — swallowed their inference `catch` into `console.error`
+(AUDIT §G; they don't fit `runModelInference`, which is request→single-result). Applied the **already-approved STT
+pattern** (`800451b`): cache the caught message → emit on a **public `error` output** (badge via the A1 latch),
+cleared by the next successful inference. Texture-render / overlay / throttle logic untouched; the transient
+"Unsupported source" status stays on the internal `_error` channel. Added the `{ id:'error', type:'string' }`
+output port to all three registry defs (matching STT; adding an *output* port is non-breaking — outputs aren't
+persisted, so no version bump / migrate).
+
+**A1 hardening (necessary, not incidental).** Emitting `error:''` every clean frame *reachably* triggered the
+`??` shadow the later-17 coercion audit had flagged as latent: `outputs.get('error') ?? outputs.get('_error')`
+picked the empty string (non-nullish), blanking the badge on an "Unsupported source" frame. Fixed the A1 selection
+in `ExecutionEngine` to prefer the public `error` **only when it's a non-empty string**, else fall back to
+`_error`. This also retroactively closes the same latent gap for STT and any future `error:''` emitter.
+
+**Tests.** `live-detection.test.ts` +2 (live loop + depth: a thrown inference error surfaces on `error`, cleared
+on the next success — the existing harness stubs `getContext`→null so no WebGL). `ExecutionEngine.test.ts` +1
+(empty `error` no longer shadows a real `_error`). All **mutation-verified** (neutralize each catch's error-cache /
+revert the A1 selection → the matching test reds → restore via `perl`, never `git checkout`).
+
+**Verification.** typecheck clean · lint 0 err (49 warns) · `test:unit` **1737 → 1740** · **boot→Play→Stop smoke
+0 real errors** (the A1 change is engine-wide, so smoked). The 7 MediaPipe executors + text-to-speech remain on
+their own services (not this pattern); every swallowed *inference* catch across the AI family is now surfaced.
+
+**▶ NEXT (maintainer-gated, unchanged):** A2 follow-through (registry-populated model selects + co-locate one AI
+node end-to-end — needs a version bump + `migrate`); the catalog **derive** (`MODEL_REGISTRY_IMPL`, 5 forks,
+AWAITING SIGN-OFF); `SECURITY_MODEL` steps 2–6; BLE/Serial/MIDI protocol drift.
+
+---
+
 ## 2026-06-30 (later 18) — corrected the empty/invalid-input clear regressions (the later-17 fix was wrong)
 
 Ran a second adversarial-audit workflow (8 executor comparisons vs their **true git originals** →

@@ -256,6 +256,17 @@ describe('soft error → node badge (A1: the dead-_error latch)', () => {
     expect(rt.getNodeMetrics('n')?.lastError).toBeNull()
   })
 
+  it('an empty-string public `error` does not shadow a real `_error` transient', async () => {
+    // The texture-render AI nodes emit error:'' every frame; on a bad-source frame they
+    // also set _error. The empty public error must fall back to the _error, not blank the badge.
+    const rt = useRuntimeStore()
+    engine.registerExecutor('shadow', () =>
+      new Map<string, unknown>([['error', ''], ['_error', 'Unsupported source']]))
+    engine.updateGraph([node('n', 'shadow')], [])
+    await engine.executeFrame()
+    expect(rt.getNodeMetrics('n')?.lastError).toBe('Unsupported source')
+  })
+
   it('ignores a non-string error value instead of stringifying it onto the badge', async () => {
     // A node that names a data port `error` (e.g. a numeric/object payload) must not
     // render `0`/`false`/`[object Object]` as badge text — only real string messages.

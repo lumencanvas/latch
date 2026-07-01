@@ -30,16 +30,21 @@ const detections = [
   { label: 'dog', score: 0.95, box: { xmin: 5, ymin: 6, xmax: 7, ymax: 8 } },
 ]
 // vi.mock is hoisted above const declarations, so create the spies via vi.hoisted.
-const { detectYolo, detectObjects } = vi.hoisted(() => ({
+const { detectYolo, detectObjects, estimateDepth } = vi.hoisted(() => ({
   detectYolo: vi.fn(),
   detectObjects: vi.fn(),
+  estimateDepth: vi.fn(),
 }))
 
 vi.mock('@/services/ai/AIInference', () => ({
-  aiInference: { detectYolo, detectObjects },
+  aiInference: { detectYolo, detectObjects, estimateDepth },
 }))
 
-import { objectDetectionYoloExecutor, objectDetectionLiveExecutor } from '@/engine/executors/ai'
+import {
+  objectDetectionYoloExecutor,
+  objectDetectionLiveExecutor,
+  depthEstimationExecutor,
+} from '@/engine/executors/ai'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 function ctx(nodeId: string, controls: Record<string, unknown>, frameCount: number): ExecutionContext {
@@ -61,6 +66,7 @@ describe('runLiveDetection', () => {
     vi.clearAllMocks()
     detectYolo.mockResolvedValue(detections)
     detectObjects.mockResolvedValue(detections)
+    estimateDepth.mockResolvedValue({ width: 0, height: 0, channels: 1, data: [] })
   })
 
   it('throttles by interval, caches results, and reports topLabel (YOLO)', async () => {
@@ -97,5 +103,40 @@ describe('runLiveDetection', () => {
     expect(detectObjects).toHaveBeenCalledTimes(1)
     expect(r1.get('count')).toBe(2)
     expect(r1.get('topLabel')).toBe('dog')
+  })
+
+  // Previously-swallowed inference catches now surface on the public `error` port
+  // (the STT pattern applied to the texture-render nodes), cleared by the next success.
+  it('surfaces a swallowed detect error on the error port, cleared on the next success', async () => {
+    detectYolo.mockRejectedValueOnce(new Error('detect-boom'))
+    objectDetectionYoloExecutor(ctx('y-err', { interval: 100, modelUrl: 'm' }, 0))
+    await flush()
+
+    // Within the interval → no re-run; the cached failure is on `error`.
+    const r1 = objectDetectionYoloExecutor(ctx('y-err', { interval: 100, modelUrl: 'm' }, 1))
+    expect(r1.get('error')).toBe('detect-boom')
+    expect(r1.get('loading')).toBe(false)
+
+    // Force a re-run past the interval; this one succeeds → error clears.
+    objectDetectionYoloExecutor(ctx('y-err', { interval: 5, modelUrl: 'm' }, 10))
+    await flush()
+    const r2 = objectDetectionYoloExecutor(ctx('y-err', { interval: 100, modelUrl: 'm' }, 11))
+    expect(r2.get('error')).toBe('')
+  })
+
+  it('depth: surfaces a swallowed estimate error on the error port, cleared on the next success', async () => {
+    estimateDepth.mockRejectedValueOnce(new Error('depth-boom'))
+    depthEstimationExecutor(ctx('d-err', { interval: 100 }, 0))
+    expect(estimateDepth).toHaveBeenCalledTimes(1)
+    await flush()
+
+    const r1 = depthEstimationExecutor(ctx('d-err', { interval: 100 }, 1))
+    expect(r1.get('error')).toBe('depth-boom')
+
+    // Re-run past the interval; success clears the error.
+    depthEstimationExecutor(ctx('d-err', { interval: 5 }, 10))
+    await flush()
+    const r2 = depthEstimationExecutor(ctx('d-err', { interval: 100 }, 11))
+    expect(r2.get('error')).toBe('')
   })
 })

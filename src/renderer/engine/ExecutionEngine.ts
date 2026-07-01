@@ -504,11 +504,15 @@ export class ExecutionEngine {
 
       // Surface a soft error (an `error`/`_error` output) on the node badge.
       // Executors report recoverable/steady-state failures this way — e.g. a model
-      // that isn't loaded yet — instead of throwing. The public `error` port wins
-      // over the legacy internal `_error` channel. Unlike a thrown error this does
-      // not push to the errors[] log or bump errorCount; it only drives the badge
-      // and clears on the next frame that reports none.
-      const softErrorValue = outputs.get('error') ?? outputs.get('_error')
+      // that isn't loaded yet — instead of throwing. The public `error` port wins,
+      // but ONLY when it's a non-empty string; an empty/absent/non-string `error`
+      // falls back to the legacy internal `_error` (so a node that emits `error:''`
+      // every frame — e.g. the texture-render AI nodes — can't shadow a real
+      // `_error` transient). Unlike a thrown error this does not push to errors[]
+      // or bump errorCount; it only drives the badge and clears on the next clean frame.
+      const publicError = outputs.get('error')
+      const softErrorValue =
+        typeof publicError === 'string' && publicError !== '' ? publicError : outputs.get('_error')
       const softError =
         typeof softErrorValue === 'string' && softErrorValue !== '' ? softErrorValue : null
 

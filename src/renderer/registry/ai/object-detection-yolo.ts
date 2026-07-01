@@ -18,6 +18,7 @@ export const objectDetectionYoloNode: NodeDefinition = {
     { id: 'count', type: 'number', label: 'Count' },
     { id: 'topLabel', type: 'string', label: 'Top Label' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
+    { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
     {

@@ -1045,6 +1045,10 @@ function runLiveDetection(
 
   const cachedDetections = getCached<Detection[]>(`${ctx.nodeId}:detections`, [])
   const loading = pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false)
+  // A previously-swallowed inference failure, surfaced on the public `error` port (badge
+  // via the engine latch); cleared by the next successful detect. The transient
+  // unsupported-source status stays on the internal `_error` channel.
+  const detectError = getCached<string | null>(`${ctx.nodeId}:detectError`, null) ?? ''
 
   // Normalize any texture/video/canvas source to ImageData (reuses the shared helper).
   const imageData = convertToImageData(source)
@@ -1063,6 +1067,7 @@ function runLiveDetection(
     outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
     outputs.set('texture', state.texture)
     outputs.set('loading', loading)
+    outputs.set('error', detectError)
     if (source) {
       outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
     }
@@ -1094,9 +1099,11 @@ function runLiveDetection(
         // download, so it reads high until the model is cached.
         setCached(`${ctx.nodeId}:detectMs`, performance.now() - startedAt)
         setCached(`${ctx.nodeId}:loading`, false)
+        setCached(`${ctx.nodeId}:detectError`, null)
       } catch (error) {
         console.error('[AI] Live detection error:', error)
         setCached(`${ctx.nodeId}:loading`, false)
+        setCached(`${ctx.nodeId}:detectError`, error instanceof Error ? error.message : String(error))
       } finally {
         pendingOperations.delete(ctx.nodeId)
       }
@@ -1161,6 +1168,7 @@ function runLiveDetection(
   outputs.set('texture', state.texture)
   // Recompute after the possible kickoff above so it reflects the live state.
   outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
+  outputs.set('error', detectError)
   return outputs
 }
 
@@ -1245,10 +1253,16 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
     depthEstimateState.set(ctx.nodeId, state)
   }
 
+  // A previously-swallowed inference failure, surfaced on the public `error` port (badge
+  // via the engine latch); cleared by the next successful estimate. The transient
+  // unsupported-source status stays on the internal `_error` channel.
+  const depthError = getCached<string | null>(`${ctx.nodeId}:depthError`, null) ?? ''
+
   const imageData = convertToImageData(source)
   if (!imageData) {
     outputs.set('texture', state.texture)
     outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
+    outputs.set('error', depthError)
     if (source) outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
     return outputs
   }
@@ -1267,9 +1281,11 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
         if (isNodeDisposed(ctx.nodeId)) return
         setCached(`${ctx.nodeId}:depth`, depth)
         setCached(`${ctx.nodeId}:loading`, false)
+        setCached(`${ctx.nodeId}:depthError`, null)
       } catch (error) {
         console.error('[AI] Depth estimation error:', error)
         setCached(`${ctx.nodeId}:loading`, false)
+        setCached(`${ctx.nodeId}:depthError`, error instanceof Error ? error.message : String(error))
       } finally {
         pendingOperations.delete(ctx.nodeId)
       }
@@ -1309,6 +1325,7 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
 
   outputs.set('texture', state.texture)
   outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
+  outputs.set('error', depthError)
   return outputs
 }
 
