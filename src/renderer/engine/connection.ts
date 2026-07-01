@@ -19,6 +19,7 @@ import { createConnectionHandle } from '@/services/connections/ConnectionHandle'
 import type { ConnectionHandle } from '@/services/connections/ConnectionHandle'
 import type { ConnectionAdapter } from '@/services/connections/types'
 import { isPreTrusted, type TrustTier } from '@/services/security/trust'
+import { isGranted, ensureRequested } from '@/services/security/capabilityGrants'
 
 export interface ConnectionResolveOptions {
   /** Control/input id holding the selected connection (default `'connectionId'`). */
@@ -34,6 +35,8 @@ export interface ConnectionResolveOptions {
  * no gating (the pre-step-2 behavior; kept for direct/test callers).
  */
 export interface ConnectionCapabilityContext {
+  /** Node-type id (the grant key; grants are remembered per node-type + capability). */
+  readonly nodeType: string
   /** The node's trust tier. Only `community` is gated; `core`/`local` bypass. */
   readonly trust: TrustTier
   /** Protocols the node DECLARED in its manifest (`definition.connections[].protocol`). */
@@ -72,12 +75,21 @@ export function resolveConnectionHandle<T extends ConnectionHandle = ConnectionH
   if (!adapter) return null
   if (opts?.protocol && adapter.protocol !== opts.protocol) return null
 
-  // SECURITY_MODEL step 2: a community node may only reach a connection whose protocol it
-  // DECLARED in its manifest. Core/local nodes are pre-trusted and bypass. Undeclared →
-  // deny (null) BEFORE auto-connecting; executors already surface a null handle on an
-  // error port. (Step 4 will additionally require user approval for declared protocols.)
-  if (cap && !isPreTrusted(cap.trust) && !cap.declaredProtocols.includes(adapter.protocol)) {
-    return null
+  // SECURITY_MODEL steps 2 + 4: gate community nodes (core/local are pre-trusted and
+  // bypass). Deny BEFORE auto-connecting; executors already surface a null handle on an
+  // error port.
+  if (cap && !isPreTrusted(cap.trust)) {
+    // Step 2 — must have DECLARED this protocol in its manifest.
+    if (!cap.declaredProtocols.includes(adapter.protocol)) return null
+    // Step 4 — and the user must have APPROVED it. The prompt is async and this gate is
+    // synchronous, so fire the approval request once and deny until it's granted (the
+    // next frame after approval allows). Default resolver denies, so nothing is granted
+    // without an explicit approval.
+    const capability = `connection:${adapter.protocol}`
+    if (!isGranted(cap.nodeType, capability)) {
+      ensureRequested(cap.nodeType, capability)
+      return null
+    }
   }
 
   if (adapter.status !== 'connected') {

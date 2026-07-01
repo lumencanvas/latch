@@ -470,6 +470,7 @@ export class ExecutionEngine {
     // trust tier or fabricate protocol declarations via its saved flow.
     const registryDef = this.nodesStore.getDefinition(nodeType)
     const capabilityContext: ConnectionCapabilityContext = {
+      nodeType,
       trust: nodeTrust(registryDef),
       declaredProtocols: (registryDef?.connections ?? []).map((c) => c.protocol),
     }
