@@ -12,6 +12,7 @@ import TemplateSelect from '@/components/connections/TemplateSelect.vue'
 import HttpTemplateEditor from '@/components/connections/HttpTemplateEditor.vue'
 import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
 import ControlRenderer from '@/components/controls/ControlRenderer.vue'
+import NodeView from '@/components/controls/NodeView.vue'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
 import DebugPanel from '@/components/debug/DebugPanel.vue'
 import { evaluateWhen } from '@/composables/useControlHelpers'
@@ -578,7 +579,21 @@ function shouldShowControl(control: { when?: WhenSchema; props?: Record<string, 
               <span>Controls</span>
             </div>
 
-            <div class="controls-list">
+            <!-- Declarative `ui` schema → one NodeView interpreter (panel surface) -->
+            <NodeView
+              v-if="nodeDefinition.ui"
+              :node-id="inspectedNode?.id ?? ''"
+              :definition="nodeDefinition"
+              :values="controlValues"
+              surface="panel"
+              class="controls-list"
+              @update="updateControl"
+            />
+
+            <div
+              v-else
+              class="controls-list"
+            >
               <div
                 v-for="control in nodeDefinition.controls"
                 v-show="shouldShowControl(control)"

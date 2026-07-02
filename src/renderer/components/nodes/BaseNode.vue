@@ -38,6 +38,7 @@ const NODE_PREVIEWS: Record<string, Component> = {
 }
 import NodeConnectionStatus from '@/components/connections/NodeConnectionStatus.vue'
 import ControlRenderer from '@/components/controls/ControlRenderer.vue'
+import NodeView from '@/components/controls/NodeView.vue'
 
 const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
@@ -242,9 +243,12 @@ const inlineControls = computed(() => {
   })
 })
 
+// A node with a declarative `ui` schema renders <NodeView> in its body (Phase 3 bullet 2).
+const hasUi = computed(() => !!definition.value?.ui)
+
 // Check if this is a simple node (no content to show in body)
 const isSimpleNode = computed(() => {
-  return !hasTextureOutput.value && !hasInlineControls.value && !nodePreview.value
+  return !hasTextureOutput.value && !hasInlineControls.value && !nodePreview.value && !hasUi.value
 })
 
 // Node types that should always show inline controls (control-type nodes)
@@ -578,9 +582,23 @@ function onLabelKeydown(e: KeyboardEvent) {
           />
         </div>
 
-        <!-- Inline Controls -->
+        <!-- Declarative `ui` schema → one NodeView interpreter -->
         <div
-          v-if="hasInlineControls && inlineControls.length > 0"
+          v-if="hasUi && definition"
+          class="node-controls"
+        >
+          <NodeView
+            :node-id="props.id"
+            :definition="definition"
+            :values="controlValues"
+            surface="node"
+            @update="updateControl"
+          />
+        </div>
+
+        <!-- Inline Controls (fallback auto-layout when there's no `ui`) -->
+        <div
+          v-else-if="hasInlineControls && inlineControls.length > 0"
           class="node-controls"
         >
           <div

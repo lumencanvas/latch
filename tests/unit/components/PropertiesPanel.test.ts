@@ -8,6 +8,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
 import PropertiesPanel from '@/components/layout/PropertiesPanel.vue'
 import ControlRenderer from '@/components/controls/ControlRenderer.vue'
+import NodeView from '@/components/controls/NodeView.vue'
 
 /**
  * Guards the Phase-3 migration WIRING on the panel side (the audit found PropertiesPanel was
@@ -88,6 +89,41 @@ describe('PropertiesPanel — ControlRenderer delegation', () => {
 
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy).toHaveBeenCalledWith(nodeId, { amount: 42 })
+  })
+
+  it('renders <NodeView surface="panel"> and commits its update when the def has a ui schema', async () => {
+    useNodesStore().register({
+      id: 'ui-node',
+      name: 'UI',
+      version: '1.0.0',
+      category: 'data',
+      description: 'x',
+      icon: 'box',
+      platforms: ['web', 'electron'],
+      inputs: [],
+      outputs: [],
+      controls: [{ id: 'amount', type: 'slider', label: 'Amount', default: 3, props: { min: 0, max: 10 } }],
+      ui: { rows: [{ widgets: [{ type: 'slider', bind: 'amount' }] }] },
+    })
+    const flowsStore = useFlowsStore()
+    flowsStore.createFlow('t')
+    const node = flowsStore.addNode('ui-node', { x: 0, y: 0 }, { amount: 3 })!
+    useUIStore().setInspectedNode(node.id)
+    const wrapper = mount(PropertiesPanel, {
+      global: {
+        stubs: {
+          TexturePreview: true, ConnectionSelect: true, TemplateSelect: true,
+          HttpTemplateEditor: true, AssetPickerControl: true, DebugPanel: true,
+        },
+      },
+    })
+    const nv = wrapper.findComponent(NodeView)
+    expect(nv.exists()).toBe(true)
+    expect(nv.props('surface')).toBe('panel')
+
+    const spy = vi.spyOn(flowsStore, 'updateNodeData').mockImplementation(() => {})
+    nv.vm.$emit('update', 'amount', 7)
+    expect(spy).toHaveBeenCalledWith(node.id, { amount: 7 })
   })
 })
 

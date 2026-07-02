@@ -9,6 +9,7 @@ import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
 import BaseNode from '@/components/nodes/BaseNode.vue'
+import NodeView from '@/components/controls/NodeView.vue'
 
 /**
  * First @vue/test-utils component test in the repo. Guards the Phase-0 fix that
@@ -175,6 +176,47 @@ describe('BaseNode conditional visibility (when / visibleWhen)', () => {
   it('still honors the legacy `visibleWhen`', () => {
     expect(textCount(mountWith('a', { visibleWhen: { controlId: 'mode', value: 'b' } }))).toBe(0)
     expect(textCount(mountWith('b', { visibleWhen: { controlId: 'mode', value: 'b' } }))).toBe(1)
+  })
+})
+
+describe('BaseNode declarative ui (NodeView)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('renders <NodeView surface="node"> when the definition has a ui schema', () => {
+    useNodesStore().register({
+      id: 'ui-node',
+      name: 'UI',
+      version: '1.0.0',
+      category: 'data',
+      description: '',
+      icon: 'box',
+      platforms: ['web', 'electron'],
+      inputs: [],
+      outputs: [],
+      controls: [{ id: 'amount', type: 'slider', label: 'Amount', default: 3, props: { min: 0, max: 10 } }],
+      ui: { rows: [{ widgets: [{ type: 'slider', bind: 'amount' }] }] },
+    })
+    const wrapper = mount(BaseNode as unknown as Record<string, unknown>, {
+      props: {
+        id: 'n1',
+        type: 'ui-node',
+        data: { nodeType: 'ui-node', amount: 3 },
+        selected: false,
+        connectable: true,
+        position: { x: 0, y: 0 },
+        dimensions: { width: 100, height: 50 },
+        dragging: false,
+        resizing: false,
+        zIndex: 0,
+        events: {},
+      },
+      global: { stubs: { Handle: true, NodeConnectionStatus: true } },
+    })
+    const nv = wrapper.findComponent(NodeView)
+    expect(nv.exists()).toBe(true)
+    expect(nv.props('surface')).toBe('node')
   })
 })
 
