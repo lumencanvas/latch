@@ -65,4 +65,26 @@ describe('evaluateWhen', () => {
     expect(evaluateWhen({ templateId: '' }, { templateId: '' })).toBe(true)
     expect(evaluateWhen({ n: 1 }, { n: '1' })).toBe(false)
   })
+
+  it('the { ne } operator tests inequality', () => {
+    expect(evaluateWhen({ mode: { ne: 'off' } }, { mode: 'on' })).toBe(true)
+    expect(evaluateWhen({ mode: { ne: 'off' } }, { mode: 'off' })).toBe(false)
+    // a missing sibling (undefined) is `ne` any concrete value → visible
+    expect(evaluateWhen({ mode: { ne: 'off' } }, {})).toBe(true)
+  })
+
+  it('the { gt } / { lt } operators test numeric ordering (false for non-numbers)', () => {
+    expect(evaluateWhen({ x: { gt: 5 } }, { x: 10 })).toBe(true)
+    expect(evaluateWhen({ x: { gt: 5 } }, { x: 5 })).toBe(false)
+    expect(evaluateWhen({ x: { lt: 5 } }, { x: 2 })).toBe(true)
+    expect(evaluateWhen({ x: { lt: 5 } }, { x: 5 })).toBe(false)
+    // non-numeric actual never satisfies an ordering operator
+    expect(evaluateWhen({ x: { gt: 5 } }, { x: 'big' })).toBe(false)
+    expect(evaluateWhen({ x: { lt: 5 } }, {})).toBe(false)
+  })
+
+  it('operators combine with plain keys under AND', () => {
+    expect(evaluateWhen({ mode: 'adaptive', level: { gt: 0 } }, { mode: 'adaptive', level: 3 })).toBe(true)
+    expect(evaluateWhen({ mode: 'adaptive', level: { gt: 0 } }, { mode: 'adaptive', level: 0 })).toBe(false)
+  })
 })

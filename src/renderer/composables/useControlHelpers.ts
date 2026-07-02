@@ -14,24 +14,30 @@ import type { WhenSchema } from '@/stores/nodes'
 
 export type { DeviceOption, DeviceType }
 
-/** Type-guard for the `{ in: [...] }` membership operator inside a {@link WhenSchema}. */
-function isInOperator(cond: unknown): cond is { in: unknown[] } {
-  return typeof cond === 'object' && cond !== null && 'in' in cond && Array.isArray((cond as { in: unknown }).in)
+/** Whether `cond` is a non-null object carrying operator key `k` (e.g. `{ in }`, `{ gt }`). */
+function hasOp<K extends string>(cond: unknown, k: K): cond is Record<K, unknown> {
+  return typeof cond === 'object' && cond !== null && k in cond
 }
 
 /**
- * Evaluate the unified conditional-visibility schema (Phase 3). Returns true when EVERY key
- * matches the corresponding value in `values` (AND); a bare condition tests strict equality,
- * `{ in: [...] }` tests membership. An absent/undefined schema is always visible. Pure — this is
- * the single source of truth the three legacy schemas (`visibleWhen`/`showWhen`/`showIf`) each map
- * onto at their call site, so their semantics stay identical.
+ * Evaluate the unified conditional-visibility schema (Phase 3). Returns true when EVERY key matches
+ * the corresponding value in `values` (AND). A bare condition tests strict equality; the operator
+ * objects add `{ in }` (membership), `{ ne }` (inequality), and `{ gt }`/`{ lt }` (numeric ordering,
+ * false for non-numbers). An absent/undefined schema is always visible. Pure — the single source of
+ * truth the three legacy schemas (`visibleWhen`/`showWhen`/`showIf`) each map onto at their call site.
  */
 export function evaluateWhen(when: WhenSchema | undefined, values: Record<string, unknown>): boolean {
   if (!when) return true
   for (const [key, cond] of Object.entries(when)) {
     const actual = values[key]
-    if (isInOperator(cond)) {
+    if (hasOp(cond, 'in') && Array.isArray(cond.in)) {
       if (!cond.in.includes(actual)) return false
+    } else if (hasOp(cond, 'ne')) {
+      if (actual === cond.ne) return false
+    } else if (hasOp(cond, 'gt')) {
+      if (!(typeof actual === 'number' && actual > (cond.gt as number))) return false
+    } else if (hasOp(cond, 'lt')) {
+      if (!(typeof actual === 'number' && actual < (cond.lt as number))) return false
     } else if (actual !== cond) {
       return false
     }

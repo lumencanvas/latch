@@ -60,10 +60,17 @@ export interface PortDefinition {
 }
 
 /**
- * A single condition in a {@link WhenSchema}: a bare value tests strict equality against the
- * sibling control's current value; `{ in: [...] }` tests membership.
+ * A single condition in a {@link WhenSchema}. A bare value tests strict equality against the
+ * sibling control's current value; the operator objects add membership / inequality / ordering
+ * (Phase 3 bullet 2). Runtime-discriminated by `evaluateWhen` — the union collapses to `unknown`
+ * for TS, which is intentional (values are author-supplied and validated at the edges).
  */
-export type WhenCondition = unknown | { in: unknown[] }
+export type WhenCondition =
+  | { in: unknown[] }
+  | { ne: unknown }
+  | { gt: number }
+  | { lt: number }
+  | unknown
 
 /**
  * Unified conditional-visibility schema (Phase 3). Keys are sibling control ids; the control
@@ -72,6 +79,49 @@ export type WhenCondition = unknown | { in: unknown[] }
  * form's `showIf` (equality or array membership → `{ in }`). Evaluate with `evaluateWhen`.
  */
 export type WhenSchema = Record<string, WhenCondition>
+
+/**
+ * Declarative custom-UI schema (Phase 3 bullet 2) — rendered by one `<NodeView>` interpreter on
+ * both surfaces. See `docs/plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md`. The widget `type`
+ * is a CLOSED enum (never a component path or code); primitives delegate to `<ControlRenderer>`,
+ * rich widgets dispatch through a registry private to the interpreter.
+ */
+export type Surface = 'node' | 'panel'
+
+export type WidgetType =
+  // primitives (delegated to <ControlRenderer>)
+  | 'slider' | 'number' | 'toggle' | 'select' | 'text' | 'color'
+  // tier A — simple 2-way / readout
+  | 'knob' | 'asset' | 'connection' | 'readout'
+  // tier B — aggregate (one structured value ↔ many flat fields)
+  | 'xy' | 'eq' | 'env' | 'wave'
+  // tier C — event / dual-state (usually reached via `component?` instead)
+  | 'piano' | 'gamepad'
+  // deferred / future slots
+  | 'curve' | 'gradient' | 'image' | 'button'
+
+export interface UIWidget {
+  type: WidgetType
+  /** A control id (2-way) or, with `source: 'output'`, an output-port id (read-only). */
+  bind: string
+  source?: 'control' | 'output'
+  label?: string
+  when?: WhenSchema
+  /** Whitelisted per widget type; primitive/string|number-array values only — no functions/objects. */
+  props?: Record<string, string | number | boolean | Array<string | number>>
+}
+
+export interface UIRow {
+  label?: string
+  when?: WhenSchema
+  widgets: UIWidget[]
+}
+
+export interface UISchema {
+  rows: UIRow[]
+  /** Which surfaces render this schema; defaults to both. */
+  surfaces?: Surface[]
+}
 
 export interface ControlDefinition {
   id: string
@@ -110,6 +160,20 @@ export interface NodeDefinition {
   inputs: PortDefinition[]
   outputs: PortDefinition[]
   controls: ControlDefinition[]
+  /**
+   * Declarative custom UI (Phase 3 bullet 2) — rendered by `<NodeView>` on both surfaces, preferred
+   * over `component`. Absent `ui` + absent `component` → BaseNode's auto-layout (today's default).
+   * See the DECLARATIVE_UI_NODEVIEW design doc.
+   */
+  ui?: UISchema
+  /**
+   * RESERVED (Phase 3 bullet 2) — the intended bespoke-SFC escape hatch for nodes that capture raw
+   * input (keyboard/MIDI/gamepad), render a live surface (video/canvas/code editor/emulator), or need
+   * bespoke geometry. NOT yet consumed: today those nodes still route through `registry/components.ts`
+   * by nodeType. Wiring this field (so `components.ts` derives from it) is a later increment; declared
+   * now only to fix the schema shape. Live render order is `ui` → BaseNode auto-layout.
+   */
+  component?: Component
   tags?: string[]
   /** Connection requirements for this node (protocols it needs) */
   connections?: NodeConnectionRequirement[]
