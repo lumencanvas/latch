@@ -6,6 +6,47 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-01 (later 37) — Phase 3 bullet 2: declarative `ui` + `NodeView` (Tier A), increments 1-3
+
+Design-first (maintainer approved a proposal — `docs/plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md`),
+then built the first slice. Key insight the design captured: bullet 1 already unified the control
+switches (`<ControlRenderer>`) and visibility (`evaluateWhen`), so **`NodeView` layers on top** rather
+than rewriting them.
+
+**Landed (commits `7eacb4c` · `fff8aae` · `fd7ee6e`).**
+- **Inc 1 — schema + operators.** `UISchema`/`UIRow`/`UIWidget` (closed `WidgetType`) + `ui?` +
+  reserved `component?` on `NodeDefinition`; `evaluateWhen` gains `{ne}`/`{gt}`/`{lt}` (bare = strict
+  eq; `gt`/`lt` false for non-numbers). Backward-compatible.
+- **Inc 2 — `NodeView` interpreter.** Renders `ui.rows` per surface, same `evaluateWhen`, primitives →
+  `<ControlRenderer>`, dispatches knob/asset/connection/readout, readout from `runtimeStore` metrics.
+  Wired **opt-in** into BaseNode + PropertiesPanel (`ui?` present → NodeView, else auto-layout). No
+  shipping node has `ui`, so behavior is unchanged (smoke 0 errors).
+- **Inc 3 — `validateUISchema`.** Untrusted custom nodes may use Tier-A widgets only; every `bind`
+  must resolve (Set-membership, prototype-safe); `props` per-type-whitelisted + primitive-only; `when`
+  primitive-only; **reserved keys** (`__proto__`/`constructor`/`prototype`) rejected; **`component`
+  never copied** — no code crosses the boundary.
+
+**Ultracode audit (plan-conformance · validator-adversarial · test-efficacy → 13-mutant battery →
+synthesis).** Verdict **good, conforms to plan**; the battery **killed all 13 mutants** incl. the 5
+security-critical validator ones; **no must-fix, no bypass**. Acted on it: (1) the adversarial security
+agent crashed (StructuredOutput retry cap) so I ran the probe myself — **no global prototype pollution**,
+binds/props already safe, but `__proto__`/`constructor` were accepted as `when` keys → **added the
+reserved-key rejection** (+ regression test, mutation-verified); (2) fixed 3 honest doc overclaims —
+`component?` is **reserved/not-yet-consumed** (was described as "formalizes components.ts"; nothing reads
+it — live order is `ui? → auto-layout`), the §9 operator wire-format supersession, and readout being
+metrics-only this increment. (Ignored one stale audit finding — "no NodeView test" — the file exists.)
+
+**Verification.** typecheck clean · lint 0 err · `test:unit` **1846 → 1867** (+21) · build exit 0 ·
+smoke 0 real errors. Every increment TDD'd + mutation-verified; committed as 3 logical units, author
+Moheeb Zara, no AI attribution.
+
+**▶ NEXT (bullet-2 remainder).** Tier B aggregate widgets (eq/env/wave via closed registry adapters,
+option B1 — no data migration); migrate the first real bespoke node(s) to `ui` with behavioral parity
+checks; then `component?` consumption (make `components.ts` derive from it). Then bullet 3 (new control
+types + control a11y). Open questions Q1-Q4 in the design doc §11 are settled to the recommended defaults.
+
+---
+
 ## 2026-07-01 (later 36) — Phase 3 committed + audited (this session's ledger)
 
 Phase 3 (control system + declarative UI) landed as 5 logical, individually-revertible commits on

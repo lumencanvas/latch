@@ -130,14 +130,24 @@ number in the docs rather than repeat §9's "~29 → JSON".
 - Emits `update(controlId, value)` (or the aggregate adapter's fan-out) so the host keeps its own write +
   undo path (BaseNode → `flowsStore.updateNodeData`; PropertiesPanel → recorded `updateNodeData`).
 
-**Resolution + fallback (opt-in per node, zero disruption):**
+**Resolution + fallback (opt-in per node, zero disruption).** The *intended* end state is:
 ```
-node has component?  → render that SFC (escape hatch)         [today's 28, unchanged]
+node has component?  → render that SFC (escape hatch)         [today's 28]
 else node has ui?    → render <NodeView>                       [migrated nodes]
 else                 → BaseNode auto-layout (current default)  [the other ~180 nodes, untouched]
 ```
-`resolveVueFlowType` keeps working; `component?` on the definition simply *formalizes* the `components.ts`
-entry (which can be generated from `component?` to keep one source of truth).
+**As shipped in increments 1–3, the LIVE order is `ui? → auto-layout`.** `component?` is a **reserved,
+not-yet-consumed** field: bespoke nodes still route through `registry/components.ts` by `nodeType` via
+`resolveVueFlowType`, exactly as before. Making `components.ts` derive from `component?` (so there's one
+source of truth) is the deferred increment 5 — nothing reads `component?` until then.
+
+> **Correction to §9 / §4 wire-format drift:** EXTENSIBILITY §9's operator `when` was
+> `{ control, op, value }`; the implemented (and canonical) form is per-key `{ ne }`/`{ gt }`/`{ lt }`/
+> `{ in }` (`nodes.ts` `WhenCondition`). Treat the per-key form as authoritative.
+>
+> **Readout scope (this increment):** `readout` reads `runtimeStore` metrics only
+> (`getNodeMetrics().outputValues`); the `getAllNodeOutputs()` texture path is added only when the
+> deferred `image`/scope widgets land.
 
 ## 8. The declarative↔code boundary (§0.5 #1 — make it visible up front)
 
