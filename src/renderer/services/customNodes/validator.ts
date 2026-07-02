@@ -1,4 +1,7 @@
-import type { NodeDefinition, PortDefinition, ControlDefinition, NodeCategory, DataType, Platform } from '@/stores/nodes'
+import type {
+  NodeDefinition, PortDefinition, ControlDefinition, NodeCategory, DataType, Platform,
+  UISchema, UIRow, UIWidget, WidgetType, Surface, WhenSchema,
+} from '@/stores/nodes'
 import type { NodeConnectionRequirement } from '@/services/connections/types'
 import type { NodeRequirement } from '@/utils/platform'
 
@@ -126,6 +129,151 @@ function validateControl(control: unknown, index: number): ControlDefinition {
   return result
 }
 
+// ── Declarative `ui` schema validation (Phase 3 bullet 2) ─────────────────────────────────────
+// Custom (untrusted) nodes may use only TIER-A widgets, whose values are simple 2-way binds or a
+// read-only readout — no aggregate adapters, no event widgets, and NEVER a code component. This is
+// what lets `ui` cross the trust boundary safely: every widget maps to a built-in, validated here.
+const CUSTOM_UI_WIDGETS = new Set<WidgetType>([
+  'slider', 'number', 'toggle', 'select', 'text', 'color', // primitives
+  'knob', 'asset', 'connection', 'readout',                // tier A
+])
+
+// Prop keys allowed per widget type; values must be primitive or primitive[] (see below).
+const WIDGET_PROPS: Partial<Record<WidgetType, string[]>> = {
+  slider: ['min', 'max', 'step'],
+  number: ['min', 'max', 'step'],
+  text: ['placeholder'],
+  knob: ['min', 'max', 'step', 'accentColor', 'size', 'default'],
+  asset: ['assetType'],
+  connection: ['protocol', 'placeholder'],
+}
+
+const WHEN_OPERATORS = ['in', 'ne', 'gt', 'lt']
+
+// Reserved keys an untrusted `ui` may never use (they alias the prototype chain). `bind`/`prop`
+// keys are already guarded (Set membership / per-type allowlist); `when` keys are arbitrary control
+// ids, so they get this explicit check.
+const RESERVED_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+function validatePropValue(v: unknown, field: string): string | number | boolean | Array<string | number> {
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return v
+  if (Array.isArray(v) && v.every((x) => typeof x === 'string' || typeof x === 'number')) {
+    return v as Array<string | number>
+  }
+  throw new ValidationError(`${field} must be a primitive or array of string|number`, field, v)
+}
+
+function validateWhenClause(when: unknown, field: string): WhenSchema {
+  if (typeof when !== 'object' || when === null || Array.isArray(when)) {
+    throw new ValidationError(`${field} must be an object`, field, when)
+  }
+  const out: Record<string, unknown> = {}
+  for (const [k, cond] of Object.entries(when as Record<string, unknown>)) {
+    if (RESERVED_KEYS.has(k)) {
+      throw new ValidationError(`${field}.${k} is a reserved key`, `${field}.${k}`, k)
+    }
+    if (cond !== null && typeof cond === 'object' && !Array.isArray(cond)) {
+      const keys = Object.keys(cond as object)
+      if (keys.length !== 1 || !WHEN_OPERATORS.includes(keys[0])) {
+        throw new ValidationError(`${field}.${k} must be a value or one operator of ${WHEN_OPERATORS.join('/')}`, `${field}.${k}`, cond)
+      }
+      const op = keys[0]
+      const val = (cond as Record<string, unknown>)[op]
+      if (op === 'in' && !Array.isArray(val)) {
+        throw new ValidationError(`${field}.${k}.in must be an array`, `${field}.${k}.in`, val)
+      }
+      if ((op === 'gt' || op === 'lt') && typeof val !== 'number') {
+        throw new ValidationError(`${field}.${k}.${op} must be a number`, `${field}.${k}.${op}`, val)
+      }
+    } else if (typeof cond === 'function' || (typeof cond === 'object' && cond !== null)) {
+      throw new ValidationError(`${field}.${k} must be a primitive`, `${field}.${k}`, cond)
+    }
+    out[k] = cond
+  }
+  return out as WhenSchema
+}
+
+function validateWidget(wid: unknown, field: string, controlIds: Set<string>, outputIds: Set<string>): UIWidget {
+  if (typeof wid !== 'object' || wid === null) {
+    throw new ValidationError(`${field} must be an object`, field, wid)
+  }
+  const w = wid as Record<string, unknown>
+  const type = validateString(w.type, `${field}.type`) as WidgetType
+  if (!CUSTOM_UI_WIDGETS.has(type)) {
+    throw new ValidationError(`${field}.type '${type}' is not allowed for custom nodes`, `${field}.type`, type)
+  }
+  const bind = validateString(w.bind, `${field}.bind`)
+  let source: 'control' | 'output' | undefined
+  if (w.source !== undefined) {
+    const s = validateString(w.source, `${field}.source`)
+    if (s !== 'control' && s !== 'output') {
+      throw new ValidationError(`${field}.source must be 'control' or 'output'`, `${field}.source`, s)
+    }
+    source = s
+  }
+  const ids = source === 'output' ? outputIds : controlIds
+  if (!ids.has(bind)) {
+    throw new ValidationError(`${field}.bind '${bind}' does not resolve to a declared ${source === 'output' ? 'output' : 'control'}`, `${field}.bind`, bind)
+  }
+  const out: UIWidget = { type, bind }
+  if (source) out.source = source
+  if (w.label !== undefined) out.label = validateString(w.label, `${field}.label`)
+  if (w.when !== undefined) out.when = validateWhenClause(w.when, `${field}.when`)
+  if (w.props !== undefined) {
+    if (typeof w.props !== 'object' || w.props === null || Array.isArray(w.props)) {
+      throw new ValidationError(`${field}.props must be an object`, `${field}.props`, w.props)
+    }
+    const allowed = WIDGET_PROPS[type] ?? []
+    const props: Record<string, string | number | boolean | Array<string | number>> = {}
+    for (const [k, v] of Object.entries(w.props)) {
+      if (!allowed.includes(k)) {
+        throw new ValidationError(`${field}.props.${k} is not allowed for widget '${type}'`, `${field}.props.${k}`, k)
+      }
+      props[k] = validatePropValue(v, `${field}.props.${k}`)
+    }
+    if (Object.keys(props).length > 0) out.props = props
+  }
+  return out
+}
+
+/**
+ * Validate + sanitize a custom node's declarative `ui` schema. Widget types are restricted to the
+ * Tier-A closed set, every `bind` must resolve to a declared control (or output for readouts), and
+ * `props`/`when` are whitelisted to primitives — so a custom node's UI can never smuggle code or an
+ * unresolved reference across the trust boundary.
+ */
+export function validateUISchema(ui: unknown, controlIds: Set<string>, outputIds: Set<string>): UISchema {
+  if (typeof ui !== 'object' || ui === null || Array.isArray(ui)) {
+    throw new ValidationError('ui must be an object', 'ui', ui)
+  }
+  const u = ui as Record<string, unknown>
+  const rowsRaw = validateArray<unknown>(u.rows, 'ui.rows')
+  const rows: UIRow[] = rowsRaw.map((row, ri) => {
+    if (typeof row !== 'object' || row === null) {
+      throw new ValidationError(`ui.rows[${ri}] must be an object`, `ui.rows[${ri}]`, row)
+    }
+    const r = row as Record<string, unknown>
+    const outRow: UIRow = { widgets: [] }
+    if (r.label !== undefined) outRow.label = validateString(r.label, `ui.rows[${ri}].label`)
+    if (r.when !== undefined) outRow.when = validateWhenClause(r.when, `ui.rows[${ri}].when`)
+    const widgetsRaw = validateArray<unknown>(r.widgets, `ui.rows[${ri}].widgets`)
+    outRow.widgets = widgetsRaw.map((wid, wi) => validateWidget(wid, `ui.rows[${ri}].widgets[${wi}]`, controlIds, outputIds))
+    return outRow
+  })
+  const result: UISchema = { rows }
+  if (u.surfaces !== undefined) {
+    const s = validateArray<unknown>(u.surfaces, 'ui.surfaces')
+    result.surfaces = s.map((x, i): Surface => {
+      const v = validateString(x, `ui.surfaces[${i}]`)
+      if (v !== 'node' && v !== 'panel') {
+        throw new ValidationError(`ui.surfaces[${i}] must be 'node' or 'panel'`, `ui.surfaces[${i}]`, v)
+      }
+      return v
+    })
+  }
+  return result
+}
+
 export function validateDefinition(definition: unknown): NodeDefinition {
   if (typeof definition !== 'object' || definition === null) {
     throw new ValidationError('Definition must be an object')
@@ -219,6 +367,12 @@ export function validateDefinition(definition: unknown): NodeDefinition {
   if (def.tags !== undefined) {
     const tagsRaw = validateArray<unknown>(def.tags, 'tags')
     result.tags = tagsRaw.map((t, i) => validateString(t, `tags[${i}]`))
+  }
+
+  // Declarative `ui` (Phase 3 bullet 2) — sanitized to Tier-A widgets with resolvable binds.
+  // `component` is deliberately NOT copied: a custom node can never supply a code component.
+  if (def.ui !== undefined) {
+    result.ui = validateUISchema(def.ui, controlIds, outputIds)
   }
 
   // Validate optional info field
