@@ -6,6 +6,38 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-02 (later 41) — Phase 3 bullet 2: second migration (parametric-eq) + ultracode feasibility sweep
+
+Ran an **ultracode workflow** (6 agents: per-node analyze → adversarial fidelity verify, in parallel) over
+the three remaining aggregate-showcase nodes, then migrated the one it cleared.
+
+**parametric-eq → `ui` eq aggregate — DONE** (same pattern as envelope-visual). Its whole body was an
+EQEditor bound to 9 flat band controls (freq1/gain1/q1…q3), all declared, positional order + defaults an
+exact match. Added `ui: { rows: [{ widgets: [{ type: 'eq', props: { fields: [freq1..q3] } }] }] }`, removed
+it from `components.ts`. New `parametric-eq-migration.test.ts` (4 tests, mutation-verified: 9-tuple exact
+fan-out reds a field swap; re-registration reds the routing test). Browser: panel renders NodeView +
+EQEditor canvas, 9 raw controls subsumed, 0 page errors. Only cosmetic delta: EQEditor 220×100 → default
+240×120 (accent #06b6d4 unchanged). typecheck clean · lint 0 err · `test:unit` **1884 → 1888** · build 0.
+
+**Feasibility verdicts (workflow, cross-verified against BaseNode plumbing) — the other two are NOT clean:**
+- **wavetable → DEFER (real blocker).** Its drawn `samples` live in a bare `node.data.waveform` key with NO
+  declared control. `BaseNode.controlValues` (the source of NodeView's `props.values`) copies ONLY declared
+  controls (`for (const control of controls.value)…`), so the wave aggregate reads `undefined` → `[]` and
+  loses custom waveforms. Fix needs a declared `waveform` control whose default is the 64-sample sine table
+  (runtime-safe: the executor already seeds `ctx.controls` from node.data), plus `frequency`/`volume` ui
+  rows. Also a minor visual gap (an untouched non-`custom` preset would show sine until interacted).
+- **xy-pad → NEEDS-WORK (no blocker, more UX delta).** normalizedX/Y are declared (default 0.5, matches),
+  but the aggregate covers only x/y: the 4 range controls (minX/maxX/minY/maxY) need their own `number` ui
+  rows, the live rawX/rawY display becomes a `readout` that only shows while running (bespoke computes it at
+  rest), and the RANGE disclosure toggle is lost (rows render always-visible). Migratable, but with visible
+  changes — hold for a maintainer call.
+
+**▶ NEXT.** wavetable + xy-pad need decisions before migrating (add an array-control type / accept xy's UX
+deltas). Otherwise: `component?` consumption (blocked on design Q2), then bullet 3 (new control types,
+drag-to-scrub, control ARIA).
+
+---
+
 ## 2026-07-02 (later 40) — Phase 3 bullet 2: first real bespoke→`ui` migration (envelope-visual)
 
 Migrated the first shipping bespoke node off its SFC onto the declarative `ui` path (maintainer picked
