@@ -179,6 +179,29 @@ function onDoubleClick() {
   emit('update:modelValue', centerValue)
 }
 
+// Keyboard (WCAG 2.1.1 / 2.5.7 — a non-pointer path). Same snap+clamp+emit as the wheel/drag path.
+function applyDelta(delta: number) {
+  let newValue = props.modelValue + delta
+  newValue = Math.round(newValue / props.step) * props.step
+  newValue = Math.max(props.min, Math.min(props.max, newValue))
+  emit('update:modelValue', newValue)
+}
+
+function onKeydown(e: KeyboardEvent) {
+  const big = props.step * 10 // coarse step, matching the wheel's shiftKey multiplier
+  switch (e.key) {
+    case 'ArrowUp': case 'ArrowRight': applyDelta(e.shiftKey ? big : props.step); break
+    case 'ArrowDown': case 'ArrowLeft': applyDelta(e.shiftKey ? -big : -props.step); break
+    case 'PageUp': applyDelta(big); break
+    case 'PageDown': applyDelta(-big); break
+    case 'Home': emit('update:modelValue', props.min); break // exact bound, no snapping
+    case 'End': emit('update:modelValue', props.max); break
+    default: return // leave Tab/Enter/Space/app shortcuts alone
+  }
+  e.preventDefault()
+  e.stopPropagation() // keep arrows/Home/End from reaching the Vue Flow canvas
+}
+
 // Redraw on value or config changes
 watch([() => props.modelValue, () => props.accentColor, () => props.size], draw)
 
@@ -207,9 +230,18 @@ onUnmounted(() => {
     <canvas
       ref="canvas"
       class="knob-canvas"
+      role="slider"
+      tabindex="0"
+      aria-orientation="vertical"
+      :aria-label="label || 'Value'"
+      :aria-valuemin="min"
+      :aria-valuemax="max"
+      :aria-valuenow="modelValue"
+      :aria-valuetext="valueFormat(modelValue)"
       @mousedown="onMouseDown"
       @wheel="onWheel"
       @dblclick="onDoubleClick"
+      @keydown="onKeydown"
     />
     <span
       v-if="showValue"
@@ -240,6 +272,17 @@ onUnmounted(() => {
 .knob-canvas {
   cursor: grab;
   touch-action: none;
+}
+
+/* Focus ring for keyboard users only (not after a mouse grab). */
+.knob-canvas:focus {
+  outline: none;
+}
+
+.knob-canvas:focus-visible {
+  outline: 2px solid var(--color-primary-400, #ff6b35);
+  outline-offset: 2px;
+  border-radius: 50%;
 }
 
 .rotary-knob.dragging .knob-canvas {

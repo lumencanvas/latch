@@ -70,3 +70,63 @@ describe('XYPad', () => {
     }
   })
 })
+
+/**
+ * XYPad accessibility (Phase 3 bullet 3): a 2D pad has no native ARIA control, so it's a single focusable
+ * role="application" host announcing both axes via aria-valuetext, with arrow keys moving the point
+ * (y is up) — the SAME atomic {x,y} emit as the drag path (WCAG 2.1.1 keyboard, 2.5.7 drag alternative).
+ */
+describe('XYPad accessibility', () => {
+  const mountKb = (modelValue: { x: number; y: number }, props = {}) =>
+    mount(XYPad, { props: { modelValue, ...props } })
+  const lastXY = (w: ReturnType<typeof mountKb>) =>
+    w.emitted('update:modelValue')?.at(-1)?.[0] as { x: number; y: number } | undefined
+
+  it('is a focusable role=application with an accessible name + both-axis value text', () => {
+    const pad = mountKb({ x: 0.25, y: 0.75 }, { label: 'Position' }).get('.xy-pad')
+    expect(pad.attributes('role')).toBe('application')
+    expect(pad.attributes('tabindex')).toBe('0')
+    expect(pad.attributes('aria-label')).toBe('Position (X Y pad)')
+    expect(pad.attributes('aria-valuetext')).toBe('X 25%, Y 75%')
+  })
+
+  it('falls back to a generic name when no label is given', () => {
+    expect(mountKb({ x: 0.5, y: 0.5 }).get('.xy-pad').attributes('aria-label')).toBe('X Y pad')
+  })
+
+  it('arrow keys move the point by step (y up), emitting {x,y}', async () => {
+    const w = mountKb({ x: 0.5, y: 0.5 })
+    await w.get('.xy-pad').trigger('keydown', { key: 'ArrowRight' })
+    expect(lastXY(w)!.x).toBeCloseTo(0.55); expect(lastXY(w)!.y).toBeCloseTo(0.5)
+    await w.get('.xy-pad').trigger('keydown', { key: 'ArrowUp' }) // y-up
+    expect(lastXY(w)!.y).toBeCloseTo(0.55)
+    await w.get('.xy-pad').trigger('keydown', { key: 'ArrowDown' })
+    expect(lastXY(w)!.y).toBeCloseTo(0.45)
+  })
+
+  it('clamps at the edges and honors Shift for a bigger step', async () => {
+    const hi = mountKb({ x: 0.98, y: 0.5 })
+    await hi.get('.xy-pad').trigger('keydown', { key: 'ArrowRight' })
+    expect(lastXY(hi)!.x).toBe(1) // clamped
+    const w = mountKb({ x: 0.5, y: 0.5 })
+    await w.get('.xy-pad').trigger('keydown', { key: 'ArrowRight', shiftKey: true })
+    expect(lastXY(w)!.x).toBeCloseTo(0.7) // BIG_STEP 0.2
+  })
+
+  it('Home centers, End jumps to top-right, PageUp coarse-raises y', async () => {
+    const w = mountKb({ x: 0.2, y: 0.3 })
+    await w.get('.xy-pad').trigger('keydown', { key: 'Home' })
+    expect(lastXY(w)).toEqual({ x: 0.5, y: 0.5 })
+    await w.get('.xy-pad').trigger('keydown', { key: 'End' })
+    expect(lastXY(w)).toEqual({ x: 1, y: 1 })
+    const p = mountKb({ x: 0.5, y: 0.5 })
+    await p.get('.xy-pad').trigger('keydown', { key: 'PageUp' })
+    expect(lastXY(p)!.y).toBeCloseTo(0.7)
+  })
+
+  it('ignores unhandled keys (no emit)', async () => {
+    const w = mountKb({ x: 0.5, y: 0.5 })
+    await w.get('.xy-pad').trigger('keydown', { key: 'a' })
+    expect(w.emitted('update:modelValue')).toBeUndefined()
+  })
+})

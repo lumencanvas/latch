@@ -138,3 +138,21 @@ describe('ControlRenderer — mousedown drag guard', () => {
     expect(mountInParent('panel')).toBe(1)
   })
 })
+
+describe('ControlRenderer accessibility', () => {
+  // The visible label in BaseNode/PropertiesPanel is adjacent text, not programmatically associated,
+  // so each native input needs its own accessible name (WCAG 4.1.2) from control.label.
+  it.each([
+    ['slider', 'input[type="range"]', 0.5],
+    ['toggle', 'input[type="checkbox"]', true],
+    ['select', 'select', 'a'],
+    ['number', 'input[type="number"]', 5],
+    ['text', 'input[type="text"]', 'hi'],
+    ['color', 'input[type="color"]', '#ffffff'],
+  ])('%s input names itself from control.label (aria-label)', (type, sel, value) => {
+    const control: Record<string, unknown> = { id: 'c', type, label: 'Cutoff' }
+    if (type === 'select') control.props = { options: ['a', 'b'] }
+    const w = render(control, value)
+    expect(w.get(sel).attributes('aria-label')).toBe('Cutoff')
+  })
+})

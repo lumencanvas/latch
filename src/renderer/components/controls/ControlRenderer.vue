@@ -60,6 +60,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
   >
     <input
       type="range"
+      :aria-label="control.label"
       :value="(modelValue as number) ?? 0"
       :min="(control.props?.min as number) ?? 0"
       :max="(control.props?.max as number) ?? 1"
@@ -79,6 +80,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
   >
     <input
       type="checkbox"
+      :aria-label="control.label"
       :checked="modelValue as boolean"
       @change="emit('update', ($event.target as HTMLInputElement).checked)"
     >
@@ -96,6 +98,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
     v-else-if="control.type === 'select'"
     class="control-select"
     :class="ctxClass"
+    :aria-label="control.label"
     :value="modelValue"
     @change="emit('update', ($event.target as HTMLSelectElement).value)"
     @mousedown="onControlMousedown"
@@ -126,6 +129,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
     type="number"
     class="control-number"
     :class="ctxClass"
+    :aria-label="control.label"
     :value="(modelValue as number) ?? 0"
     :min="control.props?.min as number"
     :max="control.props?.max as number"
@@ -141,6 +145,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
     type="text"
     class="control-text"
     :class="ctxClass"
+    :aria-label="control.label"
     :value="(modelValue as string) ?? ''"
     :placeholder="(control.props?.placeholder as string) ?? ''"
     @input="emit('update', ($event.target as HTMLInputElement).value)"
@@ -156,6 +161,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
   >
     <input
       type="color"
+      :aria-label="control.label"
       :value="(modelValue as string) ?? '#808080'"
       @input="emit('update', ($event.target as HTMLInputElement).value)"
     >

@@ -18,10 +18,12 @@ const props = withDefaults(defineProps<{
   width?: number
   height?: number
   accentColor?: string
+  label?: string
 }>(), {
   width: 150,
   height: 120,
   accentColor: '#EC4899',
+  label: '',
 })
 
 const emit = defineEmits<{
@@ -37,6 +39,37 @@ const pointStyle = computed(() => ({
   left: `${clamp01(props.modelValue.x) * 100}%`,
   top: `${(1 - clamp01(props.modelValue.y)) * 100}%`,
 }))
+
+// Screen-reader value text (both axes, since one aria-valuenow can't carry 2D).
+const valueText = computed(
+  () => `X ${(clamp01(props.modelValue.x) * 100).toFixed(0)}%, Y ${(clamp01(props.modelValue.y) * 100).toFixed(0)}%`
+)
+
+// Keyboard (WCAG 2.1.1 / 2.5.7) — a non-pointer path emitting the SAME atomic {x,y} as the drag path.
+const STEP = 0.05
+const BIG_STEP = 0.2
+
+function emitXY(x: number, y: number): void {
+  emit('update:modelValue', { x: clamp01(x), y: clamp01(y) })
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  const { x, y } = props.modelValue
+  const s = e.shiftKey ? BIG_STEP : STEP
+  switch (e.key) {
+    case 'ArrowRight': emitXY(x + s, y); break
+    case 'ArrowLeft': emitXY(x - s, y); break
+    case 'ArrowUp': emitXY(x, y + s); break // y is up: ArrowUp increases y
+    case 'ArrowDown': emitXY(x, y - s); break
+    case 'PageUp': emitXY(x, y + BIG_STEP); break
+    case 'PageDown': emitXY(x, y - BIG_STEP); break
+    case 'Home': emit('update:modelValue', { x: 0.5, y: 0.5 }); break // center
+    case 'End': emit('update:modelValue', { x: 1, y: 1 }); break // top-right
+    default: return
+  }
+  e.preventDefault()
+  e.stopPropagation() // keep arrows from reaching the Vue Flow canvas
+}
 
 function updateFromEvent(event: MouseEvent): void {
   if (!padRef.value) return
@@ -75,8 +108,14 @@ onUnmounted(() => {
   <div
     ref="padRef"
     class="xy-pad"
+    role="application"
+    tabindex="0"
+    aria-roledescription="2D pad"
+    :aria-label="label ? `${label} (X Y pad)` : 'X Y pad'"
+    :aria-valuetext="valueText"
     :style="{ width: `${width}px`, height: `${height}px` }"
     @mousedown.stop="onMouseDown"
+    @keydown="onKeydown"
   >
     <div class="xy-grid">
       <div class="xy-line-h" />
@@ -86,6 +125,10 @@ onUnmounted(() => {
       class="xy-point"
       :style="{ ...pointStyle, background: accentColor }"
     />
+    <span
+      class="sr-only"
+      aria-live="polite"
+    >{{ valueText }}</span>
   </div>
 </template>
 
@@ -96,6 +139,29 @@ onUnmounted(() => {
   border-radius: var(--radius-xs);
   cursor: crosshair;
   user-select: none;
+}
+
+/* Focus ring for keyboard users only. */
+.xy-pad:focus {
+  outline: none;
+}
+
+.xy-pad:focus-visible {
+  outline: 2px solid var(--color-primary-400, #ec4899);
+  outline-offset: 2px;
+}
+
+/* Visually hidden but read by screen readers (the live value announcement). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .xy-grid {
