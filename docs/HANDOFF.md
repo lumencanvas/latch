@@ -6,6 +6,38 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 46) — Phase 3 bullet 3: aggregate-editor keyboard a11y (Envelope + EQ) + audit
+
+Restored keyboard editing that the `ui` migrations had removed. **Insight from the ultracode audit:** because
+a migrated node renders its aggregate editor INSTEAD of the flat number controls (NodeView is `v-if` per
+widget; PropertiesPanel skips the flat-control loop when `definition.ui` is present), the pointer-only canvas
+editors made **envelope-visual / parametric-eq keyboard-INOPERABLE on both surfaces** — a real WCAG 2.1.1
+regression the migrations introduced. Fixed both editors with the XYPad pattern:
+- **EnvelopeEditor** (`a2611b8`) — focusable `role="application"`; Left/Right cycle the selected ADSR stage,
+  Up/Down/PageUp-Down/Home/End adjust it (per-stage range + clamp), `aria-valuetext` ("attack 0.10s") + live
+  region; focused stage's control point highlighted. Audit verdict **clean** (mouse path untouched, release —
+  which has no visual handle — correctly editable, cycling/clamp/valuetext all sound).
+- **EQEditor** (`6c80fe2`, the audit's must-fix) — same pattern over a flat list of the 9 band×param targets;
+  frequency by a log-ish ×1.1 step, gain ±1 dB, Q ±0.1 (matching drag/wheel), `aria-valuetext` "Band 1 200 Hz".
+
+Both: 6 tests each, mutation-verified (4-mutant battery per editor), browser-confirmed on the migrated node
+(focus → cycle → adjust, 0 console errors). typecheck clean · lint 0 err · `test:unit` **1935 → 1947** ·
+build 0.
+
+**Honest a11y state (no overclaim).** Custom widgets now keyboard-operable: RotaryKnob, XYPad, EnvelopeEditor,
+EQEditor, + all native inputs (ControlRenderer `aria-label`) + drag-to-scrub. **NOT done:** WaveformEditor
+**freehand draw** is still pointer-only — its 4 preset buttons ARE keyboard-accessible (native `<button>`s,
+cover the primary use), but arrow-key freehand-curve-drawing is impractical, so it's a **documented
+limitation**, not claimed done. Also a minor ARIA nuance: `aria-valuetext` on `role="application"` is outside
+the spec's supported-states set (some AT may ignore it) — mitigated by the duplicated `aria-live` span;
+consistent with the shipped XYPad.
+
+**▶ NEXT (bullet-3 remainder).** New control TYPES (`range`/`curve`/`gradient` — need consumers). Optionally a
+stricter ARIA pass (the `role=application`/valuetext nuance) + WaveformEditor announce. Then `component?`
+consumption (blocked on Q2).
+
+---
+
 ## 2026-07-03 (later 45) — Phase 3 bullet 2: orphan-SFC cleanup (migrations fully finished)
 
 Deleted the 4 now-dead bespoke `.vue` components (EnvelopeVisualNode/ParametricEqNode/WavetableNode/

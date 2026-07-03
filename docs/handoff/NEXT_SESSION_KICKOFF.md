@@ -2,17 +2,17 @@
 
 Copy everything in the block below as your first message to a fresh Claude Code
 session to continue LATCH with full context.
-(Last updated 2026-07-03 — HEAD `3d0848a`; tree clean & green; 17 commits this session, all committed.)
+(Last updated 2026-07-03 — HEAD `6c80fe2`; tree clean & green; 20 commits this session, all committed.)
 
 ---
 
-ultrathink You're continuing **Phase 3** of LATCH — a free/open web+desktop node-based creative-coding tool (Vue 3 + TS + Vite, Electron Forge) at `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format` (HEAD `3fdfc7c`). **Phases 0–2 done; Phase 3 bullets 1 + 2 DONE; bullet 3 started (control keyboard + ARIA done).** Tree is CLEAN and green. Get oriented before touching code.
+ultrathink You're continuing **Phase 3** of LATCH — a free/open web+desktop node-based creative-coding tool (Vue 3 + TS + Vite, Electron Forge) at `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format` (HEAD `6c80fe2`). **Phases 0–2 done; Phase 3 bullets 1 + 2 DONE; bullet 3 mostly done (control keyboard + ARIA, drag-to-scrub, Envelope+EQ editor keyboard).** Tree is CLEAN and green. Get oriented before touching code.
 
-Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing any-warns ok) · `test:unit` **1935 pass + 11 todo** (122 files) · `build` ok.
+Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing any-warns ok) · `test:unit` **1947 pass + 11 todo** (122 files) · `build` ok.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, ever** (history/PRs read as Moheeb Zara's). **Commit only when asked.** Stay on the branch. Each step ends green. **Never assume — read the real code / verify against the actual git original** (this saved wavetable: reading the executor proved the new `waveform` control is runtime-safe). Honor `strategy/05` DON'T-OVERCLAIM.
-2. `docs/HANDOFF.md` TOP entries **(later 43 → 38)** — this session's arc, newest first: (43) bullet-3 control a11y; (42) `xy-pad`+`wavetable` migrations + **ultracode regression audit that caught 3 real bugs**; (41) `parametric-eq` migration + feasibility sweep; (40) first migration `envelope-visual`; (39) Tier-B `eq`/`wave`/`xy`+XYPad; (38) first Tier-B `env`.
+2. `docs/HANDOFF.md` TOP entries **(later 46 → 40)** — this session's arc, newest first: (46) Envelope+EQ editor keyboard a11y + the audit that caught the migration's keyboard-inoperable regression; (45) orphan-SFC cleanup (bullet 2 finished); (44) drag-to-scrub; (43) control keyboard+ARIA; (42) `xy-pad`+`wavetable` migrations + **ultracode regression audit (3 real bugs)**; (41) `parametric-eq` migration; (40) first migration `envelope-visual`.
 3. `docs/plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md` — the approved bullet-2 design (Q1–Q4 settled). **Q2 is still OPEN**: `component?` = a real `Component` import on the definition, or a string key via a registry? — needed before `component?` consumption.
 4. `docs/plans/ROADMAP_2026-06-28.md` — progress snapshot (top) + the **Phase 3** section.
 5. Recall memories: **audit-against-true-original** (verify each migration vs its OWN pre-migration git original), **latch-component-test-gotchas** (@vue/test-utils: import stores before `.vue`, stub `Handle`; template `|` union casts trip `vue/no-deprecated-filter` → move to `<script>`; a NEW gotcha this session: two redundant mechanisms make a mutant un-killable — simplify to one), **latch-smoke-test-harness**, **latch-undefined-css-tokens**.
@@ -26,10 +26,11 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
   - **An ultracode audit caught + fixed 3 regressions** the per-migration tests missed (commit `e7b1f9b`): (1) node-drag hijacked editor drags → `@mousedown.stop` on `.nv-widget`; (2) persisted nodes broke on reload — a SECOND routing list `PERSISTENCE_SPECIAL_NODE_TYPES` in `usePersistence.toFlowState` still named them → removed (test pins the two-list invariant); (3) `ui` audio nodes compacted to an icon → `isCompactNode` now exempts `hasUi`.
 - **Bullet 3 STARTED — control keyboard + ARIA DONE** (commit `ae23ce9`): RotaryKnob (`role=slider` + keydown Arrow/Shift/Page/Home/End + focus ring), XYPad (`role=application` 2D keyboard + `aria-valuetext` + live region), ControlRenderer (`:aria-label` on all 6 native inputs). WCAG-spec'd via workflow, mutation-verified, knob confirmed in-browser.
 - **Bullet 3 — drag-to-scrub DONE** (commit `21e662b`): the shared number input scrubs on horizontal drag. Safe-by-design (risk-spec'd via workflow): mousedown never preventDefaults, a >4px threshold proves scrub intent so click-to-edit is preserved; absolute mousedown-value+dx mapping, clamp only against DECLARED finite min/max (reuses `clampControlNumber`'s guard — an unbounded control must not clamp), Shift=fine, leak-safe teardown. Browser-confirmed (click focuses; drag scrubs 0→15).
+- **Bullet 3 — Envelope + EQ editor keyboard DONE** (commits `a2611b8`, `6c80fe2`): an ultracode audit found the `ui` migration made envelope-visual + parametric-eq **keyboard-inoperable** (the panel's number inputs were replaced by pointer-only canvases). Both restored with the XYPad `role=application` pattern (Left/Right cycle a selected stage/band×param target, Up/Down/Home/End adjust, `aria-valuetext` + live region). Mutation-verified + browser-confirmed on the migrated nodes.
 
 ## WHAT'S NEXT — bullet-3 remainder + deferred bullet-2 items (each flagged)
 1. **New control TYPES** (`range`/`curve`/`gradient`) — need a real node consumer; deferred per the design doc until one exists.
-2. **Canvas-editor keyboard** (Envelope/EQ/Waveform aggregate editors) — still pointer-only; a harder a11y follow-up (per-handle focus + arrow control). Deferred.
+2. **WaveformEditor freehand keyboard** — still pointer-only (the ONE remaining a11y gap from the migrations). Its 4 preset `<button>`s ARE keyboard-accessible (cover the primary use), and arrow-key freehand-curve-drawing is impractical — a **documented limitation**, not overclaimed. Optionally: a focus+announce pass, or a stricter-ARIA pass (`aria-valuetext` on `role=application` is outside the spec's supported-states — mitigated by the live-region duplicate, consistent with XYPad).
 3. **`component?` consumption** — BLOCKED on design **Q2** (decide the shape first). Then make resolution read `definition.component` + `components.ts` derive from it; guard: registry set unchanged.
    (Orphan-SFC cleanup is DONE — the 4 migrated nodes' dead `.vue` were deleted; bullet 2 is fully finished.)
 - The other ~24 bespoke SFCs (mediapipe ×7, emulator, function, keyboard, gamepad-visual, synth, step-sequencer, dispatch, monitor/oscilloscope/graph/equalizer, main-output, trigger, textbox, knob) legitimately keep `component?` — live surfaces / raw input / bespoke geometry, NOT migration candidates.
