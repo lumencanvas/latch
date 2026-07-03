@@ -5,6 +5,7 @@ import { useRuntimeStore } from '@/stores/runtime'
 import type { NodeDefinition, UISchema } from '@/stores/nodes'
 import NodeView from '@/components/controls/NodeView.vue'
 import RotaryKnob from '@/components/controls/RotaryKnob.vue'
+import EnvelopeEditor from '@/components/controls/EnvelopeEditor.vue'
 
 /**
  * NodeView is the single interpreter for the declarative `ui` schema (Phase 3 bullet 2, Tier A).
@@ -87,5 +88,42 @@ describe('NodeView (Tier A interpreter)', () => {
     useRuntimeStore().updateNodeMetrics('n1', { outputValues: { out: 42 } })
     const w = mountView({ rows: [{ widgets: [{ type: 'readout', bind: 'out', source: 'output' }] }] }, {})
     expect(w.get('.nv-readout').text()).toBe('42')
+  })
+
+  it('aggregate (env): assembles EnvelopeData from 4 flat controls and fans updates back out', () => {
+    const ui = { rows: [{ widgets: [{ type: 'env', bind: '', props: { fields: ['a', 'd', 's', 'r'] } }] }] }
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition: def(ui), values: { a: 0.1, d: 0.2, s: 0.5, r: 0.3 }, surface: 'panel' },
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, EnvelopeEditor: true } },
+    })
+    const env = w.findComponent(EnvelopeEditor)
+    // assemble: structured keys ← positional control fields
+    expect(env.props('modelValue')).toEqual({ attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.3 })
+    // disperse: an edit fans out one update(controlId, value) per field
+    env.vm.$emit('update:modelValue', { attack: 0.9, decay: 0.2, sustain: 0.5, release: 0.3 })
+    const updates = w.emitted('update') as unknown[][]
+    expect(updates).toContainEqual(['a', 0.9])
+    expect(updates).toContainEqual(['r', 0.3])
+    expect(updates).toHaveLength(4)
+  })
+
+  it('aggregate (env): missing fields fall back to the control default, then 0', () => {
+    const definition = def({ rows: [{ widgets: [{ type: 'env', bind: '', props: { fields: ['a', 'd', 's', 'r'] } }] }] })
+    definition.controls = [
+      { id: 'a', type: 'number', label: 'A', default: 0.01 },
+      { id: 'd', type: 'number', label: 'D', default: 0.1 },
+      { id: 's', type: 'number', label: 'S', default: 0.5 },
+      { id: 'r', type: 'number', label: 'R' }, // no default → final 0 fallback
+    ]
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition, values: { d: 0.2 }, surface: 'panel' }, // 'a','s','r' absent
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, EnvelopeEditor: true } },
+    })
+    expect(w.findComponent(EnvelopeEditor).props('modelValue')).toEqual({
+      attack: 0.01, // control default (not 0)
+      decay: 0.2, // present in values, overrides default
+      sustain: 0.5, // control default
+      release: 0, // absent value + no default → 0
+    })
   })
 })

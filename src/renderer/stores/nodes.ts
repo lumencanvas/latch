@@ -93,11 +93,12 @@ export type WidgetType =
   | 'slider' | 'number' | 'toggle' | 'select' | 'text' | 'color'
   // tier A — simple 2-way / readout
   | 'knob' | 'asset' | 'connection' | 'readout'
-  // tier B — aggregate (one structured value ↔ many flat fields)
+  // tier B — aggregate (one structured value ↔ many flat fields). NOTE: only `env` is dispatched by
+  // NodeView today; xy/eq/wave are reserved enum slots (their adapters land in a later increment).
   | 'xy' | 'eq' | 'env' | 'wave'
-  // tier C — event / dual-state (usually reached via `component?` instead)
+  // tier C — event / dual-state (reserved; usually reached via `component?` instead — not dispatched)
   | 'piano' | 'gamepad'
-  // deferred / future slots
+  // deferred / future slots (reserved — not dispatched)
   | 'curve' | 'gradient' | 'image' | 'button'
 
 export interface UIWidget {

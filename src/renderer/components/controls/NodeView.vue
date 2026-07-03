@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * NodeView — the single interpreter for the declarative `ui` schema (Phase 3 bullet 2, Tier A).
- * Renders a node's `ui.rows` on either surface, evaluating the same `when` as everything else and
- * delegating primitive widgets to <ControlRenderer> (reuse) and rich widgets to a closed registry
- * private to this file. Presentational: it reads `values` + runtime outputs and emits
- * `update(controlId, value)`; the host owns the write/undo path. See the DECLARATIVE_UI design doc.
+ * NodeView — the single interpreter for the declarative `ui` schema (Phase 3 bullet 2). Renders a
+ * node's `ui.rows` on either surface, evaluating the same `when` as everything else and delegating
+ * primitive widgets to <ControlRenderer> (reuse), Tier-A rich widgets, and Tier-B AGGREGATE widgets
+ * (one structured value ↔ several flat controls) to a closed registry private to this file.
+ * Presentational: it reads `values` + runtime outputs and emits `update(controlId, value)` (aggregates
+ * fan out one per changed field); the host owns the write/undo path. See the DECLARATIVE_UI design doc.
  */
 import { computed } from 'vue'
 import type { NodeDefinition, ControlDefinition, UIWidget, Surface } from '@/stores/nodes'
@@ -14,6 +15,7 @@ import ControlRenderer from '@/components/controls/ControlRenderer.vue'
 import RotaryKnob from '@/components/controls/RotaryKnob.vue'
 import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
 import ConnectionSelect from '@/components/connections/ConnectionSelect.vue'
+import EnvelopeEditor, { type EnvelopeData } from '@/components/controls/EnvelopeEditor.vue'
 
 const props = defineProps<{
   nodeId: string
@@ -92,6 +94,38 @@ function assetType(w: UIWidget): 'image' | 'video' | 'audio' | 'all' {
   const t = str(w, 'assetType', 'all')
   return t === 'image' || t === 'video' || t === 'audio' ? t : 'all'
 }
+
+// ── Tier-B aggregate widgets: one structured value ↔ several flat controls ──────────────────────
+// The widget's `props.fields` names the bound control ids, positionally matched to the widget's
+// structured keys. Aggregates are built-in only (validateUISchema forbids them for custom nodes), so
+// this trusted mapping never crosses the boundary. Each edit fans out one `update` per field — the
+// host's debounced recordParamEdit coalesces them into a single undo step.
+const ENV_ORDER: (keyof EnvelopeData)[] = ['attack', 'decay', 'sustain', 'release']
+
+function aggregateFields(w: UIWidget): string[] {
+  const f = w.props?.fields
+  return Array.isArray(f) ? f.map((x) => String(x)) : []
+}
+
+function envValue(w: UIWidget): EnvelopeData {
+  const fields = aggregateFields(w)
+  // A field absent from `values` falls back to its control's declared default (mirrors the bespoke
+  // node's per-field defaults), then 0 — never a uniform 0 that would collapse attack/decay.
+  const at = (i: number): number => {
+    const v = props.values[fields[i]]
+    if (typeof v === 'number') return v
+    const def = controlFor(fields[i])?.default
+    return typeof def === 'number' ? def : 0
+  }
+  return { attack: at(0), decay: at(1), sustain: at(2), release: at(3) }
+}
+
+function onEnv(w: UIWidget, data: EnvelopeData): void {
+  const fields = aggregateFields(w)
+  ENV_ORDER.forEach((k, i) => {
+    if (fields[i]) emit('update', fields[i], data[k])
+  })
+}
 </script>
 
 <template>
@@ -165,6 +199,13 @@ function assetType(w: UIWidget): 'image' | 'video' | 'audio' | 'all' {
               v-else-if="w.type === 'readout'"
               class="nv-readout"
             >{{ readout(w) }}</span>
+
+            <!-- Envelope (Tier-B aggregate: ADSR ↔ 4 flat controls) -->
+            <EnvelopeEditor
+              v-else-if="w.type === 'env'"
+              :model-value="envValue(w)"
+              @update:model-value="(v: EnvelopeData) => onEnv(w, v)"
+            />
           </div>
         </template>
       </div>

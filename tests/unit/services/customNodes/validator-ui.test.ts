@@ -24,9 +24,10 @@ describe('validateUISchema', () => {
     expect(out.surfaces).toEqual(['panel'])
   })
 
-  it('rejects a widget type outside the Tier-A closed set (e.g. aggregate `eq`)', () => {
-    const ui = { rows: [{ widgets: [{ type: 'eq', bind: 'amount' }] }] }
-    expect(() => validateUISchema(ui, controls, outputs)).toThrow(ValidationError)
+  it('rejects widget types outside the Tier-A closed set (aggregate/event widgets are built-in only)', () => {
+    for (const type of ['eq', 'env', 'wave', 'xy', 'piano', 'gamepad', 'curve']) {
+      expect(() => validateUISchema({ rows: [{ widgets: [{ type, bind: 'amount' }] }] }, controls, outputs)).toThrow(ValidationError)
+    }
   })
 
   it('rejects a bind that does not resolve to a declared control', () => {
