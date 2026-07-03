@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onUnmounted } from 'vue'
 import type { ControlDefinition } from '@/stores/nodes'
 import {
   useControlSelectOptions,
@@ -49,6 +49,79 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
   const fallback = (props.modelValue as number) ?? (control.default as number) ?? 0
   emit('update', clampControlNumber(raw, { min: control.props?.min, max: control.props?.max, fallback }))
 }
+
+/**
+ * Drag-to-scrub on the number input (Phase 3 bullet 3). A HORIZONTAL drag past a small threshold scrubs
+ * the value; a plain click still focuses + edits normally (the hot-path invariant, shared by ~566
+ * controls). Safe-by-design: mousedown NEVER preventDefaults (that would kill focus/caret) — we only
+ * preventDefault once the threshold proves scrub intent. Value maps ABSOLUTELY from the mousedown value +
+ * total dx, snapped to step and clamped only against DECLARED (finite) min/max (both are optional here).
+ */
+const SCRUB_THRESHOLD = 4 // px of horizontal travel before a drag counts as a scrub, not a click
+const isScrubbing = ref(false)
+let scrubArmed = false
+let scrubStartX = 0
+let scrubStartValue = 0
+let scrubControl: ControlDefinition | null = null
+
+function guardedStep(c: ControlDefinition): number {
+  const s = c.props?.step as number
+  return Number.isFinite(s) && s > 0 ? s : 1
+}
+
+function scrubUnitsPerPx(c: ControlDefinition): number {
+  const min = c.props?.min, max = c.props?.max
+  // bounded: whole range over ~200px; unbounded (the common case): one step per 4px.
+  if (typeof min === 'number' && typeof max === 'number' && max > min) return (max - min) / 200
+  return guardedStep(c) / 4
+}
+
+function snapClamp(c: ControlDefinition, v: number): number {
+  const step = guardedStep(c)
+  let nv = Math.round(v / step) * step
+  const decimals = (String(step).split('.')[1] || '').length
+  nv = Number(nv.toFixed(decimals)) // kill float dust so scrub matches typed values
+  const min = c.props?.min, max = c.props?.max
+  if (typeof min === 'number') nv = Math.max(min, nv) // clamp ONLY against finite bounds (min/max optional)
+  if (typeof max === 'number') nv = Math.min(max, nv)
+  return nv
+}
+
+function endScrub() {
+  scrubArmed = false
+  isScrubbing.value = false
+  scrubControl = null
+  window.removeEventListener('mousemove', onScrubMove)
+  window.removeEventListener('mouseup', endScrub)
+}
+
+function onScrubMove(e: MouseEvent) {
+  if (!scrubArmed || !scrubControl) return
+  const dx = e.clientX - scrubStartX
+  if (!isScrubbing.value) {
+    if (Math.abs(dx) < SCRUB_THRESHOLD) return // still could be a click — don't scrub, don't preventDefault
+    isScrubbing.value = true
+  }
+  e.preventDefault() // now suppress text selection while dragging
+  const fine = e.shiftKey ? 0.25 : 1 // Shift = finer control
+  emit('update', snapClamp(scrubControl, scrubStartValue + dx * scrubUnitsPerPx(scrubControl) * fine))
+}
+
+function onNumberMousedown(e: MouseEvent, control: ControlDefinition) {
+  onControlMousedown(e) // preserve the canvas node-drag guard
+  if (scrubArmed) return // ignore a second button while armed
+  scrubArmed = true
+  scrubStartX = e.clientX
+  scrubStartValue = (props.modelValue as number) ?? (control.default as number) ?? 0
+  scrubControl = control
+  // NOTE: no preventDefault here — a plain click must still focus the input + place the caret.
+  window.addEventListener('mousemove', onScrubMove)
+  window.addEventListener('mouseup', endScrub)
+}
+
+onUnmounted(() => {
+  if (scrubArmed) endScrub() // no leaked window listeners if unmounted mid-scrub
+})
 </script>
 
 <template>
@@ -128,7 +201,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
     v-else-if="control.type === 'number'"
     type="number"
     class="control-number"
-    :class="ctxClass"
+    :class="[ctxClass, { scrubbing: isScrubbing }]"
     :aria-label="control.label"
     :value="(modelValue as number) ?? 0"
     :min="control.props?.min as number"
@@ -136,7 +209,7 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
     :step="(control.props?.step as number) ?? 1"
     @input="emit('update', parseFloat(($event.target as HTMLInputElement).value) || 0)"
     @blur="clampNumberControl(control, ($event.target as HTMLInputElement).value)"
-    @mousedown="onControlMousedown"
+    @mousedown="onNumberMousedown($event, control)"
   >
 
   <!-- Text -->
@@ -278,6 +351,18 @@ function clampNumberControl(control: ControlDefinition, raw: string) {
 .control-number.ctx-canvas:focus {
   outline: none;
   border-color: var(--color-primary-400);
+}
+
+/* Drag-to-scrub affordance: horizontal-resize cursor when hovering an unfocused field (so it still
+   reads as editable once focused); lock out text selection while actively scrubbing. Scoped to
+   .control-number so no other widget shifts. */
+.control-number:hover:not(:focus) {
+  cursor: ew-resize;
+}
+
+.control-number.scrubbing {
+  cursor: ew-resize;
+  user-select: none;
 }
 
 .control-text.ctx-canvas {

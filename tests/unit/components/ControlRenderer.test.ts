@@ -156,3 +156,70 @@ describe('ControlRenderer accessibility', () => {
     expect(w.get(sel).attributes('aria-label')).toBe('Cutoff')
   })
 })
+
+describe('ControlRenderer number drag-to-scrub', () => {
+  // Simulate a mousedown on the input then a window drag; the handler adds window mousemove/mouseup.
+  const drag = async (w: ReturnType<typeof render>, fromX: number, toX: number, opts: MouseEventInit = {}) => {
+    await w.get('input[type="number"]').trigger('mousedown', { clientX: fromX })
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: toX, ...opts }))
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: toX })) // complete the gesture → releases listeners
+  }
+  const lastVal = (w: ReturnType<typeof render>) => w.emitted('update')?.at(-1)?.[0] as number | undefined
+
+  it('a plain click (no horizontal travel) does NOT scrub — click-to-edit is preserved', async () => {
+    const w = render({ id: 'n', type: 'number', props: { min: 0, max: 10 } }, 5)
+    await w.get('input[type="number"]').trigger('mousedown', { clientX: 100 })
+    window.dispatchEvent(new MouseEvent('mouseup', { clientX: 100 }))
+    expect(w.emitted('update')).toBeUndefined()
+  })
+
+  it('a sub-threshold move (<4px) does not scrub', async () => {
+    const w = render({ id: 'n', type: 'number', props: { min: 0, max: 10 } }, 5)
+    await drag(w, 100, 102) // 2px
+    expect(w.emitted('update')).toBeUndefined()
+  })
+
+  it('a drag past the threshold scrubs, mapping dx→value from the mousedown value', async () => {
+    const w = render({ id: 'n', type: 'number', props: { min: 0, max: 10, step: 1 } }, 5)
+    await drag(w, 100, 140) // dx 40 · sensitivity (10-0)/200 = 0.05 → +2 → 7
+    expect(lastVal(w)).toBe(7)
+  })
+
+  it('clamps ONLY against declared finite bounds (never exceeds max)', async () => {
+    const w = render({ id: 'n', type: 'number', props: { min: 0, max: 10, step: 1 } }, 5)
+    await drag(w, 100, 500) // huge dx → would be 25, clamped to max 10
+    expect(lastVal(w)).toBe(10)
+  })
+
+  it('an UNBOUNDED control (no min/max) scrubs by step, never NaN, never clamped', async () => {
+    const w = render({ id: 'n', type: 'number' }, 5) // no props → step defaults to 1, unbounded
+    await drag(w, 100, 140) // dx 40 · sensitivity step/4 = 0.25 → +10 → 15
+    expect(lastVal(w)).toBe(15)
+    expect(Number.isNaN(lastVal(w))).toBe(false)
+  })
+
+  it('Shift makes the scrub finer', async () => {
+    const coarse = render({ id: 'n', type: 'number', props: { min: 0, max: 10, step: 0.1 } }, 5)
+    await drag(coarse, 100, 140) // +2 → 7
+    const fine = render({ id: 'n', type: 'number', props: { min: 0, max: 10, step: 0.1 } }, 5)
+    await drag(fine, 100, 140, { shiftKey: true }) // +2*0.25 = +0.5 → 5.5
+    expect(Math.abs(lastVal(fine)! - 5)).toBeLessThan(Math.abs(lastVal(coarse)! - 5))
+  })
+
+  it('tears down window listeners if unmounted mid-scrub (no leak across ~566 instances)', async () => {
+    const removed: string[] = []
+    const orig = window.removeEventListener.bind(window)
+    window.removeEventListener = ((t: string, ...rest: unknown[]) => {
+      removed.push(t); return (orig as (...a: unknown[]) => void)(t, ...rest)
+    }) as typeof window.removeEventListener
+    try {
+      const w = render({ id: 'n', type: 'number' }, 5)
+      await w.get('input[type="number"]').trigger('mousedown', { clientX: 100 }) // arm
+      w.unmount()
+      expect(removed).toContain('mousemove')
+      expect(removed).toContain('mouseup')
+    } finally {
+      window.removeEventListener = orig
+    }
+  })
+})
