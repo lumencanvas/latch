@@ -1,10 +1,10 @@
+import { markRaw } from 'vue'
 import GamepadVisualNode from './GamepadVisualNode.vue'
 import type { NodeDefinition } from '../../types'
 
-export { GamepadVisualNode }
-
 export const gamepadVisualNode: NodeDefinition = {
   id: 'gamepad-visual',
+  component: markRaw(GamepadVisualNode),
   name: 'Visual Gamepad',
   version: '1.0.0',
   category: 'inputs',

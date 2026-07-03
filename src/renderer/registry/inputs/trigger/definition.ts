@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '@/stores/nodes'
 
+import { markRaw } from 'vue'
+import TriggerNode from './TriggerNode.vue'
+
 export const triggerNode: NodeDefinition = {
   id: 'trigger',
+  component: markRaw(TriggerNode),
   name: 'Trigger',
   version: '1.0.0',
   category: 'inputs',

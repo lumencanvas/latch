@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '@/stores/nodes'
 
+import { markRaw } from 'vue'
+import GraphNode from './GraphNode.vue'
+
 export const graphNode: NodeDefinition = {
   id: 'graph',
+  component: markRaw(GraphNode),
   name: 'Graph',
   version: '1.0.0',
   category: 'debug',

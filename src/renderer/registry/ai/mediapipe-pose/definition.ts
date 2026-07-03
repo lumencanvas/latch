@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipePoseNode from './MediaPipePoseNode.vue'
+
 export const mediapipePoseNode: NodeDefinition = {
   id: 'mediapipe-pose',
+  component: markRaw(MediaPipePoseNode),
   name: 'Pose Estimation',
   version: '1.0.0',
   category: 'ai',

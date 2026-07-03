@@ -1,4 +1,4 @@
-export { functionNode, FunctionNode } from './_function'
+export { functionNode } from './_function'
 export { expressionNode } from './expression'
 export { templateNode } from './template'
 export { counterNode } from './counter'

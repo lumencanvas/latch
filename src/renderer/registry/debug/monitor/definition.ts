@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MonitorNode from './MonitorNode.vue'
+
 export const monitorNode: NodeDefinition = {
   id: 'monitor',
+  component: markRaw(MonitorNode),
   name: 'Monitor',
   version: '1.0.0',
   category: 'debug',

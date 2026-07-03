@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipeFaceNode from './MediaPipeFaceNode.vue'
+
 export const mediapipeFaceNode: NodeDefinition = {
   id: 'mediapipe-face',
+  component: markRaw(MediaPipeFaceNode),
   name: 'Face Mesh',
   version: '1.0.0',
   category: 'ai',

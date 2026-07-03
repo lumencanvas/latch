@@ -168,11 +168,13 @@ export interface NodeDefinition {
    */
   ui?: UISchema
   /**
-   * RESERVED (Phase 3 bullet 2) — the intended bespoke-SFC escape hatch for nodes that capture raw
-   * input (keyboard/MIDI/gamepad), render a live surface (video/canvas/code editor/emulator), or need
-   * bespoke geometry. NOT yet consumed: today those nodes still route through `registry/components.ts`
-   * by nodeType. Wiring this field (so `components.ts` derives from it) is a later increment; declared
-   * now only to fix the schema shape. Live render order is `ui` → BaseNode auto-layout.
+   * Bespoke-SFC escape hatch for nodes that capture raw input (keyboard/MIDI/gamepad), render a live
+   * surface (video/canvas/code editor/emulator), or need bespoke geometry. This is the SINGLE SOURCE OF
+   * TRUTH for custom-component routing: `registry/components.ts` derives both `nodeTypes` and
+   * `CUSTOM_NODE_TYPE_IDS` from the definitions that carry a `component` (increment 5). Set it with
+   * `markRaw(MyNode)`. Absent `ui` + absent `component` → BaseNode's auto-layout. Render order is
+   * `component` → `ui` → BaseNode auto-layout. (The nodes-store `components` map / `getComponent` remain
+   * unwired — the live render path is the `nodeTypes` map, not the store.)
    */
   component?: Component
   tags?: string[]

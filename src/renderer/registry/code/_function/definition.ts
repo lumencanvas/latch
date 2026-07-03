@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import FunctionNode from './FunctionNode.vue'
+
 export const functionNode: NodeDefinition = {
   id: 'function',
+  component: markRaw(FunctionNode),
   name: 'Function',
   version: '1.0.0',
   category: 'code',

@@ -1,4 +1,4 @@
-export { emulatorNode, EmulatorNode } from './emulator'
+export { emulatorNode } from './emulator'
 
 import { emulatorNode } from './emulator'
 import type { NodeDefinition } from '../types'

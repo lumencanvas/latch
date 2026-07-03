@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import StepSequencerNode from './StepSequencerNode.vue'
+
 export const stepSequencerNode: NodeDefinition = {
   id: 'step-sequencer',
+  component: markRaw(StepSequencerNode),
   name: 'Step Sequencer',
   version: '1.0.0',
   category: 'timing',

@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipeGestureNode from './MediaPipeGestureNode.vue'
+
 export const mediapipeGestureNode: NodeDefinition = {
   id: 'mediapipe-gesture',
+  component: markRaw(MediaPipeGestureNode),
   name: 'Gesture Recognition',
   version: '1.0.0',
   category: 'ai',

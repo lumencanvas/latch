@@ -1,94 +1,39 @@
 /**
  * Node Component Registry
  *
- * Maps node type IDs to their Vue components.
- * Most nodes use BaseNode, but some have custom UI components.
+ * Maps node type IDs to their Vue components for Vue Flow. Most nodes render with the generic
+ * `BaseNode` (declaratively, via `ui`, or the auto-layout default); bespoke nodes declare a
+ * `component` on their definition (the escape hatch — see DECLARATIVE_UI_NODEVIEW design §5).
+ *
+ * This map is DERIVED from `definition.component` — the single source of truth. To give a node a
+ * bespoke SFC, set `component: markRaw(MyNode)` on its definition; it then routes here automatically.
+ * (Previously this file hand-maintained the map, which had to be kept in sync by hand.)
  */
 
-import { markRaw } from 'vue'
+import { markRaw, type Component } from 'vue'
 import BaseNode from '@/components/nodes/BaseNode.vue'
+import { allNodes } from './allNodes'
 
-// Import custom UI components from their node folders
-import { TriggerNode } from './inputs/trigger'
-import { TextboxNode } from './inputs/textbox'
-import { KnobNode } from './inputs/_knob'
-import { KeyboardNode } from './inputs/keyboard'
-import { GamepadVisualNode } from './inputs/gamepad-visual'
-import { MonitorNode } from './debug/monitor'
-import { OscilloscopeNode } from './debug/oscilloscope'
-import { GraphNode } from './debug/graph'
-import { EqualizerNode } from './debug/equalizer'
-import { MainOutputNode } from './outputs/main-output'
-import { StepSequencerNode } from './timing/step-sequencer'
-import { SynthNode } from './audio/_synth'
-import { MediaPipeHandNode } from './ai/mediapipe-hand'
-import { MediaPipeFaceNode } from './ai/mediapipe-face'
-import { MediaPipePoseNode } from './ai/mediapipe-pose'
-import { MediaPipeObjectNode } from './ai/mediapipe-object'
-import { MediaPipeSegmentationNode } from './ai/mediapipe-segmentation'
-import { MediaPipeGestureNode } from './ai/mediapipe-gesture'
-import { MediaPipeAudioNode } from './ai/mediapipe-audio'
-import { FunctionNode } from './code/_function'
-import { DispatchNode } from './logic/dispatch'
-import { EmulatorNode } from './emulation/emulator'
+/** Definitions that carry a bespoke SFC, in registry order. */
+const customComponentNodes = allNodes.filter(
+  (d): d is typeof d & { component: Component } => !!d.component,
+)
 
 /**
- * Node type to Vue component mapping.
- * Used by Vue Flow to render nodes.
+ * Node type to Vue component mapping. Used by Vue Flow to render nodes.
+ * `default`/`custom` → BaseNode; each bespoke node → its declared `component`.
  */
-export const nodeTypes = {
-  // Default renderer for all simple nodes
+export const nodeTypes: Record<string, Component> = {
   default: markRaw(BaseNode),
   custom: markRaw(BaseNode),
-
-  // Custom UI nodes - inputs
-  trigger: markRaw(TriggerNode),
-  // xy-pad migrated to a declarative `ui` xy aggregate (Phase 3 bullet 2) → BaseNode+NodeView.
-  textbox: markRaw(TextboxNode),
-  knob: markRaw(KnobNode),
-  keyboard: markRaw(KeyboardNode),
-  'gamepad-visual': markRaw(GamepadVisualNode),
-
-  // Custom UI nodes - debug
-  monitor: markRaw(MonitorNode),
-  oscilloscope: markRaw(OscilloscopeNode),
-  graph: markRaw(GraphNode),
-  equalizer: markRaw(EqualizerNode),
-
-  // Custom UI nodes - outputs
-  'main-output': markRaw(MainOutputNode),
-
-  // Custom UI nodes - timing
-  'step-sequencer': markRaw(StepSequencerNode),
-
-  // Custom UI nodes - audio
-  // envelope-visual + parametric-eq + wavetable migrated to declarative `ui` aggregates (Phase 3 bullet 2).
-  synth: markRaw(SynthNode),
-
-  // Custom UI nodes - AI (MediaPipe)
-  'mediapipe-hand': markRaw(MediaPipeHandNode),
-  'mediapipe-face': markRaw(MediaPipeFaceNode),
-  'mediapipe-pose': markRaw(MediaPipePoseNode),
-  'mediapipe-object': markRaw(MediaPipeObjectNode),
-  'mediapipe-segmentation': markRaw(MediaPipeSegmentationNode),
-  'mediapipe-gesture': markRaw(MediaPipeGestureNode),
-  'mediapipe-audio': markRaw(MediaPipeAudioNode),
-
-  // Custom UI nodes - Code
-  function: markRaw(FunctionNode),
-
-  // Custom UI nodes - Logic
-  dispatch: markRaw(DispatchNode),
-
-  // Custom UI nodes - Emulation
-  emulator: markRaw(EmulatorNode),
+  ...Object.fromEntries(customComponentNodes.map((d) => [d.id, markRaw(d.component)])),
 }
 
 /**
- * Node type ids that have a dedicated custom component (everything except the
- * generic BaseNode renderers). Single source of truth so the flows store's
- * node-type decision can never drift from this map.
+ * Node type ids that have a dedicated custom component (everything except the generic BaseNode
+ * renderers). Derived from the same `component` source as `nodeTypes`, so the flows store's
+ * node-type decision (and the persistence rehydration path — which aliases this) can never drift from
+ * the components. Frozen: it's a read-only lookup (`.includes`), and `PERSISTENCE_SPECIAL_NODE_TYPES`
+ * aliases it — freezing forbids an accidental in-place `.push`/`.sort` from silently mutating both.
  */
-export const CUSTOM_NODE_TYPE_IDS: string[] = Object.keys(nodeTypes).filter(
-  (k) => k !== 'default' && k !== 'custom',
-)
+export const CUSTOM_NODE_TYPE_IDS: readonly string[] = Object.freeze(customComponentNodes.map((d) => d.id))

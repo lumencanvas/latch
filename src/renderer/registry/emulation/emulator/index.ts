@@ -1,12 +1,12 @@
+import { markRaw } from 'vue'
 import EmulatorNode from './EmulatorNode.vue'
 import { CORE_LIST } from '@/services/emulation/coreMap'
 import { DEFAULT_EJS_DATA } from '@/services/emulation/emulatorjs'
 import type { NodeDefinition } from '../../types'
 
-export { EmulatorNode }
-
 export const emulatorNode: NodeDefinition = {
   id: 'emulator',
+  component: markRaw(EmulatorNode),
   name: 'Emulator',
   version: '1.0.0',
   category: 'video',

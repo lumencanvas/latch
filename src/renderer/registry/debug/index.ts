@@ -2,10 +2,10 @@
 export { consoleNode } from './console'
 
 // Custom UI debug nodes
-export { monitorNode, MonitorNode } from './monitor'
-export { oscilloscopeNode, OscilloscopeNode } from './oscilloscope'
-export { graphNode, GraphNode } from './graph'
-export { equalizerNode, EqualizerNode } from './equalizer'
+export { monitorNode } from './monitor'
+export { oscilloscopeNode } from './oscilloscope'
+export { graphNode } from './graph'
+export { equalizerNode } from './equalizer'
 
 import { consoleNode } from './console'
 import { monitorNode } from './monitor'

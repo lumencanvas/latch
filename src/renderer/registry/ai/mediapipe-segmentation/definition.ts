@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipeSegmentationNode from './MediaPipeSegmentationNode.vue'
+
 export const mediapipeSegmentationNode: NodeDefinition = {
   id: 'mediapipe-segmentation',
+  component: markRaw(MediaPipeSegmentationNode),
   name: 'Selfie Segmentation',
   version: '1.0.0',
   category: 'ai',

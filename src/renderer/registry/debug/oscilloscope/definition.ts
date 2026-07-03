@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '@/stores/nodes'
 
+import { markRaw } from 'vue'
+import OscilloscopeNode from './OscilloscopeNode.vue'
+
 export const oscilloscopeNode: NodeDefinition = {
   id: 'oscilloscope',
+  component: markRaw(OscilloscopeNode),
   name: 'Oscilloscope',
   version: '1.0.0',
   category: 'debug',

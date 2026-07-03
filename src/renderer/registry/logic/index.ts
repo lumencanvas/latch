@@ -18,7 +18,7 @@ export { inRangeNode } from './in-range'
 export { sampleHoldNode } from './sample-hold'
 export { latchNode } from './latch'
 export { matchValueNode } from './match-value'
-export { dispatchNode, DispatchNode } from './dispatch'
+export { dispatchNode } from './dispatch'
 
 import { compareNode } from './compare'
 import { andNode } from './and'

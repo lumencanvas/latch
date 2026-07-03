@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipeAudioNode from './MediaPipeAudioNode.vue'
+
 export const mediapipeAudioNode: NodeDefinition = {
   id: 'mediapipe-audio',
+  component: markRaw(MediaPipeAudioNode),
   name: 'Audio Classifier',
   version: '1.0.0',
   category: 'ai',

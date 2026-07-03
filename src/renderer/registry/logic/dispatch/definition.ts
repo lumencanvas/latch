@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import DispatchNode from './DispatchNode.vue'
+
 export const dispatchNode: NodeDefinition = {
   id: 'dispatch',
+  component: markRaw(DispatchNode),
   name: 'Dispatch',
   version: '1.0.0',
   category: 'logic',

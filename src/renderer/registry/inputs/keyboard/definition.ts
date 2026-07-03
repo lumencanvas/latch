@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '@/stores/nodes'
 
+import { markRaw } from 'vue'
+import KeyboardNode from './KeyboardNode.vue'
+
 export const keyboardNode: NodeDefinition = {
   id: 'keyboard',
+  component: markRaw(KeyboardNode),
   name: 'Keyboard',
   version: '1.0.0',
   category: 'inputs',

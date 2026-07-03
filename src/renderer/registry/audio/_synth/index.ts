@@ -1,7 +1,10 @@
+import { markRaw } from 'vue'
 import type { NodeDefinition } from '../../types'
+import SynthNode from './SynthNode.vue'
 
 export const synthNode: NodeDefinition = {
   id: 'synth',
+  component: markRaw(SynthNode),
   name: 'Synth',
   version: '1.0.0',
   category: 'audio',
@@ -54,6 +57,3 @@ export const synthNode: NodeDefinition = {
     pairsWith: ['midi-input', 'envelope', 'audio-output', 'reverb', 'gain'],
   },
 }
-
-// Export the custom node component
-export { default as SynthNode } from './SynthNode.vue'

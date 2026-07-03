@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipeHandNode from './MediaPipeHandNode.vue'
+
 export const mediapipeHandNode: NodeDefinition = {
   id: 'mediapipe-hand',
+  component: markRaw(MediaPipeHandNode),
   name: 'Hand Tracking',
   version: '1.0.0',
   category: 'ai',

@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MediaPipeObjectNode from './MediaPipeObjectNode.vue'
+
 export const mediapipeObjectNode: NodeDefinition = {
   id: 'mediapipe-object',
+  component: markRaw(MediaPipeObjectNode),
   name: 'Object Detection (MediaPipe)',
   version: '1.0.0',
   category: 'ai',

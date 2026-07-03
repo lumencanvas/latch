@@ -1,4 +1,4 @@
-export { mainOutputNode, MainOutputNode } from './main-output'
+export { mainOutputNode } from './main-output'
 
 import { mainOutputNode } from './main-output'
 import type { NodeDefinition } from '../types'

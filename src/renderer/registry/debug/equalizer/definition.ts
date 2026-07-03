@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import EqualizerNode from './EqualizerNode.vue'
+
 export const equalizerNode: NodeDefinition = {
   id: 'equalizer',
+  component: markRaw(EqualizerNode),
   name: 'Equalizer',
   version: '1.0.0',
   category: 'debug',

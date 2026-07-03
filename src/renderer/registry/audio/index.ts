@@ -18,7 +18,7 @@ export { audioBitcrusherNode } from './audio-bitcrusher'
 export { envelopeVisualNode } from './envelope-visual'
 export { parametricEqNode } from './parametric-eq'
 export { wavetableNode } from './wavetable'
-export { synthNode, SynthNode } from './_synth'
+export { synthNode } from './_synth'
 
 import { oscillatorNode } from './oscillator'
 import { audioOutputNode } from './audio-output'

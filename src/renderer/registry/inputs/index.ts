@@ -4,15 +4,15 @@ export { sliderNode } from './slider'
 export { audioInputNode } from './audio-input'
 
 // Custom UI input nodes
-export { triggerNode, TriggerNode } from './trigger'
+export { triggerNode } from './trigger'
 export { xyPadNode } from './xy-pad'
-export { textboxNode, TextboxNode } from './textbox'
-export { knobNode, KnobNode } from './knob'
-export { keyboardNode, KeyboardNode } from './keyboard'
+export { textboxNode } from './textbox'
+export { knobNode } from './knob'
+export { keyboardNode } from './keyboard'
 
 // Controller input nodes
 export { gamepadNode } from './gamepad'
-export { gamepadVisualNode, GamepadVisualNode } from './gamepad-visual'
+export { gamepadVisualNode } from './gamepad-visual'
 
 // Re-categorized input nodes
 export { midiInputNode } from '../connectivity/midi-input'

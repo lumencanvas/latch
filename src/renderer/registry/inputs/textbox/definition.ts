@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import TextboxNode from './TextboxNode.vue'
+
 export const textboxNode: NodeDefinition = {
   id: 'textbox',
+  component: markRaw(TextboxNode),
   name: 'Textbox',
   version: '1.0.0',
   category: 'inputs',

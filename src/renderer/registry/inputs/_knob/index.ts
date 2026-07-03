@@ -1,7 +1,10 @@
+import { markRaw } from 'vue'
 import type { NodeDefinition } from '../../types'
+import KnobNode from './KnobNode.vue'
 
 export const knobNode: NodeDefinition = {
   id: 'knob',
+  component: markRaw(KnobNode),
   name: 'Knob',
   version: '1.0.0',
   category: 'inputs',
@@ -25,6 +28,3 @@ export const knobNode: NodeDefinition = {
     pairsWith: ['gain', 'filter', 'oscillator', 'map-range'],
   },
 }
-
-// Export the custom node component
-export { default as KnobNode } from './KnobNode.vue'

@@ -1,7 +1,11 @@
 import type { NodeDefinition } from '../../types'
 
+import { markRaw } from 'vue'
+import MainOutputNode from './MainOutputNode.vue'
+
 export const mainOutputNode: NodeDefinition = {
   id: 'main-output',
+  component: markRaw(MainOutputNode),
   name: 'Main Output',
   version: '1.0.0',
   category: 'outputs',
