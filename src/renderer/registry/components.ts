@@ -21,7 +21,6 @@ import { GraphNode } from './debug/graph'
 import { EqualizerNode } from './debug/equalizer'
 import { MainOutputNode } from './outputs/main-output'
 import { StepSequencerNode } from './timing/step-sequencer'
-import { ParametricEqNode } from './audio/_parametric-eq'
 import { WavetableNode } from './audio/_wavetable'
 import { SynthNode } from './audio/_synth'
 import { MediaPipeHandNode } from './ai/mediapipe-hand'
@@ -65,8 +64,7 @@ export const nodeTypes = {
   'step-sequencer': markRaw(StepSequencerNode),
 
   // Custom UI nodes - audio
-  // envelope-visual migrated to a declarative `ui` env aggregate (Phase 3 bullet 2) → BaseNode+NodeView.
-  'parametric-eq': markRaw(ParametricEqNode),
+  // envelope-visual + parametric-eq migrated to declarative `ui` aggregates (Phase 3 bullet 2) → NodeView.
   wavetable: markRaw(WavetableNode),
   synth: markRaw(SynthNode),
 

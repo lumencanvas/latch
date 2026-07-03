@@ -28,6 +28,14 @@ export const parametricEqNode: NodeDefinition = {
     { id: 'gain3', type: 'number', label: 'Gain 3', default: 0, props: { min: -24, max: 24, step: 0.1 } },
     { id: 'q3', type: 'number', label: 'Q 3', default: 1, props: { min: 0.1, max: 10, step: 0.1 } },
   ],
+  // Declarative UI (Phase 3 bullet 2): the whole body is the EQEditor bound to the 9 flat band
+  // controls, so it's expressible as the built-in `eq` Tier-B aggregate — no bespoke SFC needed.
+  // Fields are positional, chunked by 3 into bands (freq,gain,q per band). Replaces ParametricEqNode.vue.
+  ui: {
+    rows: [
+      { widgets: [{ type: 'eq', bind: '', props: { fields: ['freq1', 'gain1', 'q1', 'freq2', 'gain2', 'q2', 'freq3', 'gain3', 'q3'] } }] },
+    ],
+  },
   info: {
     overview: 'A 3-band parametric equalizer with a visual frequency response display and draggable band controls. Each band has independent frequency, gain, and Q settings for precise tonal shaping across the low, mid, and high ranges.',
     tips: [
