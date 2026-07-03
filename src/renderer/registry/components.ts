@@ -10,7 +10,6 @@ import BaseNode from '@/components/nodes/BaseNode.vue'
 
 // Import custom UI components from their node folders
 import { TriggerNode } from './inputs/trigger'
-import { XYPadNode } from './inputs/xy-pad'
 import { TextboxNode } from './inputs/textbox'
 import { KnobNode } from './inputs/_knob'
 import { KeyboardNode } from './inputs/keyboard'
@@ -45,7 +44,7 @@ export const nodeTypes = {
 
   // Custom UI nodes - inputs
   trigger: markRaw(TriggerNode),
-  'xy-pad': markRaw(XYPadNode),
+  // xy-pad migrated to a declarative `ui` xy aggregate (Phase 3 bullet 2) → BaseNode+NodeView.
   textbox: markRaw(TextboxNode),
   knob: markRaw(KnobNode),
   keyboard: markRaw(KeyboardNode),
