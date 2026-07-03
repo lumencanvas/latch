@@ -93,6 +93,20 @@ describe('NodeView (Tier A interpreter)', () => {
     expect(w.get('.nv-readout').text()).toBe('42')
   })
 
+  it('readout a11y: a runtime output is an announced named status region; a static readout is a plain span', () => {
+    useRuntimeStore().updateNodeMetrics('n1', { outputValues: { out: 42 } })
+    const out = mountView({ rows: [{ widgets: [{ type: 'readout', bind: 'out', source: 'output', label: 'Level' }] }] }, {})
+    const span = out.get('.nv-readout')
+    expect(span.attributes('role')).toBe('status')
+    expect(span.attributes('aria-live')).toBe('polite')
+    expect(span.attributes('aria-label')).toBe('Level: 42') // name + value, so a change is announced
+    // A static control-value readout is NOT a live region (no announcement spam).
+    const stat = mountView({ rows: [{ widgets: [{ type: 'readout', bind: 'amount' }] }] }, { amount: 3 })
+    const s2 = stat.get('.nv-readout')
+    expect(s2.attributes('role')).toBeUndefined()
+    expect(s2.attributes('aria-live')).toBeUndefined()
+  })
+
   it('stops mousedown propagation on widgets (so canvas node-drag does not hijack an editor drag)', () => {
     const onDoc = vi.fn()
     document.addEventListener('mousedown', onDoc)

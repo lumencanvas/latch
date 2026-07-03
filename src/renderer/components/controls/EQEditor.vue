@@ -190,7 +190,9 @@ function draw() {
     const band = props.modelValue.bands[i]
     const x = freqToX(band.frequency)
     const y = gainToY(band.gain)
-    const isActive = isDragging.value === i
+    // Active while dragged OR while it's the keyboard-selected band on a focused editor (matches
+    // EnvelopeEditor/WaveformEditor — restores the selection feedback the migration lacked).
+    const isActive = isDragging.value === i || (focused.value && selBand.value === i)
 
     ctx.beginPath()
     ctx.arc(x, y, isActive ? 8 : 6, 0, Math.PI * 2)
@@ -309,6 +311,7 @@ const PARAMS: Param[] = ['frequency', 'gain', 'q']
 const selectedTarget = ref(0) // 0..8 → band = idx/3, param = PARAMS[idx%3]
 const selBand = computed(() => Math.floor(selectedTarget.value / 3))
 const selParam = computed<Param>(() => PARAMS[selectedTarget.value % 3])
+const focused = ref(false)
 
 const valueText = computed(() => {
   const band = props.modelValue.bands[selBand.value]
@@ -356,7 +359,7 @@ function onKeydown(e: KeyboardEvent): void {
   e.stopPropagation()
 }
 
-watch(() => props.modelValue, draw, { deep: true })
+watch([() => props.modelValue, selectedTarget, focused], draw, { deep: true })
 
 onMounted(() => {
   draw()
@@ -385,6 +388,8 @@ onUnmounted(() => {
       @mousedown.stop
       @touchstart.stop
       @keydown="onKeydown"
+      @focus="focused = true"
+      @blur="focused = false"
     />
     <span
       class="sr-only"

@@ -314,6 +314,8 @@ onUnmounted(() => {
         :key="preset"
         class="preset-btn"
         :class="{ active: modelValue.preset === preset }"
+        :aria-label="preset"
+        :aria-pressed="modelValue.preset === preset"
         @click="selectPreset(preset)"
       >
         {{ preset.charAt(0).toUpperCase() }}

@@ -279,10 +279,15 @@ function onXy(w: UIWidget, data: XYValue): void {
               @update:model-value="(v) => emit('update', w.bind, v)"
             />
 
-            <!-- Readout (control value or runtime output) -->
+            <!-- Readout (control value or runtime output). A runtime output changes live, so it becomes a
+                 named polite status region (announced on change); a static control-value readout stays a
+                 plain text span (its content is already in the a11y tree, no live-region spam). -->
             <span
               v-else-if="w.type === 'readout'"
               class="nv-readout"
+              :role="w.source === 'output' ? 'status' : undefined"
+              :aria-live="w.source === 'output' ? 'polite' : undefined"
+              :aria-label="w.source === 'output' && w.label ? `${w.label}: ${readout(w)}` : undefined"
             >{{ readout(w) }}</span>
 
             <!-- Envelope (Tier-B aggregate: ADSR ↔ 4 flat controls) -->

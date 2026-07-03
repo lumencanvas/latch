@@ -80,6 +80,14 @@ describe('WaveformEditor keyboard accessibility', () => {
     expect(pad(w).attributes('aria-valuetext')).toBe('sample 1/64: 0.00')
   })
 
+  it('preset buttons expose an aria-label + aria-pressed toggle state', () => {
+    const w = mountEd({ samples: Array.from({ length: N }, () => 0), preset: 'square' })
+    const btns = w.findAll('.preset-btn')
+    expect(btns.map((b) => b.attributes('aria-label'))).toEqual(['sine', 'square', 'sawtooth', 'triangle'])
+    // only the active preset is pressed
+    expect(btns.map((b) => b.attributes('aria-pressed'))).toEqual(['false', 'true', 'false', 'false'])
+  })
+
   it('clamps the value at +/-1 and ignores unhandled keys', async () => {
     const w = mountEd({ samples: Array.from({ length: N }, (_, i) => (i === 0 ? 0.98 : 0)), preset: 'custom' })
     await pad(w).trigger('keydown', { key: 'ArrowUp' }) // 0.98 + 0.05 → clamp 1
