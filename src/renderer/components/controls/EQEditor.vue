@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 
 export interface EQBand {
   frequency: number  // 20-20000 Hz
@@ -300,6 +300,62 @@ function onWheel(e: WheelEvent) {
   }
 }
 
+// Keyboard a11y (WCAG 2.1.1 / 4.1.2) — the `ui` migration replaced parametric-eq's panel number inputs
+// with this pointer-only canvas, removing keyboard access. Restore it like EnvelopeEditor: one focusable
+// role="application" host cycling a flat list of the 9 band×param targets (Left/Right) and adjusting the
+// selected one (Up/Down/Home/End), announced via aria-valuetext. Emits the same EQData as the drag.
+type Param = 'frequency' | 'gain' | 'q'
+const PARAMS: Param[] = ['frequency', 'gain', 'q']
+const selectedTarget = ref(0) // 0..8 → band = idx/3, param = PARAMS[idx%3]
+const selBand = computed(() => Math.floor(selectedTarget.value / 3))
+const selParam = computed<Param>(() => PARAMS[selectedTarget.value % 3])
+
+const valueText = computed(() => {
+  const band = props.modelValue.bands[selBand.value]
+  if (!band) return ''
+  const p = selParam.value
+  const val = p === 'frequency'
+    ? `${Math.round(band.frequency)} Hz`
+    : p === 'gain'
+      ? `${band.gain > 0 ? '+' : ''}${band.gain.toFixed(1)} dB`
+      : `Q ${band.q.toFixed(1)}`
+  return `Band ${selBand.value + 1} ${val}`
+})
+
+function adjustSelected(dir: 1 | -1 | 'min' | 'max'): void {
+  const bi = selBand.value
+  const p = selParam.value
+  const band = props.modelValue.bands[bi]
+  if (!band) return
+  const clamp = (lo: number, hi: number, v: number) => Math.max(lo, Math.min(hi, v))
+  let nv: number
+  if (p === 'frequency') {
+    nv = dir === 'min' ? MIN_FREQ : dir === 'max' ? MAX_FREQ
+      : Math.round(clamp(MIN_FREQ, MAX_FREQ, band.frequency * (dir === 1 ? 1.1 : 1 / 1.1))) // log-ish step
+  } else if (p === 'gain') {
+    nv = dir === 'min' ? MIN_GAIN : dir === 'max' ? MAX_GAIN : clamp(MIN_GAIN, MAX_GAIN, band.gain + dir * 1)
+  } else {
+    nv = dir === 'min' ? 0.1 : dir === 'max' ? 10 : Number(clamp(0.1, 10, band.q + dir * 0.1).toFixed(1))
+  }
+  const newBands = [...props.modelValue.bands]
+  newBands[bi] = { ...band, [p]: nv }
+  emit('update:modelValue', { bands: newBands })
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  switch (e.key) {
+    case 'ArrowRight': selectedTarget.value = (selectedTarget.value + 1) % 9; break // next band×param
+    case 'ArrowLeft': selectedTarget.value = (selectedTarget.value + 8) % 9; break
+    case 'ArrowUp': adjustSelected(1); break
+    case 'ArrowDown': adjustSelected(-1); break
+    case 'Home': adjustSelected('min'); break
+    case 'End': adjustSelected('max'); break
+    default: return
+  }
+  e.preventDefault()
+  e.stopPropagation()
+}
+
 watch(() => props.modelValue, draw, { deep: true })
 
 onMounted(() => {
@@ -316,6 +372,11 @@ onUnmounted(() => {
     <canvas
       ref="canvas"
       class="eq-canvas"
+      role="application"
+      tabindex="0"
+      aria-roledescription="parametric EQ"
+      aria-label="Equalizer"
+      :aria-valuetext="valueText"
       @pointerdown.stop="onPointerDown"
       @pointermove.stop="onPointerMove"
       @pointerup.stop="onPointerUp"
@@ -323,7 +384,12 @@ onUnmounted(() => {
       @wheel.stop.prevent="onWheel"
       @mousedown.stop
       @touchstart.stop
+      @keydown="onKeydown"
     />
+    <span
+      class="sr-only"
+      aria-live="polite"
+    >{{ valueText }}</span>
     <div class="eq-values">
       <span
         v-for="(band, i) in modelValue.bands"
@@ -349,6 +415,27 @@ onUnmounted(() => {
   cursor: crosshair;
   touch-action: none;
   user-select: none;
+}
+
+.eq-canvas:focus {
+  outline: none;
+}
+
+.eq-canvas:focus-visible {
+  outline: 2px solid var(--color-primary-400, #06b6d4);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .eq-values {
