@@ -6,6 +6,44 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-02 (later 42) — Phase 3 bullet 2: xy-pad + wavetable migrations + ultracode regression audit
+
+Self-driven ultracode continuation. Migrated the last two aggregate-backed bespoke nodes, then ran an
+adversarial audit workflow that caught three real regressions — fixed + guarded.
+
+**xy-pad → `ui` xy aggregate** (first MULTI-ROW schema): xy pad (normalizedX/Y) + rawX/rawY output
+readouts + 4 range number controls. Two documented deltas: readouts are running-only, range renders
+always-visible (no RANGE toggle). **wavetable → `ui` wave aggregate**: needed a data-only `waveform`
+control (default = 64-sample sine) because its drawn samples lived in a bare `node.data` key the aggregate
+(declared-controls-only) couldn't read; verified runtime-safe against the executor (samples used only when
+preset==='custom'). Both: parity test (5 each, mutation-verified) + full gate + browser (wavetable incl.
+Play/Stop). **All 4 aggregate-backed nodes now migrated** (env/eq + xy/wave).
+
+**Ultracode audit workflow** (4 parallel adversarial agents: wavetable runtime/serialization, xy-pad
+functional parity, env+eq, cross-cutting registry). wavetable + xy-pad + env/eq came back clean on
+runtime/data, but the audit found **3 regressions the per-migration tests missed** (they checked the panel,
+not the canvas / persistence) — all fixed in commit `e7b1f9b`, each with a mutation-verified test:
+1. **Node-drag hijacked editor drags** — bespoke SFCs wrapped editors in `@mousedown.stop`; NodeView
+   didn't (EQEditor/XYPad self-stop, envelope/waveform didn't). Added `@mousedown.stop` on `.nv-widget`.
+2. **Persisted migrated nodes broke on reload** — `usePersistence.toFlowState` (IndexedDB rehydration) had
+   its OWN `specialNodeTypes` list still naming the 4 nodes, forcing a dead Vue Flow `type`. Removed them
+   (hoisted to exported `PERSISTENCE_SPECIAL_NODE_TYPES`; new test pins the two-list invariant). Verified
+   end-to-end in browser (add → autosave → reload → rehydrates as 'custom' + NodeView, 0 errors).
+3. **`ui` audio nodes compacted to an icon** — `isCompactNode` compacts audio-category nodes with inline
+   controls (env-visual/parametric-eq/wavetable matched), hiding the canvas editor. Exempted `hasUi` nodes.
+
+typecheck clean · lint 0 err · `test:unit` **1888 → 1909** · build 0 · browser round-trips 0 errors.
+Commits this session: 14 (author Moheeb Zara, no AI attribution).
+
+**▶ NEXT / open.** (a) NICE-TO-HAVE: delete the 4 now-orphaned bespoke SFCs (EnvelopeVisualNode/
+ParametricEqNode/WavetableNode/XYPadNode.vue) + their re-export chains — deferred (cascades into the
+`public-exports` contract gate; harmless/tree-shaken meanwhile). (b) `component?` consumption — blocked on
+design Q2. (c) Bullet 3 (new control types, drag-to-scrub, control keyboard+ARIA). The remaining bespoke
+SFCs (mediapipe/emulator/function/keyboard/gamepad/synth/step-sequencer/dispatch/monitor/...) legitimately
+keep `component?` (live surfaces / raw input / bespoke geometry) — not migration candidates.
+
+---
+
 ## 2026-07-02 (later 41) — Phase 3 bullet 2: second migration (parametric-eq) + ultracode feasibility sweep
 
 Ran an **ultracode workflow** (6 agents: per-node analyze → adversarial fidelity verify, in parallel) over
