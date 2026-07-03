@@ -3,21 +3,17 @@ import { useFlowsStore, type FlowState } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
 import { useConnectionsStore } from '@/stores/connections'
 import { flowStorage, settingsStorage, initializeDatabase, type PersistedFlow } from '@/services/database'
+import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
 
 /**
- * Node types that still have their own bespoke Vue component, used by `toFlowState` to keep the Vue
- * Flow `type` on rehydration from IndexedDB. This is the SECOND routing list alongside
- * `registry/components.ts` (`CUSTOM_NODE_TYPE_IDS`) — a node migrated to a declarative `ui` schema must
- * be absent from BOTH so persisted and freshly-added instances agree (→ 'custom' → BaseNode + NodeView).
- * (Exported so a test can pin that invariant.)
+ * Node types with their own bespoke Vue component, used by `toFlowState` to keep the Vue Flow `type`
+ * on rehydration from IndexedDB. Kept identical to `registry/components.ts` (`CUSTOM_NODE_TYPE_IDS`) —
+ * both now derive from the single source of truth (`definition.component`) so this rehydration path and
+ * the fresh-add path (`resolveVueFlowType`) can never drift. A node migrated to a declarative `ui`
+ * schema is absent from the source and so from both (→ 'custom' → BaseNode + NodeView).
+ * (Exported so a test can pin that the two lists stay one source.)
  */
-export const PERSISTENCE_SPECIAL_NODE_TYPES = [
-  'main-output', 'trigger', 'monitor', 'oscilloscope', 'graph', 'equalizer',
-  'textbox', 'knob', 'keyboard', 'step-sequencer',
-  'mediapipe-hand', 'mediapipe-face', 'mediapipe-pose', 'mediapipe-object',
-  'mediapipe-segmentation', 'mediapipe-gesture', 'mediapipe-audio',
-  'function', 'synth',
-]
+export const PERSISTENCE_SPECIAL_NODE_TYPES = CUSTOM_NODE_TYPE_IDS
 
 // Debounce helper
 function debounce<T extends (...args: unknown[]) => unknown>(fn: T, ms: number): T {

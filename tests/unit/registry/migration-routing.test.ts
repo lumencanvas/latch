@@ -23,3 +23,19 @@ describe('bespoke→ui migrated nodes are de-registered from BOTH routing lists'
     })
   }
 })
+
+/**
+ * The two lists must not merely both-exclude the migrated nodes — they must be the SAME set. Both now
+ * derive from the one source (`definition.component`), so a bespoke node added later is routed correctly
+ * on BOTH the fresh-add path and the persistence-rehydration path without a second hand-edit. (This
+ * killed a latent drift where gamepad-visual/dispatch/emulator were in components.ts but missing from
+ * the hand-maintained persistence list — only masked by the `healNodeTypes` fixup on flow activation.)
+ */
+describe('the two routing lists are one source of truth', () => {
+  it('PERSISTENCE_SPECIAL_NODE_TYPES is the SAME array as CUSTOM_NODE_TYPE_IDS (an alias, not a copy)', () => {
+    // Reference identity, not value equality: a value-equal copy (`[...CUSTOM_NODE_TYPE_IDS]`) or a
+    // re-hardcoded list would silently drift if the source ever changed. `.toBe` fails the instant the
+    // alias is replaced by ANY freshly-built array — the exact regression this guards against.
+    expect(PERSISTENCE_SPECIAL_NODE_TYPES).toBe(CUSTOM_NODE_TYPE_IDS)
+  })
+})
