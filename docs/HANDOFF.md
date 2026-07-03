@@ -6,6 +6,43 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-02 (later 40) — Phase 3 bullet 2: first real bespoke→`ui` migration (envelope-visual)
+
+Migrated the first shipping bespoke node off its SFC onto the declarative `ui` path (maintainer picked
+`envelope-visual` as the cleanest first target — its whole body was an EnvelopeEditor). Two source edits:
+(1) added `ui: { rows: [{ widgets: [{ type: 'env', props: { fields: ENV_ORDER } }] }] }` to the definition;
+(2) removed `envelope-visual` from `registry/components.ts`, so `resolveVueFlowType` returns `custom` →
+BaseNode renders `<NodeView>` (the env aggregate) instead of the bespoke SFC. `EnvelopeVisualNode.vue` is
+now orphaned (left in place + still exported for easy revert; archive it on accept).
+
+**Behavioral parity, not pixel parity (design Q3).** New `envelope-visual-migration.test.ts` (4 tests,
+mutation-verified): the definition declares the env aggregate on the 4 ADSR controls in ENV_ORDER; it's no
+longer in `CUSTOM_NODE_TYPE_IDS`; NodeView assembles EnvelopeData from the 4 controls and disperses edits
+back to attack/decay/sustain/release; absent values fall back to the control defaults — matching the old
+`envelopeData` getter/setter exactly. Mutants killed: ui field-order swap (reds 3), re-registration (reds
+the routing test).
+
+**Browser check.** Added the node live (Playwright) and confirmed the **properties panel renders
+`<NodeView>` + the EnvelopeEditor canvas** (`hasUi` true) with **0 raw number inputs** (the 4 ADSR controls
+are subsumed by the aggregate) and **0 page errors**. Note: freshly-added nodes don't paint their canvas
+*body* in headless — but an untouched `gain` node behaves identically, so that's a pre-existing
+added-node/headless quirk, NOT a migration regression (verified side-by-side; not chased).
+
+**One UX change to note (flagged for accept/revert).** Because the `ui` applies to both surfaces, the
+properties panel now shows the EnvelopeEditor (drag) instead of the 4 typeable ADSR number inputs it
+auto-layouted before. For this drag-first node it's arguably better (consistent editor canvas+panel), but
+it removes numeric entry from the panel. One-line revert if undesired (the current `ui` schema can't put
+env-on-node + numbers-on-panel in one schema — UIWidget has no per-widget surface field, only UISchema does).
+
+typecheck clean · lint 0 err · `test:unit` **1880 → 1884** (+4) · build exit 0 · browser 0 page errors.
+
+**▶ NEXT.** More migrations (each needs a which-node confirm + accept its shell/panel change) — the other
+aggregate-showcase nodes (`parametric-eq`, `wavetable`, `xy-pad`) are the next-cleanest. Then `component?`
+consumption — **blocked on design Q2** (real `Component` import on the definition vs. a string key via a
+registry) — needs a maintainer decision. Then bullet 3 (new control types, drag-to-scrub, control ARIA).
+
+---
+
 ## 2026-07-02 (later 39) — Phase 3 bullet 2: Tier-B complete (eq + wave + xy/XYPad)
 
 Finished the Tier-B aggregate set in `NodeView`. **`eq`** (`EQEditor`, reused): 9 flat controls chunked
