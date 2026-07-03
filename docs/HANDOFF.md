@@ -6,6 +6,37 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 50) — ultracode a11y audit + fixes: control / NodeView / editor surface
+
+A 15-agent workflow audited keyboard/ARIA/focus across the declarative-UI control surface (ControlRenderer,
+NodeView, the 4 canvas editors, PropertiesPanel) → 11 findings, **7 confirmed** by adversarial verify (4
+rejected), all WCAG-grounded and all fixed:
+- **AssetPickerControl** (2.1.1 A) — the opener was a mouse-only `<div>`, a full keyboard lockout of the
+  picker (and everything behind it). Now a real `<button>` (`aria-expanded`/`haspopup`); the clear control
+  moved to a SIBLING button (no nested interactive). Unit-tested (activation opens the picker) + mutation-
+  verified.
+- **Toggle control** (2.1.1 A + 2.4.7 AA) — the checkbox was `display:none` → unfocusable, so every boolean
+  control was keyboard-inoperable. Swapped for the visually-hidden-but-focusable pattern + a focus ring on
+  the faux switch. **Browser-confirmed**: `display:block`, `opacity:0`, receives focus.
+- **Focus rings** (2.4.7 AA) — scoped `:focus{outline:none}` on number/text/select suppressed the global
+  keyboard ring (only a low-contrast border tint remained). Added same-specificity `:focus-visible` rules
+  (later in source order → win for keyboard focus) restoring a 2px ring; mouse focus stays ring-free.
+  **Browser-confirmed**: 2px outline on focus.
+- **EQEditor selection feedback** — never drew the keyboard-selected band as active (divergence from
+  Envelope/Waveform). Added `focused` state + active-band highlight + a watch on the selection (so the
+  canvas tracks Left/Right too).
+- **Readout widget** (1.3.1 A / 4.1.3 AA) — a runtime output is now a named polite `role="status"` region
+  (announced on change); a static control-value readout stays a plain text span (no live-region spam).
+  Unit-tested + mutation-verified.
+- **Waveform preset buttons** (4.1.2 A) — single-letter labels ("S"/"Q") + no state → added `aria-label`
+  (full preset name) + `aria-pressed`. Unit-tested + mutation-verified.
+
+**Deferred:** finding #7 (visible control labels not programmatically associated in BaseNode — LOW; already
+partially mitigated by the `aria-label` pass; a broader label-association refactor). typecheck clean · lint
+0 err · `test:unit` **1963 → 1967** (127 files, +4 a11y tests) · browser smoke 0 real errors.
+
+---
+
 ## 2026-07-03 (later 49) — ultracode pass: finish the generated-index cleanup + adversarial review of the uncommitted diff
 
 A 39-agent workflow (per-category dead-code sweeps → cross-cutting review dimensions → adversarial verify).
