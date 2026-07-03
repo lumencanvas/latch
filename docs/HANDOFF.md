@@ -6,6 +6,36 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 43) — Phase 3 bullet 3: control keyboard + ARIA (a11y)
+
+Started bullet 3 with the no-decision-needed accessibility slice. An ultracode workflow produced
+WCAG-grounded implementation specs for the custom control widgets (the native inputs were already
+keyboard-operable); implemented all three, each keyboard path emitting the SAME event as the pointer
+path with the same clamp/step:
+- **RotaryKnob** — canvas gains `role="slider"`, tabindex, `aria-valuemin/max/now/valuetext` + `aria-label`,
+  keydown (Arrow ±step, Shift/PageUp-Down coarse, Home=min/End=max), `:focus-visible` ring, and
+  `stopPropagation` so arrows don't leak to Vue Flow.
+- **XYPad** — a 2D pad has no native ARIA control, so a single focusable `role="application"` host
+  announcing both axes via `aria-valuetext` + a polite live region; arrow keys move the point (y-up),
+  Shift=bigger, Home=center, End=corner (chosen over nested per-axis sliders to mirror the atomic {x,y}
+  pointer emit — the spec agent justified this).
+- **ControlRenderer** — `:aria-label="control.label"` on all 6 native inputs; the visible label in
+  BaseNode/PropertiesPanel is adjacent text, NOT programmatically associated, so inputs were nameless to AT.
+
+Each widget has a11y tests (roles/attrs + keyboard emits), all mutation-verified (5-mutant battery: knob
+ArrowRight no-op, knob aria-valuenow, xy ArrowUp inversion, xy role, CR aria-label). Knob keyboard also
+confirmed **end-to-end in a browser** (focus → ArrowRight → `aria-valuenow` changes, 0 errors). typecheck
+clean · lint 0 err · `test:unit` **1909 → 1928** (+19) · build 0. (The ControlRenderer spec agent hit the
+StructuredOutput retry cap again — did that analysis inline.)
+
+**▶ NEXT (bullet 3 remainder).** New control TYPES (`range`/`curve`/`gradient` — need real consumers, so
+deferred per the design doc) and **drag-to-scrub** on number inputs (additive, no decision). Then the
+deferred orphan-SFC cleanup + `component?` consumption (blocked on Q2). The aggregate editors
+(Envelope/EQ/Waveform) remain canvas-drag-only (no keyboard) — a harder a11y follow-up (would need
+per-handle focus/arrow control), noted not done.
+
+---
+
 ## 2026-07-02 (later 42) — Phase 3 bullet 2: xy-pad + wavetable migrations + ultracode regression audit
 
 Self-driven ultracode continuation. Migrated the last two aggregate-backed bespoke nodes, then ran an
