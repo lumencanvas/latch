@@ -6,6 +6,25 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 51) — audit of the a11y commits + small cleanup
+
+Adversarial regression audit (read-only agent + inline checks) of the later-50 a11y commits
+(`815af39`/`8f60a2a`/`2ce7b7f`). **Verdict: NO real regressions.** All mouse/pointer paths, visual state,
+layout, and the EQ watch change are behavior-preserving; `:focus-visible` coverage is complete
+(select/number/text × canvas/panel are ringed for keyboard, ring-free for mouse; slider/color/toggle have no
+outline-suppression so they keep the global ring); the AssetPicker clear button (`@click.stop`) still clears
+without toggling the picker; `input:checked + .toggle-track` still drives the faux switch. Two minor items
+fixed:
+- Removed orphaned `.preview-content` CSS (its wrapper `<div>` was dropped in the AssetPicker restructure).
+- Added `position: relative` to `.control-toggle` (both contexts) so the visually-hidden absolute checkbox
+  is contained by its own label rather than anchoring to a far positioned ancestor (robustness).
+
+**Noted-not-done:** the toggle's MOUSE (label-click) path is not unit-tested — the fix is a CSS
+`display:none` removal that happy-dom can't guard (no scoped CSS); it's browser-confirmed in later-50
+instead. typecheck clean · build 0 · a11y tests green.
+
+---
+
 ## 2026-07-03 (later 50) — ultracode a11y audit + fixes: control / NodeView / editor surface
 
 A 15-agent workflow audited keyboard/ARIA/focus across the declarative-UI control surface (ControlRenderer,
