@@ -27,6 +27,52 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const isDrawing = ref(false)
 const lastDrawX = ref<number | null>(null)
 
+// Keyboard a11y (WCAG 2.1.1 / 4.1.2). Freehand curve-drawing is inherently pointer-driven, but the editor
+// must still be keyboard-OPERABLE — like the other canvas editors (XYPad/Envelope/EQ), one focusable
+// role="application" host with an internally SELECTED sample. Adapted to a long sample sequence: the
+// horizontal (index) axis is navigated with Left/Right (±1), PageUp/Down (±8), Home/End (first/last); the
+// vertical (value) axis is adjusted with Up/Down (±step, Shift = coarse). Announced via aria-valuetext.
+// (The 4 preset buttons were already keyboard-accessible and cover the common shapes.)
+const selectedIndex = ref(0)
+const focused = ref(false)
+const VALUE_STEP = 0.05
+
+function clampIndex(i: number): number {
+  return Math.max(0, Math.min(props.sampleCount - 1, i))
+}
+
+/** Announced to screen readers: which sample is selected + its value (e.g. "sample 12/64: 0.35"). */
+const valueText = computed(() => {
+  const i = clampIndex(selectedIndex.value)
+  return `sample ${i + 1}/${props.sampleCount}: ${(samples.value[i] ?? 0).toFixed(2)}`
+})
+
+function adjustSelectedValue(delta: number): void {
+  const i = clampIndex(selectedIndex.value)
+  const newSamples = [...samples.value]
+  let v = newSamples[i] + delta
+  v = Math.max(-1, Math.min(1, v))
+  newSamples[i] = Number(v.toFixed(4)) // kill float dust
+  emit('update:modelValue', { samples: newSamples, preset: 'custom' })
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  const step = e.shiftKey ? VALUE_STEP * 4 : VALUE_STEP
+  switch (e.key) {
+    case 'ArrowRight': selectedIndex.value = clampIndex(selectedIndex.value + 1); break
+    case 'ArrowLeft': selectedIndex.value = clampIndex(selectedIndex.value - 1); break
+    case 'PageDown': selectedIndex.value = clampIndex(selectedIndex.value + 8); break
+    case 'PageUp': selectedIndex.value = clampIndex(selectedIndex.value - 8); break
+    case 'Home': selectedIndex.value = 0; break
+    case 'End': selectedIndex.value = props.sampleCount - 1; break
+    case 'ArrowUp': adjustSelectedValue(step); break
+    case 'ArrowDown': adjustSelectedValue(-step); break
+    default: return
+  }
+  e.preventDefault()
+  e.stopPropagation()
+}
+
 // Presets
 const presets: Record<string, (index: number, total: number) => number> = {
   sine: (i, t) => Math.sin((i / t) * Math.PI * 2),
@@ -141,6 +187,20 @@ function draw() {
       ctx.fill()
     }
   }
+
+  // Highlight the keyboard-selected sample while focused (mirrors the other editors' active handle).
+  if (focused.value) {
+    const i = Math.max(0, Math.min(sampleData.length - 1, selectedIndex.value))
+    const x = padding + (i / (sampleData.length - 1)) * drawW
+    const y = centerY - sampleData[i] * (drawH / 2)
+    ctx.beginPath()
+    ctx.arc(x, y, 4, 0, Math.PI * 2)
+    ctx.fillStyle = props.accentColor
+    ctx.fill()
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 1
+    ctx.stroke()
+  }
 }
 
 function xToSampleIndex(x: number): number {
@@ -217,7 +277,7 @@ function selectPreset(preset: string) {
   emit('update:modelValue', { samples: newSamples, preset: preset as WaveformData['preset'] })
 }
 
-watch(() => props.modelValue, draw, { deep: true })
+watch([() => props.modelValue, selectedIndex, focused], draw, { deep: true })
 
 onMounted(() => {
   draw()
@@ -234,8 +294,20 @@ onUnmounted(() => {
     <canvas
       ref="canvas"
       class="waveform-canvas"
+      role="application"
+      tabindex="0"
+      aria-roledescription="waveform"
+      aria-label="Waveform"
+      :aria-valuetext="valueText"
       @mousedown="onMouseDown"
+      @keydown="onKeydown"
+      @focus="focused = true"
+      @blur="focused = false"
     />
+    <span
+      class="sr-only"
+      aria-live="polite"
+    >{{ valueText }}</span>
     <div class="waveform-presets">
       <button
         v-for="preset in ['sine', 'square', 'sawtooth', 'triangle']"
@@ -261,6 +333,27 @@ onUnmounted(() => {
   border: 1px solid #333;
   border-radius: 4px;
   cursor: crosshair;
+}
+
+.waveform-canvas:focus {
+  outline: none;
+}
+
+.waveform-canvas:focus-visible {
+  outline: 2px solid var(--color-primary-400, #22c55e);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .waveform-presets {
