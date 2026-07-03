@@ -277,6 +277,7 @@ onUnmounted(() => {
 }
 
 .control-toggle.ctx-canvas {
+  position: relative; /* contain the absolutely-positioned (visually hidden) checkbox */
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -451,6 +452,7 @@ onUnmounted(() => {
 }
 
 .control-toggle.ctx-panel {
+  position: relative; /* contain the absolutely-positioned (visually hidden) checkbox */
   display: flex;
   align-items: center;
   cursor: pointer;

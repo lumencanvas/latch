@@ -216,13 +216,6 @@ function togglePicker() {
   border-radius: var(--radius-xs);
 }
 
-.preview-content {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-}
-
 .preview-image {
   width: 32px;
   height: 32px;
