@@ -283,8 +283,14 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+/* Visually hidden but still focusable + operable by keyboard (NOT display:none, which drops it from the
+   tab order). The faux switch (.toggle-track) is driven by the real checkbox's :checked state. */
 .control-toggle.ctx-canvas input {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
 }
 
 .control-toggle.ctx-canvas .toggle-track {
@@ -451,7 +457,11 @@ onUnmounted(() => {
 }
 
 .control-toggle.ctx-panel input {
-  display: none;
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
 }
 
 .control-toggle.ctx-panel .toggle-track {
@@ -546,5 +556,24 @@ onUnmounted(() => {
   font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   text-transform: uppercase;
+}
+
+/* Keyboard focus rings (WCAG 2.4.7). The per-control `:focus { outline: none }` rules above clear the
+   ring for MOUSE focus (keeping just the border tint); these same-specificity `:focus-visible` rules come
+   later in source order so they win for KEYBOARD focus, restoring a visible ring. The toggle's ring sits
+   on the faux switch since the real checkbox is visually hidden. */
+.control-select.ctx-canvas:focus-visible,
+.control-number.ctx-canvas:focus-visible,
+.control-text.ctx-canvas:focus-visible,
+.control-select.ctx-panel:focus-visible,
+.control-number.ctx-panel:focus-visible,
+.control-text.ctx-panel:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 1px;
+}
+
+.control-toggle input:focus-visible + .toggle-track {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 2px;
 }
 </style>
