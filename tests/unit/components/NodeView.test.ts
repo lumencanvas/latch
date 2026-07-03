@@ -6,6 +6,9 @@ import type { NodeDefinition, UISchema } from '@/stores/nodes'
 import NodeView from '@/components/controls/NodeView.vue'
 import RotaryKnob from '@/components/controls/RotaryKnob.vue'
 import EnvelopeEditor from '@/components/controls/EnvelopeEditor.vue'
+import EQEditor from '@/components/controls/EQEditor.vue'
+import WaveformEditor from '@/components/controls/WaveformEditor.vue'
+import XYPad from '@/components/controls/XYPad.vue'
 
 /**
  * NodeView is the single interpreter for the declarative `ui` schema (Phase 3 bullet 2, Tier A).
@@ -102,9 +105,8 @@ describe('NodeView (Tier A interpreter)', () => {
     // disperse: an edit fans out one update(controlId, value) per field
     env.vm.$emit('update:modelValue', { attack: 0.9, decay: 0.2, sustain: 0.5, release: 0.3 })
     const updates = w.emitted('update') as unknown[][]
-    expect(updates).toContainEqual(['a', 0.9])
-    expect(updates).toContainEqual(['r', 0.3])
-    expect(updates).toHaveLength(4)
+    // exact ordered fan-out — a middle-field transposition (e.g. decay/sustain swap) must not survive
+    expect(updates).toEqual([['a', 0.9], ['d', 0.2], ['s', 0.5], ['r', 0.3]])
   })
 
   it('aggregate (env): missing fields fall back to the control default, then 0', () => {
@@ -125,5 +127,129 @@ describe('NodeView (Tier A interpreter)', () => {
       sustain: 0.5, // control default
       release: 0, // absent value + no default → 0
     })
+  })
+
+  it('aggregate (eq): assembles 3 bands from 9 flat controls (chunked by 3) and fans updates back out', () => {
+    const fields = ['freq1', 'gain1', 'q1', 'freq2', 'gain2', 'q2', 'freq3', 'gain3', 'q3']
+    const ui = { rows: [{ widgets: [{ type: 'eq', bind: '', props: { fields } }] }] }
+    const values = {
+      freq1: 200, gain1: 1, q1: 0.5,
+      freq2: 1000, gain2: 2, q2: 1,
+      freq3: 5000, gain3: 3, q3: 2,
+    }
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition: def(ui), values, surface: 'panel' },
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, EQEditor: true } },
+    })
+    const eq = w.findComponent(EQEditor)
+    // assemble: positional fields → { bands: [{frequency,gain,q}×3] } (mirrors bespoke _parametric-eq)
+    expect(eq.props('modelValue')).toEqual({
+      bands: [
+        { frequency: 200, gain: 1, q: 0.5 },
+        { frequency: 1000, gain: 2, q: 1 },
+        { frequency: 5000, gain: 3, q: 2 },
+      ],
+    })
+    // disperse: an edit fans out one update(controlId, value) per field — 9 total, positionally
+    eq.vm.$emit('update:modelValue', {
+      bands: [
+        { frequency: 250, gain: 1, q: 0.5 },
+        { frequency: 1000, gain: 2, q: 1 },
+        { frequency: 5000, gain: 3, q: 4 },
+      ],
+    })
+    const updates = w.emitted('update') as unknown[][]
+    // exact ordered 9-tuple — catches any band/key axis transposition, not just the two corners
+    expect(updates).toEqual([
+      ['freq1', 250], ['gain1', 1], ['q1', 0.5],
+      ['freq2', 1000], ['gain2', 2], ['q2', 1],
+      ['freq3', 5000], ['gain3', 3], ['q3', 4],
+    ])
+  })
+
+  it('aggregate (eq): missing fields fall back to the control default, then 0', () => {
+    const fields = ['freq1', 'gain1', 'q1', 'freq2', 'gain2', 'q2', 'freq3', 'gain3', 'q3']
+    const definition = def({ rows: [{ widgets: [{ type: 'eq', bind: '', props: { fields } }] }] })
+    definition.controls = fields.map((id) =>
+      id === 'freq2'
+        ? { id, type: 'number', label: id } // no default → final 0 fallback
+        : { id, type: 'number', label: id, default: id.startsWith('freq') ? 1000 : 1 }
+    )
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition, values: { gain1: 7 }, surface: 'panel' }, // only gain1 present
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, EQEditor: true } },
+    })
+    expect(w.findComponent(EQEditor).props('modelValue')).toEqual({
+      bands: [
+        { frequency: 1000, gain: 7, q: 1 }, // freq1 default, gain1 present, q1 default
+        { frequency: 0, gain: 1, q: 1 },    // freq2 no default → 0
+        { frequency: 1000, gain: 1, q: 1 },
+      ],
+    })
+  })
+
+  it('aggregate (wave): assembles WaveformData from a samples field + a preset field, fans both out', () => {
+    const ui = { rows: [{ widgets: [{ type: 'wave', bind: '', props: { fields: ['waveform', 'preset'] } }] }] }
+    const w = mount(NodeView, {
+      props: {
+        nodeId: 'n1',
+        definition: def(ui),
+        values: { waveform: [0, 0.5, 1, 0.5], preset: 'custom' },
+        surface: 'panel',
+      },
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, WaveformEditor: true } },
+    })
+    const wave = w.findComponent(WaveformEditor)
+    // assemble: samples ← field[0] (array), preset ← field[1] (string) — mirrors bespoke _wavetable
+    expect(wave.props('modelValue')).toEqual({ samples: [0, 0.5, 1, 0.5], preset: 'custom' })
+    // disperse: an edit fans out samples then preset — 2 updates
+    wave.vm.$emit('update:modelValue', { samples: [1, 1, 1, 1], preset: 'square' })
+    const updates = w.emitted('update') as unknown[][]
+    expect(updates).toEqual([['waveform', [1, 1, 1, 1]], ['preset', 'square']])
+  })
+
+  it('aggregate (wave): missing fields fall back to control defaults, then []/sine', () => {
+    const definition = def({ rows: [{ widgets: [{ type: 'wave', bind: '', props: { fields: ['waveform', 'preset'] } }] }] })
+    definition.controls = [
+      { id: 'waveform', type: 'number', label: 'W' }, // no default → [] fallback
+      { id: 'preset', type: 'select', label: 'P', default: 'triangle' },
+    ]
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition, values: {}, surface: 'panel' }, // both absent
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, WaveformEditor: true } },
+    })
+    expect(w.findComponent(WaveformEditor).props('modelValue')).toEqual({
+      samples: [], // absent + no array default → []
+      preset: 'triangle', // control default
+    })
+  })
+
+  it('aggregate (xy): assembles {x,y} from 2 flat controls and fans updates back out', () => {
+    const ui = { rows: [{ widgets: [{ type: 'xy', bind: '', props: { fields: ['normalizedX', 'normalizedY'] } }] }] }
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition: def(ui), values: { normalizedX: 0.25, normalizedY: 0.75 }, surface: 'panel' },
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, XYPad: true } },
+    })
+    const xy = w.findComponent(XYPad)
+    // assemble: {x,y} ← positional control fields (mirrors bespoke xy-pad normalizedX/normalizedY)
+    expect(xy.props('modelValue')).toEqual({ x: 0.25, y: 0.75 })
+    // disperse: an edit fans out one update(controlId, value) per axis
+    xy.vm.$emit('update:modelValue', { x: 0.1, y: 0.9 })
+    const updates = w.emitted('update') as unknown[][]
+    expect(updates).toEqual([['normalizedX', 0.1], ['normalizedY', 0.9]])
+  })
+
+  it('aggregate (xy): missing fields fall back to the control default (0.5), then 0', () => {
+    const definition = def({ rows: [{ widgets: [{ type: 'xy', bind: '', props: { fields: ['normalizedX', 'normalizedY'] } }] }] })
+    definition.controls = [
+      // non-round default so the assertion can only pass by READING the control default, not a hardcoded 0.5
+      { id: 'normalizedX', type: 'number', label: 'X', default: 0.42 },
+      { id: 'normalizedY', type: 'number', label: 'Y' }, // no default → final 0 fallback
+    ]
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition, values: {}, surface: 'panel' }, // both absent
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true, XYPad: true } },
+    })
+    expect(w.findComponent(XYPad).props('modelValue')).toEqual({ x: 0.42, y: 0 })
   })
 })

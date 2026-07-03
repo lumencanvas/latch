@@ -16,6 +16,9 @@ import RotaryKnob from '@/components/controls/RotaryKnob.vue'
 import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
 import ConnectionSelect from '@/components/connections/ConnectionSelect.vue'
 import EnvelopeEditor, { type EnvelopeData } from '@/components/controls/EnvelopeEditor.vue'
+import EQEditor, { type EQBand, type EQData } from '@/components/controls/EQEditor.vue'
+import WaveformEditor, { type WaveformData } from '@/components/controls/WaveformEditor.vue'
+import XYPad, { type XYValue } from '@/components/controls/XYPad.vue'
 
 const props = defineProps<{
   nodeId: string
@@ -107,17 +110,26 @@ function aggregateFields(w: UIWidget): string[] {
   return Array.isArray(f) ? f.map((x) => String(x)) : []
 }
 
+/**
+ * One aggregate field, read as a number: bound value → the control's declared default → 0. Mirrors
+ * each bespoke node's per-field defaults, so a missing field never collapses to a uniform 0. Shared
+ * by the env and eq adapters (both fan positional scalar controls into a structured widget value).
+ */
+function fieldNumber(fields: string[], i: number): number {
+  const v = props.values[fields[i]]
+  if (typeof v === 'number') return v
+  const def = controlFor(fields[i])?.default
+  return typeof def === 'number' ? def : 0
+}
+
 function envValue(w: UIWidget): EnvelopeData {
   const fields = aggregateFields(w)
-  // A field absent from `values` falls back to its control's declared default (mirrors the bespoke
-  // node's per-field defaults), then 0 — never a uniform 0 that would collapse attack/decay.
-  const at = (i: number): number => {
-    const v = props.values[fields[i]]
-    if (typeof v === 'number') return v
-    const def = controlFor(fields[i])?.default
-    return typeof def === 'number' ? def : 0
+  return {
+    attack: fieldNumber(fields, 0),
+    decay: fieldNumber(fields, 1),
+    sustain: fieldNumber(fields, 2),
+    release: fieldNumber(fields, 3),
   }
-  return { attack: at(0), decay: at(1), sustain: at(2), release: at(3) }
 }
 
 function onEnv(w: UIWidget, data: EnvelopeData): void {
@@ -125,6 +137,75 @@ function onEnv(w: UIWidget, data: EnvelopeData): void {
   ENV_ORDER.forEach((k, i) => {
     if (fields[i]) emit('update', fields[i], data[k])
   })
+}
+
+// eq: 9 flat controls chunked by 3 ↔ { bands: [{frequency,gain,q}×3] } (mirrors bespoke _parametric-eq:
+// band b ← [freq_(b+1), gain_(b+1), q_(b+1)]). Positional, like env.
+const EQ_BAND_KEYS: (keyof EQBand)[] = ['frequency', 'gain', 'q']
+const EQ_BANDS = 3
+
+function eqValue(w: UIWidget): EQData {
+  const fields = aggregateFields(w)
+  const bands: EQBand[] = []
+  for (let b = 0; b < EQ_BANDS; b++) {
+    bands.push({
+      frequency: fieldNumber(fields, b * 3),
+      gain: fieldNumber(fields, b * 3 + 1),
+      q: fieldNumber(fields, b * 3 + 2),
+    })
+  }
+  return { bands }
+}
+
+function onEq(w: UIWidget, data: EQData): void {
+  const fields = aggregateFields(w)
+  data.bands.forEach((band, b) => {
+    EQ_BAND_KEYS.forEach((k, j) => {
+      const idx = b * 3 + j
+      if (fields[idx]) emit('update', fields[idx], band[k])
+    })
+  })
+}
+
+// wave: 2 heterogeneous fields ↔ { samples[], preset } (mirrors bespoke _wavetable: waveform↔samples,
+// preset↔preset). Unlike env/eq the fields are non-numeric, so fall back per-type: array default → [],
+// string default → 'sine'.
+function waveValue(w: UIWidget): WaveformData {
+  const fields = aggregateFields(w)
+  const rawSamples = props.values[fields[0]]
+  const defSamples = controlFor(fields[0])?.default
+  const samples = Array.isArray(rawSamples)
+    ? (rawSamples as number[])
+    : Array.isArray(defSamples)
+      ? (defSamples as number[])
+      : []
+  const rawPreset = props.values[fields[1]]
+  const defPreset = controlFor(fields[1])?.default
+  const preset = typeof rawPreset === 'string'
+    ? rawPreset
+    : typeof defPreset === 'string'
+      ? defPreset
+      : 'sine'
+  return { samples, preset: preset as WaveformData['preset'] }
+}
+
+function onWave(w: UIWidget, data: WaveformData): void {
+  const fields = aggregateFields(w)
+  if (fields[0]) emit('update', fields[0], data.samples)
+  if (fields[1]) emit('update', fields[1], data.preset)
+}
+
+// xy: 2 flat controls ↔ { x, y } (both 0..1). Positional, like env; mirrors bespoke xy-pad's
+// normalizedX/normalizedY (range min/max stays as separate primitive controls, per the design).
+function xyValue(w: UIWidget): XYValue {
+  const fields = aggregateFields(w)
+  return { x: fieldNumber(fields, 0), y: fieldNumber(fields, 1) }
+}
+
+function onXy(w: UIWidget, data: XYValue): void {
+  const fields = aggregateFields(w)
+  if (fields[0]) emit('update', fields[0], data.x)
+  if (fields[1]) emit('update', fields[1], data.y)
 }
 </script>
 
@@ -205,6 +286,27 @@ function onEnv(w: UIWidget, data: EnvelopeData): void {
               v-else-if="w.type === 'env'"
               :model-value="envValue(w)"
               @update:model-value="(v: EnvelopeData) => onEnv(w, v)"
+            />
+
+            <!-- Parametric EQ (Tier-B aggregate: 3 bands ↔ 9 flat controls) -->
+            <EQEditor
+              v-else-if="w.type === 'eq'"
+              :model-value="eqValue(w)"
+              @update:model-value="(v: EQData) => onEq(w, v)"
+            />
+
+            <!-- Wavetable (Tier-B aggregate: samples[] + preset ↔ 2 flat controls) -->
+            <WaveformEditor
+              v-else-if="w.type === 'wave'"
+              :model-value="waveValue(w)"
+              @update:model-value="(v: WaveformData) => onWave(w, v)"
+            />
+
+            <!-- XY pad (Tier-B aggregate: {x,y} ↔ 2 flat controls) -->
+            <XYPad
+              v-else-if="w.type === 'xy'"
+              :model-value="xyValue(w)"
+              @update:model-value="(v: XYValue) => onXy(w, v)"
             />
           </div>
         </template>
