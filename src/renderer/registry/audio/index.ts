@@ -15,9 +15,9 @@ export { audioDistortionNode } from './audio-distortion'
 export { audioBitcrusherNode } from './audio-bitcrusher'
 
 // Custom UI audio nodes
-export { envelopeVisualNode, EnvelopeVisualNode } from './envelope-visual'
-export { parametricEqNode, ParametricEqNode } from './parametric-eq'
-export { wavetableNode, WavetableNode } from './wavetable'
+export { envelopeVisualNode } from './envelope-visual'
+export { parametricEqNode } from './parametric-eq'
+export { wavetableNode } from './wavetable'
 export { synthNode, SynthNode } from './_synth'
 
 import { oscillatorNode } from './oscillator'

@@ -46,6 +46,3 @@ export const parametricEqNode: NodeDefinition = {
     pairsWith: ['audio-player', 'gain', 'audio-output', 'reverb', 'filter'],
   },
 }
-
-// Export the custom node component
-export { default as ParametricEqNode } from './ParametricEqNode.vue'

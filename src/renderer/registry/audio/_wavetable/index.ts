@@ -47,6 +47,3 @@ export const wavetableNode: NodeDefinition = {
     pairsWith: ['gain', 'filter', 'envelope', 'audio-output', 'svf-filter'],
   },
 }
-
-// Export the custom node component
-export { default as WavetableNode } from './WavetableNode.vue'

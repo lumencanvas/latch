@@ -40,6 +40,3 @@ export const envelopeVisualNode: NodeDefinition = {
     pairsWith: ['oscillator', 'gain', 'filter', 'synth', 'beat-detect'],
   },
 }
-
-// Export the custom node component
-export { default as EnvelopeVisualNode } from './EnvelopeVisualNode.vue'

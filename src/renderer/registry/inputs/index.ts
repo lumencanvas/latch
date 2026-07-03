@@ -5,7 +5,7 @@ export { audioInputNode } from './audio-input'
 
 // Custom UI input nodes
 export { triggerNode, TriggerNode } from './trigger'
-export { xyPadNode, XYPadNode } from './xy-pad'
+export { xyPadNode } from './xy-pad'
 export { textboxNode, TextboxNode } from './textbox'
 export { knobNode, KnobNode } from './knob'
 export { keyboardNode, KeyboardNode } from './keyboard'
