@@ -6,6 +6,20 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 45) — Phase 3 bullet 2: orphan-SFC cleanup (migrations fully finished)
+
+Deleted the 4 now-dead bespoke `.vue` components (EnvelopeVisualNode/ParametricEqNode/WavetableNode/
+XYPadNode) left by the `ui` migrations — unimported since they left `components.ts`, kept only as
+revert-safety while the migrations were verified. An ultracode workflow (reference sweep + contract-gate
+impact, both agents `safe=true`, cross-checked against my own grep + fixture read) confirmed no real
+consumer and no gate edits. Removed the 4 files + trimmed the component symbols out of their re-export
+chains (leaf `index.ts` → wrapper `.ts` → category barrels), keeping every node DEFINITION export intact.
+Pure dead-code removal (the `.vue` were already tree-shaken; no runtime path touched) — typecheck clean ·
+lint 0 err · `test:unit` **1935** (unchanged) · build 0 · registry/contract gates green. **Bullet 2 is now
+fully finished** (no dead SFCs). The other ~24 bespoke SFCs stay by design.
+
+---
+
 ## 2026-07-03 (later 44) — Phase 3 bullet 3: drag-to-scrub on the number control
 
 Added Blender/AE-style drag-to-scrub to the shared `<input type="number">` in `ControlRenderer`

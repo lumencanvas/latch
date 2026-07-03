@@ -2,7 +2,7 @@
 
 Copy everything in the block below as your first message to a fresh Claude Code
 session to continue LATCH with full context.
-(Last updated 2026-07-03 — HEAD `21e662b`; tree clean & green; 16 commits this session, all committed.)
+(Last updated 2026-07-03 — HEAD `3d0848a`; tree clean & green; 17 commits this session, all committed.)
 
 ---
 
@@ -31,7 +31,7 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
 1. **New control TYPES** (`range`/`curve`/`gradient`) — need a real node consumer; deferred per the design doc until one exists.
 2. **Canvas-editor keyboard** (Envelope/EQ/Waveform aggregate editors) — still pointer-only; a harder a11y follow-up (per-handle focus + arrow control). Deferred.
 3. **`component?` consumption** — BLOCKED on design **Q2** (decide the shape first). Then make resolution read `definition.component` + `components.ts` derive from it; guard: registry set unchanged.
-4. **Orphan-SFC cleanup** (nice-to-have): delete the 4 now-unused bespoke `.vue` (EnvelopeVisualNode/ParametricEqNode/WavetableNode/XYPadNode) + their re-export chains — cascades into the `public-exports` contract gate, so update that fixture too. Harmless (tree-shaken) meanwhile.
+   (Orphan-SFC cleanup is DONE — the 4 migrated nodes' dead `.vue` were deleted; bullet 2 is fully finished.)
 - The other ~24 bespoke SFCs (mediapipe ×7, emulator, function, keyboard, gamepad-visual, synth, step-sequencer, dispatch, monitor/oscilloscope/graph/equalizer, main-output, trigger, textbox, knob) legitimately keep `component?` — live surfaces / raw input / bespoke geometry, NOT migration candidates.
 
 ## HOW TO WORK
