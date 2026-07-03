@@ -2,13 +2,13 @@
 
 Copy everything in the block below as your first message to a fresh Claude Code
 session to continue LATCH with full context.
-(Last updated 2026-07-03 — HEAD `3fdfc7c`; tree clean & green; 13 commits this session, all committed.)
+(Last updated 2026-07-03 — HEAD `21e662b`; tree clean & green; 16 commits this session, all committed.)
 
 ---
 
 ultrathink You're continuing **Phase 3** of LATCH — a free/open web+desktop node-based creative-coding tool (Vue 3 + TS + Vite, Electron Forge) at `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format` (HEAD `3fdfc7c`). **Phases 0–2 done; Phase 3 bullets 1 + 2 DONE; bullet 3 started (control keyboard + ARIA done).** Tree is CLEAN and green. Get oriented before touching code.
 
-Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing any-warns ok) · `test:unit` **1928 pass + 11 todo** (122 files) · `build` ok.
+Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing any-warns ok) · `test:unit` **1935 pass + 11 todo** (122 files) · `build` ok.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, ever** (history/PRs read as Moheeb Zara's). **Commit only when asked.** Stay on the branch. Each step ends green. **Never assume — read the real code / verify against the actual git original** (this saved wavetable: reading the executor proved the new `waveform` control is runtime-safe). Honor `strategy/05` DON'T-OVERCLAIM.
@@ -25,13 +25,13 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
   - **All 4 aggregate-backed bespoke nodes MIGRATED** to `ui` (off `components.ts` → BaseNode+NodeView): `envelope-visual`(env), `parametric-eq`(eq), `xy-pad`(xy, multi-row: pad+readouts+range), `wavetable`(wave — needed a data-only `waveform` control for the bare-`node.data`-key blocker; runtime-safe, samples used only when preset==='custom'). Each has a behavioral-parity test (`tests/unit/registry/*-migration.test.ts`), mutation-verified + browser-confirmed.
   - **An ultracode audit caught + fixed 3 regressions** the per-migration tests missed (commit `e7b1f9b`): (1) node-drag hijacked editor drags → `@mousedown.stop` on `.nv-widget`; (2) persisted nodes broke on reload — a SECOND routing list `PERSISTENCE_SPECIAL_NODE_TYPES` in `usePersistence.toFlowState` still named them → removed (test pins the two-list invariant); (3) `ui` audio nodes compacted to an icon → `isCompactNode` now exempts `hasUi`.
 - **Bullet 3 STARTED — control keyboard + ARIA DONE** (commit `ae23ce9`): RotaryKnob (`role=slider` + keydown Arrow/Shift/Page/Home/End + focus ring), XYPad (`role=application` 2D keyboard + `aria-valuetext` + live region), ControlRenderer (`:aria-label` on all 6 native inputs). WCAG-spec'd via workflow, mutation-verified, knob confirmed in-browser.
+- **Bullet 3 — drag-to-scrub DONE** (commit `21e662b`): the shared number input scrubs on horizontal drag. Safe-by-design (risk-spec'd via workflow): mousedown never preventDefaults, a >4px threshold proves scrub intent so click-to-edit is preserved; absolute mousedown-value+dx mapping, clamp only against DECLARED finite min/max (reuses `clampControlNumber`'s guard — an unbounded control must not clamp), Shift=fine, leak-safe teardown. Browser-confirmed (click focuses; drag scrubs 0→15).
 
 ## WHAT'S NEXT — bullet-3 remainder + deferred bullet-2 items (each flagged)
-1. **drag-to-scrub** on number inputs — additive, but the number input in `ControlRenderer` is shared by ~566 controls → get the maintainer's UX call (activation gesture, sensitivity) before touching that hot path; must NOT break click-to-edit.
-2. **New control TYPES** (`range`/`curve`/`gradient`) — need a real node consumer; deferred per the design doc until one exists.
-3. **Canvas-editor keyboard** (Envelope/EQ/Waveform aggregate editors) — still pointer-only; a harder a11y follow-up (per-handle focus + arrow control). Deferred.
-4. **`component?` consumption** — BLOCKED on design **Q2** (decide the shape first). Then make resolution read `definition.component` + `components.ts` derive from it; guard: registry set unchanged.
-5. **Orphan-SFC cleanup** (nice-to-have): delete the 4 now-unused bespoke `.vue` (EnvelopeVisualNode/ParametricEqNode/WavetableNode/XYPadNode) + their re-export chains — cascades into the `public-exports` contract gate, so update that fixture too. Harmless (tree-shaken) meanwhile.
+1. **New control TYPES** (`range`/`curve`/`gradient`) — need a real node consumer; deferred per the design doc until one exists.
+2. **Canvas-editor keyboard** (Envelope/EQ/Waveform aggregate editors) — still pointer-only; a harder a11y follow-up (per-handle focus + arrow control). Deferred.
+3. **`component?` consumption** — BLOCKED on design **Q2** (decide the shape first). Then make resolution read `definition.component` + `components.ts` derive from it; guard: registry set unchanged.
+4. **Orphan-SFC cleanup** (nice-to-have): delete the 4 now-unused bespoke `.vue` (EnvelopeVisualNode/ParametricEqNode/WavetableNode/XYPadNode) + their re-export chains — cascades into the `public-exports` contract gate, so update that fixture too. Harmless (tree-shaken) meanwhile.
 - The other ~24 bespoke SFCs (mediapipe ×7, emulator, function, keyboard, gamepad-visual, synth, step-sequencer, dispatch, monitor/oscilloscope/graph/equalizer, main-output, trigger, textbox, knob) legitimately keep `component?` — live surfaces / raw input / bespoke geometry, NOT migration candidates.
 
 ## HOW TO WORK

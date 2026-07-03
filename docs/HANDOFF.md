@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 44) — Phase 3 bullet 3: drag-to-scrub on the number control
+
+Added Blender/AE-style drag-to-scrub to the shared `<input type="number">` in `ControlRenderer`
+(used by ~566 controls), spec'd + adversarially risk-analysed via an ultracode workflow (verdict
+**implement-with-care**). Safe-by-design so it can't regress the hot path:
+- **Click-to-edit preserved** — mousedown NEVER preventDefaults; preventDefault is deferred until a >4px
+  horizontal move proves scrub intent, so a plain click still focuses + places the caret (double-click,
+  caret-drag untouched). Browser-confirmed: click focuses the field, a horizontal drag scrubs it (0→15).
+- Value maps **absolutely** (mousedown value + total dx, reversible), snapped to step, clamped ONLY against
+  **declared finite** min/max — both optional here, so it reuses `clampControlNumber`'s typeof-guard rather
+  than the knob's unconditional clamp (which would NaN-poison unbounded controls). Shift = finer.
+- Coexists with the canvas node-drag guard (`onControlMousedown`) + the blur-clamp; adds NO keydown handler
+  (native arrow increment intact); `ew-resize` cursor on hover-when-unfocused; window listeners removed on
+  mouseup + `onUnmounted` (leak-safe across the ~566 instances).
+- 7 tests (threshold/click passthrough, absolute mapping, finite-only clamp, unbounded non-NaN, Shift-fine,
+  unmount teardown), all mutation-verified. typecheck clean · lint 0 err · `test:unit` **1928 → 1935** ·
+  build 0 · browser 0 errors. (The design spec agent hit the StructuredOutput cap; the risk agent's spec was
+  complete, so I implemented from it.)
+
+**▶ NEXT (bullet-3 remainder).** New control TYPES (`range`/`curve`/`gradient` — need consumers) and canvas
+aggregate-editor keyboard (Envelope/EQ/Waveform — harder) are the remaining a11y/control items. Then the
+deferred orphan-SFC cleanup + `component?` consumption (blocked on Q2).
+
+---
+
 ## 2026-07-03 (later 43) — Phase 3 bullet 3: control keyboard + ARIA (a11y)
 
 Started bullet 3 with the no-decision-needed accessibility slice. An ultracode workflow produced
