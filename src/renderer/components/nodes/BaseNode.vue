@@ -265,6 +265,10 @@ const isCompactNode = computed(() => {
   // Control nodes should never be compact
   if (controlNodeTypes.includes(nodeType)) return false
 
+  // A node with a declarative `ui` schema must render its NodeView body (e.g. the migrated
+  // audio editor nodes envelope-visual/parametric-eq/wavetable), not be compacted to an icon.
+  if (hasUi.value) return false
+
   // Nodes with texture output or a body preview need the body, not compact
   if (hasTextureOutput.value) return false
   if (nodePreview.value) return false

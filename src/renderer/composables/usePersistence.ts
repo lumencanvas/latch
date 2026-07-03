@@ -4,6 +4,21 @@ import { useUIStore } from '@/stores/ui'
 import { useConnectionsStore } from '@/stores/connections'
 import { flowStorage, settingsStorage, initializeDatabase, type PersistedFlow } from '@/services/database'
 
+/**
+ * Node types that still have their own bespoke Vue component, used by `toFlowState` to keep the Vue
+ * Flow `type` on rehydration from IndexedDB. This is the SECOND routing list alongside
+ * `registry/components.ts` (`CUSTOM_NODE_TYPE_IDS`) — a node migrated to a declarative `ui` schema must
+ * be absent from BOTH so persisted and freshly-added instances agree (→ 'custom' → BaseNode + NodeView).
+ * (Exported so a test can pin that invariant.)
+ */
+export const PERSISTENCE_SPECIAL_NODE_TYPES = [
+  'main-output', 'trigger', 'monitor', 'oscilloscope', 'graph', 'equalizer',
+  'textbox', 'knob', 'keyboard', 'step-sequencer',
+  'mediapipe-hand', 'mediapipe-face', 'mediapipe-pose', 'mediapipe-object',
+  'mediapipe-segmentation', 'mediapipe-gesture', 'mediapipe-audio',
+  'function', 'synth',
+]
+
 // Debounce helper
 function debounce<T extends (...args: unknown[]) => unknown>(fn: T, ms: number): T {
   let timeoutId: ReturnType<typeof setTimeout> | null = null
@@ -53,14 +68,7 @@ export function usePersistence() {
    * Convert PersistedFlow to FlowState with migration
    */
   function toFlowState(persisted: PersistedFlow): FlowState {
-    // Special node types that have their own Vue components
-    const specialNodeTypes = [
-      'main-output', 'trigger', 'xy-pad', 'monitor', 'oscilloscope', 'graph', 'equalizer',
-      'textbox', 'knob', 'keyboard', 'envelope-visual', 'parametric-eq', 'wavetable', 'step-sequencer',
-      'mediapipe-hand', 'mediapipe-face', 'mediapipe-pose', 'mediapipe-object',
-      'mediapipe-segmentation', 'mediapipe-gesture', 'mediapipe-audio',
-      'function', 'synth',
-    ]
+    const specialNodeTypes = PERSISTENCE_SPECIAL_NODE_TYPES
 
     // Migrate nodes - ensure special nodes have correct Vue Flow type
     const migratedNodes = persisted.nodes.map(node => {

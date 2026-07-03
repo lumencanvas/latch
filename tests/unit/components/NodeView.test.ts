@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import { useRuntimeStore } from '@/stores/runtime'
@@ -91,6 +91,20 @@ describe('NodeView (Tier A interpreter)', () => {
     useRuntimeStore().updateNodeMetrics('n1', { outputValues: { out: 42 } })
     const w = mountView({ rows: [{ widgets: [{ type: 'readout', bind: 'out', source: 'output' }] }] }, {})
     expect(w.get('.nv-readout').text()).toBe('42')
+  })
+
+  it('stops mousedown propagation on widgets (so canvas node-drag does not hijack an editor drag)', () => {
+    const onDoc = vi.fn()
+    document.addEventListener('mousedown', onDoc)
+    const w = mount(NodeView, {
+      props: { nodeId: 'n1', definition: def({ rows: [{ widgets: [{ type: 'slider', bind: 'amount' }] }] }), values: { amount: 3 }, surface: 'node' },
+      global: { stubs: { RotaryKnob: true, AssetPickerControl: true, ConnectionSelect: true } },
+      attachTo: document.body,
+    })
+    w.get('.nv-widget').trigger('mousedown') // bubbles; @mousedown.stop must halt it before document
+    expect(onDoc).not.toHaveBeenCalled()
+    document.removeEventListener('mousedown', onDoc)
+    w.unmount()
   })
 
   it('aggregate (env): assembles EnvelopeData from 4 flat controls and fans updates back out', () => {

@@ -65,6 +65,60 @@ function mountNode() {
   })
 }
 
+// An audio-category node (a COMPACT category) with 4 inline controls. Without `ui` it renders compact
+// (icon-only); with `ui` it must render its NodeView body instead — the migrated audio editor nodes.
+function defAudio(withUi: boolean): NodeDefinition {
+  return {
+    id: withUi ? 'test-audio-ui' : 'test-audio-plain',
+    name: 'Test Audio',
+    version: '1.0.0',
+    category: 'audio',
+    description: '',
+    icon: 'box',
+    platforms: ['web', 'electron'],
+    inputs: [],
+    outputs: [],
+    controls: [
+      { id: 'attack', type: 'number', label: 'A', default: 0.1 },
+      { id: 'decay', type: 'number', label: 'D', default: 0.2 },
+      { id: 'sustain', type: 'number', label: 'S', default: 0.5 },
+      { id: 'release', type: 'number', label: 'R', default: 0.3 },
+    ],
+    ...(withUi
+      ? { ui: { rows: [{ widgets: [{ type: 'env' as const, bind: '', props: { fields: ['attack', 'decay', 'sustain', 'release'] } }] }] } }
+      : {}),
+  }
+}
+
+function mountAudio(withUi: boolean) {
+  useNodesStore().register(defAudio(withUi))
+  const type = withUi ? 'test-audio-ui' : 'test-audio-plain'
+  return mount(BaseNode as unknown as Record<string, unknown>, {
+    props: {
+      id: 'node-1', type, data: { nodeType: type },
+      selected: false, connectable: true, position: { x: 0, y: 0 },
+      dimensions: { width: 100, height: 50 }, dragging: false, resizing: false, zIndex: 0, events: {},
+    },
+    global: { stubs: { Handle: true, NodeConnectionStatus: true, EnvelopeEditor: true } },
+  })
+}
+
+describe('BaseNode compact display vs declarative `ui`', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('a `ui` node in a compact category renders NodeView, not the compact icon body', () => {
+    const w = mountAudio(true)
+    expect(w.find('.node-view').exists()).toBe(true)
+    expect(w.find('.compact-body').exists()).toBe(false)
+  })
+
+  it('the same node WITHOUT `ui` still compacts (guards that the exemption is what flips it)', () => {
+    const w = mountAudio(false)
+    expect(w.find('.compact-body').exists()).toBe(true)
+    expect(w.find('.node-view').exists()).toBe(false)
+  })
+})
+
 describe('BaseNode number controls', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

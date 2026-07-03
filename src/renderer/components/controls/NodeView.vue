@@ -230,9 +230,13 @@ function onXy(w: UIWidget, data: XYValue): void {
           v-for="(w, wi) in row.widgets"
           :key="wi"
         >
+          <!-- @mousedown.stop: on the canvas surface a widget lives inside a draggable Vue Flow node;
+               without this, dragging inside an editor (envelope/waveform curve, xy pad) would drag the
+               NODE instead of editing. The bespoke SFCs wrapped their editors the same way. -->
           <div
             v-if="isVisible(w.when)"
             class="nv-widget"
+            @mousedown.stop
           >
             <label
               v-if="w.label"
