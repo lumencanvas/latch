@@ -22,6 +22,14 @@ export const envelopeVisualNode: NodeDefinition = {
     { id: 'sustain', type: 'number', label: 'Sustain', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'release', type: 'number', label: 'Release', default: 0.3, props: { min: 0.001, max: 5, step: 0.001 } },
   ],
+  // Declarative UI (Phase 3 bullet 2): the whole body is the EnvelopeEditor bound to the 4 ADSR
+  // controls, so it's expressible as the built-in `env` Tier-B aggregate — no bespoke SFC needed.
+  // Fields are positional in ENV_ORDER (attack, decay, sustain, release). Replaces EnvelopeVisualNode.vue.
+  ui: {
+    rows: [
+      { widgets: [{ type: 'env', bind: '', props: { fields: ['attack', 'decay', 'sustain', 'release'] } }] },
+    ],
+  },
   info: {
     overview: 'A visual ADSR envelope editor with draggable control points for shaping attack, decay, sustain, and release curves. Functions identically to the standard Envelope node but adds an interactive graphical display for intuitive editing.',
     tips: [
