@@ -73,43 +73,49 @@ function togglePicker() {
       {{ label }}
     </label>
 
-    <!-- Selected asset preview -->
-    <div
-      class="asset-preview"
-      @click="togglePicker"
-    >
-      <div
-        v-if="selectedAsset"
-        class="preview-content"
+    <!-- Selected asset preview. The opener is a real <button> (keyboard: Tab + Enter/Space for free);
+         the clear control is a SIBLING button, not a descendant, to avoid nesting interactive elements. -->
+    <div class="asset-preview">
+      <button
+        type="button"
+        class="asset-open"
+        :aria-label="selectedAsset ? `Asset: ${selectedAsset.name}. Activate to change.` : 'Select asset'"
+        :aria-expanded="showPicker"
+        aria-haspopup="true"
+        @click="togglePicker"
       >
-        <img
-          v-if="thumbnailUrl"
-          :src="thumbnailUrl"
-          :alt="selectedAsset.name"
-          class="preview-image"
-        >
-        <div
+        <template v-if="selectedAsset">
+          <img
+            v-if="thumbnailUrl"
+            :src="thumbnailUrl"
+            :alt="selectedAsset.name"
+            class="preview-image"
+          >
+          <div
+            v-else
+            class="preview-icon"
+          >
+            <Image :size="20" />
+          </div>
+          <span class="preview-name">{{ selectedAsset.name }}</span>
+        </template>
+        <span
           v-else
-          class="preview-icon"
+          class="preview-empty"
         >
-          <Image :size="20" />
-        </div>
-        <span class="preview-name">{{ selectedAsset.name }}</span>
-        <button
-          class="clear-btn"
-          title="Clear selection"
-          @click.stop="clearSelection"
-        >
-          <X :size="14" />
-        </button>
-      </div>
-      <div
-        v-else
-        class="preview-empty"
+          <FolderOpen :size="16" />
+          <span>Select asset...</span>
+        </span>
+      </button>
+      <button
+        v-if="selectedAsset"
+        class="clear-btn"
+        title="Clear selection"
+        aria-label="Clear asset selection"
+        @click.stop="clearSelection"
       >
-        <FolderOpen :size="16" />
-        <span>Select asset...</span>
-      </div>
+        <X :size="14" />
+      </button>
     </div>
 
     <!-- Asset picker dropdown -->
@@ -174,17 +180,40 @@ function togglePicker() {
 .asset-preview {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2);
   border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
   background: var(--color-neutral-50);
-  cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .asset-preview:hover {
   border-color: var(--color-neutral-300);
   background: var(--color-neutral-0);
+}
+
+/* The opener: a transparent, full-width button so the whole row activates the picker by keyboard. */
+.asset-open {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.asset-open:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .preview-content {
