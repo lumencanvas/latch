@@ -6,6 +6,135 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 49) — ultracode pass: finish the generated-index cleanup + adversarial review of the uncommitted diff
+
+A 39-agent workflow (per-category dead-code sweeps → cross-cutting review dimensions → adversarial verify).
+
+**Generated-index cleanup (increment-5 follow-up now DONE).** Per-category read-only agents produced a
+**44-removal manifest** of the now-unused bespoke-component-symbol re-exports (leaf `index.ts`
+`export { XxxNode }` / `export { default as XxxNode } from './XxxNode.vue'` → wrapper `.ts` like
+`inputs/knob.ts` → category barrel `export { xxxNode, XxxNode } from './x'`). A safety skeptic independently
+re-grepped and confirmed **manifestSafe** — zero real consumers, and no removal touches a `component:
+markRaw(...)` line, a definition's `.vue` import, or a node DEFINITION export (`xxxNode` stays). Applied all
+44 + cleaned the dangling `// Export the custom node component` comments / blank lines. `components.ts` is
+now a **fully generated index** with no leftover manual component plumbing (the `.vue` stay referenced via
+their definitions).
+
+**Adversarial review of the full uncommitted diff.** 4 review dimensions raised 25 findings; the verify
+phase confirmed **6** (rejected 19 as noise/nits/pre-existing) — all fixed:
+1. Stale JSDoc on `NodeDefinition.component` ("RESERVED / NOT yet consumed") → rewritten: it's the single
+   source `components.ts` derives from.
+2. **The persistence-list equality test was a spread-copy tautology** — `[...A].sort()` deepEquals
+   `[...B].sort()` can't distinguish an alias from a value-equal copy. Replaced with reference identity
+   `expect(PERSISTENCE_SPECIAL_NODE_TYPES).toBe(CUSTOM_NODE_TYPE_IDS)`. **Mutation-verified**: a value-equal
+   copy (`[...CUSTOM_NODE_TYPE_IDS]`) now reds (the old test would have passed). (Matches the
+   `latch-component-test-gotchas` "redundant mechanisms → un-killable mutant" note.)
+3. WaveformEditor had no guard that NAVIGATION keys (Left/Right/Page/Home/End) don't emit — folded a
+   `expect(emitted).toBeUndefined()` into the nav test. **Mutation-verified** (a nav key that emits reds).
+4–6. Three stale kickoff claims: HANDOFF read-range (`46→40`→`48→40`), a mixed HEAD (`6c80fe2` vs
+   `c4b7b78`), and an INHERITED-INVARIANT still saying "`component?` declared but NOT consumed" — all
+   reconciled to the DONE state.
+
+typecheck clean · lint 0 err · `test:unit` **1963** (unchanged — strengthened existing tests, no net new) ·
+build 0. ~25 registry files touched (pure dead-export removal, validated by typecheck+build+registry guards
+which import the whole barrel chain).
+
+---
+
+## 2026-07-03 (later 48) — Phase 3 bullet 3: WaveformEditor keyboard a11y (the last pointer-only editor)
+
+Closed the remaining a11y gap flagged in later-43/46: `WaveformEditor` (used by the `wavetable` node's
+`wave` aggregate — `NodeView.vue:303`) was pointer-only for its freehand canvas. Freehand *drawing* is
+inherently a pointer affordance, but the editor is now keyboard-**operable** (WCAG 2.1.1) with the same
+`role="application"` + selected-target idiom as XYPad/Envelope/EQ, adapted to a long sample sequence:
+- **Horizontal (index)**: Left/Right ±1 sample, PageUp/Down ±8, Home/End first/last.
+- **Vertical (value)**: Up/Down ±0.05 (Shift = ×4 coarse), clamped -1..1; emits the SAME
+  `{ samples, preset:'custom' }` as the drag.
+- Announced via `aria-valuetext` ("sample 12/64: 0.35") + a polite live-region span; `:focus-visible`
+  ring; the keyboard-selected sample is highlighted on the canvas while focused (mirrors the other
+  editors' active handle). `stopPropagation` so arrows don't leak to Vue Flow. Mouse/preset paths
+  untouched (the 4 preset `<button>`s were already keyboard-accessible and cover the common shapes).
+
+**No overclaim.** This is keyboard *operability* (navigate + adjust samples), NOT "draw a freehand curve
+by keyboard" (impractical; presets + per-sample editing serve keyboard users). 7 tests on the real
+component with real keydown events, **mutation-verified** (ArrowUp-inverted + ArrowRight-noop both red).
+typecheck clean · lint 0 err · `test:unit` **1956 → 1963** (126 files) · build-safe.
+**Browser status (honest):** app boots clean (0 real console errors) and adding a wavetable mounts the
+editor with 0 errors; the sibling EQEditor renders as `role="application"` in the node-body DOM in the same
+app, and this component uses the identical pattern (EQ/Envelope were browser-confirmed in later-46) — but a
+live keyboard capture on the rendered WaveformEditor was NOT achieved (couldn't automate the node-explorer
+add-flow blind). Logic is unit+mutation-verified; the `draw()` highlight is structurally identical to the
+shipped `isDrawing` arc block (safe with a real 2D context).
+
+**▶ NEXT.** New control TYPES (`range`/`curve`/`gradient`) still await a real consumer node (deferred).
+Optional: a manual browser pass on the WaveformEditor keyboard when convenient; the hygiene follow-ups from
+later-47 (feed `node.component` into the dead store map; drop the 18 unused re-exports).
+
+---
+
+## 2026-07-03 (later 47) — Phase 3 bullet 2 / increment 5: `component` is the single source of routing truth
+
+Resolved design **Q2** (maintainer decision): `component?` = a **real Component import on the node
+definition**, and `registry/components.ts` becomes a **generated index**. Wired it end-to-end.
+
+**Step 1 — derive the component map from `definition.component`.** All 22 bespoke nodes now declare
+`component: markRaw(XxxNode)` on their definition (18 via their `definition.ts`, 4 inline in `index.ts`:
+`_knob`/`gamepad-visual`/`_synth`/`emulator`). Extracted the aggregated `allNodes` list into a new
+`registry/allNodes.ts` so `components.ts` can read the definitions WITHOUT importing `registry/index.ts`
+(which re-exports `nodeTypes` — a cycle). `components.ts` now derives BOTH `nodeTypes` and
+`CUSTOM_NODE_TYPE_IDS` from `allNodes.filter(d => d.component)` — no more hand-maintained map. Guard test
+`tests/unit/registry/custom-node-components.test.ts` (5) pins: derived set == the frozen 22-id historical
+set == the set of definitions carrying a `component`; migrated-to-`ui` nodes carry none. Mutation-verified
+(drop one `component` → 3 assertions red).
+
+**Step 2 — collapse the redundant SECOND routing list.** `PERSISTENCE_SPECIAL_NODE_TYPES` was a
+hand-maintained subset that had **already drifted** — `gamepad-visual`/`dispatch`/`emulator` were in
+`components.ts` but missing from it (a latent rehydration bug masked only by the `healNodeTypes` fixup on
+flow activation; read-only audit surfaced this). Made it `= CUSTOM_NODE_TYPE_IDS` (one source), killing the
+drift. New equality guard in `migration-routing.test.ts`; mutation-verified against a re-hardcoded divergent
+list (the structural regression it guards).
+
+**Verification.** typecheck clean · lint 0 err (49 pre-existing any-warns) · `test:unit` **1947 → 1953**
+(125 files) · build 0 · **browser smoke 0 real errors**: a persisted demo flow rehydrated with every
+bespoke node routing to its correct component type (`vue-flow__node-trigger/-monitor/-synth/…`) while
+`ui`/plain nodes stayed `vue-flow__node-custom` — proving the derived map AND the unified persistence path
+end-to-end. (The `components.ts↔allNodes↔index.ts` cycle is also exercised at import time by the routing
+unit tests, and by the prod build.)
+
+**Adversarial audit (ultrathink, read-only agent + inline decisive checks) — verdict: SAFE, no bugs.**
+- **Identity preserved** — a git-diff script proved all 22 id→component mappings are byte-identical to the
+  old hand-map, each imported from its own `.vue` (no silent cross-wiring).
+- **Security** — a community/local custom node CANNOT inject a bespoke SFC: `customNodes/validator.ts:373`
+  deliberately never copies `component`, and `nodeTypes`/`CUSTOM_NODE_TYPE_IDS` are built once from built-in
+  `allNodes` (custom nodes register into the store's `definitions` map, which does not feed `nodeTypes`).
+- **The cycle is real but pre-existing + benign.** Every bespoke `.vue` imports `useFlowsStore`, and
+  `flows.ts` imports `components.ts` → so `components.ts → allNodes → definition → .vue → stores/flows →
+  components.ts` is a cycle. It resolves in BOTH entry orders because `components.ts`'s only top-level cyclic
+  read is `allNodes` (nothing in the `allNodes` subtree re-enters `components.ts`), and `flows.ts`'s
+  `CUSTOM_NODE_TYPE_IDS` use + the `.vue`'s `useFlowsStore` call are runtime-only (tolerate a temporarily
+  uninitialized live binding). The old `components.ts` already imported the `.vue` directly, so this loop
+  pre-dates the change. `usePersistence` (now importing `components.ts`) is only pulled in from
+  `App.vue`/`FlowTabs`/`AppHeader` — no worker/preload/main context.
+- **markRaw/serialization** — definitions are never JSON-serialized (flows persist `node.data` only); spreads
+  (`deriveModelDefinition`) preserve the markRaw reference; the custom-node share/export path excludes it.
+- **Test hardening from the audit** (+3 tests, all mutation-verified): components are DISTINCT objects
+  (kills a copy-pasted wrong-`.vue` import → duplicate); each `nodeTypes[id].__name` equals its expected SFC
+  (kills a single wrong import); each entry is its definition's own component (derive not cross-wired). Also
+  `Object.freeze`d `CUSTOM_NODE_TYPE_IDS` (→ `readonly`) so an accidental in-place `.push`/`.sort` can't
+  silently mutate both routing lists (the persistence list aliases it). `test:unit` **1953 → 1956**.
+
+**Honest state / not-done.** The nodes store's `components: Map` + `getComponent` getter remain **dead**
+(`initializeNodeRegistry` calls `register(node)` without a component; no consumer) — left as-is; feeding
+`node.component` there is an optional hygiene follow-up. The 18 per-node `index.ts` still carry now-unused
+`export { default as XxxNode }` re-exports — harmless (not flagged by tsc/lint; keep the `.vue` referenced),
+optional cleanup. `NodeSpec.component` (defineNode) stays inert — the live registry is `NodeDefinition`.
+
+**▶ NEXT (Phase 3 remainder).** Increment 6 / new control TYPES (`range`/`curve`/`gradient`) still need a
+real consumer node (deferred). WaveformEditor freehand-keyboard remains a documented a11y limitation
+(optional focus+announce / stricter-ARIA polish). Increment 5 (`component?` consumption) is now DONE.
+
+---
+
 ## 2026-07-03 (later 46) — Phase 3 bullet 3: aggregate-editor keyboard a11y (Envelope + EQ) + audit
 
 Restored keyboard editing that the `ui` migrations had removed. **Insight from the ultracode audit:** because

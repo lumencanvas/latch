@@ -180,6 +180,11 @@ tiers because their `ui` is trusted (`core`).
    parity-gated. Add `xy`.
 5. **`component?` formalization.** Make `components.ts` derive from `component?` (single source); the 14
    escape-hatch nodes declare it. No behavior change (guard test: registry set unchanged).
+   **DONE (2026-07-03, HANDOFF later 47).** All 22 bespoke definitions declare `component: markRaw(...)`;
+   `allNodes` extracted to `registry/allNodes.ts` (breaks the `components.ts↔index.ts` cycle);
+   `components.ts` derives `nodeTypes` + `CUSTOM_NODE_TYPE_IDS` from `allNodes.filter(d => d.component)`.
+   Also collapsed the redundant `PERSISTENCE_SPECIAL_NODE_TYPES` to `= CUSTOM_NODE_TYPE_IDS` (killed a
+   latent drift). Guarded + mutation-verified + browser-smoke confirmed.
 6. **New control types** (`curve`/`gradient`) as they gain a real consumer — *bullet 3 territory*, deferred.
 
 Each step follows the repo discipline: TDD, mutation-verify, typecheck + lint + `test:unit` + build + smoke,
@@ -191,6 +196,8 @@ individually revertible, no AI attribution.
 - **Q2 — `component?` = actual `Component` import on the definition, or a string key resolved via a registry?**
   A real import co-locates best but pulls SFCs into the definition module graph. Recommendation: real
   `component?` on `defineNode`, `components.ts` becomes a generated index.
+  **RESOLVED (2026-07-03): real `Component` import on the definition** (maintainer decision). Implemented in
+  increment 5 — see §10.5 and HANDOFF later 47.
 - **Q3 — snapshot-parity harness:** DOM snapshot of a migrated node vs its old SFC is brittle (canvas
   widgets). Propose behavioral parity (bind reads/writes the right `node.data` keys; `when` toggles) instead
   of pixel snapshots — consistent with how bullet 1 was verified.
