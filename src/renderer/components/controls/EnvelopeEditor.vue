@@ -26,11 +26,63 @@ const emit = defineEmits<{
 const canvas = ref<HTMLCanvasElement | null>(null)
 const isDragging = ref<'attack' | 'decay' | 'sustain' | 'release' | null>(null)
 
+// Keyboard a11y (WCAG 2.1.1 / 4.1.2). A canvas can't expose its handles as separate focusables, so —
+// like XYPad — this is one focusable role="application" host with an internally SELECTED stage that arrow
+// keys cycle + adjust, announced via aria-valuetext. Restores keyboard ADSR editing the `ui` migration
+// removed (the panel used to auto-layout number inputs; it now shows this editor).
+type Stage = 'attack' | 'decay' | 'sustain' | 'release'
+const STAGES: Stage[] = ['attack', 'decay', 'sustain', 'release']
+const selectedStage = ref<Stage>('attack')
+const focused = ref(false)
+
 // Time scale configuration
 const MAX_ATTACK = 2
 const MAX_DECAY = 2
 const MAX_RELEASE = 5
 const TOTAL_TIME = MAX_ATTACK + MAX_DECAY + MAX_RELEASE
+
+// Per-stage keyboard adjustment ranges (declared after the MAX_* constants they reference).
+const STAGE_RANGE: Record<Stage, { min: number; max: number; step: number }> = {
+  attack: { min: 0.001, max: MAX_ATTACK, step: 0.05 },
+  decay: { min: 0.001, max: MAX_DECAY, step: 0.05 },
+  sustain: { min: 0, max: 1, step: 0.05 },
+  release: { min: 0.001, max: MAX_RELEASE, step: 0.1 },
+}
+
+/** Announced to screen readers: which stage is selected + its value (e.g. "attack 0.10s"). */
+const valueText = computed(() => {
+  const s = selectedStage.value
+  const v = props.modelValue[s]
+  return `${s} ${s === 'sustain' ? `${Math.round(v * 100)}%` : `${v.toFixed(2)}s`}`
+})
+
+function adjustStage(stage: Stage, delta: number): void {
+  const r = STAGE_RANGE[stage]
+  let nv = props.modelValue[stage] + delta
+  nv = Math.round(nv / r.step) * r.step
+  const dec = (String(r.step).split('.')[1] || '').length
+  nv = Number(nv.toFixed(dec)) // kill float dust
+  nv = Math.max(r.min, Math.min(r.max, nv))
+  emit('update:modelValue', { ...props.modelValue, [stage]: nv })
+}
+
+function onKeydown(e: KeyboardEvent): void {
+  const i = STAGES.indexOf(selectedStage.value)
+  const r = STAGE_RANGE[selectedStage.value]
+  switch (e.key) {
+    case 'ArrowRight': selectedStage.value = STAGES[(i + 1) % STAGES.length]; break // next stage
+    case 'ArrowLeft': selectedStage.value = STAGES[(i + STAGES.length - 1) % STAGES.length]; break // prev
+    case 'ArrowUp': adjustStage(selectedStage.value, r.step); break
+    case 'ArrowDown': adjustStage(selectedStage.value, -r.step); break
+    case 'PageUp': adjustStage(selectedStage.value, r.step * 4); break
+    case 'PageDown': adjustStage(selectedStage.value, -r.step * 4); break
+    case 'Home': emit('update:modelValue', { ...props.modelValue, [selectedStage.value]: r.min }); break
+    case 'End': emit('update:modelValue', { ...props.modelValue, [selectedStage.value]: r.max }); break
+    default: return
+  }
+  e.preventDefault()
+  e.stopPropagation()
+}
 
 // Convert envelope values to pixel positions
 const controlPoints = computed(() => {
@@ -125,9 +177,11 @@ function draw() {
     ctx.stroke()
   }
 
-  drawPoint(pts.attack.x, pts.attack.y, isDragging.value === 'attack')
-  drawPoint(pts.decay.x, pts.decay.y, isDragging.value === 'decay')
-  drawPoint(pts.sustain.x, pts.sustain.y, isDragging.value === 'sustain')
+  // A point is "active" while dragged OR while it's the keyboard-selected stage on a focused editor.
+  const active = (s: Stage) => isDragging.value === s || (focused.value && selectedStage.value === s)
+  drawPoint(pts.attack.x, pts.attack.y, active('attack'))
+  drawPoint(pts.decay.x, pts.decay.y, active('decay'))
+  drawPoint(pts.sustain.x, pts.sustain.y, active('sustain'))
 
   // Labels
   ctx.fillStyle = '#666'
@@ -228,7 +282,7 @@ function onWheel(e: WheelEvent) {
   emit('update:modelValue', { ...props.modelValue, release: newRelease })
 }
 
-watch(() => props.modelValue, draw, { deep: true })
+watch([() => props.modelValue, selectedStage, focused], draw, { deep: true })
 
 onMounted(() => {
   draw()
@@ -245,9 +299,21 @@ onUnmounted(() => {
     <canvas
       ref="canvas"
       class="envelope-canvas"
+      role="application"
+      tabindex="0"
+      aria-roledescription="ADSR envelope"
+      aria-label="Envelope"
+      :aria-valuetext="valueText"
       @mousedown="onMouseDown"
       @wheel="onWheel"
+      @keydown="onKeydown"
+      @focus="focused = true"
+      @blur="focused = false"
     />
+    <span
+      class="sr-only"
+      aria-live="polite"
+    >{{ valueText }}</span>
     <div class="envelope-values">
       <span>A: {{ modelValue.attack.toFixed(2) }}s</span>
       <span>D: {{ modelValue.decay.toFixed(2) }}s</span>
@@ -268,6 +334,27 @@ onUnmounted(() => {
   border: 1px solid #333;
   border-radius: 4px;
   cursor: crosshair;
+}
+
+.envelope-canvas:focus {
+  outline: none;
+}
+
+.envelope-canvas:focus-visible {
+  outline: 2px solid var(--color-primary-400, #ff6b35);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .envelope-values {
