@@ -6,6 +6,34 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-02 (later 38) — Phase 3 bullet 2: first Tier-B aggregate (envelope)
+
+Extended `NodeView` with the first **Tier-B aggregate** widget (commit `01cd7ac`). `env` maps one
+`EnvelopeData` (ADSR) ↔ four flat controls via positional `props.fields`, reusing the shipping
+`EnvelopeEditor`. Assemble reads the bound control values (fallback: control default → 0); disperse
+fans an edit out as one `update` per field (host's debounced `recordParamEdit` coalesces → one undo
+step). **Built-in only** — `validateUISchema` rejects env/eq/wave/xy for custom nodes (now explicitly
+tested across all aggregate/event types). xy/eq/wave stay reserved enum slots.
+
+**Ultracode audit** (conformance+fidelity · test-efficacy → mutation battery → synthesis): **good,
+conforms to plan (B1), no must-fix, no security hole** — the "custom node smuggles an aggregate" mutant
+is killed (independently verified: `CUSTOM_UI_WIDGETS` excludes aggregates). **Fidelity verified**
+against the REAL node: `registry/audio/_envelope-visual` declares exactly 4 flat controls
+(attack/decay/sustain/release) in ENV_ORDER, so the positional adapter is a faithful **no-migration**
+mirror. Acted on 2 nice-to-haves it found: the uniform-`?? 0` default diverged from the bespoke node's
+per-field defaults → now falls back to the control's declared default (also killed the dead-code M5
+survivor, verified with a value→default→0 branch test). typecheck clean · lint 0 err · `test:unit`
+**1867 → 1869** · build exit 0. (The test-efficacy agent crashed on the StructuredOutput cap again;
+the mutation battery + fidelity agent covered its ground.)
+
+**▶ NEXT (bullet-2 remainder).** More Tier-B adapters — `eq` (9 fields → 3 bands, needs chunking; reuse
+EQEditor) and `wave` (WaveformEditor); `xy` needs a small XYPad widget (the shipping one is archived).
+Then the **first real bespoke-node migration** to `ui` — deferred because it changes a shipping node's
+shell (bespoke → BaseNode+NodeView), a product/visual decision needing a browser parity check, not a
+headless refactor. Then `component?` consumption (formalize `components.ts`). Then bullet 3.
+
+---
+
 ## 2026-07-01 (later 37) — Phase 3 bullet 2: declarative `ui` + `NodeView` (Tier A), increments 1-3
 
 Design-first (maintainer approved a proposal — `docs/plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md`),
