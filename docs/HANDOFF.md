@@ -6,6 +6,47 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-02 (later 39) — Phase 3 bullet 2: Tier-B complete (eq + wave + xy/XYPad)
+
+Finished the Tier-B aggregate set in `NodeView`. **`eq`** (`EQEditor`, reused): 9 flat controls chunked
+by 3 ↔ `{ bands: [{frequency,gain,q}×3] }`, positional, fidelity-mirrors bespoke `_parametric-eq` (band b
+← `freq_(b+1)/gain_(b+1)/q_(b+1)`). **`wave`** (`WaveformEditor`, reused): 2 *heterogeneous* fields ↔
+`{ samples[], preset }` (mirrors bespoke `_wavetable`: `waveform↔samples`, `preset↔preset`); per-type
+fallback (array→`[]`, string→`'sine'`). **`xy`** (new `XYPad` control): 2 flat controls ↔ `{ x, y }`
+(0..1), mirrors bespoke `xy-pad` `normalizedX/normalizedY` — **range (min/max) stays as separate primitive
+controls** (maintainer decision on the model). All aggregates assemble value→control-default→0 via the
+shared `fieldNumber` helper (extracted from the env adapter this session, so env's own fallback test now
+guards it too); every edit fans one `update` per field (host's debounced `recordParamEdit` coalesces →
+one undo step). **Built-in only** — `validateUISchema` already rejects `eq`/`wave`/`xy` for custom nodes
+(`validator-ui.test.ts` line 28; `CUSTOM_UI_WIDGETS` excludes them) — no validator change, no security gap.
+
+**New `components/controls/XYPad.vue`** — a reusable pad extracted from the archived node SFC: draggable
+point over a square area, `modelValue {x,y}` 0..1 (y up), clamped, window-drag on mousedown, listener
+teardown on mouseup + unmount. Presentational (host owns write/undo). Same look as the bespoke pad so a
+future migration is visually faithful.
+
+**Test-efficacy catch (the session's real finding).** The first XYPad had BOTH an `isDragging` flag AND
+listener attach/detach stopping post-mouseup emits — two redundant mechanisms, so no single mutation could
+red the "stops after mouseup" test (M3/M3b/M4 all *survived*). That's the "passing test ≠ guarding test"
+trap. Fix: **removed the redundant `isDragging` flag** (the move listener only exists during a drag, so the
+guard was dead weight) → single teardown mechanism, which the test now genuinely kills (M3b reds it).
+
+**TDD + mutation-verified** each increment (edit→red→restore via `.bak`, never `git checkout`): eq
+chunk-arithmetic + fan-out; shared-`fieldNumber` fallback (reds BOTH env+eq fallback tests); wave
+field-index + preset-default + fan-out; XYPad y-inversion + clamp + teardown; xy axis-index + fan-out —
+all killed. typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **1869 → 1879** (+10,
+new `XYPad.test.ts`) · build exit 0 · **boot smoke 0 real errors** (6 nodes inspected, Play→Stop). Note:
+no shipping node has `ui`, so the smoke confirms no boot regression from the new module-graph imports —
+it does NOT exercise XYPad live (nothing renders it yet; that waits on the first bespoke migration).
+
+**▶ NEXT.** First real bespoke-node migration to `ui` (e.g. `knob`, or `xy-pad`/`parametric-eq` now that
+their aggregates exist) — changes the node shell (bespoke → BaseNode+NodeView), a product/visual call
+needing a browser parity check + maintainer sign-off on which of the ~10–14 migratable nodes change look.
+Then `component?` consumption (formalize `components.ts`), then bullet 3 (new control types, drag-to-scrub,
+control ARIA). Tree is green + uncommitted (commit on request).
+
+---
+
 ## 2026-07-02 (later 38) — Phase 3 bullet 2: first Tier-B aggregate (envelope)
 
 Extended `NodeView` with the first **Tier-B aggregate** widget (commit `01cd7ac`). `env` maps one
