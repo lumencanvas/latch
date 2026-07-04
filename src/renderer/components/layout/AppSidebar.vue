@@ -234,9 +234,15 @@ function onSelectConnection(connectionId: string) {
           <label class="filter-label">Filter by category</label>
           <div
             class="custom-select"
-            @click="toggleDropdown"
+            @keydown.escape="dropdownOpen = false"
           >
-            <div class="select-display">
+            <button
+              type="button"
+              class="select-display"
+              aria-haspopup="listbox"
+              :aria-expanded="dropdownOpen"
+              @click="toggleDropdown"
+            >
               <span
                 v-if="nodesStore.categoryFilter"
                 class="select-color"
@@ -250,32 +256,40 @@ function onSelectConnection(connectionId: string) {
                 :size="14"
                 class="select-arrow"
               />
-            </div>
+            </button>
             <div
               v-if="dropdownOpen"
               class="select-options"
+              role="listbox"
+              aria-label="Filter by category"
             >
-              <div
+              <button
+                type="button"
                 class="select-option"
+                role="option"
+                :aria-selected="!nodesStore.categoryFilter"
                 :class="{ active: !nodesStore.categoryFilter }"
-                @click.stop="selectCategory(null)"
+                @click="selectCategory(null)"
               >
                 <span class="option-color all-color" />
                 <span>All Categories ({{ nodesStore.definitions.size }})</span>
-              </div>
-              <div
+              </button>
+              <button
                 v-for="[id, meta] in categories"
                 :key="id"
+                type="button"
                 class="select-option"
+                role="option"
+                :aria-selected="nodesStore.categoryFilter === id"
                 :class="{ active: nodesStore.categoryFilter === id }"
-                @click.stop="selectCategory(id)"
+                @click="selectCategory(id)"
               >
                 <span
                   class="option-color"
                   :style="{ background: meta.color }"
                 />
                 <span>{{ meta.label }} ({{ categoryCounts[id] ?? 0 }})</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -345,11 +359,13 @@ function onSelectConnection(connectionId: string) {
                 v-if="!isCategoryCollapsed(categoryId)"
                 class="category-nodes"
               >
-                <div
+                <button
                   v-for="node in nodesByCategory.get(categoryId)"
                   :key="node.id"
+                  type="button"
                   class="node-item"
                   draggable="true"
+                  :aria-label="`Add ${node.name} node`"
                   :title="`Drag onto the canvas, or tap to add`"
                   @dragstart="(e) => onDragStart(e, node.id)"
                   @click="uiStore.requestNodeAdd(node.id)"
@@ -362,7 +378,7 @@ function onSelectConnection(connectionId: string) {
                     <span class="node-item-name">{{ node.name }}</span>
                     <span class="node-item-desc">{{ node.description }}</span>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
           </template>
@@ -581,9 +597,13 @@ function onSelectConnection(connectionId: string) {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   padding: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-xs);
   background: var(--color-neutral-50);
@@ -593,6 +613,11 @@ function onSelectConnection(connectionId: string) {
 .select-display:hover {
   border-color: var(--color-neutral-300);
   background: var(--color-neutral-0);
+}
+
+.select-display:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
 }
 
 .select-color {
@@ -631,15 +656,25 @@ function onSelectConnection(connectionId: string) {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  width: 100%;
   padding: var(--space-2) var(--space-3);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   color: var(--color-neutral-700);
+  text-align: left;
+  background: transparent;
+  border: none;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
 
 .select-option:hover {
   background: var(--color-neutral-100);
+}
+
+.select-option:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .select-option.active {
@@ -762,14 +797,23 @@ function onSelectConnection(connectionId: string) {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
+  width: 100%;
   padding: var(--space-2);
+  font-family: inherit;
   font-size: var(--font-size-sm);
   color: var(--color-neutral-700);
+  text-align: left;
+  background: transparent;
   cursor: grab;
   border-radius: var(--radius-xs);
   transition: all var(--transition-fast);
   border: 1px solid transparent;
   margin: 2px 0;
+}
+
+.node-item:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .node-item:hover {
