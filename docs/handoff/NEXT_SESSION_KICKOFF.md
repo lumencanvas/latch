@@ -1,117 +1,127 @@
-# Next-session kickoff — Phase 3 (Control system + declarative UI) DONE; Phase-4 a11y down-payment made
+# Next-session kickoff — Phase 4 accessibility IN PROGRESS (~30/33 audit findings closed)
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-03 — branch `phase0-file-format`, last code commit `ae9a5ad` + a docs commit on top;
-tree CLEAN & green; everything this session is committed. Verify with `git log --oneline -14`.)
+(Last updated 2026-07-03 — branch `phase0-file-format`, last commit `0e7ee1f`; tree CLEAN & green;
+everything this session is committed. Verify with `git log --oneline -12`.)
 
 ---
 
 ultrathink You're continuing **LATCH** — a free/open, web+desktop, node-based creative-coding tool ("Live Art
 Tool for Creative Humans"; Vue 3 + TS + Vite, Electron Forge; 238 nodes) at
 `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format`. **Phase 3 (Control system +
-declarative UI) is DONE**; an opportunistic **Phase-4 accessibility down-payment** just landed. Tree is CLEAN
-and everything is committed & green. **Get oriented before touching code, and pick the next thread with me.**
+declarative UI) is DONE. Phase 4 (accessibility) is IN PROGRESS — ~30 of 33 app-wide audit findings closed
+this session** across 3 increments. Tree is CLEAN and everything is committed & green. **Get oriented before
+touching code, and pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **1967 pass + 11 todo** (127 files) · `build` ok.
+`test:unit` **1988 pass + 11 todo** (134 files) · `build` ok.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
-   **Commit only when asked.** Stay on the branch (branch off `main` only if asked and currently on it).
-   Each step ends green. **Never assume — read the real code / verify against the actual git original.**
-   Honor `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 51 → 44)**, newest first: (51) audit of the a11y commits + cleanup;
-   (50) ultracode a11y audit + 7 WCAG fixes on the control surface; (49) generated-index cleanup + review;
-   (48) WaveformEditor keyboard a11y; (47) **increment 5 — `component` is the single source of routing
-   truth** (+ adversarial audit); (46) Envelope+EQ editor keyboard a11y; (45) orphan-SFC cleanup; (44)
-   drag-to-scrub.
-3. `docs/plans/ROADMAP_2026-06-28.md` — the canonical phase order + the progress snapshot at the top (kept
-   current). **This owns sequencing; where older `docs/plans/` files conflict, this wins.**
-4. `docs/plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md` — the declarative-`ui` design (Q1–Q4 all
-   resolved; §10.5 `component?` consumption DONE).
-5. Recall memories: **latch-a11y-bug-classes** (NEW — mouse-only `<div>` triggers, `display:none`
-   faux-switch inputs, scoped `:focus{outline:none}` killing the global focus-visible ring; the canvas-editor
-   `role=application` pattern; happy-dom can't verify CSS/focus → browser-smoke those), **latch-strategy**
-   (positioning = open/durable/**accessible**, NOT performance; don't-overclaim list),
-   **latch-component-test-gotchas** (@vue/test-utils: import stores before `.vue`; a reference-alias/redundant
-   mechanism makes a mutant un-killable → assert identity, not value), **latch-smoke-test-harness** (Playwright
-   + system Chrome vs `npm run dev`), **audit-against-true-original**, **latch-undefined-css-tokens**,
-   **node-library-backlog**.
+   **Commit only when asked.** Stay on the branch. Each step ends green. **Never assume — read the real code /
+   verify against the actual git original.** Honor `strategy/05` **DON'T-OVERCLAIM**.
+2. `docs/A11Y_APP_AUDIT_2026-07-03.md` — **the live Phase-4 a11y tracker**: 33 confirmed findings grouped by
+   theme, with Increments 1–3 marked DONE and the remaining backlog (Themes D + F + low) called out.
+3. `docs/HANDOFF.md` TOP entries **(later 52 → 45)**, newest first: (52) **Phase-4 a11y: app-wide audit +
+   modal focus layer + Theme-B div→button sweep + Theme-C/E names/live-region** (this session); (51) audit of
+   the control-surface a11y commits; (50) ultracode control-surface a11y audit + 7 fixes; (49) generated-index
+   cleanup; (48) WaveformEditor keyboard a11y; (47) `component` single-source routing; (46) Envelope+EQ
+   keyboard; (45) orphan-SFC cleanup.
+4. `docs/plans/ROADMAP_2026-06-28.md` — canonical phase order + the progress snapshot at the top (Phase 4 now
+   IN PROGRESS). **This owns sequencing; where older `docs/plans/` files conflict, this wins.**
+5. Recall memories: **latch-a11y-bug-classes** (mouse-only `<div>` triggers, `display:none` faux inputs,
+   scoped `:focus{outline:none}` killing the ring, `role=application` canvas idiom; **app-chrome SFCs
+   (AppSidebar/FlowTabs/NodeExplorer/EditorView) don't cleanly unit-mount → verify via browser smoke, not
+   unit tests**; **Vue Flow `<Handle>` forwards fallthrough attrs like `aria-label` to the handle DOM**),
+   **latch-strategy** (positioning = open/durable/**accessible**, NOT performance; don't-overclaim),
+   **latch-component-test-gotchas** (import stores before `.vue`; assert identity not value),
+   **latch-smoke-test-harness** (Playwright + system Chrome vs `npm run dev`), **audit-against-true-original**,
+   **latch-undefined-css-tokens**, **node-library-backlog**.
 
 ## WHERE WE ARE
-- **Phase 0 (Foundations): DONE.** `.latch` v2 format + migration; `defineNode`/`NodeSpec`; typed `ctx`;
-  registry glob; quick-win fixes. CI count-equality + round-trip gates.
-- **Phase 1 (De-monolith + kill the leak class): ~95%.** State-group migration 22/23 (only `subflow`,
-  deferred to Phase 7); per-type leak gate + exact-pure-set gate live; `_`-split GC bug resolved.
-- **Phase 2 (Register-once subsystems, security-hardened): IN PROGRESS.** Connection handle + mqtt/ws/http
-  converted; **security spine DONE at Node-RED parity** (trust tiers, capability gate). Remaining: BLE
-  device-picker UX (`TODO(ble-ux)`, currently auto-picks first match) + a few adapter conversions.
-- **Phase 3 (Control system + declarative UI): DONE.**
-  - Bullet 1: one `<ControlRenderer>` (canvas+panel) + one `when`/`evaluateWhen`.
-  - Bullet 2: declarative `ui` + `NodeView` (Tier A primitives + Tier B aggregates `env`/`eq`/`wave`/`xy`,
-    BUILT-IN ONLY); all 4 aggregate-backed bespoke nodes migrated; `validateUISchema`.
-  - **`component?` consumption (increment 5): DONE.** `registry/components.ts` DERIVES `nodeTypes` +
-    `CUSTOM_NODE_TYPE_IDS` (frozen) from `allNodes.filter(d => d.component)` — the single source of truth; the
-    22 bespoke definitions each declare `component: markRaw(XxxNode)`; `allNodes` extracted to
-    `registry/allNodes.ts` (breaks the `components↔index` cycle); dead component re-exports removed.
-    `PERSISTENCE_SPECIAL_NODE_TYPES` is now a **reference alias** to `CUSTOM_NODE_TYPE_IDS` (was a drifted
-    hand-list). Guards: `tests/unit/registry/custom-node-components.test.ts`, `migration-routing.test.ts`.
-  - Bullet 3: control keyboard+ARIA, drag-to-scrub, and **all 4 canvas editors keyboard-operable**
-    (Envelope/EQ/Waveform/XYPad). Only deferred item: new control TYPES (`range`/`curve`/`gradient`) — they
-    need a real consumer node, so deferred per the design doc.
-- **Phase-4 accessibility down-payment (later-50/51):** an ultracode audit of the control/NodeView/editor
-  surface fixed 7 confirmed WCAG gaps (asset-picker + toggle keyboard lockouts, suppressed focus-visible
-  rings, EQ selection feedback, readout announce, waveform preset names). Broader app-wide a11y is Phase 4
-  proper.
+- **Phase 0 (Foundations): DONE.** **Phase 1 (de-monolith/leak class): ~95%** (only `subflow`, deferred to
+  Phase 7). **Phase 2 (register-once subsystems): IN PROGRESS** — security spine DONE at Node-RED parity;
+  remaining BLE device-picker UX (`TODO(ble-ux)`) + a few adapters. **Phase 3 (Control + declarative UI):
+  DONE** (one `<ControlRenderer>`; declarative `ui`+`NodeView` Tier-A + Tier-B aggregates; `component?` is the
+  single routing source; all 4 canvas editors keyboard-operable). Only deferred Phase-3 item: new control
+  TYPES (`range`/`curve`/`gradient`) — need a real consumer node.
+- **Phase 4 (Canvas, onboarding & accessibility): IN PROGRESS — accessibility stream.** An ultracode 5-surface
+  app-wide audit (`docs/A11Y_APP_AUDIT_2026-07-03.md`) → **33 confirmed findings** (16 high/15 med/2 low).
+  Closed this session (~30) in 3 increments:
+  - **Increment 1 — modal focus management (10).** NEW `composables/useDialogA11y.ts` (focus move-in · Tab
+    focus-trap · focus restore to opener · Escape-to-close) applied to all 8 dialogs + `role="dialog"`/
+    `aria-modal`/`aria-labelledby`, named close buttons, `role="status"` toasts, and the AIModelManager toggle
+    off `display:none`. TDD + mutation-verified; browser-smoke 12/12.
+  - **Increment 2 — Theme B: mouse-only `<div>`→`<button>` (~14).** Asset cards, connection/debug rows (wrap
+    a select-`<button>`, keep action controls as siblings, or a plain button); node palette + category filter
+    (buttons + listbox); flow tabs (roving `tablist` + arrow/F2/Delete/Shift+F10 + focus-managed context menu
+    via `useDialogA11y`); HTTP template edit (sibling button + listbox). Unit+mutation for the mountable ones;
+    browser-verified for the app-chrome (AppSidebar 11/11, FlowTabs 13/13).
+  - **Increment 3 — Theme C names/labels + E live region (6).** Accessible names on the connection `<select>`,
+    both search inputs, and port handles; `aria-label`+`aria-expanded` on the collapse toggle (BaseNode + 5
+    bespoke shells); `aria-pressed` on category filters; `role="alert"` on the connection-error toast.
+  - **The control-surface a11y (later-50/51)** was a separate, earlier pass — don't re-audit `controls/*` or
+    `PropertiesPanel.vue`.
 
 ## WHAT'S NEXT — pick a thread with me (each flagged)
-1. **Phase 4 — Canvas, onboarding & accessibility (natural continuation).** The control-surface a11y is done;
-   Phase 4 proper is app-wide: node-explorer/toolbar/dialogs keyboard+ARIA, canvas keyboard nav (add/move/
-   connect nodes without a mouse), focus management across panels, onboarding. Could start with an ultracode
-   a11y audit of the WHOLE app (I scoped the last one to the control surface only).
-2. **Phase 3 tail — new control types (`range`/`curve`/`gradient`).** DEFERRED: they need a real consumer
-   node. Only worth doing if we design/adopt a node that uses one.
-3. **Phase 2 tail — BLE device-picker UX** (`TODO(ble-ux)`) + remaining adapter conversions.
-4. **Phase 5+ — modulation gap / per-node co-location / subflow rebuild / live-VJ** (bigger, later phases; see
-   ROADMAP + `docs/AUDIT_2026-06-28.md`).
-Ask me which to take (or propose one). Don't dive into a whole new phase without confirming the thread.
+1. **Phase 4 a11y tail — Theme D: non-color cues (1.4.1).** Port/edge *type* + connection status + tag chips
+   convey meaning by color alone (`BaseNode.vue`, `AnimatedEdge.vue`, `ConnectionStatusBadge.vue`,
+   `NodeExplorer.vue` tag chips). The port/edge-type cue is a **visual-language decision** (adds a
+   shape/letter/icon to every port across 208 nodes) — get the maintainer's call on the style FIRST.
+2. **Phase 4 a11y headline — Theme F: canvas keyboard wiring (#1).** Keyboard select/move/**wire** nodes on
+   the canvas (`role="application"` idiom; VueFlow). Node *adding* already works (tap-to-add via
+   `addNodeAtCenter`/`nodeAddNonce`); movement + wiring are locked out. A dedicated multi-increment effort —
+   scope the interaction model + confirm before building.
+3. **Phase 4 non-a11y items:** canvas toolbar + marquee selection, snippets tab + `flowToPreview` thumbnails,
+   templates on the empty canvas, onboarding. (POLISH Streams 2–3; see ROADMAP Phase 4.)
+4. **Low a11y tails:** #33 (NodeExplorer grid→detail focus management), #14 (full template-listbox arrow-key
+   roving).
+5. **Other threads:** Phase 2 BLE device-picker UX; Phase 5+ (modulation gap / co-location / subflow / VJ).
+Ask me which to take. Don't dive into a whole new phase without confirming.
 
 ## HOW TO WORK
 - **Each step ends green:** `typecheck` + `lint` + `test:unit` (`build` for prod-source; **smoke for any
-  runtime/UI change**). Smoke = Playwright + system Chrome; run the `.mjs` **from the repo root** so bare
-  `playwright` resolves (`channel:'chrome'`, headless, filter benign device/XNNPACK/TensorFlow/AudioContext/
-  DeviceEnumeration noise) → 0 real console errors. **Test env is happy-dom** (`tests/setup.ts`): `getContext
-  ('2d')` is a no-op mock (editor `draw()` runs, won't throw) but scoped CSS + `:focus-visible` are NOT
-  applied → verify `display`/focus-ring/CSS fixes in a REAL browser. Editors/migrations: verify via the
-  PROPERTIES PANEL (a control node's `.node-view`) — freshly-added node bodies don't PAINT their canvas in
-  headless (DOM elements still exist). Adding a node via the node-explorer UI is fiddly to automate blind.
-- **TDD + mutation-verify EVERY increment:** test → red → implement → green; then hand-break via `perl`/`cp
-  .bak` (NEVER `git checkout` — wipes uncommitted work) and confirm the test reds. A passing test ≠ a guarding
-  test (audits keep proving it — regressions hide in canvas/persistence/CSS paths the "green" tests miss).
-- **ultracode pattern** (when I say "ultracode" — use the Workflow tool): parallel read-only audit/review
-  agents → adversarially VERIFY each finding (reject nits/already-done/out-of-scope) → act on the confirmed
-  set. Worked well this session (dead-code sweep + a11y audit both had good signal-to-noise). Caveat: a
-  schema-heavy agent can hit the StructuredOutput retry cap — run that probe inline if it fails.
-- **Commit only when asked**; logical, individually-revertible, dependency-ordered, file-level-clean commits;
-  **no AI attribution** (author Moheeb Zara). Update `docs/HANDOFF.md` + the ROADMAP snapshot + this kickoff at
-  close.
+  runtime/UI change**). Smoke = Playwright + system Chrome: write the `.mjs` in scratchpad, import via
+  `import pw from '<repo>/node_modules/playwright/index.js'; const { chromium } = pw` (bare `playwright` won't
+  ESM-resolve from scratchpad), `channel:'chrome'`, headless, `--use-fake-*-for-media-stream` +
+  `permissions:['camera','microphone']`, filter benign device/XNNPACK/TensorFlow/AudioContext noise → 0 real
+  console errors. Open modals via header `button[title="Node Explorer"|"Connection Manager"|"AI Model
+  Manager"]`; expand a sidebar `button.category-header` to render `.node-item`s.
+- **Test env is happy-dom** (`tests/setup.ts`): programmatic `focus()`/`activeElement`/`Tab`-trap logic IS
+  testable (used by `useDialogA11y.test.ts`), but scoped CSS + `:focus-visible` + layout are NOT → verify
+  focus RINGS / `display` / visual restructures in a REAL browser.
+- **App-chrome SFCs don't cleanly unit-mount** (AppSidebar/FlowTabs/NodeExplorer/EditorView have heavy
+  registry/VueFlow/IndexedDB deps) → verify those via **browser-DOM assertions** on the live app, and SAY it's
+  browser-verified (not unit+mutation). Props/store-driven leaf components (AssetCard, ConnectionList,
+  DebugPanel, TemplateSelect, ConnectionSelect, CategoryNav) DO unit-mount — TDD + mutation those.
+- **TDD + mutation-verify EVERY unit-testable increment:** test → red → implement → green; then hand-break via
+  `perl`/`cp .bak` (NEVER `git checkout` — wipes uncommitted work) and confirm red.
+- **ultracode pattern** (when I say "ultracode" — use the Workflow tool): parallel read-only audit agents →
+  adversarially VERIFY each finding (reject nits/already-done/out-of-scope) → act on the confirmed set. The
+  app-wide a11y audit this session had excellent signal (33/35 confirmed). Keep finding schemas modest to
+  avoid the StructuredOutput retry cap.
+- **Commit only when asked**; logical, individually-revertible, file-level-clean commits; **no AI attribution**
+  (author Moheeb Zara). Update `docs/A11Y_APP_AUDIT_2026-07-03.md` + `docs/HANDOFF.md` + the ROADMAP snapshot +
+  this kickoff at close.
 
 ## INHERITED INVARIANTS (don't regress / don't overclaim)
-- **`component` is the SINGLE SOURCE** of custom-component routing. `components.ts` derives `nodeTypes` +
-  `CUSTOM_NODE_TYPE_IDS` (frozen) from `allNodes.filter(d => d.component)`; `PERSISTENCE_SPECIAL_NODE_TYPES`
-  is a reference **alias** (assert identity, not value). To give a node a bespoke SFC: set `component:
-  markRaw(MyNode)` on its definition. `components.ts` imports `allNodes` from `./allNodes` (NOT `./index`) to
-  stay acyclic. The nodes-STORE `components` map / `getComponent` stay UNWIRED (live path is `nodeTypes`).
-- **NodeView is opt-in** (`definition.ui`). ~180 nodes keep BaseNode auto-layout; ~22 bespoke SFCs carry
-  `definition.component`. A `ui` node is never compact (`isCompactNode` exempts `hasUi`). `@mousedown.stop` on
-  `.nv-widget` stops canvas node-drag hijacking editor drags — don't remove.
-- **Aggregates (`env`/`eq`/`wave`/`xy`) are BUILT-IN ONLY** (custom nodes = Tier-A widgets only;
-  `validateUISchema` rejects aggregates + `component` for custom). Aggregate fields must be DECLARED controls.
-- **All 4 canvas editors** are keyboard-operable via `role="application"` + a selected target navigated by
-  arrows + `aria-valuetext` + a duplicated `aria-live` span + a focus-visible ring + the selected target
-  highlighted on canvas while focused. Match this for ANY new canvas editor (see `latch-a11y-bug-classes`).
-- **Security is DONE at Node-RED parity** — don't re-open the sandbox; don't gate `core`/`local`, only
-  `community`.
+- **`useDialogA11y` (`composables/useDialogA11y.ts`) is the shared dialog/menu focus layer.** Bind its
+  `onKeydown` to the OVERLAY `@keydown`, pass a template ref to the CONTAINER, and add `role="dialog"`+
+  `aria-modal`+`aria-labelledby` (or `role="menu"` for menus) yourself. It moves focus in on open, traps Tab,
+  restores focus to the opener on close, and closes on Escape. Used by all 8 modals + the FlowTabs context
+  menu. For a modal that already handles a key (e.g. CodeEditor's Ctrl+S), COMPOSE: handle your key, else call
+  `onKeydown(e)`.
+- **Mouse-only-`<div>` fix pattern:** if the interactive element has NO nested interactive content, make it a
+  `<button>` (keyboard-operable by contract). If it wraps an action control (delete/edit/actions), DON'T nest
+  — wrap the select area in a `<button>` and keep the action(s) as SIBLINGS in a container `<div>`. Reset the
+  button chrome in CSS (`background/border/padding/font/color/text-align` + `:focus-visible` ring) and reveal
+  hover-only affordances on `:focus-within` too.
+- **`component` is the SINGLE SOURCE** of custom-component routing (`components.ts` derives `nodeTypes` +
+  `CUSTOM_NODE_TYPE_IDS` from `allNodes.filter(d => d.component)`; `PERSISTENCE_SPECIAL_NODE_TYPES` is a
+  reference alias). **NodeView is opt-in** (`definition.ui`). **Aggregates are BUILT-IN ONLY.** **All 4 canvas
+  editors** use the `role="application"` + selected-target-arrows idiom — match it for any new canvas editor.
+- **Security is DONE at Node-RED parity** — don't re-open the sandbox.
 - **DON'T-OVERCLAIM** (`strategy/05`): a CSS/focus fix that only happy-dom "passed" is NOT verified — say so;
-  keyboard *operability* ≠ "freehand-draw by keyboard"; report skipped browser checks honestly.
+  a browser-DOM-asserted fix is "browser-verified", not "unit+mutation-verified"; keyboard *operability* ≠
+  "freehand-draw by keyboard"; report skipped browser checks honestly.
