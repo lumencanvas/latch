@@ -6,6 +6,35 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-04 (later 56) — Phase 4 a11y Theme F Increment 2 (keyboard move) + a batch-split bug fix
+
+Built increment 2 of the canvas keyboard model: **move**. With a selection, Arrow keys nudge the selected
+node(s) by grid step (Shift = 5× coarse); with no selection they still rove the navigation cursor (Escape
+deselects to go back to browsing). A burst of nudges collapses into a single `Move node` undo entry — opened
+on the first nudge, closed after a 600 ms idle, any non-move key, blur, or unmount — reusing the pointer
+drag-stop path exactly (`flowsStore.updateNodePosition` + `markDirty`, `startBatch`/`endBatch`). Panning only
+happens when a node nears the viewport edge (via `flowToScreenCoordinate`) — unlike navigation, move must not
+re-centre on every keystroke or the node would look stationary while the canvas slides. New position is
+announced.
+
+**Bug caught + fixed during verification:** `Shift+Arrow` dispatches two keydowns — a bare `Shift` then the
+arrow — and the bare `Shift` (not an arrow) was hitting the "any non-move key ends the burst" path and
+**splitting the move history into two undo entries** (fine nudges vs the coarse one). Fixed by ignoring bare
+modifier keydowns (`Shift`/`Alt`/`Meta`/`Control`) as the leading half of an in-progress chord. Only surfaced
+because verification measured **flow coordinates** (node inline transform, pan-invariant) and probed undo
+granularity — screen-coordinate checks were confounded by `setCenter` panning.
+
+Browser smoke (system Chrome, flow-coordinate): directional move (grid 20; coarse 100) · multi-select moves
+all 16 nodes together · **one undo reverts the whole fine+coarse burst** to exact start · redo restores ·
+navigate-mode after Escape announces "node i of n" not a move · **move persists across a full page reload** ·
+0 console errors. typecheck clean · lint 0 err · `test:unit` **1994** (EditorView is app-chrome → browser-
+verified, not unit). Committed separately (author Moheeb Zara, no AI attribution).
+
+**Next:** inc 3 **WIRE** (from scratch — needs the maintainer's `w`-key confirmation); inc 4 polish +
+optional shared composable + spatial nav.
+
+---
+
 ## 2026-07-04 (later 55) — Phase 4 a11y Theme F: canvas keyboard operation, Increment 1 (select/navigate)
 
 Opened the headline a11y item — making the node canvas keyboard-operable (WCAG 2.1.1). A **7-agent design
