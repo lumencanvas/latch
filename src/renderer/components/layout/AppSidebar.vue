@@ -224,6 +224,7 @@ function onSelectConnection(connectionId: string) {
             type="text"
             class="search-input"
             placeholder="Search nodes..."
+            aria-label="Search nodes"
             :value="nodesStore.searchQuery"
             @input="nodesStore.setSearchQuery(($event.target as HTMLInputElement).value)"
           >

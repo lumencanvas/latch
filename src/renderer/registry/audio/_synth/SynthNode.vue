@@ -498,6 +498,8 @@ onUnmounted(() => {
         <span class="node-title">Synth</span>
         <button
           class="node-collapse-btn"
+          :aria-label="isCollapsed ? 'Expand node' : 'Collapse node'"
+          :aria-expanded="!isCollapsed"
           @click.stop="toggleCollapse"
         >
           <ChevronDown

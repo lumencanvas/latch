@@ -152,6 +152,8 @@ function getTypeColor(type: string): string {
       <span class="node-title">Trigger</span>
       <button
         class="node-collapse-btn"
+        :aria-label="isCollapsed ? 'Expand node' : 'Collapse node'"
+        :aria-expanded="!isCollapsed"
         @click.stop="toggleCollapse"
       >
         <ChevronDown :size="14" />

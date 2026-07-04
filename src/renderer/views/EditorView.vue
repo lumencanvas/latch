@@ -754,6 +754,7 @@ onUnmounted(() => {
       <div
         v-if="connectionError"
         class="connection-error"
+        role="alert"
       >
         {{ connectionError }}
       </div>

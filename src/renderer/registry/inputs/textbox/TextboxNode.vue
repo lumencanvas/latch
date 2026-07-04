@@ -147,6 +147,8 @@ const previewText = computed(() => {
       <span class="node-title">Textbox</span>
       <button
         class="node-collapse-btn"
+        :aria-label="isCollapsed ? 'Expand node' : 'Collapse node'"
+        :aria-expanded="!isCollapsed"
         @click.stop="toggleCollapse"
       >
         <ChevronDown :size="14" />

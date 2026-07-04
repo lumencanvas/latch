@@ -112,6 +112,8 @@ function updateKnobValue(value: number) {
         <span class="node-title">Knob</span>
         <button
           class="node-collapse-btn"
+          :aria-label="isCollapsed ? 'Expand node' : 'Collapse node'"
+          :aria-expanded="!isCollapsed"
           @click.stop="toggleCollapse"
         >
           <ChevronDown

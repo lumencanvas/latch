@@ -410,6 +410,7 @@ function onLabelKeydown(e: KeyboardEvent) {
           :position="Position.Left"
           :style="{ background: getTypeColor(input.type) }"
           class="port-handle"
+          :aria-label="`${input.label} input (${getSemanticLabel(input.id, input.type)})`"
         />
         <!-- External label - positioned to the left of the node -->
         <div
@@ -440,6 +441,7 @@ function onLabelKeydown(e: KeyboardEvent) {
           :position="Position.Right"
           :style="{ background: getTypeColor(output.type) }"
           class="port-handle"
+          :aria-label="`${output.label} output (${getSemanticLabel(output.id, output.type)})`"
         />
         <!-- External label - positioned to the right of the node -->
         <div
@@ -501,6 +503,8 @@ function onLabelKeydown(e: KeyboardEvent) {
         <button
           v-if="!isSimpleNode"
           class="node-collapse-btn"
+          :aria-label="isCollapsed ? 'Expand node' : 'Collapse node'"
+          :aria-expanded="!isCollapsed"
           @click.stop="toggleCollapse"
         >
           <ChevronDown

@@ -250,6 +250,8 @@ function getTypeColor(type: string): string {
         <span class="node-title">Step Seq</span>
         <button
           class="node-collapse-btn"
+          :aria-label="isCollapsed ? 'Expand node' : 'Collapse node'"
+          :aria-expanded="!isCollapsed"
           @click.stop="toggleCollapse"
         >
           <ChevronDown

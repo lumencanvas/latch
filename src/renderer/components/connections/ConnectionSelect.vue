@@ -62,6 +62,7 @@ function editConnection() {
       <select
         class="connection-select"
         :value="modelValue"
+        :aria-label="placeholder || 'Select connection'"
         @change="handleSelect"
       >
         <option value="">

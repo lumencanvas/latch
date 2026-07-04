@@ -159,6 +159,7 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
             type="text"
             class="search-input"
             placeholder="Search nodes..."
+            aria-label="Search nodes"
             :value="explorerStore.searchQuery"
             @input="explorerStore.setSearchQuery(($event.target as HTMLInputElement).value)"
           >

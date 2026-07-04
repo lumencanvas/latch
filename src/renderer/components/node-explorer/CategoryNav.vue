@@ -26,6 +26,7 @@ const categories = computed(() =>
     <button
       class="cat-item"
       :class="{ active: selectedCategory === null }"
+      :aria-pressed="selectedCategory === null"
       @click="emit('select', null)"
     >
       <span
@@ -40,6 +41,7 @@ const categories = computed(() =>
       :key="key"
       class="cat-item"
       :class="{ active: selectedCategory === key }"
+      :aria-pressed="selectedCategory === key"
       @click="emit('select', key)"
     >
       <span
