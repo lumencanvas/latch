@@ -3,6 +3,7 @@ import { ref, computed, onUnmounted } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
 import { useFlowsStore } from '@/stores/flows'
 import { usePersistence } from '@/composables/usePersistence'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const flowsStore = useFlowsStore()
 const { deleteFlow: deleteFlowFromDb, saveFlow } = usePersistence()
@@ -195,6 +196,21 @@ function handleRenameKeydown(event: KeyboardEvent) {
     cancelRename()
   }
 }
+
+// Dialog accessibility (focus move-in/trap/restore + Escape) for the two modals.
+const renameDialogRef = ref<HTMLElement | null>(null)
+const { onKeydown: onRenameKeydown } = useDialogA11y({
+  isOpen: () => renameModal.value.visible,
+  container: renameDialogRef,
+  onClose: cancelRename,
+})
+
+const deleteDialogRef = ref<HTMLElement | null>(null)
+const { onKeydown: onDeleteKeydown } = useDialogA11y({
+  isOpen: () => deleteModal.value.visible,
+  container: deleteDialogRef,
+  onClose: cancelDelete,
+})
 </script>
 
 <template>
@@ -269,9 +285,18 @@ function handleRenameKeydown(event: KeyboardEvent) {
         v-if="renameModal.visible"
         class="modal-overlay"
         @click.self="cancelRename"
+        @keydown="onRenameKeydown"
       >
-        <div class="rename-modal">
-          <h3>Rename Flow</h3>
+        <div
+          ref="renameDialogRef"
+          class="rename-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rename-modal-title"
+        >
+          <h3 id="rename-modal-title">
+            Rename Flow
+          </h3>
           <input
             ref="renameInput"
             v-model="renameModal.name"
@@ -305,10 +330,18 @@ function handleRenameKeydown(event: KeyboardEvent) {
         v-if="deleteModal.visible"
         class="modal-overlay"
         @click.self="cancelDelete"
-        @keydown.escape="cancelDelete"
+        @keydown="onDeleteKeydown"
       >
-        <div class="delete-modal">
-          <h3>Delete Flow</h3>
+        <div
+          ref="deleteDialogRef"
+          class="delete-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-modal-title"
+        >
+          <h3 id="delete-modal-title">
+            Delete Flow
+          </h3>
           <p class="delete-message">
             Are you sure you want to delete <strong>{{ deleteModal.flowName }}</strong>? This cannot be undone.
           </p>

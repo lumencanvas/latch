@@ -6,8 +6,16 @@ import { aiInference, AI_MODELS, type ModelLoadState } from '@/services/ai/AIInf
 import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/modelStorage'
 import { WEBLLM_MODELS } from '@/registry/ai/llm'
 import { webLLMService } from '@/services/ai/WebLLMService'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const uiStore = useUIStore()
+
+const dialogRef = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y({
+  isOpen: () => uiStore.aiModelManagerOpen,
+  container: dialogRef,
+  onClose: close,
+})
 
 // Reactive state
 const modelStates = ref<Map<string, { state: ModelLoadState; progress: number; error?: string }>>(new Map())
@@ -298,8 +306,15 @@ function getCategoryColor(category: string): string {
         v-if="uiStore.aiModelManagerOpen"
         class="ai-modal-overlay"
         @click.self="close"
+        @keydown="onKeydown"
       >
-        <div class="ai-modal">
+        <div
+          ref="dialogRef"
+          class="ai-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ai-modal-title"
+        >
           <!-- Header -->
           <div class="modal-header">
             <div class="header-left">
@@ -307,13 +322,17 @@ function getCategoryColor(category: string): string {
                 :size="20"
                 class="header-icon"
               />
-              <h2 class="modal-title">
+              <h2
+                id="ai-modal-title"
+                class="modal-title"
+              >
                 Local AI Models
               </h2>
               <span class="model-count">{{ loadedModelCount }} loaded</span>
             </div>
             <button
               class="close-btn"
+              aria-label="Close AI model manager"
               @click="close"
             >
               <X :size="20" />
@@ -832,6 +851,7 @@ function getCategoryColor(category: string): string {
 }
 
 .toggle-label {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -840,8 +860,20 @@ function getCategoryColor(category: string): string {
   cursor: pointer;
 }
 
+/* Visually hide the checkbox but keep it focusable and in the tab order
+   (display:none would make the toggle keyboard-inoperable — WCAG 2.1.1).
+   Must stay the adjacent sibling of .toggle-switch for the :checked selectors. */
 .toggle-label input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+
+.toggle-label input:focus-visible + .toggle-switch {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
 }
 
 .toggle-switch {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from 'vue'
+import { ref, watch } from 'vue'
 import { X, GraduationCap } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
@@ -7,11 +7,19 @@ import { useNodesStore } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
 import { flowSnippets } from '@/data/flow-snippets'
 import NodeExplorer from '@/components/node-explorer/NodeExplorer.vue'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const explorerStore = useNodeExplorerStore()
+
+const dialogRef = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y({
+  isOpen: () => uiStore.nodeExplorerOpen,
+  container: dialogRef,
+  onClose: close,
+})
 
 // Reset explorer state when opening
 watch(() => uiStore.nodeExplorerOpen, (open) => {
@@ -54,12 +62,6 @@ function handleInsertSnippet(snippetId: string) {
   if (nodeIds.length > 0) uiStore.selectNodes(nodeIds)
   close()
 }
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    close()
-  }
-}
 </script>
 
 <template>
@@ -69,19 +71,29 @@ function handleKeydown(e: KeyboardEvent) {
         v-if="uiStore.nodeExplorerOpen"
         class="modal-overlay"
         @click.self="close"
-        @keydown="handleKeydown"
+        @keydown="onKeydown"
       >
-        <div class="modal-container">
+        <div
+          ref="dialogRef"
+          class="modal-container"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="node-explorer-modal-title"
+        >
           <!-- Header -->
           <div class="modal-header">
             <div class="modal-title-group">
               <GraduationCap :size="18" />
-              <h2 class="modal-title">
+              <h2
+                id="node-explorer-modal-title"
+                class="modal-title"
+              >
                 NODE EXPLORER
               </h2>
             </div>
             <button
               class="close-btn"
+              aria-label="Close node explorer"
               @click="close"
             >
               <X :size="16" />

@@ -15,10 +15,18 @@ import {
   type UniformDefinition,
 } from '@/services/visual/ShaderPresets'
 import MonacoEditor from '@/components/editors/MonacoEditor.vue'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
+
+const dialogRef = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y({
+  isOpen: () => uiStore.shaderEditorOpen,
+  container: dialogRef,
+  onClose: close,
+})
 
 // Local state
 const code = ref('')
@@ -268,12 +276,22 @@ function getUniformTypeLabel(type: string): string {
         v-if="uiStore.shaderEditorOpen"
         class="shader-editor-overlay"
         @click.self="close"
+        @keydown="onKeydown"
       >
-        <div class="shader-editor-modal">
+        <div
+          ref="dialogRef"
+          class="shader-editor-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shader-editor-modal-title"
+        >
           <!-- Header -->
           <div class="modal-header">
             <div class="header-left">
-              <h2 class="modal-title">
+              <h2
+                id="shader-editor-modal-title"
+                class="modal-title"
+              >
                 Shader Editor
               </h2>
               <span
@@ -292,6 +310,7 @@ function getUniformTypeLabel(type: string): string {
               </button>
               <button
                 class="close-btn"
+                aria-label="Close shader editor"
                 @click="close"
               >
                 <X :size="20" />

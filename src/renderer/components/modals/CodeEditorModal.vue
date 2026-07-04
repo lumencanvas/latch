@@ -5,10 +5,18 @@ import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
 import MonacoEditor from '@/components/editors/MonacoEditor.vue'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
+
+const dialogRef = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y({
+  isOpen: () => uiStore.codeEditorOpen,
+  container: dialogRef,
+  onClose: close,
+})
 
 // Local state
 const code = ref('')
@@ -71,15 +79,14 @@ function close() {
   uiStore.closeCodeEditor()
 }
 
-// Save on Ctrl/Cmd+S
+// Save on Ctrl/Cmd+S; Escape-to-close and Tab-trapping are handled by useDialogA11y.
 function handleKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
     e.preventDefault()
     saveCode()
+    return
   }
-  if (e.key === 'Escape') {
-    close()
-  }
+  onKeydown(e)
 }
 </script>
 
@@ -90,11 +97,20 @@ function handleKeydown(e: KeyboardEvent) {
       class="modal-overlay"
       @keydown="handleKeydown"
     >
-      <div class="modal-container">
+      <div
+        ref="dialogRef"
+        class="modal-container"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="code-editor-modal-title"
+      >
         <!-- Header -->
         <div class="modal-header">
           <div class="header-left">
-            <h2 class="modal-title">
+            <h2
+              id="code-editor-modal-title"
+              class="modal-title"
+            >
               Function Editor
               <span
                 v-if="nodeDefinition"

@@ -15,10 +15,18 @@ import ProtocolSelector from './ProtocolSelector.vue'
 import ConnectionEditor from './ConnectionEditor.vue'
 import type { BaseConnectionConfig, ConnectionTypeDefinition } from '@/services/connections/types'
 import { nanoid } from 'nanoid'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const connectionsStore = useConnectionsStore()
 const { modalOpen, selectedConnection, selectedConnectionId, isCreating, selectedProtocol, connections } =
   storeToRefs(connectionsStore)
+
+const dialogRef = ref<HTMLElement | null>(null)
+const { onKeydown } = useDialogA11y({
+  isOpen: () => modalOpen.value,
+  container: dialogRef,
+  onClose: () => connectionsStore.closeModal(),
+})
 
 // Save feedback toast
 const saveMessage = ref<string | null>(null)
@@ -104,19 +112,30 @@ function handleCreate() {
         v-if="modalOpen"
         class="connection-modal-overlay"
         @click.self="connectionsStore.closeModal"
+        @keydown="onKeydown"
       >
-        <div class="connection-modal">
+        <div
+          ref="dialogRef"
+          class="connection-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="connection-modal-title"
+        >
           <!-- Header -->
           <div class="modal-header">
             <div class="header-left">
               <Plug class="header-icon" />
-              <h2 class="modal-title">
+              <h2
+                id="connection-modal-title"
+                class="modal-title"
+              >
                 Connections
               </h2>
               <span class="connection-count">{{ connections.length }} configured</span>
             </div>
             <button
               class="close-btn"
+              aria-label="Close connections"
               @click="connectionsStore.closeModal"
             >
               <X />
@@ -168,6 +187,8 @@ function handleCreate() {
             <div
               v-if="saveMessage"
               class="save-toast"
+              role="status"
+              aria-live="polite"
             >
               <CheckCircle class="save-toast-icon" />
               {{ saveMessage }}
