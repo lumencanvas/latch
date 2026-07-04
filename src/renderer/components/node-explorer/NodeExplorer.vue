@@ -175,9 +175,16 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
             :key="tag"
             class="tag-chip"
             :class="{ active: explorerStore.selectedTags.includes(tag) }"
+            :aria-pressed="explorerStore.selectedTags.includes(tag)"
             @click="explorerStore.toggleTag(tag)"
           >
-            {{ tag }}
+            <!-- Non-color cue (WCAG 1.4.1): a check marks the active chip so its
+                 state does not rely on the primary-colour fill alone. -->
+            <span
+              v-if="explorerStore.selectedTags.includes(tag)"
+              class="tag-check"
+              aria-hidden="true"
+            >✓ </span>{{ tag }}
           </button>
           <button
             v-if="explorerStore.selectedTags.length > 0"
