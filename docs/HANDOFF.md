@@ -6,6 +6,40 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-04 (later 57) — Phase 4 a11y Theme F Increment 3 (keyboard wiring) — the headline 2.1.1 finding CLOSED
+
+Built increment 3 — keyboard **wiring**, from scratch (Vue Flow ships none). `w` on the cursor node starts a
+wire; a 3-stage machine drives it: **pick source output** (↑↓ cycle, auto-picked when there's one) → **pick
+target node** (←→ cycle — only nodes that have a `validateConnection`-valid input for this source) → **pick
+target input port** (↑↓ cycle, valid only) → **Enter** commits. It reuses the pointer `onConnect` path exactly
+(`addEdges([conn])` + `flowsStore.addEdge` + `markDirty`) inside one `Add connection` undo entry; **Escape**
+cancels, **Backspace** steps back a stage (no dead-ends). Every stage is announced via the live region.
+
+Full per-handle visual (maintainer's choice): a new `ui.wireDraft {sourceId, sourceHandle, targetId,
+targetHandle}` drives a **glow on the exact source output + candidate-target input handles** in `BaseNode.vue`
+(and reveals those two nodes' port labels). BaseNode gained `useUIStore` + `isWireSourceHandle`/
+`isWireTargetHandle`/`isWireNode` + a scoped box-shadow glow (no transform, to avoid clobbering the handle's
+`translateY`).
+
+Verification was **store-truth** (read Pinia `flows.activeFlow.edges.length` via the page), because
+`:only-render-visible-elements` makes both DOM edge counts and screen coordinates unreliable — a lesson from
+inc 2. Smoke (system Chrome): `w`→source-handle glow · source-port / target-node / target-port cycling with
+announcements · **commit creates a real new edge (store 18→19) that persists across a full reload** · Escape
+cancels + announces · glow clears after commit · **0 console errors**. Several apparent "failures" during
+verification were all measurement artifacts (screen-coord panning, virtualization, a regex matching "input" in
+the target-node prompt) — none were real bugs.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **1994** · EditorView/BaseNode are app-chrome →
+browser-verified, not unit. **Theme F 2.1.1 finding CLOSED — select, move, and wire are all keyboard-operable.**
+Committed separately (author Moheeb Zara, no AI attribution).
+
+**Remaining (optional, inc 4):** spatial nearest-in-direction nav, an edge-cursor sub-mode (delete edges by
+keyboard), a rubber-band ghost edge, and extracting the copy-pasted `role="application"` chrome into a shared
+`useApplicationKeyboard` composable. Also still open in Phase 4 a11y: the deferred port/edge type-colour cue
+(Theme D, maintainer visual-language call) and the low `.search-input` focus-ring tail.
+
+---
+
 ## 2026-07-04 (later 56) — Phase 4 a11y Theme F Increment 2 (keyboard move) + a batch-split bug fix
 
 Built increment 2 of the canvas keyboard model: **move**. With a selection, Arrow keys nudge the selected
