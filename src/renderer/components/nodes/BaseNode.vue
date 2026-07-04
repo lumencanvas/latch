@@ -14,6 +14,7 @@ import { categoryIcons, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
+import { useUIStore } from '@/stores/ui'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
@@ -44,7 +45,23 @@ const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const runtimeStore = useRuntimeStore()
+const uiStore = useUIStore()
 const { recordParamEdit } = useFlowHistory()
+
+// Keyboard-wiring (Theme F inc 3): glow the exact source/target handle of an
+// in-progress wire, and reveal this node's port labels while it participates.
+function isWireSourceHandle(portId: string): boolean {
+  const d = uiStore.wireDraft
+  return !!d && d.sourceId === props.id && d.sourceHandle === portId
+}
+function isWireTargetHandle(portId: string): boolean {
+  const d = uiStore.wireDraft
+  return !!d && d.targetId === props.id && d.targetHandle === portId
+}
+const isWireNode = computed(() => {
+  const d = uiStore.wireDraft
+  return !!d && (d.sourceId === props.id || d.targetId === props.id)
+})
 
 // The node's current runtime error (cleared when it next executes successfully).
 // Drives the red border + header badge. `getNodeMetrics` is reactive via the
@@ -410,12 +427,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           :position="Position.Left"
           :style="{ background: getTypeColor(input.type) }"
           class="port-handle"
+          :class="{ 'wire-target-handle': isWireTargetHandle(input.id) }"
           :aria-label="`${input.label} input (${getSemanticLabel(input.id, input.type)})`"
         />
         <!-- External label - positioned to the left of the node -->
         <div
           class="port-label port-label-left"
-          :class="{ visible: hoveredPort === `in-${input.id}` || props.selected }"
+          :class="{ visible: hoveredPort === `in-${input.id}` || props.selected || isWireNode }"
         >
           <span class="label-text">{{ input.label }}</span>
           <span
@@ -441,12 +459,13 @@ function onLabelKeydown(e: KeyboardEvent) {
           :position="Position.Right"
           :style="{ background: getTypeColor(output.type) }"
           class="port-handle"
+          :class="{ 'wire-source-handle': isWireSourceHandle(output.id) }"
           :aria-label="`${output.label} output (${getSemanticLabel(output.id, output.type)})`"
         />
         <!-- External label - positioned to the right of the node -->
         <div
           class="port-label port-label-right"
-          :class="{ visible: hoveredPort === `out-${output.id}` || props.selected }"
+          :class="{ visible: hoveredPort === `out-${output.id}` || props.selected || isWireNode }"
         >
           <span class="label-text">{{ output.label }}</span>
           <span
@@ -1004,6 +1023,14 @@ function onLabelKeydown(e: KeyboardEvent) {
 
 :deep(.port-handle:hover) {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Keyboard-wiring glow on the exact source / candidate-target handle (Theme F). */
+:deep(.port-handle.wire-source-handle),
+:deep(.port-handle.wire-target-handle) {
+  border-color: var(--color-primary-400) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-400), 0 0 10px 3px var(--color-primary-400) !important;
+  z-index: 20 !important;
 }
 
 :deep(.vue-flow__handle-left) {

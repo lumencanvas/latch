@@ -157,6 +157,14 @@ interface UIState {
   // Keyboard navigation cursor on the canvas (roved by arrow keys; distinct
   // from selection — a node can be under the cursor without being selected).
   canvasCursor: string | null
+  // In-progress keyboard wire (Theme F inc 3). Drives the source/target handle
+  // glow in BaseNode; the full state machine lives in EditorView.
+  wireDraft: {
+    sourceId: string
+    sourceHandle: string
+    targetId: string | null
+    targetHandle: string | null
+  } | null
 
   // Preferences
   theme: Theme
@@ -219,6 +227,7 @@ export const useUIStore = defineStore('ui', {
     hoveredNode: null,
     inspectedNode: null,
     canvasCursor: null,
+    wireDraft: null,
 
     // Preferences
     theme: 'light',
@@ -392,6 +401,14 @@ export const useUIStore = defineStore('ui', {
 
     setCanvasCursor(nodeId: string | null) {
       this.canvasCursor = nodeId
+    },
+
+    setWireDraft(draft: UIState['wireDraft']) {
+      this.wireDraft = draft
+    },
+
+    clearWireDraft() {
+      this.wireDraft = null
     },
 
     setHoveredNode(nodeId: string | null) {

@@ -327,6 +327,12 @@ function onCanvasKeydown(event: KeyboardEvent) {
     return
   }
 
+  // While a wire is in progress, the wire state machine owns the keys.
+  if (wire.value) {
+    onWireKeydown(event)
+    return
+  }
+
   const isArrow =
     event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown'
   // With a selection, arrows MOVE the selected node(s); otherwise they rove the
@@ -360,6 +366,10 @@ function onCanvasKeydown(event: KeyboardEvent) {
       if (uiStore.selectedNodes.length === 0) return // nothing to clear — let it bubble
       clearCanvasSelection()
       break
+    case 'w':
+    case 'W':
+      startWire() // begin keyboard wiring from the cursor node
+      break
     default:
       return // bubble Tab, Delete/Backspace (window handler owns it), everything else
   }
@@ -380,6 +390,7 @@ function onCanvasFocus() {
 
 function onCanvasBlur() {
   flushMoveBatch()
+  if (wire.value) cancelWire(false)
   canvasFocused.value = false
 }
 
@@ -444,6 +455,260 @@ function flushMoveBatch() {
     endBatch(moveBatchSnapshot.value, 'Move node')
     moveBatchSnapshot.value = null
   }
+}
+
+// ── Canvas keyboard WIRE (Theme F, increment 3) ──────────────────────────────
+// Create a connection by keyboard, reusing the pointer onConnect + validation
+// path. `ui.wireDraft` mirrors the source/target handle so BaseNode can glow the
+// exact ports; the stage machine lives here.
+interface WirePort {
+  id: string
+  type: string
+  label: string
+}
+interface WireState {
+  stage: 'source' | 'target-node' | 'target-port'
+  sourceId: string
+  sourcePortIdx: number
+  targetId: string | null
+  targetPortIdx: number
+}
+const wire = ref<WireState | null>(null)
+
+function nodeById(id: string | null | undefined): Node | undefined {
+  return id ? flowsStore.activeNodes.find(n => n.id === id) : undefined
+}
+
+/** Ports for a node, merging static definition + dynamic (mirrors BaseNode). */
+function portsOf(node: Node | undefined, kind: 'inputs' | 'outputs'): WirePort[] {
+  if (!node) return []
+  const def = nodesStore.getDefinition(node.data?.nodeType as string)
+  const staticPorts = ((def?.[kind] ?? []) as WirePort[])
+  const dynKey = kind === 'inputs' ? '_dynamicInputs' : '_dynamicOutputs'
+  const dyn = (node.data?.[dynKey] as WirePort[] | undefined) ?? []
+  const ids = new Set(staticPorts.map(p => p.id))
+  return [...staticPorts, ...dyn.filter(d => !ids.has(d.id))]
+}
+
+/** Silent validity check (no error toast) — used to filter candidates. */
+function connValid(sourceId: string, sourceHandle: string, targetId: string, targetHandle: string): boolean {
+  return validateConnection(
+    { source: sourceId, sourceHandle, target: targetId, targetHandle },
+    (nt) => nodesStore.getDefinition(nt),
+    (nid) => flowsStore.activeFlow?.nodes.find(n => n.id === nid)?.data as Record<string, unknown> | undefined
+  ).valid
+}
+
+function wireSourcePorts(): WirePort[] {
+  return wire.value ? portsOf(nodeById(wire.value.sourceId), 'outputs') : []
+}
+function wireSourcePort(): WirePort | undefined {
+  return wireSourcePorts()[wire.value?.sourcePortIdx ?? -1]
+}
+function wireCandidateTargets(): Node[] {
+  const w = wire.value
+  const src = wireSourcePort()
+  if (!w || !src) return []
+  return flowsStore.activeNodes.filter(
+    n => n.id !== w.sourceId && portsOf(n, 'inputs').some(inp => connValid(w.sourceId, src.id, n.id, inp.id))
+  )
+}
+function wireTargetPorts(): WirePort[] {
+  const w = wire.value
+  const src = wireSourcePort()
+  if (!w || !src || !w.targetId) return []
+  const tid = w.targetId
+  return portsOf(nodeById(tid), 'inputs').filter(inp => connValid(w.sourceId, src.id, tid, inp.id))
+}
+
+function syncWireDraft() {
+  const w = wire.value
+  if (!w) {
+    uiStore.clearWireDraft()
+    return
+  }
+  const src = wireSourcePort()
+  const tgtPort = w.stage === 'target-port' ? wireTargetPorts()[w.targetPortIdx] : undefined
+  uiStore.setWireDraft({
+    sourceId: w.sourceId,
+    sourceHandle: src?.id ?? '',
+    targetId: w.stage === 'target-port' ? w.targetId : null,
+    targetHandle: tgtPort?.id ?? null,
+  })
+}
+
+function announceWire() {
+  const w = wire.value
+  if (!w) return
+  const src = wireSourcePort()
+  const srcName = nodeName(nodeById(w.sourceId))
+  if (w.stage === 'source') {
+    canvasAnnounce.value = `Wiring from ${srcName}, output ${src?.label ?? ''}. Up/Down to pick an output, Enter to continue, Escape to cancel.`
+  } else if (w.stage === 'target-node') {
+    canvasAnnounce.value = `Connect ${src?.label ?? ''} to ${nodeName(nodeById(w.targetId))}. Left/Right for another target, Enter to pick its input.`
+  } else {
+    const tp = wireTargetPorts()[w.targetPortIdx]
+    canvasAnnounce.value = `Connect ${src?.label ?? ''} to ${nodeName(nodeById(w.targetId))}, input ${tp?.label ?? ''}. Enter to connect, Escape to cancel.`
+  }
+}
+
+function startWire() {
+  const node = nodeById(uiStore.canvasCursor)
+  if (!node) return
+  if (portsOf(node, 'outputs').length === 0) {
+    canvasAnnounce.value = `${nodeName(node)} has no outputs to wire from.`
+    return
+  }
+  wire.value = { stage: 'source', sourceId: node.id, sourcePortIdx: 0, targetId: null, targetPortIdx: 0 }
+  if (portsOf(node, 'outputs').length === 1) advanceFromSource()
+  else {
+    syncWireDraft()
+    announceWire()
+  }
+}
+
+function advanceFromSource() {
+  const w = wire.value
+  if (!w) return
+  const candidates = wireCandidateTargets()
+  if (candidates.length === 0) {
+    canvasAnnounce.value = `No compatible target for ${wireSourcePort()?.label ?? 'this output'}.`
+    return
+  }
+  w.stage = 'target-node'
+  w.targetId = candidates[0].id
+  uiStore.setCanvasCursor(candidates[0].id)
+  panCursorIntoView(candidates[0])
+  syncWireDraft()
+  announceWire()
+}
+
+function cycleSourcePort(delta: 1 | -1) {
+  const w = wire.value
+  if (!w) return
+  const ports = wireSourcePorts()
+  if (ports.length === 0) return
+  w.sourcePortIdx = (w.sourcePortIdx + delta + ports.length) % ports.length
+  syncWireDraft()
+  announceWire()
+}
+
+function cycleTargetNode(delta: 1 | -1) {
+  const w = wire.value
+  if (!w) return
+  const candidates = wireCandidateTargets()
+  if (candidates.length === 0) return
+  const cur = candidates.findIndex(n => n.id === w.targetId)
+  const next = candidates[(Math.max(0, cur) + delta + candidates.length) % candidates.length]
+  w.targetId = next.id
+  uiStore.setCanvasCursor(next.id)
+  panCursorIntoView(next)
+  syncWireDraft()
+  announceWire()
+}
+
+function enterTargetPorts() {
+  const w = wire.value
+  if (!w || !w.targetId || wireTargetPorts().length === 0) return
+  w.stage = 'target-port'
+  w.targetPortIdx = 0
+  syncWireDraft()
+  announceWire()
+}
+
+function cycleTargetPort(delta: 1 | -1) {
+  const w = wire.value
+  if (!w) return
+  const ports = wireTargetPorts()
+  if (ports.length === 0) return
+  w.targetPortIdx = (w.targetPortIdx + delta + ports.length) % ports.length
+  syncWireDraft()
+  announceWire()
+}
+
+function commitWire() {
+  const w = wire.value
+  if (!w || w.stage !== 'target-port' || !w.targetId) return
+  const src = wireSourcePort()
+  const tgt = wireTargetPorts()[w.targetPortIdx]
+  if (!src || !tgt) return
+  if (!connValid(w.sourceId, src.id, w.targetId, tgt.id)) {
+    showConnectionError('Incompatible connection')
+    return
+  }
+  const connection: Connection = { source: w.sourceId, sourceHandle: src.id, target: w.targetId, targetHandle: tgt.id }
+  const before = startBatch()
+  addEdges([connection])
+  flowsStore.addEdge(connection.source, connection.sourceHandle ?? '', connection.target, connection.targetHandle ?? '')
+  flowsStore.markDirty()
+  endBatch(before, 'Add connection')
+  const targetId = w.targetId
+  canvasAnnounce.value = `Connected ${src.label} to ${nodeName(nodeById(targetId))} ${tgt.label}.`
+  cancelWire(false)
+  uiStore.setCanvasCursor(targetId)
+}
+
+function cancelWire(announce = true) {
+  wire.value = null
+  uiStore.clearWireDraft()
+  if (announce) canvasAnnounce.value = 'Wiring cancelled.'
+}
+
+function stepBackWire() {
+  const w = wire.value
+  if (!w) return
+  if (w.stage === 'target-port') {
+    w.stage = 'target-node'
+    syncWireDraft()
+    announceWire()
+  } else if (w.stage === 'target-node') {
+    w.stage = 'source'
+    w.targetId = null
+    uiStore.setCanvasCursor(w.sourceId)
+    const s = nodeById(w.sourceId)
+    if (s) panCursorIntoView(s)
+    syncWireDraft()
+    announceWire()
+  } else {
+    cancelWire()
+  }
+}
+
+function onWireKeydown(event: KeyboardEvent) {
+  const w = wire.value
+  if (!w) return
+  switch (event.key) {
+    case 'Escape':
+      cancelWire()
+      break
+    case 'Backspace':
+      stepBackWire()
+      break
+    case 'Enter':
+    case ' ':
+      if (w.stage === 'source') advanceFromSource()
+      else if (w.stage === 'target-node') enterTargetPorts()
+      else commitWire()
+      break
+    case 'ArrowUp':
+      if (w.stage === 'source') cycleSourcePort(-1)
+      else if (w.stage === 'target-port') cycleTargetPort(-1)
+      break
+    case 'ArrowDown':
+      if (w.stage === 'source') cycleSourcePort(1)
+      else if (w.stage === 'target-port') cycleTargetPort(1)
+      break
+    case 'ArrowLeft':
+      if (w.stage === 'target-node') cycleTargetNode(-1)
+      break
+    case 'ArrowRight':
+      if (w.stage === 'target-node') cycleTargetNode(1)
+      break
+    default:
+      return // let other keys bubble
+  }
+  event.preventDefault()
+  event.stopPropagation()
 }
 
 // Show the cursor ring (a class on the node's Vue Flow wrapper) only while the
