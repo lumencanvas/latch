@@ -1,21 +1,23 @@
-# Next-session kickoff — Phase 4 accessibility IN PROGRESS (~30/33 audit findings closed + regression-audited)
+# Next-session kickoff — Phase 4 accessibility IN PROGRESS (~32/33 audit findings closed + regression-audited)
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-03 — branch `phase0-file-format`, last commit `f6f3d0a`; tree CLEAN & green;
-everything this session is committed & regression-audited. Verify with `git log --oneline -13`.)
+(Last updated 2026-07-04 — branch `phase0-file-format`, last commit `5f433d2`; the **Theme-D increment
+(later-54) is done, verified, and green but NOT yet committed** — see `git status` / `git diff`. Commit it
+(no AI attribution) before starting new work. Verify with `git log --oneline -13`.)
 
 ---
 
 ultrathink You're continuing **LATCH** — a free/open, web+desktop, node-based creative-coding tool ("Live Art
 Tool for Creative Humans"; Vue 3 + TS + Vite, Electron Forge; 238 nodes) at
 `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format`. **Phase 3 (Control system +
-declarative UI) is DONE. Phase 4 (accessibility) is IN PROGRESS — ~30 of 33 app-wide audit findings closed
-this session** across 3 increments. Tree is CLEAN and everything is committed & green. **Get oriented before
+declarative UI) is DONE. Phase 4 (accessibility) is IN PROGRESS — ~32 of 33 app-wide audit findings closed**
+across 4 increments (the port/edge type-colour cue is the only open a11y-audit item, deferred by the
+maintainer as a visual-language call). The Theme-D increment may be uncommitted — check `git status`. **Get oriented before
 touching code, and pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **1989 pass + 11 todo** (134 files) · `build` ok.
+`test:unit` **1994 pass + 11 todo** (135 files) · `build` ok.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
@@ -63,14 +65,20 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
   - **Increment 3 — Theme C names/labels + E live region (6).** Accessible names on the connection `<select>`,
     both search inputs, and port handles; `aria-label`+`aria-expanded` on the collapse toggle (BaseNode + 5
     bespoke shells); `aria-pressed` on category filters; `role="alert"` on the connection-error toast.
+  - **Increment 4 — Theme D non-color cues (later-54).** Connection status badge + tag chips. The badge was
+    a **rendering bug**, not colour-only: styled with Tailwind classes this project doesn't ship → invisible
+    since `1d4e5de`. Rewrote onto scoped CSS + tokens (error drawn as a soft **square** = the 1.4.1 cue) +
+    `role="img"`/`aria-label`; TDD+mutation, browser-verified. Tag chips got a `✓` active cue + `aria-pressed`.
+    **Deferred:** the port/edge type-colour cue (maintainer call — 208-node visual language). Also logged a
+    new low tail: `.search-input { outline: none }` kills its own focus ring (2.4.7).
   - **The control-surface a11y (later-50/51)** was a separate, earlier pass — don't re-audit `controls/*` or
     `PropertiesPanel.vue`.
 
 ## WHAT'S NEXT — pick a thread with me (each flagged)
-1. **Phase 4 a11y tail — Theme D: non-color cues (1.4.1).** Port/edge *type* + connection status + tag chips
-   convey meaning by color alone (`BaseNode.vue`, `AnimatedEdge.vue`, `ConnectionStatusBadge.vue`,
-   `NodeExplorer.vue` tag chips). The port/edge-type cue is a **visual-language decision** (adds a
-   shape/letter/icon to every port across 208 nodes) — get the maintainer's call on the style FIRST.
+1. **Phase 4 a11y tail — Theme D: non-color cues (1.4.1).** Status badge + tag chips DONE (later-54). Only the
+   **port/edge *type* cue** remains (`BaseNode.vue` handle + `AnimatedEdge.vue`) — a **visual-language decision**
+   (adds a shape/letter/icon to every port across 208 nodes), **deferred by the maintainer**; needs a concrete
+   mockup pass + their style call before building (a port and its edge must share one cue).
 2. **Phase 4 a11y headline — Theme F: canvas keyboard wiring (#1).** Keyboard select/move/**wire** nodes on
    the canvas (`role="application"` idiom; VueFlow). Node *adding* already works (tap-to-add via
    `addNodeAtCenter`/`nodeAddNonce`); movement + wiring are locked out. A dedicated multi-increment effort —

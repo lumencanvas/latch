@@ -6,6 +6,89 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-04 (later 55) — Phase 4 a11y Theme F: canvas keyboard operation, Increment 1 (select/navigate)
+
+Opened the headline a11y item — making the node canvas keyboard-operable (WCAG 2.1.1). A **7-agent design
+workflow** (recon: current canvas / the 4-editor `role=application` idiom / store+VueFlow seams → 3 independent
+interaction-model proposals → adversarial synthesis) produced a recommended model + a 4-increment plan, every
+file/line ref verified against real code. Maintainer approved the model and increment-1 scope.
+
+**Recommended model:** one owned `role="application"` host on `.editor-view` (forced by
+`:only-render-visible-elements` — off-screen node DOM doesn't exist, so no per-node roving tabindex), with a
+store-backed keyboard **cursor** distinct from selection, mirroring the 4 control editors' idiom. Modes
+NAVIGATE (done) + WIRE (later). Every action reuses an existing write path (select = the Cmd+A `node.selected`
+write; move = `updateNodePosition`; wire = the `onConnect` body) so keyboard and mouse can't diverge.
+
+**Increment 1 (shipped, browser-verified):**
+- `.editor-view` → `role="application" tabindex="0"` + `aria-roledescription`/`aria-label`/`aria-valuetext`,
+  `@focus`/`@blur`/`@keydown`; a `:focus-visible` inset ring; an `aria-live="polite"` sr-only region.
+- New `ui.canvasCursor` state + `setCanvasCursor`. A cursor that Arrow-keys rove over spatially-sorted
+  `activeNodes` (top→bottom, left→right; wrapping; `setCenter` pans it into view); Enter/Space select
+  (Shift = additive), Escape clears. Cursor shown as a dashed `.kbd-cursor` node ring (a `node.class` toggle,
+  gated on focus). Select mirrors the Cmd+A path (`node.selected` + `uiStore.selectNodes` + inspect).
+- `node.ariaLabel` set on newly-added nodes (`flows.addNode`) — Vue Flow's wrapper has no fallback name.
+- Guards: text inputs + Cmd/Ctrl chords pass through (the window `handleKeyDown` keeps owning undo/copy/
+  select-all/**Delete** — Delete now reachable because selection is keyboard-reachable); unhandled keys bubble.
+
+Browser smoke (system Chrome, 22 nodes): host ARIA correct · focus + summary announce · Arrow roving with
+cursor ring + per-node live announcements · Enter selects + announces · Escape clears · **Cmd/Ctrl+A passes
+through** (not swallowed) · focus-ring rule compiled · **0 console errors**. typecheck clean · lint 0 err ·
+`test:unit` **1994** (the `ariaLabel` addition didn't trip the `.latch` round-trip gate). EditorView is
+app-chrome → browser-verified, not unit (per policy).
+
+**Deferred (planned):** inc 2 keyboard **move** of selected nodes (grid-nudge + history batch + persistence);
+inc 3 **WIRE** mode (built from scratch — needs the maintainer's `w`-key confirmation); inc 4 polish + optional
+`useApplicationKeyboard` composable + spatial nav. `node.ariaLabel` currently new-nodes-only (announcements use
+`data.label`, so this is a minor bonus; a load-time back-fill is a tiny follow-up). All uncommitted on
+`phase0-file-format`; no AI attribution.
+
+---
+
+## 2026-07-04 (later 54) — Phase 4 a11y Theme D (non-color cues) + a real invisible-badge fix
+
+Closed the two mechanical **Theme D** (WCAG 1.4.1) findings; the maintainer **deferred** the port/edge
+type-colour cue (a visual-language call — a shape/letter on every port across 208 nodes; ports/edges stay
+visually identical). Along the way, the "connection status conveyed by colour alone" finding turned out to be
+a **rendering bug**, not a polish item:
+
+- **ConnectionStatusBadge was invisible.** It was styled entirely with Tailwind utility classes
+  (`w-2 h-2 rounded-full bg-emerald-500` …) but **this project ships no Tailwind** — no config, not in
+  `package.json`, nothing defines those classes. Proven live in the running app: a span with the badge's exact
+  classes renders `0×0`, transparent, `border-radius: 0`. So the badge (used in 4 connection surfaces) had
+  rendered **nothing** since it was introduced (`1d4e5de`); the audit read the colour intent from source.
+  Rewrote it onto real **scoped CSS + design tokens** (connected `--color-success` · connecting/reconnecting
+  `--color-warning`+pulse · disconnected `--color-neutral-400` · error `--color-error`) with **error drawn as
+  a soft square** — the only non-circular state, so the critical green/red pair is hue-independent (1.4.1).
+  `role="img"`+`aria-label` name it. TDD + **mutation-verified** (5 tests / 4 mutations red); **browser-verified**
+  against the compiled scoped CSS + a rendered measurement (error `rgb(239,68,68)` @ `2px` vs connected
+  `rgb(34,197,94)` @ circle; tokens resolve to real hex, 0 console errors).
+- **Tag filter chips (NodeExplorer)** — active state was the primary-colour fill alone; added a `✓` prefix on
+  the active chip (the non-colour cue) + `aria-pressed`. Browser-verified: click flips `aria-pressed`
+  false→true, text `ai`→`✓ ai`, fill preserved; the global `:focus-visible` ring covers the chip.
+
+Observed-not-fixed (out of Theme-D scope, logged in the audit misc table): `.search-input { outline: none }`
+in NodeExplorer unconditionally kills its own keyboard focus ring (the known LATCH `:focus`-suppression bug
+class) — a 2.4.7 item, not among the original 33.
+
+**Adversarial regression audit (ultracode, 5 agents / 4 lenses over the uncommitted diff): CLEAN — 0 confirmed
+regressions or correctness defects.** Lenses: badge consumer integrity, badge a11y/scoped-CSS correctness,
+tag-chip regression, test efficacy; each finding independently verified. Verifier confirmed all four colour
+tokens exist (no undefined-token fallback), the badge's public prop API is unchanged so all 4 consumers stay
+safe, and the tag-chip `aria-hidden` check + `aria-pressed` don't double-announce. The one finding (rejected
+as not-a-regression) noted the `:title` tooltip binding wasn't asserted — added that assertion,
+mutation-verified (dropping `:title` now fails). Also confirmed the dead-Tailwind-class bug is **isolated**: a
+scan of every `.vue`/`.ts` file found zero other components using Tailwind-signature classes, so the badge was
+the only casualty.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **1989 → 1994** (134 → 135 files) · browser
+smoke 0 console errors · regression-audited clean. **Theme D: 2 of 4 closed, 2 deferred → ~32 of 33 app-audit
+findings.** Remaining a11y:
+port/edge non-colour cue (deferred, design call) + **Theme F** canvas keyboard wiring (the headline) + low
+tails (#33, search-input focus ring, template-listbox roving). All on `phase0-file-format`; not committed
+(awaiting the go-ahead); no AI attribution.
+
+---
+
 ## 2026-07-03 (later 53) — adversarial regression audit of the Phase-4 a11y commits + hardening
 
 Three parallel read-only review agents (modal focus layer · div→button restructures · ARIA/tablist) over
