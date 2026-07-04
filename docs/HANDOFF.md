@@ -6,6 +6,35 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 52) — Phase 4 a11y kickoff: app-wide audit + modal focus layer + Theme-B div→button sweep
+
+Opened **Phase 4 (accessibility)** proper. An ultracode 5-surface read-only audit (canvas,
+layout chrome, modals, node explorer, connections/assets) → adversarial verify → **33 confirmed
+findings** (16 high / 15 med / 2 low; 2 rejected). Recorded in `docs/A11Y_APP_AUDIT_2026-07-03.md`.
+Then executed the two highest-leverage themes (7 commits):
+
+- **Increment 1 — modal focus management (10 findings).** New `composables/useDialogA11y.ts`
+  (focus move-in · Tab focus-trap · focus restore to opener · Escape-to-close), applied to all 8
+  dialogs (4 editor modals + connection manager + FlowTabs rename/delete). Each gained
+  `role="dialog"`/`aria-modal`/`aria-labelledby`, named close buttons, a `role="status"` toast, and
+  the AIModelManager toggle checkboxes moved off `display:none` to the visually-hidden-but-focusable
+  pattern. Composable is TDD + **mutation-verified** (7 tests / 5 mutations each red). Browser-smoke
+  12/12 (system Chrome), 0 real console errors.
+- **Increment 2 — Theme B: mouse-only `<div>`s → real controls (≈14 findings).** Asset cards,
+  connection rows, debug rows (wrap-select-button or plain button); node palette + category filter
+  (buttons + listbox); flow tabs (roving `tablist` + arrow/F2/Delete/Shift+F10 + focus-managed context
+  menu); HTTP template edit control (sibling button + listbox semantics). Unit + mutation-verified for
+  the unit-mountable components (AssetCard/ConnectionList/DebugPanel/TemplateSelect — +10 tests);
+  **browser-verified** for the app-chrome that won't unit-mount in isolation (AppSidebar 11/11,
+  FlowTabs 13/13, 0 console errors).
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **1967 → 1984** (132 files) · build OK.
+**~24 of 33 findings closed.** Remaining: **Theme C** names/labels (#3/16/17/19/30), **D** non-color
+cues (#18/21/22/31), **E** connection-error toast live-region (#20), **F** canvas keyboard wiring (#1 —
+the headline, a dedicated multi-increment effort), + low #33. All committed, no AI attribution.
+
+---
+
 ## 2026-07-03 (later 51) — audit of the a11y commits + small cleanup
 
 Adversarial regression audit (read-only agent + inline checks) of the later-50 a11y commits
