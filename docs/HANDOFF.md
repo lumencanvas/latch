@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-03 (later 53) — adversarial regression audit of the Phase-4 a11y commits + hardening
+
+Three parallel read-only review agents (modal focus layer · div→button restructures · ARIA/tablist) over
+`83736bd..HEAD`, each finding adversarially verified inline. **No functional regressions in the shipped
+mouse paths** (Ctrl+S, `@click.self`, toggle `:checked` sibling selector, aria-label id uniqueness,
+event-payload identity, drag preservation, dropdown open/close all confirmed intact). **5 real gaps found +
+fixed** (`f6f3d0a`), none a regression from pre-session behaviour:
+- **Tablist Tab-unreachable while editing a subflow** (med) — `activeFlowId` is a subflow id not in the tab
+  strip → every tab `tabindex=-1`. Added a `rovingTabId` fallback so one tab is always tabbable.
+- **Context-menu → Rename/Delete dropped focus to `<body>`** (med) — the modal captured the about-to-unmount
+  menu item as its restore target. Fixed by closing the menu first, then opening the modal on `nextTick` (the
+  clean decouple; a watch-declaration-order attempt did NOT work — verified empirically via a focus-trace
+  smoke, F2 path always worked, menu path was the bug).
+- **Context menu over-claimed `role="menu"`/`menuitem`** (low) without the APG arrow-key model → downgraded to
+  a labelled `role="group"` (DON'T-OVERCLAIM).
+- **ConnectionList right-edge dead-zone** (low) — only the inner button selected. Delegated `@click` to the
+  row so the whole row selects (button Enter/Space bubbles); unit + mutation-tested.
+- **Textbox/Trigger collapsed-state `expand-btn` unlabelled** (low) — added `aria-label`+`aria-expanded`.
+
+Deferred (noted, not a regression): `role="tab"` lacks a `tabpanel`/`aria-controls` association (needs a
+small cross-component decision — the canvas is the shared panel). typecheck clean · lint 0 err · `test:unit`
+**1988 → 1989** (134 files) · build OK · audit-fix smoke 7/7, 0 console errors.
+
+---
+
 ## 2026-07-03 (later 52) — Phase 4 a11y kickoff: app-wide audit + modal focus layer + Theme-B div→button sweep
 
 Opened **Phase 4 (accessibility)** proper. An ultracode 5-surface read-only audit (canvas,

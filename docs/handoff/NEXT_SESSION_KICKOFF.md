@@ -1,9 +1,9 @@
-# Next-session kickoff — Phase 4 accessibility IN PROGRESS (~30/33 audit findings closed)
+# Next-session kickoff — Phase 4 accessibility IN PROGRESS (~30/33 audit findings closed + regression-audited)
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-03 — branch `phase0-file-format`, last commit `0e7ee1f`; tree CLEAN & green;
-everything this session is committed. Verify with `git log --oneline -12`.)
+(Last updated 2026-07-03 — branch `phase0-file-format`, last commit `f6f3d0a`; tree CLEAN & green;
+everything this session is committed & regression-audited. Verify with `git log --oneline -13`.)
 
 ---
 
@@ -15,7 +15,7 @@ this session** across 3 increments. Tree is CLEAN and everything is committed & 
 touching code, and pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **1988 pass + 11 todo** (134 files) · `build` ok.
+`test:unit` **1989 pass + 11 todo** (134 files) · `build` ok.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
@@ -23,11 +23,13 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
    verify against the actual git original.** Honor `strategy/05` **DON'T-OVERCLAIM**.
 2. `docs/A11Y_APP_AUDIT_2026-07-03.md` — **the live Phase-4 a11y tracker**: 33 confirmed findings grouped by
    theme, with Increments 1–3 marked DONE and the remaining backlog (Themes D + F + low) called out.
-3. `docs/HANDOFF.md` TOP entries **(later 52 → 45)**, newest first: (52) **Phase-4 a11y: app-wide audit +
-   modal focus layer + Theme-B div→button sweep + Theme-C/E names/live-region** (this session); (51) audit of
-   the control-surface a11y commits; (50) ultracode control-surface a11y audit + 7 fixes; (49) generated-index
-   cleanup; (48) WaveformEditor keyboard a11y; (47) `component` single-source routing; (46) Envelope+EQ
-   keyboard; (45) orphan-SFC cleanup.
+3. `docs/HANDOFF.md` TOP entries **(later 53 → 46)**, newest first: (53) **adversarial regression audit of the
+   Phase-4 a11y commits + 5 hardening fixes** (no real regressions; tablist roving fallback, context-menu→modal
+   focus via nextTick, role=menu→group downgrade, ConnectionList row-click delegation, expand-btn labels);
+   (52) **Phase-4 a11y: app-wide audit + modal focus layer + Theme-B div→button sweep + Theme-C/E names/live-
+   region**; (51) audit of the control-surface a11y commits; (50) ultracode control-surface a11y audit + 7
+   fixes; (49) generated-index cleanup; (48) WaveformEditor keyboard a11y; (47) `component` single-source
+   routing; (46) Envelope+EQ keyboard.
 4. `docs/plans/ROADMAP_2026-06-28.md` — canonical phase order + the progress snapshot at the top (Phase 4 now
    IN PROGRESS). **This owns sequencing; where older `docs/plans/` files conflict, this wins.**
 5. Recall memories: **latch-a11y-bug-classes** (mouse-only `<div>` triggers, `display:none` faux inputs,
@@ -76,7 +78,9 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
 3. **Phase 4 non-a11y items:** canvas toolbar + marquee selection, snippets tab + `flowToPreview` thumbnails,
    templates on the empty canvas, onboarding. (POLISH Streams 2–3; see ROADMAP Phase 4.)
 4. **Low a11y tails:** #33 (NodeExplorer grid→detail focus management), #14 (full template-listbox arrow-key
-   roving).
+   roving), and the FlowTabs `role="tab"` → `tabpanel`/`aria-controls` association (deferred in later-53 — the
+   editor canvas is the shared panel; needs a small cross-component decision, or reconsider role=tab vs a
+   labelled button group).
 5. **Other threads:** Phase 2 BLE device-picker UX; Phase 5+ (modulation gap / co-location / subflow / VJ).
 Ask me which to take. Don't dive into a whole new phase without confirming.
 
@@ -108,10 +112,15 @@ Ask me which to take. Don't dive into a whole new phase without confirming.
 ## INHERITED INVARIANTS (don't regress / don't overclaim)
 - **`useDialogA11y` (`composables/useDialogA11y.ts`) is the shared dialog/menu focus layer.** Bind its
   `onKeydown` to the OVERLAY `@keydown`, pass a template ref to the CONTAINER, and add `role="dialog"`+
-  `aria-modal`+`aria-labelledby` (or `role="menu"` for menus) yourself. It moves focus in on open, traps Tab,
-  restores focus to the opener on close, and closes on Escape. Used by all 8 modals + the FlowTabs context
-  menu. For a modal that already handles a key (e.g. CodeEditor's Ctrl+S), COMPOSE: handle your key, else call
-  `onKeydown(e)`.
+  `aria-modal`+`aria-labelledby` (or `role="group"` for the tab context menu — NOT `role="menu"`, which we
+  don't fully implement) yourself. It moves focus in on open, traps Tab, restores focus to the opener on close,
+  and closes on Escape. Used by all 8 modals + the FlowTabs context menu. For a modal that already handles a
+  key (e.g. CodeEditor's Ctrl+S), COMPOSE: handle your key, else call `onKeydown(e)`.
+  - **Opening one dialog FROM another (menu → modal): decouple with `nextTick`.** It captures its restore
+    target at open time = `document.activeElement`; if you open it synchronously while a menu is closing, it
+    captures the about-to-unmount menu item and focus falls to `<body>` on close. Close the first, then open
+    the second in `nextTick` (see FlowTabs `renameFlow`/`closeFlowFromMenu`). Watch-DECLARATION-ORDER does NOT
+    reliably control this — verified empirically in later-53; use the nextTick decouple.
 - **Mouse-only-`<div>` fix pattern:** if the interactive element has NO nested interactive content, make it a
   `<button>` (keyboard-operable by contract). If it wraps an action control (delete/edit/actions), DON'T nest
   — wrap the select area in a `<button>` and keep the action(s) as SIBLINGS in a container `<div>`. Reset the
