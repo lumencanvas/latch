@@ -71,8 +71,7 @@ async function createNewFlow() {
   await saveFlow(flow.id)
 }
 
-function closeFlow(flowId: string, event: MouseEvent) {
-  event.stopPropagation()
+function closeFlowById(flowId: string) {
   const flow = flowsStore.getFlowById(flowId)
   deleteModal.value = {
     visible: true,
@@ -81,22 +80,19 @@ function closeFlow(flowId: string, event: MouseEvent) {
   }
 }
 
-function showContextMenu(flowId: string, event: MouseEvent) {
-  event.preventDefault()
+function closeFlow(flowId: string, event: MouseEvent) {
   event.stopPropagation()
+  closeFlowById(flowId)
+}
 
+function openContextMenu(flowId: string, x: number, y: number) {
   // Clean up any existing listener
   if (contextMenuCleanup) {
     contextMenuCleanup()
     contextMenuCleanup = null
   }
 
-  contextMenu.value = {
-    visible: true,
-    flowId,
-    x: event.clientX,
-    y: event.clientY,
-  }
+  contextMenu.value = { visible: true, flowId, x, y }
 
   // Close menu when clicking elsewhere
   const closeMenu = () => {
@@ -108,6 +104,70 @@ function showContextMenu(flowId: string, event: MouseEvent) {
     document.addEventListener('click', closeMenu)
     contextMenuCleanup = closeMenu
   }, 0)
+}
+
+function showContextMenu(flowId: string, event: MouseEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  openContextMenu(flowId, event.clientX, event.clientY)
+}
+
+// Keyboard operation of the tablist: activate, arrow-navigate, rename, delete,
+// and open the context menu — all without a mouse (WCAG 2.1.1).
+function onTabKeydown(event: KeyboardEvent, flowId: string) {
+  const el = event.currentTarget as HTMLElement
+  const focusSibling = (sibling: Element | null | undefined) => {
+    const next = sibling as HTMLElement | null
+    if (!next) return
+    const id = next.dataset.flowId
+    if (id) selectFlow(id)
+    next.focus()
+  }
+
+  switch (event.key) {
+    case 'Enter':
+    case ' ':
+      event.preventDefault()
+      selectFlow(flowId)
+      break
+    case 'ArrowRight':
+      event.preventDefault()
+      focusSibling(el.nextElementSibling)
+      break
+    case 'ArrowLeft':
+      event.preventDefault()
+      focusSibling(el.previousElementSibling)
+      break
+    case 'Home':
+      event.preventDefault()
+      focusSibling(el.parentElement?.firstElementChild)
+      break
+    case 'End':
+      event.preventDefault()
+      focusSibling(el.parentElement?.lastElementChild)
+      break
+    case 'F2':
+      event.preventDefault()
+      startRenameFlow(flowId)
+      break
+    case 'Delete':
+    case 'Backspace':
+      event.preventDefault()
+      closeFlowById(flowId)
+      break
+    case 'ContextMenu': {
+      event.preventDefault()
+      const r = el.getBoundingClientRect()
+      openContextMenu(flowId, r.left, r.bottom)
+      break
+    }
+    default:
+      if (event.shiftKey && event.key === 'F10') {
+        event.preventDefault()
+        const r = el.getBoundingClientRect()
+        openContextMenu(flowId, r.left, r.bottom)
+      }
+  }
 }
 
 // Clean up on unmount
@@ -211,19 +271,43 @@ const { onKeydown: onDeleteKeydown } = useDialogA11y({
   container: deleteDialogRef,
   onClose: cancelDelete,
 })
+
+// The context menu behaves like a dialog for the keyboard: focus moves into it,
+// Escape closes it, and focus returns to the tab that opened it.
+const contextMenuRef = ref<HTMLElement | null>(null)
+const { onKeydown: onContextMenuKeydown } = useDialogA11y({
+  isOpen: () => contextMenu.value.visible,
+  container: contextMenuRef,
+  onClose: () => {
+    contextMenu.value.visible = false
+    if (contextMenuCleanup) {
+      contextMenuCleanup()
+      contextMenuCleanup = null
+    }
+  },
+})
 </script>
 
 <template>
   <div class="flow-tabs">
-    <div class="tabs-container">
+    <div
+      class="tabs-container"
+      role="tablist"
+      aria-label="Open flows"
+    >
       <div
         v-for="flow in openFlows"
         :key="flow.id"
+        :data-flow-id="flow.id"
         class="flow-tab"
         :class="{ active: flow.id === activeFlowId }"
+        role="tab"
+        :aria-selected="flow.id === activeFlowId"
+        :tabindex="flow.id === activeFlowId ? 0 : -1"
         @click="selectFlow(flow.id)"
         @dblclick="startRenameFlow(flow.id)"
         @contextmenu="showContextMenu(flow.id, $event)"
+        @keydown="onTabKeydown($event, flow.id)"
       >
         <span class="tab-name">
           {{ flow.name }}
@@ -234,7 +318,8 @@ const { onKeydown: onDeleteKeydown } = useDialogA11y({
         </span>
         <button
           class="close-btn"
-          title="Delete flow"
+          tabindex="-1"
+          :aria-label="`Delete flow ${flow.name}`"
           @click="closeFlow(flow.id, $event)"
         >
           <X :size="12" />
@@ -254,17 +339,23 @@ const { onKeydown: onDeleteKeydown } = useDialogA11y({
     <Teleport to="body">
       <div
         v-if="contextMenu.visible"
+        ref="contextMenuRef"
         class="context-menu"
+        role="menu"
+        aria-label="Flow actions"
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+        @keydown="onContextMenuKeydown"
       >
         <button
           class="menu-item"
+          role="menuitem"
           @click="renameFlow"
         >
           Rename
         </button>
         <button
           class="menu-item"
+          role="menuitem"
           @click="duplicateFlow"
         >
           Duplicate
@@ -272,6 +363,7 @@ const { onKeydown: onDeleteKeydown } = useDialogA11y({
         <div class="menu-divider" />
         <button
           class="menu-item danger"
+          role="menuitem"
           @click="closeFlowFromMenu"
         >
           Delete
@@ -418,6 +510,11 @@ const { onKeydown: onDeleteKeydown } = useDialogA11y({
   background: var(--color-neutral-700);
 }
 
+.flow-tab:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: -2px;
+}
+
 .tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -444,7 +541,8 @@ const { onKeydown: onDeleteKeydown } = useDialogA11y({
   transition: all 0.1s ease;
 }
 
-.flow-tab:hover .close-btn {
+.flow-tab:hover .close-btn,
+.flow-tab:focus-within .close-btn {
   opacity: 1;
 }
 
