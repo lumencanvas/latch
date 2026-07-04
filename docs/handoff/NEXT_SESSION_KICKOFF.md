@@ -1,20 +1,21 @@
-# Next-session kickoff — Phase 4 accessibility IN PROGRESS (~32/33 audit findings closed + regression-audited)
+# Next-session kickoff — Phase 4 accessibility ~COMPLETE (canvas keyboard 2.1.1 CLOSED; audit fully addressed)
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-04 — branch `phase0-file-format`, last commit `5f433d2`; the **Theme-D increment
-(later-54) is done, verified, and green but NOT yet committed** — see `git status` / `git diff`. Commit it
-(no AI attribution) before starting new work. Verify with `git log --oneline -13`.)
+(Last updated 2026-07-04 — branch `phase0-file-format`, last commit `1d791e0`; **tree is CLEAN & green,
+everything committed** (Theme D + Theme F increments 1–3). Verify with `git log --oneline -13`.)
 
 ---
 
 ultrathink You're continuing **LATCH** — a free/open, web+desktop, node-based creative-coding tool ("Live Art
 Tool for Creative Humans"; Vue 3 + TS + Vite, Electron Forge; 238 nodes) at
 `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format`. **Phase 3 (Control system +
-declarative UI) is DONE. Phase 4 (accessibility) is IN PROGRESS — ~32 of 33 app-wide audit findings closed**
-across 4 increments (the port/edge type-colour cue is the only open a11y-audit item, deferred by the
-maintainer as a visual-language call). The Theme-D increment may be uncommitted — check `git status`. **Get oriented before
-touching code, and pick the next thread with me.**
+declarative UI) is DONE. Phase 4 (accessibility) is ~COMPLETE** — the app-wide audit is fully addressed and the
+**headline canvas-keyboard finding (WCAG 2.1.1) is CLOSED**: nodes can be selected, moved, and wired entirely
+by keyboard. Only two small a11y items remain open — the port/edge type-colour cue (Theme D, deferred as a
+maintainer visual-language call) and a low `.search-input` focus-ring tail — plus optional Theme-F inc-4
+polish. Tree is CLEAN, everything committed & green. **Get oriented before touching code, and pick the next
+thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
 `test:unit` **1994 pass + 11 todo** (135 files) · `build` ok.
@@ -24,14 +25,17 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
    **Commit only when asked.** Stay on the branch. Each step ends green. **Never assume — read the real code /
    verify against the actual git original.** Honor `strategy/05` **DON'T-OVERCLAIM**.
 2. `docs/A11Y_APP_AUDIT_2026-07-03.md` — **the live Phase-4 a11y tracker**: 33 confirmed findings grouped by
-   theme, with Increments 1–3 marked DONE and the remaining backlog (Themes D + F + low) called out.
-3. `docs/HANDOFF.md` TOP entries **(later 53 → 46)**, newest first: (53) **adversarial regression audit of the
-   Phase-4 a11y commits + 5 hardening fixes** (no real regressions; tablist roving fallback, context-menu→modal
-   focus via nextTick, role=menu→group downgrade, ConnectionList row-click delegation, expand-btn labels);
-   (52) **Phase-4 a11y: app-wide audit + modal focus layer + Theme-B div→button sweep + Theme-C/E names/live-
-   region**; (51) audit of the control-surface a11y commits; (50) ultracode control-surface a11y audit + 7
-   fixes; (49) generated-index cleanup; (48) WaveformEditor keyboard a11y; (47) `component` single-source
-   routing; (46) Envelope+EQ keyboard.
+   theme. Modal/Theme-B/Theme-C/Theme-D all DONE; **Theme F (canvas keyboard) CLOSED** across increments 1–3;
+   remaining = the deferred port/edge colour cue + the low `.search-input` focus-ring tail.
+3. `docs/HANDOFF.md` TOP entries **(later 57 → 50)**, newest first: (57) **Theme F inc 3 — keyboard wiring;
+   2.1.1 CLOSED** (`w`→3-stage source/target/port machine reusing `onConnect`, per-handle glow via `ui.wireDraft`,
+   store-truth verified: real new edge + persists); (56) **Theme F inc 2 — keyboard move** (grid-step, one-undo-
+   per-burst, persists; fixed a bare-`Shift`-splits-the-undo-batch bug); (55) **Theme F inc 1 — keyboard focus +
+   nav + select** (`role="application"` host on `.editor-view`); (54) **Theme D non-colour cues** (invisible-
+   badge fix + tag chips); (53) adversarial regression audit + 5 hardening fixes; (52) app-wide a11y audit +
+   modal focus layer + Theme-B sweep; (51) control-surface a11y audit; (50) ultracode control-surface a11y + 7
+   fixes. **Verification lesson (inc 2/3): Vue Flow's `:only-render-visible-elements` makes DOM edge counts +
+   screen coords unreliable — verify canvas state via node inline-transform (flow coords) + the Pinia store.**
 4. `docs/plans/ROADMAP_2026-06-28.md` — canonical phase order + the progress snapshot at the top (Phase 4 now
    IN PROGRESS). **This owns sequencing; where older `docs/plans/` files conflict, this wins.**
 5. Recall memories: **latch-a11y-bug-classes** (mouse-only `<div>` triggers, `display:none` faux inputs,
@@ -50,9 +54,11 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
   DONE** (one `<ControlRenderer>`; declarative `ui`+`NodeView` Tier-A + Tier-B aggregates; `component?` is the
   single routing source; all 4 canvas editors keyboard-operable). Only deferred Phase-3 item: new control
   TYPES (`range`/`curve`/`gradient`) — need a real consumer node.
-- **Phase 4 (Canvas, onboarding & accessibility): IN PROGRESS — accessibility stream.** An ultracode 5-surface
-  app-wide audit (`docs/A11Y_APP_AUDIT_2026-07-03.md`) → **33 confirmed findings** (16 high/15 med/2 low).
-  Closed this session (~30) in 3 increments:
+- **Phase 4 (Canvas, onboarding & accessibility): accessibility stream ~COMPLETE.** An ultracode 5-surface
+  app-wide audit (`docs/A11Y_APP_AUDIT_2026-07-03.md`) → **33 confirmed findings** (16 high/15 med/2 low), now
+  fully addressed except the deferred port/edge colour cue + a low focus-ring tail. Modal-focus, Theme-B, and
+  Theme-C increments (below) landed first; then **Theme D** (non-colour cues) and **Theme F** (canvas keyboard
+  operation — select/move/wire, **2.1.1 CLOSED**):
   - **Increment 1 — modal focus management (10).** NEW `composables/useDialogA11y.ts` (focus move-in · Tab
     focus-trap · focus restore to opener · Escape-to-close) applied to all 8 dialogs + `role="dialog"`/
     `aria-modal`/`aria-labelledby`, named close buttons, `role="status"` toasts, and the AIModelManager toggle
@@ -71,6 +77,15 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
     `role="img"`/`aria-label`; TDD+mutation, browser-verified. Tag chips got a `✓` active cue + `aria-pressed`.
     **Deferred:** the port/edge type-colour cue (maintainer call — 208-node visual language). Also logged a
     new low tail: `.search-input { outline: none }` kills its own focus ring (2.4.7).
+  - **Theme F — canvas keyboard operation (later 55–57), 2.1.1 CLOSED.** A 7-agent design workflow → maintainer-
+    approved 4-increment plan; increments 1–3 shipped: **(1)** `.editor-view` is a `role="application"` host with
+    an arrow-key *cursor* (roves nodes, distinct from selection), Enter/Space select, Escape clear, live-region
+    announcements, focus-visible ring — mirrors the 4 control editors' idiom (no per-node tabindex, forced by
+    `:only-render-visible-elements`). **(2)** grid-step **move** of the selection (Shift = coarse), one-undo-per-
+    burst, persists. **(3)** from-scratch **wiring**: `w` → source-output / target-node / target-input machine
+    (valid-filtered via `validateConnection`), Enter commit / Escape cancel / Backspace step-back, per-handle glow
+    via `ui.wireDraft` in BaseNode, reuses the `onConnect` path. **Optional inc 4:** spatial nav, edge-cursor
+    keyboard-delete, ghost edge, extract a shared `useApplicationKeyboard` composable.
   - **The control-surface a11y (later-50/51)** was a separate, earlier pass — don't re-audit `controls/*` or
     `PropertiesPanel.vue`.
 
@@ -79,10 +94,10 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
    **port/edge *type* cue** remains (`BaseNode.vue` handle + `AnimatedEdge.vue`) — a **visual-language decision**
    (adds a shape/letter/icon to every port across 208 nodes), **deferred by the maintainer**; needs a concrete
    mockup pass + their style call before building (a port and its edge must share one cue).
-2. **Phase 4 a11y headline — Theme F: canvas keyboard wiring (#1).** Keyboard select/move/**wire** nodes on
-   the canvas (`role="application"` idiom; VueFlow). Node *adding* already works (tap-to-add via
-   `addNodeAtCenter`/`nodeAddNonce`); movement + wiring are locked out. A dedicated multi-increment effort —
-   scope the interaction model + confirm before building.
+2. **Phase 4 a11y headline — Theme F: canvas keyboard (#1) — DONE (2.1.1 CLOSED).** Select/move/wire all
+   keyboard-operable (later 55–57). Only **optional inc 4 polish** remains: spatial nearest-in-direction nav,
+   an edge-cursor sub-mode for keyboard edge-delete, a rubber-band ghost edge while wiring, and/or extracting the
+   copy-pasted `role="application"` chrome (canvas + 4 editors) into a shared `useApplicationKeyboard` composable.
 3. **Phase 4 non-a11y items:** canvas toolbar + marquee selection, snippets tab + `flowToPreview` thumbnails,
    templates on the empty canvas, onboarding. (POLISH Streams 2–3; see ROADMAP Phase 4.)
 4. **Low a11y tails:** #33 (NodeExplorer grid→detail focus management), #14 (full template-listbox arrow-key
