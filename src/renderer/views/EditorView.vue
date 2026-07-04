@@ -4,7 +4,7 @@ import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
-import type { Connection, NodeChange } from '@vue-flow/core'
+import type { Connection, NodeChange, Node } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
@@ -40,6 +40,12 @@ interface ClipboardData {
 }
 const clipboard = ref<ClipboardData | null>(null)
 
+// Canvas keyboard navigation (Theme F / WCAG 2.1.1): the .editor-view host is a
+// focusable role="application" surface with an arrow-key "cursor" that roves
+// nodes (distinct from selection). `canvasAnnounce` feeds the live region.
+const canvasFocused = ref(false)
+const canvasAnnounce = ref('')
+
 const flowsStore = useFlowsStore()
 const uiStore = useUIStore()
 const nodesStore = useNodesStore()
@@ -55,6 +61,7 @@ const {
   onNodeClick,
   project,
   fitView,
+  setCenter,
   setViewport,
   getViewport,
   getSelectedEdges,
@@ -226,6 +233,136 @@ watch(
     const types = [...uiStore.pendingNodeAdds]
     uiStore.pendingNodeAdds = []
     types.forEach(addNodeAtCenter)
+  }
+)
+
+// ── Canvas keyboard navigation (Theme F, WCAG 2.1.1) ─────────────────────────
+// Increment 1: focus + cursor roving + select + announcements. Mirrors the
+// role="application" idiom used by the 4 canvas control editors. Keyboard MOVE
+// and WIRE are deferred to later increments.
+
+/** Nodes in a stable reading order: top-to-bottom, then left-to-right. */
+function sortedNodes(): Node[] {
+  return [...flowsStore.activeNodes].sort(
+    (a, b) => a.position.y - b.position.y || a.position.x - b.position.x
+  )
+}
+
+function nodeName(n: Node | undefined): string {
+  if (!n) return 'node'
+  return (n.data?.label as string) || (n.data?.nodeType as string) || 'node'
+}
+
+/** Keep the cursor node on-screen — off-screen nodes aren't rendered
+ *  (:only-render-visible-elements), so the ring/announce need it centred. */
+function panCursorIntoView(n: Node) {
+  try {
+    setCenter(n.position.x, n.position.y, { zoom: getViewport().zoom, duration: 150 })
+  } catch {
+    // pane not ready yet — ignore
+  }
+}
+
+function moveCursor(delta: 1 | -1) {
+  const list = sortedNodes()
+  if (list.length === 0) {
+    canvasAnnounce.value = 'Canvas is empty.'
+    return
+  }
+  const curIndex = list.findIndex(n => n.id === uiStore.canvasCursor)
+  const nextIndex = (Math.max(0, curIndex) + delta + list.length) % list.length
+  const next = list[nextIndex]
+  uiStore.setCanvasCursor(next.id)
+  panCursorIntoView(next)
+  canvasAnnounce.value = `${nodeName(next)}, node ${nextIndex + 1} of ${list.length}. Enter to select.`
+}
+
+/** Select the cursor node. Mirrors the Cmd+A path: writes `node.selected` (the
+ *  getSelectedNodes watcher fans it out) plus the ui store, belt-and-suspenders. */
+function selectCursorNode(additive: boolean) {
+  const id = uiStore.canvasCursor
+  if (!id) return
+  // `selected` is a runtime flag Vue Flow adds, not on the input Node type — cast
+  // it the same way the Cmd+A select-all path does.
+  const nodes = flowsStore.activeNodes as Array<Node & { selected?: boolean }>
+  if (!additive) nodes.forEach(n => { n.selected = false })
+  const target = nodes.find(n => n.id === id)
+  if (!target) return
+  target.selected = true
+  const selectedIds = nodes.filter(n => n.selected).map(n => n.id)
+  uiStore.selectNodes(selectedIds)
+  uiStore.setInspectedNode(selectedIds.length === 1 ? selectedIds[0] : null)
+  canvasAnnounce.value =
+    selectedIds.length > 1
+      ? `${nodeName(target)} added to selection, ${selectedIds.length} selected.`
+      : `Selected ${nodeName(target)}.`
+}
+
+function clearCanvasSelection() {
+  const nodes = flowsStore.activeNodes as Array<Node & { selected?: boolean }>
+  nodes.forEach(n => { n.selected = false })
+  uiStore.clearSelection()
+  uiStore.setInspectedNode(null)
+  canvasAnnounce.value = 'Selection cleared.'
+}
+
+function onCanvasKeydown(event: KeyboardEvent) {
+  // Let node rename fields / control inputs keep their own keys.
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+  // Cmd/Ctrl chords belong to the window handler (undo/copy/select-all/…).
+  if (event.metaKey || event.ctrlKey) return
+  switch (event.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+      moveCursor(1)
+      break
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      moveCursor(-1)
+      break
+    case 'Enter':
+    case ' ':
+      selectCursorNode(event.shiftKey)
+      break
+    case 'Escape':
+      if (uiStore.selectedNodes.length === 0) return // nothing to clear — let it bubble
+      clearCanvasSelection()
+      break
+    default:
+      return // bubble Tab, Delete/Backspace (window handler owns it), everything else
+  }
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function onCanvasFocus() {
+  canvasFocused.value = true
+  const list = sortedNodes()
+  if (!uiStore.canvasCursor && list.length) {
+    uiStore.setCanvasCursor(uiStore.selectedNodes[0] ?? list[0].id)
+  }
+  canvasAnnounce.value = list.length
+    ? `Node canvas, ${list.length} node${list.length > 1 ? 's' : ''}. Arrow keys to browse, Enter to select.`
+    : 'Node canvas, empty. Add a node from the palette.'
+}
+
+// Show the cursor ring (a class on the node's Vue Flow wrapper) only while the
+// canvas is focused — matching the editors' `focused && selected` gate. No other
+// code manages `node.class`, so toggling it here is safe.
+watch(
+  () => [uiStore.canvasCursor, canvasFocused.value] as const,
+  (_cur, prev) => {
+    const prevId = prev?.[0]
+    const nodes = flowsStore.activeNodes
+    if (prevId) {
+      const p = nodes.find(n => n.id === prevId)
+      if (p && p.class === 'kbd-cursor') p.class = undefined
+    }
+    const id = uiStore.canvasCursor
+    if (id && canvasFocused.value) {
+      const c = nodes.find(n => n.id === id)
+      if (c) c.class = 'kbd-cursor'
+    }
   }
 )
 
@@ -680,7 +817,22 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="editor-view">
+  <div
+    class="editor-view"
+    role="application"
+    tabindex="0"
+    aria-roledescription="node canvas"
+    :aria-label="`Node canvas, ${flowsStore.activeNodes.length} nodes`"
+    :aria-valuetext="canvasAnnounce"
+    @focus="onCanvasFocus"
+    @blur="canvasFocused = false"
+    @keydown="onCanvasKeydown"
+  >
+    <!-- Polite live region: announces cursor movement, selection, etc. to AT. -->
+    <span
+      class="sr-only"
+      aria-live="polite"
+    >{{ canvasAnnounce }}</span>
     <VueFlow
       v-if="flowsStore.activeFlow"
       v-model:nodes="flowsStore.activeFlow.nodes"
@@ -767,6 +919,36 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   position: relative;
+}
+
+/* Keyboard focus ring on the canvas host. Inset because the host is full-bleed.
+   :focus-visible only (mouse clicks into the canvas stay ring-free). */
+.editor-view:focus {
+  outline: none;
+}
+.editor-view:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: -2px;
+}
+
+/* Visually-hidden live region (screen-reader only). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard cursor ring — the roved node (distinct from the solid selected ring). */
+.flow-canvas :deep(.vue-flow__node.kbd-cursor) {
+  outline: 2px dashed var(--color-primary-400);
+  outline-offset: 4px;
+  border-radius: 2px;
 }
 
 .flow-canvas {

@@ -389,6 +389,9 @@ export const useFlowsStore = defineStore('flows', {
         id: nanoid(),
         type: vueFlowType,
         position,
+        // Accessible name for the Vue Flow node wrapper (it has no fallback);
+        // consumed by the canvas keyboard-navigation announcements and AT.
+        ariaLabel: `${(data.label as string) || nodeType} node`,
         data: {
           ...data,
           nodeType,

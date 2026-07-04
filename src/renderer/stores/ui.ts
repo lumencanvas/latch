@@ -154,6 +154,9 @@ interface UIState {
   selectedNodes: string[]
   hoveredNode: string | null
   inspectedNode: string | null
+  // Keyboard navigation cursor on the canvas (roved by arrow keys; distinct
+  // from selection — a node can be under the cursor without being selected).
+  canvasCursor: string | null
 
   // Preferences
   theme: Theme
@@ -215,6 +218,7 @@ export const useUIStore = defineStore('ui', {
     selectedNodes: [],
     hoveredNode: null,
     inspectedNode: null,
+    canvasCursor: null,
 
     // Preferences
     theme: 'light',
@@ -384,6 +388,10 @@ export const useUIStore = defineStore('ui', {
 
     clearSelection() {
       this.selectedNodes = []
+    },
+
+    setCanvasCursor(nodeId: string | null) {
+      this.canvasCursor = nodeId
     },
 
     setHoveredNode(nodeId: string | null) {
