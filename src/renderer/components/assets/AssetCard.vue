@@ -63,58 +63,65 @@ const typeIcon = {
 </script>
 
 <template>
-  <div
-    class="asset-card"
-    draggable="true"
-    @click="onClick"
-    @dragstart="onDragStart"
-  >
-    <!-- Thumbnail -->
-    <div class="asset-thumbnail">
-      <img
-        v-if="thumbnailUrl"
-        :src="thumbnailUrl"
-        :alt="asset.name"
-      >
-      <div
-        v-else
-        class="asset-icon"
-      >
-        <component
-          :is="typeIcon[asset.type] ?? File"
-          :size="32"
-        />
+  <div class="asset-card">
+    <!-- Select target: a real button so it is keyboard-operable (WCAG 2.1.1).
+         The delete control is a sibling below, never nested inside this button. -->
+    <button
+      type="button"
+      class="asset-select"
+      draggable="true"
+      :aria-label="`Select asset ${asset.name}`"
+      @click="onClick"
+      @dragstart="onDragStart"
+    >
+      <!-- Thumbnail -->
+      <div class="asset-thumbnail">
+        <img
+          v-if="thumbnailUrl"
+          :src="thumbnailUrl"
+          :alt="asset.name"
+        >
+        <div
+          v-else
+          class="asset-icon"
+        >
+          <component
+            :is="typeIcon[asset.type] ?? File"
+            :size="32"
+          />
+        </div>
+
+        <!-- Duration badge for video/audio -->
+        <span
+          v-if="asset.duration"
+          class="duration-badge"
+        >
+          {{ formatDuration(asset.duration) }}
+        </span>
       </div>
 
-      <!-- Duration badge for video/audio -->
-      <span
-        v-if="asset.duration"
-        class="duration-badge"
-      >
-        {{ formatDuration(asset.duration) }}
-      </span>
-    </div>
+      <!-- Info -->
+      <div class="asset-info">
+        <span
+          class="asset-name"
+          :title="asset.name"
+        >
+          {{ asset.name }}
+        </span>
+        <span class="asset-meta">
+          {{ formatSize(asset.size) }}
+          <template v-if="asset.width && asset.height">
+            &middot; {{ asset.width }}x{{ asset.height }}
+          </template>
+        </span>
+      </div>
+    </button>
 
-    <!-- Info -->
-    <div class="asset-info">
-      <span
-        class="asset-name"
-        :title="asset.name"
-      >
-        {{ asset.name }}
-      </span>
-      <span class="asset-meta">
-        {{ formatSize(asset.size) }}
-        <template v-if="asset.width && asset.height">
-          &middot; {{ asset.width }}x{{ asset.height }}
-        </template>
-      </span>
-    </div>
-
-    <!-- Delete button -->
+    <!-- Delete button (sibling of the select button, not nested) -->
     <button
+      type="button"
       class="delete-btn"
-      title="Delete asset"
+      :aria-label="`Delete asset ${asset.name}`"
       @click="onDelete"
     >
       <Trash2 :size="14" />
@@ -131,7 +138,6 @@ const typeIcon = {
   border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  cursor: pointer;
   transition: all var(--transition-fast);
 }
 
@@ -140,8 +146,28 @@ const typeIcon = {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.asset-card:active {
+/* The select target fills the card; reset the native button chrome. */
+.asset-select {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.asset-select:active {
   cursor: grabbing;
+}
+
+.asset-select:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .asset-thumbnail {
@@ -217,11 +243,19 @@ const typeIcon = {
   transition: opacity var(--transition-fast);
 }
 
-.asset-card:hover .delete-btn {
+/* Reveal delete on hover OR keyboard focus so it is reachable without a mouse. */
+.asset-card:hover .delete-btn,
+.asset-card:focus-within .delete-btn,
+.delete-btn:focus-visible {
   opacity: 1;
 }
 
 .delete-btn:hover {
   background: var(--color-error-500);
+}
+
+.delete-btn:focus-visible {
+  outline: 2px solid var(--color-neutral-0);
+  outline-offset: -2px;
 }
 </style>

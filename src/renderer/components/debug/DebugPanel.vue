@@ -287,15 +287,17 @@ const warnCount = computed(() => {
         </button>
       </div>
       <div class="errors-content">
-        <div
+        <button
           v-for="error in runtimeStore.recentErrors.slice().reverse()"
           :key="error.id"
+          type="button"
           class="error-item"
+          :aria-label="`Show error node ${error.nodeName}: ${error.message}`"
           @click="highlightNode(error.nodeId)"
         >
           <span class="error-node">{{ error.nodeName }}</span>
           <span class="error-msg">{{ error.message }}</span>
-        </div>
+        </button>
       </div>
     </div>
 
@@ -309,15 +311,17 @@ const warnCount = computed(() => {
         <span class="section-title">Monitors</span>
       </div>
       <div class="monitors-content">
-        <div
+        <button
           v-for="monitor in monitorValues"
           :key="monitor.nodeId"
+          type="button"
           class="monitor-item"
+          :aria-label="`Show monitor node ${monitor.name}`"
           @click="highlightNode(monitor.nodeId)"
         >
           <span class="monitor-name">{{ monitor.name }}</span>
           <span class="monitor-value">{{ formatValue(monitor.value) }}</span>
-        </div>
+        </button>
       </div>
     </div>
   </div>
@@ -529,14 +533,25 @@ const warnCount = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 100%;
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
+  border: none;
   border-bottom: 1px solid var(--color-neutral-100);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   transition: background var(--transition-fast);
 }
 
 .error-item:hover {
   background: var(--color-error-light, #fef2f2);
+}
+
+.error-item:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .error-node {
@@ -559,14 +574,25 @@ const warnCount = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
+  border: none;
   border-bottom: 1px solid var(--color-neutral-100);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   transition: background var(--transition-fast);
 }
 
 .monitor-item:hover {
   background: var(--color-neutral-50);
+}
+
+.monitor-item:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .monitor-name {

@@ -153,20 +153,29 @@ function selectConnection(connectionId: string) {
             props.selectedId === conn.id && 'selected',
             props.compact && 'compact',
           ]"
-          @click="selectConnection(conn.id)"
         >
-          <ConnectionStatusBadge
-            :status="getStatus(conn.id)"
-            size="sm"
-          />
-          <span class="connection-name">{{ conn.name }}</span>
-          <span
-            v-if="getStatusError(conn.id)"
-            class="connection-error"
-            :title="getStatusError(conn.id)"
+          <!-- Select target: a real button so the row is keyboard-operable
+               (WCAG 2.1.1). The quick actions stay as sibling buttons. -->
+          <button
+            type="button"
+            class="connection-select"
+            :aria-label="`Edit connection ${conn.name}`"
+            :aria-current="props.selectedId === conn.id ? 'true' : undefined"
+            @click="selectConnection(conn.id)"
           >
-            <AlertCircle class="error-icon" />
-          </span>
+            <ConnectionStatusBadge
+              :status="getStatus(conn.id)"
+              size="sm"
+            />
+            <span class="connection-name">{{ conn.name }}</span>
+            <span
+              v-if="getStatusError(conn.id)"
+              class="connection-error"
+              :title="getStatusError(conn.id)"
+            >
+              <AlertCircle class="error-icon" />
+            </span>
+          </button>
 
           <!-- Quick actions -->
           <div
@@ -307,13 +316,34 @@ function selectConnection(connectionId: string) {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  cursor: pointer;
   border-radius: var(--radius-sm);
   transition: background 0.15s ease;
 }
 
 .connection-item:hover {
   background: var(--color-neutral-100);
+}
+
+/* The select target fills the row; reset the native button chrome. */
+.connection-select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.connection-select:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
 }
 
 .connection-item.selected {
@@ -351,7 +381,8 @@ function selectConnection(connectionId: string) {
   transition: opacity 0.15s ease;
 }
 
-.connection-item:hover .connection-actions {
+.connection-item:hover .connection-actions,
+.connection-item:focus-within .connection-actions {
   opacity: 1;
 }
 
