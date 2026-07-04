@@ -153,15 +153,18 @@ function selectConnection(connectionId: string) {
             props.selectedId === conn.id && 'selected',
             props.compact && 'compact',
           ]"
+          @click="selectConnection(conn.id)"
         >
           <!-- Select target: a real button so the row is keyboard-operable
-               (WCAG 2.1.1). The quick actions stay as sibling buttons. -->
+               (WCAG 2.1.1). Its click is delegated to the row so the whole row
+               is a mouse target (the button's Enter/Space click bubbles up); the
+               quick actions stay as sibling buttons and stopPropagation to avoid
+               selecting when acted on. -->
           <button
             type="button"
             class="connection-select"
             :aria-label="`Edit connection ${conn.name}`"
             :aria-current="props.selectedId === conn.id ? 'true' : undefined"
-            @click="selectConnection(conn.id)"
           >
             <ConnectionStatusBadge
               :status="getStatus(conn.id)"

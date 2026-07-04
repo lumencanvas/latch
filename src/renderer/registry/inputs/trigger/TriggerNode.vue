@@ -128,6 +128,8 @@ function getTypeColor(type: string): string {
     <!-- Expand button -->
     <button
       class="expand-btn"
+      aria-label="Expand node"
+      :aria-expanded="!isCollapsed"
       @click.stop="toggleCollapse"
     >
       <ChevronRight :size="12" />

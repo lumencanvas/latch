@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onUnmounted } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
 import { useFlowsStore } from '@/stores/flows'
 import { usePersistence } from '@/composables/usePersistence'
@@ -11,6 +11,16 @@ const { deleteFlow: deleteFlowFromDb, saveFlow } = usePersistence()
 // Get only main flows (not subflows) for tabs
 const openFlows = computed(() => flowsStore.mainFlows)
 const activeFlowId = computed(() => flowsStore.activeFlowId)
+
+// The roving-tabindex entry point. Normally the active tab, but fall back to the
+// first tab when the active flow is not in the strip (e.g. while editing a
+// subflow, whose id is not a main flow) so the tablist always keeps exactly one
+// Tab-reachable tab. aria-selected still tracks the real activeFlowId.
+const rovingTabId = computed(() => {
+  const flows = openFlows.value
+  if (flows.some((f) => f.id === activeFlowId.value)) return activeFlowId.value
+  return flows[0]?.id ?? null
+})
 
 // Context menu state
 const contextMenu = ref<{
@@ -180,14 +190,19 @@ onUnmounted(() => {
 
 function renameFlow() {
   const flow = flowsStore.getFlowById(contextMenu.value.flowId!)
-  if (flow) {
-    renameModal.value = {
-      visible: true,
-      flowId: flow.id,
-      name: flow.name,
-    }
-  }
+  // Close the menu FIRST so its focus-restore returns focus to the tab, THEN open
+  // the modal on the next tick so the modal captures the tab (not the about-to-
+  // unmount menu item) as its focus-restore target. See closeFlowFromMenu.
   contextMenu.value.visible = false
+  if (flow) {
+    nextTick(() => {
+      renameModal.value = {
+        visible: true,
+        flowId: flow.id,
+        name: flow.name,
+      }
+    })
+  }
 }
 
 function confirmRename() {
@@ -214,15 +229,20 @@ async function duplicateFlow() {
 }
 
 function closeFlowFromMenu() {
-  if (contextMenu.value.flowId) {
-    const flow = flowsStore.getFlowById(contextMenu.value.flowId)
-    deleteModal.value = {
-      visible: true,
-      flowId: contextMenu.value.flowId,
-      flowName: flow?.name ?? 'this flow',
-    }
-  }
+  const flowId = contextMenu.value.flowId
+  // Close the menu first (restores focus to the tab), then open the modal next
+  // tick so it captures the tab as its restore target rather than the menu item.
   contextMenu.value.visible = false
+  if (flowId) {
+    const flow = flowsStore.getFlowById(flowId)
+    nextTick(() => {
+      deleteModal.value = {
+        visible: true,
+        flowId,
+        flowName: flow?.name ?? 'this flow',
+      }
+    })
+  }
 }
 
 async function confirmDelete() {
@@ -258,6 +278,8 @@ function handleRenameKeydown(event: KeyboardEvent) {
 }
 
 // Dialog accessibility (focus move-in/trap/restore + Escape) for the two modals.
+// (Opening a modal FROM the context menu is decoupled with nextTick in
+// renameFlow/closeFlowFromMenu so focus restores to the tab, not the menu item.)
 const renameDialogRef = ref<HTMLElement | null>(null)
 const { onKeydown: onRenameKeydown } = useDialogA11y({
   isOpen: () => renameModal.value.visible,
@@ -303,7 +325,7 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
         :class="{ active: flow.id === activeFlowId }"
         role="tab"
         :aria-selected="flow.id === activeFlowId"
-        :tabindex="flow.id === activeFlowId ? 0 : -1"
+        :tabindex="flow.id === rovingTabId ? 0 : -1"
         @click="selectFlow(flow.id)"
         @dblclick="startRenameFlow(flow.id)"
         @contextmenu="showContextMenu(flow.id, $event)"
@@ -337,25 +359,26 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
 
     <!-- Context Menu -->
     <Teleport to="body">
+      <!-- A focus-trapped popup of action buttons (Tab to move, Enter to activate,
+           Escape to close). Deliberately role="group", NOT role="menu": we don't
+           implement the APG menu arrow-key model, so claiming it would mislead AT. -->
       <div
         v-if="contextMenu.visible"
         ref="contextMenuRef"
         class="context-menu"
-        role="menu"
+        role="group"
         aria-label="Flow actions"
         :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
         @keydown="onContextMenuKeydown"
       >
         <button
           class="menu-item"
-          role="menuitem"
           @click="renameFlow"
         >
           Rename
         </button>
         <button
           class="menu-item"
-          role="menuitem"
           @click="duplicateFlow"
         >
           Duplicate
@@ -363,7 +386,6 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
         <div class="menu-divider" />
         <button
           class="menu-item danger"
-          role="menuitem"
           @click="closeFlowFromMenu"
         >
           Delete

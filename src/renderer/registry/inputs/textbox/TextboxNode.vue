@@ -123,6 +123,8 @@ const previewText = computed(() => {
     <!-- Expand button -->
     <button
       class="expand-btn"
+      aria-label="Expand node"
+      :aria-expanded="!isCollapsed"
       @click.stop="toggleCollapse"
     >
       <ChevronRight :size="12" />

@@ -35,6 +35,14 @@ describe('ConnectionList keyboard accessibility', () => {
     expect(w.emitted('select')?.[0]).toEqual(['c1'])
   })
 
+  it('selects when the whole row is clicked (delegated, not just the button)', async () => {
+    // The row button's click is delegated to the .connection-item container so the
+    // full row is a mouse target; clicking the row (not the button) must still select.
+    const w = mount(ConnectionList)
+    await w.get('.connection-item').trigger('click')
+    expect(w.emitted('select')?.[0]).toEqual(['c1'])
+  })
+
   it('marks the selected row with aria-current', () => {
     const w = mount(ConnectionList, { props: { selectedId: 'c1' } })
     expect(w.get('button.connection-select').attributes('aria-current')).toBe('true')
