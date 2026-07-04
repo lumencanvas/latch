@@ -27,11 +27,16 @@ Then executed the two highest-leverage themes (7 commits):
   the unit-mountable components (AssetCard/ConnectionList/DebugPanel/TemplateSelect — +10 tests);
   **browser-verified** for the app-chrome that won't unit-mount in isolation (AppSidebar 11/11,
   FlowTabs 13/13, 0 console errors).
+- **Increment 3 — Theme C (names/labels) + E (live region) (6 findings).** Accessible names for the
+  connection `<select>`, both node-search inputs, and the port handles (aria-label forwards through Vue
+  Flow); `aria-label`+`aria-expanded` on the collapse toggle (BaseNode + 5 bespoke node shells);
+  `aria-pressed` on category filters; `role="alert"` on the connection-error toast. ConnectionSelect +
+  CategoryNav unit+mutation-verified; canvas/explorer names browser-verified (7/7, 0 errors).
 
-State: typecheck clean · lint 0 err (49 warns) · `test:unit` **1967 → 1984** (132 files) · build OK.
-**~24 of 33 findings closed.** Remaining: **Theme C** names/labels (#3/16/17/19/30), **D** non-color
-cues (#18/21/22/31), **E** connection-error toast live-region (#20), **F** canvas keyboard wiring (#1 —
-the headline, a dedicated multi-increment effort), + low #33. All committed, no AI attribution.
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **1967 → 1988** (134 files) · build OK.
+**~30 of 33 findings closed.** Remaining: **Theme D** non-color port/edge/status/tag cues (#18/21/22/31 —
+needs light design judgment), **Theme F** canvas keyboard wiring (#1 — the headline, a dedicated
+multi-increment effort), + low #33 and the #14 combobox tail. All committed, no AI attribution.
 
 ---
 
