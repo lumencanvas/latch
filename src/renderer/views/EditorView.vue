@@ -46,6 +46,13 @@ const clipboard = ref<ClipboardData | null>(null)
 const canvasFocused = ref(false)
 const canvasAnnounce = ref('')
 
+// Keyboard MOVE (increment 2): a burst of arrow-nudges collapses into one undo
+// entry (opened on the first nudge, closed after an idle gap / on any other key
+// / on blur), mirroring the pointer drag-stop batch.
+const moveBatchSnapshot = ref<ReturnType<typeof startBatch>>(null)
+let moveBatchTimer: ReturnType<typeof setTimeout> | null = null
+const NUDGE_COARSE_FACTOR = 5
+
 const flowsStore = useFlowsStore()
 const uiStore = useUIStore()
 const nodesStore = useNodesStore()
@@ -64,6 +71,7 @@ const {
   setCenter,
   setViewport,
   getViewport,
+  flowToScreenCoordinate,
   getSelectedEdges,
 } = vueFlow
 
@@ -309,16 +317,40 @@ function clearCanvasSelection() {
 function onCanvasKeydown(event: KeyboardEvent) {
   // Let node rename fields / control inputs keep their own keys.
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+  // Bare modifier keydowns (Shift/Alt/Meta/Control) are the leading half of a
+  // chord in progress — ignore them without flushing, so holding Shift to
+  // coarse-move doesn't split the move-history batch.
+  if (event.key === 'Shift' || event.key === 'Alt' || event.key === 'Meta' || event.key === 'Control') return
   // Cmd/Ctrl chords belong to the window handler (undo/copy/select-all/…).
-  if (event.metaKey || event.ctrlKey) return
+  if (event.metaKey || event.ctrlKey) {
+    flushMoveBatch() // an undo/redo etc. mid-move should close the burst first
+    return
+  }
+
+  const isArrow =
+    event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown'
+  // With a selection, arrows MOVE the selected node(s); otherwise they rove the
+  // navigation cursor (Escape deselects to return to browsing).
+  const isMove = isArrow && uiStore.selectedNodes.length > 0
+  if (!isMove) flushMoveBatch() // any non-move key ends the current move burst
+  const step = event.shiftKey ? uiStore.gridSize * NUDGE_COARSE_FACTOR : uiStore.gridSize
+
   switch (event.key) {
     case 'ArrowRight':
-    case 'ArrowDown':
-      moveCursor(1)
+      if (isMove) nudgeSelected(step, 0)
+      else moveCursor(1)
       break
     case 'ArrowLeft':
+      if (isMove) nudgeSelected(-step, 0)
+      else moveCursor(-1)
+      break
+    case 'ArrowDown':
+      if (isMove) nudgeSelected(0, step)
+      else moveCursor(1)
+      break
     case 'ArrowUp':
-      moveCursor(-1)
+      if (isMove) nudgeSelected(0, -step)
+      else moveCursor(-1)
       break
     case 'Enter':
     case ' ':
@@ -344,6 +376,74 @@ function onCanvasFocus() {
   canvasAnnounce.value = list.length
     ? `Node canvas, ${list.length} node${list.length > 1 ? 's' : ''}. Arrow keys to browse, Enter to select.`
     : 'Node canvas, empty. Add a node from the palette.'
+}
+
+function onCanvasBlur() {
+  flushMoveBatch()
+  canvasFocused.value = false
+}
+
+/** Pan only when a node has drifted near/past the viewport edge — unlike
+ *  navigation, MOVE must NOT re-centre every keystroke (that would make the node
+ *  look stationary while the canvas slides under it). */
+function ensureNodeVisible(n: Node) {
+  try {
+    const pane = document.querySelector('.vue-flow__pane') as HTMLElement | null
+    const rect = pane?.getBoundingClientRect()
+    if (!rect) return
+    const screen = flowToScreenCoordinate({ x: n.position.x, y: n.position.y })
+    const margin = 80
+    const outside =
+      screen.x < rect.left + margin ||
+      screen.x > rect.right - margin ||
+      screen.y < rect.top + margin ||
+      screen.y > rect.bottom - margin
+    if (outside) setCenter(n.position.x, n.position.y, { zoom: getViewport().zoom, duration: 150 })
+  } catch {
+    // pane / transform not ready — skip panning
+  }
+}
+
+/** Nudge every selected node by (dx, dy), persisting + batching like a drag. */
+function nudgeSelected(dx: number, dy: number) {
+  const ids = uiStore.selectedNodes
+  if (ids.length === 0) return
+  if (!moveBatchSnapshot.value) moveBatchSnapshot.value = startBatch()
+  const nodes = flowsStore.activeNodes
+  let primary: Node | undefined
+  for (const id of ids) {
+    const n = nodes.find(nn => nn.id === id)
+    if (!n) continue
+    flowsStore.updateNodePosition(id, { x: n.position.x + dx, y: n.position.y + dy })
+    if (!primary) primary = n
+  }
+  // updateNodePosition intentionally skips dirty (it fires per-frame during drag);
+  // mark once here so the new layout autosaves — same as drag-stop.
+  flowsStore.markDirty()
+  if (primary) ensureNodeVisible(primary)
+  if (ids.length > 1) {
+    canvasAnnounce.value = `Moved ${ids.length} nodes.`
+  } else if (primary) {
+    canvasAnnounce.value = `${nodeName(primary)} moved to ${Math.round(primary.position.x)}, ${Math.round(primary.position.y)}.`
+  }
+  scheduleMoveBatchFlush()
+}
+
+function scheduleMoveBatchFlush() {
+  if (moveBatchTimer) clearTimeout(moveBatchTimer)
+  moveBatchTimer = setTimeout(flushMoveBatch, 600)
+}
+
+/** Close the current move burst into a single 'Move node' history entry. */
+function flushMoveBatch() {
+  if (moveBatchTimer) {
+    clearTimeout(moveBatchTimer)
+    moveBatchTimer = null
+  }
+  if (moveBatchSnapshot.value) {
+    endBatch(moveBatchSnapshot.value, 'Move node')
+    moveBatchSnapshot.value = null
+  }
 }
 
 // Show the cursor ring (a class on the node's Vue Flow wrapper) only while the
@@ -808,6 +908,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  // Close any open keyboard-move history batch so it isn't orphaned.
+  flushMoveBatch()
   // Clear any pending connection error timeout
   if (connectionErrorTimeout) {
     clearTimeout(connectionErrorTimeout)
@@ -825,7 +927,7 @@ onUnmounted(() => {
     :aria-label="`Node canvas, ${flowsStore.activeNodes.length} nodes`"
     :aria-valuetext="canvasAnnounce"
     @focus="onCanvasFocus"
-    @blur="canvasFocused = false"
+    @blur="onCanvasBlur"
     @keydown="onCanvasKeydown"
   >
     <!-- Polite live region: announces cursor movement, selection, etc. to AT. -->
