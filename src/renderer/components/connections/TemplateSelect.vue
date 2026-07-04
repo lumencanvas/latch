@@ -84,10 +84,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="template-select">
+  <div
+    class="template-select"
+    @keydown.escape="isOpen = false"
+  >
     <button
       class="template-select-trigger"
       :class="{ open: isOpen, empty: !selectedTemplate && !modelValue }"
+      aria-haspopup="listbox"
+      :aria-expanded="isOpen"
       @click="isOpen = !isOpen"
     >
       <span class="trigger-label">
@@ -116,11 +121,15 @@ onUnmounted(() => {
     <div
       v-if="isOpen"
       class="template-dropdown"
+      role="listbox"
+      aria-label="HTTP request template"
     >
       <!-- Inline option -->
       <button
         v-if="allowInline"
         class="template-option inline-option"
+        role="option"
+        :aria-selected="modelValue === ''"
         :class="{ selected: modelValue === '' }"
         @click="selectInline"
       >
@@ -134,30 +143,37 @@ onUnmounted(() => {
       />
 
       <!-- Templates -->
-      <button
+      <div
         v-for="template in templates"
         :key="template.id"
-        class="template-option"
+        class="template-option-row"
         :class="{ selected: template.id === modelValue }"
-        @click="selectTemplate(template.id)"
       >
-        <span
-          class="method-badge"
-          :class="template.method.toLowerCase()"
+        <button
+          type="button"
+          class="template-option"
+          role="option"
+          :aria-selected="template.id === modelValue"
+          @click="selectTemplate(template.id)"
         >
-          {{ template.method }}
-        </span>
-        <span class="template-name">{{ template.name }}</span>
-        <span class="template-path">{{ template.path }}</span>
-        <span
+          <span
+            class="method-badge"
+            :class="template.method.toLowerCase()"
+          >
+            {{ template.method }}
+          </span>
+          <span class="template-name">{{ template.name }}</span>
+          <span class="template-path">{{ template.path }}</span>
+        </button>
+        <button
+          type="button"
           class="edit-btn"
-          role="button"
-          title="Edit template"
+          :aria-label="`Edit template ${template.name}`"
           @click.stop="handleEdit($event, template.id)"
         >
           <Pencil :size="12" />
-        </span>
-      </button>
+        </button>
+      </div>
 
       <!-- Empty state -->
       <div
@@ -261,18 +277,55 @@ onUnmounted(() => {
   transition: background var(--transition-fast);
 }
 
-.template-option:hover {
+.template-option:hover,
+.inline-option:hover {
   background: var(--color-neutral-50);
 }
 
-.template-option.selected {
+.template-option.selected,
+.inline-option.selected {
   background: var(--color-primary-50);
   color: var(--color-primary-700);
+}
+
+.template-option:focus-visible,
+.inline-option:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .template-option.inline-option {
   font-style: italic;
   color: var(--color-neutral-500);
+}
+
+/* Template rows pair a select button with an edit button as siblings. */
+.template-option-row {
+  display: flex;
+  align-items: center;
+  transition: background var(--transition-fast);
+}
+
+.template-option-row:hover {
+  background: var(--color-neutral-50);
+}
+
+.template-option-row.selected {
+  background: var(--color-primary-50);
+}
+
+.template-option-row.selected .template-option {
+  background: transparent;
+  color: var(--color-primary-700);
+}
+
+.template-option-row .template-option {
+  flex: 1;
+  min-width: 0;
+}
+
+.template-option-row .template-option:hover {
+  background: transparent;
 }
 
 .method-badge {
@@ -344,13 +397,20 @@ onUnmounted(() => {
   transition: all var(--transition-fast);
 }
 
-.template-option:hover .edit-btn {
+.template-option-row:hover .edit-btn,
+.template-option-row:focus-within .edit-btn,
+.edit-btn:focus-visible {
   opacity: 1;
 }
 
 .edit-btn:hover {
   background: var(--color-neutral-200);
   color: var(--color-neutral-700);
+}
+
+.edit-btn:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
 }
 
 .dropdown-separator {
