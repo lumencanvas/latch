@@ -1185,6 +1185,7 @@ onUnmounted(() => {
 
 <template>
   <div
+    id="flow-canvas-panel"
     class="editor-view"
     role="application"
     tabindex="0"

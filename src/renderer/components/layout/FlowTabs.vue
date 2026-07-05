@@ -312,6 +312,12 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
 
 <template>
   <div class="flow-tabs">
+    <!-- Each tab controls the shared node-canvas region (`#flow-canvas-panel`,
+         the EditorView host) via aria-controls. That host is deliberately NOT
+         also given role="tabpanel": it is already role="application" (the Theme-F
+         canvas keyboard surface) — an element can hold only one role — and it
+         carries its own dynamic "Node canvas, N nodes" label. aria-controls
+         conveys the tab↔region relationship without either conflict. -->
     <div
       class="tabs-container"
       role="tablist"
@@ -325,6 +331,7 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
         :class="{ active: flow.id === activeFlowId }"
         role="tab"
         :aria-selected="flow.id === activeFlowId"
+        aria-controls="flow-canvas-panel"
         :tabindex="flow.id === rovingTabId ? 0 : -1"
         @click="selectFlow(flow.id)"
         @dblclick="startRenameFlow(flow.id)"
