@@ -214,6 +214,13 @@ function formatSize(bytes: number): string {
   background: var(--color-neutral-0);
 }
 
+/* Keyboard focus keeps a visible ring on top of the border/background shift the
+   base `outline: none` would otherwise strip (WCAG 2.4.7). */
+.search-input:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
 .filter-tabs {
   display: flex;
   gap: 2px;

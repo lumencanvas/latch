@@ -298,6 +298,13 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
   color: var(--color-neutral-400);
 }
 
+/* Restore a keyboard focus ring the base `outline: none` suppressed (WCAG 2.4.7).
+   The borderless, transparent input has no other focus affordance. */
+.search-input:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+}
+
 .tag-filter {
   display: flex;
   flex-wrap: wrap;
