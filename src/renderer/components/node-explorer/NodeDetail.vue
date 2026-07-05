@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, watch, nextTick } from 'vue'
 import { ArrowLeft } from 'lucide-vue-next'
 import { categoryMeta, dataTypeMeta, type NodeDefinition, useNodesStore } from '@/stores/nodes'
 import { flowSnippets } from '@/data/flow-snippets'
@@ -38,6 +38,18 @@ const pairsWithNodes = computed(() => {
     .map(id => nodesStore.getDefinition(id))
     .filter((d): d is NodeDefinition => d !== undefined)
 })
+
+// Manage focus when the grid swaps to this detail view (WCAG 2.4.3). Move focus
+// to the node-name heading so a screen reader announces which node opened; it is
+// tabindex="-1" (programmatic focus only, no visible ring). Re-run when the
+// displayed node changes via an in-detail "navigate to" so focus is never lost
+// to <body>.
+const headingRef = ref<HTMLElement | null>(null)
+function focusHeading() {
+  headingRef.value?.focus()
+}
+onMounted(focusHeading)
+watch(() => props.definition.id, () => nextTick(focusHeading))
 </script>
 
 <template>
@@ -56,7 +68,11 @@ const pairsWithNodes = computed(() => {
       >{{ categoryLabel }}</span>
     </div>
 
-    <h2 class="detail-name">
+    <h2
+      ref="headingRef"
+      class="detail-name"
+      tabindex="-1"
+    >
       {{ definition.name }}
     </h2>
 
@@ -279,6 +295,13 @@ const pairsWithNodes = computed(() => {
   letter-spacing: var(--letter-spacing-wider);
   color: var(--color-neutral-800);
   margin: 0;
+}
+
+/* The heading is only ever focused programmatically (tabindex="-1") to move the
+   reading cursor into this view; the view fully replacing the grid is the visible
+   cue, so suppress the ring the global :focus-visible would draw around the title. */
+.detail-name:focus {
+  outline: none;
 }
 
 .detail-overview {

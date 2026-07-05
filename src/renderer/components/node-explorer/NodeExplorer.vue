@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { Search } from 'lucide-vue-next'
 import { useNodesStore, dataTypeMeta, type NodeCategory, type DataType } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
@@ -72,12 +72,25 @@ const categorySnippets = computed(() => {
   return flowSnippets.filter(s => s.category === explorerStore.selectedCategory)
 })
 
+// The node grid, so we can return keyboard focus to the originating card when the
+// detail view closes (WCAG 2.4.3 — the swap must not strand focus on <body>).
+const gridRef = ref<HTMLElement | null>(null)
+
 function handleSelectNode(nodeId: string) {
   explorerStore.selectNode(nodeId)
 }
 
 function handleBack() {
+  // Capture which node we were viewing before clearing it, then restore focus to
+  // its card once the grid has re-rendered.
+  const returningTo = explorerStore.selectedNodeId
   explorerStore.clearSelection()
+  if (!returningTo) return
+  nextTick(() => {
+    gridRef.value
+      ?.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(returningTo)}"]`)
+      ?.focus()
+  })
 }
 
 function handleAddToFlow(nodeId: string) {
@@ -196,10 +209,14 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
         </div>
 
         <!-- Node grid -->
-        <div class="node-grid">
+        <div
+          ref="gridRef"
+          class="node-grid"
+        >
           <NodeCard
             v-for="node in filteredNodes"
             :key="node.id"
+            :data-node-id="node.id"
             :definition="node"
             @select="handleSelectNode"
           />
