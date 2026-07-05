@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, ref, onUnmounted } from 'vue'
+import { computed, watch, ref, nextTick, onUnmounted } from 'vue'
 import { ChevronDown, Plus, Pencil } from 'lucide-vue-next'
 import { useConnectionsStore } from '@/stores/connections'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
@@ -38,15 +38,72 @@ const selectedTemplate = computed(() => {
 
 // Dropdown open state
 const isOpen = ref(false)
+const triggerRef = ref<HTMLElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
+
+// Return keyboard focus to the trigger after the dropdown closes (the trigger now
+// shows the chosen value, so it is the natural landing spot).
+function refocusTrigger() {
+  nextTick(() => triggerRef.value?.focus())
+}
 
 function selectTemplate(templateId: string) {
   emit('update:modelValue', templateId)
   isOpen.value = false
+  refocusTrigger()
 }
 
 function selectInline() {
   emit('update:modelValue', '')
   isOpen.value = false
+  refocusTrigger()
+}
+
+function closeAndRefocus() {
+  isOpen.value = false
+  refocusTrigger()
+}
+
+// Listbox keyboard model (WCAG 2.1.1). role="listbox" promises arrow-key
+// navigation between its options; drive DOM focus across the option buttons so
+// the promise is honoured. Options stay individually Tab-reachable so each row's
+// edit affordance remains operable.
+function optionEls(): HTMLElement[] {
+  return dropdownRef.value
+    ? Array.from(dropdownRef.value.querySelectorAll<HTMLElement>('[role="option"]'))
+    : []
+}
+
+function focusOptionAt(index: number) {
+  const els = optionEls()
+  if (!els.length) return
+  els[(index + els.length) % els.length]?.focus()
+}
+
+function onListboxKeydown(e: KeyboardEvent) {
+  const els = optionEls()
+  // The handler is bound to the whole dropdown, so keydown also bubbles from the
+  // Tab-reachable edit/add buttons, which are not options → indexOf is -1. Land on
+  // the first option for ArrowDown and the last for ArrowUp in that case.
+  const current = els.indexOf(document.activeElement as HTMLElement)
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault()
+      focusOptionAt(current < 0 ? 0 : current + 1)
+      break
+    case 'ArrowUp':
+      e.preventDefault()
+      focusOptionAt(current < 0 ? els.length - 1 : current - 1)
+      break
+    case 'Home':
+      e.preventDefault()
+      focusOptionAt(0)
+      break
+    case 'End':
+      e.preventDefault()
+      focusOptionAt(els.length - 1)
+      break
+  }
 }
 
 function handleEdit(e: Event, templateId: string) {
@@ -71,6 +128,12 @@ function handleClickOutside(e: MouseEvent) {
 watch(isOpen, (open) => {
   if (open) {
     document.addEventListener('click', handleClickOutside)
+    // Move focus onto the selected option (or the first) once the list renders.
+    nextTick(() => {
+      const els = optionEls()
+      const selected = els.findIndex((el) => el.getAttribute('aria-selected') === 'true')
+      focusOptionAt(selected >= 0 ? selected : 0)
+    })
   } else {
     document.removeEventListener('click', handleClickOutside)
   }
@@ -86,9 +149,10 @@ onUnmounted(() => {
 <template>
   <div
     class="template-select"
-    @keydown.escape="isOpen = false"
+    @keydown.escape="closeAndRefocus"
   >
     <button
+      ref="triggerRef"
       class="template-select-trigger"
       :class="{ open: isOpen, empty: !selectedTemplate && !modelValue }"
       aria-haspopup="listbox"
@@ -120,9 +184,11 @@ onUnmounted(() => {
 
     <div
       v-if="isOpen"
+      ref="dropdownRef"
       class="template-dropdown"
       role="listbox"
       aria-label="HTTP request template"
+      @keydown="onListboxKeydown"
     >
       <!-- Inline option -->
       <button
