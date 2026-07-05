@@ -6,6 +6,59 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-04 (later 58) — Phase 4 a11y Increment 5: the low tails — a11y stream now all-closed bar the deferred Theme-D cue
+
+Closed the four remaining low-severity a11y tails from `A11Y_APP_AUDIT_2026-07-03.md`, each a
+small, individually-revertible change ending green.
+
+1. **`.search-input` focus ring (2.4.7).** The scoped `outline: none` on the three search inputs
+   (node-explorer, sidebar, asset browser) stripped the keyboard focus indicator — the known LATCH
+   bug class. Added a `:focus-visible` token ring (`2px solid var(--color-primary-500)`, offset 2px)
+   to each. Browser-verified: node-explorer + sidebar inputs render a live `2px solid rgb(26,154,122)`
+   ring on focus (`:focus-visible` matches); all three compiled scoped rules ship. CSS-only →
+   browser-verified, not unit (happy-dom can't measure CSS focus).
+2. **Grid→detail focus (2.4.3).** Selecting a node card swaps the explorer grid for `NodeDetail`;
+   focus now moves to the detail's node-name `<h2>` (`tabindex="-1"`, ring suppressed — the view swap
+   is the visible cue, so a screen reader announces which node opened) and re-runs on in-detail
+   navigate-to. **Back** restores focus to the originating card (`data-node-id` lookup within the
+   grid; attribute falls through NodeCard's single `<button>` root). Browser-verified end to end
+   (card → Enter → heading → Back → same card), 0 console errors. App-chrome → browser-verified.
+3. **Template listbox roving (#14, 2.1.1).** `TemplateSelect`'s `role="listbox"` now honours the
+   listbox keyboard model — open focuses the selected/first option, Arrow/Home/End move between
+   options (wrapping), Escape closes and returns focus to the trigger (selecting also refocuses it).
+   Options stay individually Tab-reachable so each row's edit affordance stays operable (a deliberate
+   carry-over of the Theme-B decision, not a strict single-tab-stop APG listbox). Unit +
+   mutation-verified: 7 new tests; 4 mutations (no-wrap / no-open-focus / no-Escape-restore /
+   ArrowUp-from-a-non-option-button) each confirmed red.
+4. **Flow tab → region association (1.3.1).** Each `role="tab"` gained `aria-controls="flow-canvas-panel"`
+   and the EditorView host gained that stable `id`, exposing the tab↔region relationship. A separate
+   `role="tabpanel"` is **deliberately not** applied: that host is already `role="application"` (the
+   Theme-F canvas keyboard surface — one role per element) and carries its own dynamic "Node canvas,
+   N nodes" label; `aria-controls` conveys the association without the conflict. Rationale documented
+   inline in FlowTabs. Browser-verified: every tab's `aria-controls` resolves to the unique live
+   application host, 0 console errors.
+
+**Adversarial review (ultracode):** a 4-dimension multi-agent review of the diff (correctness / a11y /
+regression / honesty) → adversarial verify surfaced **1 confirmed low finding**, fixed here: `ArrowUp` on
+the template listbox while focus sat on a Tab-reachable non-option button (edit / Add-Template) wrapped to
+the *second* option instead of the last (`indexOf` = −1 → `focusOptionAt(−2)`). Normalized the out-of-list
+index (ArrowDown→first, ArrowUp→last) + added a regression test. The rest were correctly rejected nitpicks
+(the `--color-primary-500` ring matches the local component-focus convention; the mouse-click ring on a text
+input is standard native behaviour; `aria-controls`→`role="application"` is valid ARIA).
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2001** (+7 TemplateSelect) · build ok.
+**Phase 4 accessibility stream is now fully closed except the maintainer-deferred port/edge type-colour
+cue** (Theme D — a visual-language call across 208 nodes). Committed to `phase0-file-format` as four
+logical, individually-revertible commits (`a784d3b` search-ring · `fc1a68f` grid→detail focus · `2b52234`
+template listbox · `b9534b9` tab↔canvas association) + this docs commit; author Moheeb Zara, no AI
+attribution.
+
+**Remaining Phase 4 (non-a11y):** canvas toolbar + marquee selection, snippets tab + `flowToPreview`
+thumbnails, templates on the empty canvas, onboarding. Optional Theme-F inc-4 polish (spatial nav,
+edge-cursor delete, ghost edge, shared `useApplicationKeyboard` composable).
+
+---
+
 ## 2026-07-04 (later 57) — Phase 4 a11y Theme F Increment 3 (keyboard wiring) — the headline 2.1.1 finding CLOSED
 
 Built increment 3 — keyboard **wiring**, from scratch (Vue Flow ships none). `w` on the cursor node starts a
