@@ -6,6 +6,25 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 66) — End-of-session audit (runtime clean) + snippets are now searchable
+
+**Audit (ultrathink):** a final full-app runtime smoke after ~11 session increments — boot → **Play**
+(`runtime.isRunning` true) → **Stop** (false) — came back with **0 real console errors** (only the benign
+XNNPACK INFO line). The assembled app (canvas keyboard/marquee/thumbnails/the EditorView extraction) is
+runtime-healthy. The audit also surfaced a papercut, fixed below.
+
+**Continue: node-explorer snippets narrow with the search box.** They used to vanish the moment you typed
+(`v-if … && !searchQuery`, and `categorySnippets` ignored the query), so a snippet was findable only by
+category. Added a `visibleSnippets` computed that runs the query through the existing `fuzzySearch` (over
+name + description) and drops the `!searchQuery` gate. Browser-verified: typing "audio" narrows 6→2 snippets,
+a no-match query → 0, clearing restores 6, **0 console errors**. Additive + low-risk (NodeExplorer is
+app-chrome → browser-verified, not unit).
+
+State: typecheck clean · lint 0 err · `test:unit` **2022** · build ok · final runtime smoke 0 real errors.
+All committed + pushed on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-07 (later 65) — Audit of the thumbnail work + roll thumbnails out to the explorer snippet cards
 
 **Audit (self, ultrathink) of later-64.** Investigated two suspected issues, both concretely in the browser:
