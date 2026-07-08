@@ -53,10 +53,13 @@ const preview = computed(() =>
 </template>
 
 <style scoped>
+/* Size is owned by the consumer's class (or the svg's width/height attributes when
+   used standalone) — deliberately no height here, so it can't fight a consumer that
+   sets one (e.g. the fixed-height starter-card thumb). The viewBox + default
+   preserveAspectRatio="xMidYMid meet" fits the drawing to whatever box results. */
 .flow-preview {
   display: block;
-  width: 100%;
-  height: auto;
+  max-width: 100%;
 }
 
 .flow-preview-edge {
