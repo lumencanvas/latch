@@ -4,7 +4,7 @@ import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import { MiniMap } from '@vue-flow/minimap'
-import type { Connection, NodeChange } from '@vue-flow/core'
+import type { Connection, NodeChange, XYPosition } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
@@ -16,13 +16,15 @@ defineOptions({ name: 'EditorView' })
 
 import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
-import { useNodesStore } from '@/stores/nodes'
+import { useNodesStore, dataTypeMeta } from '@/stores/nodes'
 import { flowSnippets } from '@/data/flow-snippets'
 import { snippetToInsertableNodes } from '@/utils/snippets'
 import { nodeTypeColor } from '@/utils/nodeColor'
+import { suggestNodesForPort } from '@/utils/nodeSuggestions'
 import FlowPreview from '@/components/preview/FlowPreview.vue'
 import AnimatedEdge from '@/components/edges/AnimatedEdge.vue'
-import { validateConnection } from '@/utils/connections'
+import WireSuggestionPopover, { type SuggestionItem } from '@/components/canvas/WireSuggestionPopover.vue'
+import { validateConnection, getPortType, areTypesCompatible } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 import { useCanvasKeyboard } from '@/composables/useCanvasKeyboard'
 import { getCustomNodeLoader } from '@/services/customNodes'
@@ -52,6 +54,8 @@ const nodesStore = useNodesStore()
 const vueFlow = useVueFlow()
 const {
   onConnect,
+  onConnectStart,
+  onConnectEnd,
   addEdges,
   onNodeDragStart,
   onNodeDragStop,
@@ -138,6 +142,7 @@ function getNodeMinimapColor(node: { data?: Record<string, unknown> }): string {
 
 // Handle connections
 onConnect((connection: Connection) => {
+  connectionMade = true
   addEdges([connection])
   if (flowsStore.activeFlow) {
     flowsStore.addEdge(
@@ -148,6 +153,130 @@ onConnect((connection: Connection) => {
     )
   }
 })
+
+// ── Drag-a-wire-into-empty-space → compatible-node suggestions ───────────────
+// When a wire is released on empty canvas (connectEnd fires without a preceding
+// connect), offer the nodes whose ports are type-compatible with the dragged-from
+// port; picking one inserts it at the drop point and auto-wires it.
+let connectionMade = false
+let connectOrigin: { nodeId: string; handleId: string; handleType: 'source' | 'target' } | null = null
+
+const wireSuggest = ref<{
+  x: number
+  y: number
+  items: SuggestionItem[]
+  originTypeLabel: string
+  originGlyph: string
+  originColor: string
+  origin: { nodeId: string; handleId: string; direction: 'source' | 'target'; flowPosition: XYPosition }
+} | null>(null)
+
+onConnectStart((params) => {
+  connectionMade = false
+  connectOrigin = params.nodeId && params.handleId
+    ? { nodeId: params.nodeId, handleId: params.handleId, handleType: params.handleType ?? 'source' }
+    : null
+})
+
+onConnectEnd((event) => {
+  const origin = connectOrigin
+  connectOrigin = null
+  // A valid drop already made the connection; only empty-space drops open the picker.
+  if (connectionMade || !origin || !event || !flowsStore.activeFlow) return
+  const point = 'clientX' in event ? event : event.changedTouches[0]
+  if (!point) return
+  // Only offer suggestions on a drop onto EMPTY canvas — a rejected drop onto a
+  // node/handle shouldn't hijack into the picker. elementFromPoint is used (not
+  // event.target) because a touchend's target is the touchstart element, not the
+  // element under the release point.
+  const dropEl = document.elementFromPoint(point.clientX, point.clientY)
+  if (dropEl?.closest('.vue-flow__node')) return
+  openWireSuggestions(origin, point)
+})
+
+function openWireSuggestions(
+  origin: { nodeId: string; handleId: string; handleType: 'source' | 'target' },
+  point: { clientX: number; clientY: number },
+) {
+  const node = flowsStore.activeFlow?.nodes.find(n => n.id === origin.nodeId)
+  const nodeType = node?.data?.nodeType as string | undefined
+  if (!nodeType) return
+
+  const def = nodesStore.getDefinition(nodeType)
+  const direction = origin.handleType === 'source' ? 'output' : 'input'
+  const originType = getPortType(def, origin.handleId, direction, node?.data as Record<string, unknown>)
+  if (!originType) return
+
+  const suggestions = suggestNodesForPort(
+    { type: originType, direction: origin.handleType },
+    nodesStore.allDefinitions,
+    areTypesCompatible,
+  )
+  if (suggestions.length === 0) return
+
+  const items: SuggestionItem[] = suggestions.map(s => ({
+    nodeType: s.nodeType,
+    name: nodesStore.getDefinition(s.nodeType)?.name ?? s.nodeType,
+    color: nodeTypeColor(s.nodeType, t => nodesStore.getDefinition(t)?.category),
+    port: s.port,
+  }))
+
+  const meta = dataTypeMeta[originType]
+  // Place the new node so its wired handle lands near the drop rather than the
+  // node's top-left corner: nudge up to the first port row, and for an input-drag
+  // shift left a node-width so the new node's OUTPUT edge (not its left corner)
+  // meets the cursor. Offsets are applied in screen space, then projected.
+  // `project` expects pane-relative coordinates, so subtract the pane's offset
+  // (the canvas is inset by the left toolbar) — otherwise the node lands a
+  // sidebar-width off.
+  const NODE_W = 170, PORT_ROW = 20
+  const ox = origin.handleType === 'target' ? -NODE_W : 0
+  const pane = document.querySelector('.vue-flow__pane')?.getBoundingClientRect()
+  const flowPosition = project({
+    x: point.clientX + ox - (pane?.left ?? 0),
+    y: point.clientY - PORT_ROW - (pane?.top ?? 0),
+  })
+  wireSuggest.value = {
+    // Clamp so the popover stays fully on-screen near the drop point.
+    x: Math.min(point.clientX, window.innerWidth - 252),
+    y: Math.min(point.clientY, window.innerHeight - 320),
+    items,
+    originTypeLabel: meta?.label ?? originType,
+    originGlyph: meta?.glyph ?? '',
+    originColor: meta?.color ?? 'var(--color-neutral-400)',
+    origin: {
+      nodeId: origin.nodeId,
+      handleId: origin.handleId,
+      direction: origin.handleType,
+      flowPosition,
+    },
+  }
+}
+
+function pickWireSuggestion(item: SuggestionItem) {
+  const ctx = wireSuggest.value
+  if (!ctx || !flowsStore.activeFlow) return
+
+  const before = startBatch()
+  const node = flowsStore.addNode(item.nodeType, ctx.origin.flowPosition)
+  if (node) {
+    // Wire origin → new node in the direction the wire was dragged.
+    if (ctx.origin.direction === 'source') {
+      flowsStore.addEdge(ctx.origin.nodeId, ctx.origin.handleId, node.id, item.port.id)
+    } else {
+      flowsStore.addEdge(node.id, item.port.id, ctx.origin.nodeId, ctx.origin.handleId)
+    }
+    uiStore.selectNodes([node.id])
+  }
+  endBatch(before, 'Add connected node')
+  closeWireSuggestions()
+}
+
+function closeWireSuggestions() {
+  wireSuggest.value = null
+  // Return focus to the canvas host so keyboard users aren't stranded.
+  document.getElementById('flow-canvas-panel')?.focus()
+}
 
 // Handle node drag start - capture state for undo
 onNodeDragStart(() => {
@@ -845,6 +974,21 @@ onUnmounted(() => {
         {{ connectionError }}
       </div>
     </Transition>
+
+    <!-- Drag-a-wire-into-empty-space → compatible-node suggestions -->
+    <Teleport to="body">
+      <WireSuggestionPopover
+        v-if="wireSuggest"
+        :items="wireSuggest.items"
+        :x="wireSuggest.x"
+        :y="wireSuggest.y"
+        :origin-type-label="wireSuggest.originTypeLabel"
+        :origin-glyph="wireSuggest.originGlyph"
+        :origin-color="wireSuggest.originColor"
+        @pick="pickWireSuggestion"
+        @close="closeWireSuggestions"
+      />
+    </Teleport>
   </div>
 </template>
 
