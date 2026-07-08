@@ -6,6 +6,30 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 65) — Audit of the thumbnail work + roll thumbnails out to the explorer snippet cards
+
+**Audit (self, ultrathink) of later-64.** Investigated two suspected issues, both concretely in the browser:
+- *Suspected:* `getColor`'s `var(...)` fallback wouldn't render as an SVG `fill` **attribute** (presentation
+  attributes classically don't resolve `var()`). *Verdict: non-issue* — Chromium (the web+Electron target) DOES
+  resolve `fill="var(--token)"` to the token colour (measured `rgb(140,140,140)`). Disproven by measurement.
+- *Real (latent):* `FlowPreview`'s root `svg` carried `.flow-preview {height:auto}` AND the card's
+  `.starter-thumb {height:48px}` — two single-class scoped rules on the same element, so the correct 48px height
+  depended on stylesheet **cascade order**; if it flipped, the thumb would size by width (~150px) and blow out
+  the card. **Fixed** (`ffb01b4`): FlowPreview no longer imposes a height, so the consumer's box always governs
+  (rendered size unchanged, verified). a11y / honesty / over-abstraction lenses were clean.
+
+**Continue: thumbnails on the node-explorer snippet cards.** Applied the same `FlowPreview` primitive to
+`FlowSnippet.vue` (a small 56×40 preview at the left of each card), so **all 34 snippets** get a schematic —
+not just the 4 starters — completing the thumbnail rollout across both snippet surfaces. Kept a local
+`nodeColor` resolver (2nd copy of the 2-line category-colour lookup); will extract a shared helper only if the
+dedicated snippets tab becomes a 3rd consumer (rule of three, avoiding premature abstraction).
+
+Browser-verified: explorer snippet cards render category-coloured thumbnails (40px, correct node/edge counts),
+**0 console errors**. typecheck clean · lint 0 err · `test:unit` 2022 · build ok. Uncommitted card change on
+`phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-07 (later 64) — Phase 4 non-a11y: flowToPreview thumbnails on the starter-template cards
 
 Built the reusable thumbnail primitive the ROADMAP pairs with the snippets tab, and applied it to the
