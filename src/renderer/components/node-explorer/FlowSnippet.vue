@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FlowSnippet } from '@/data/flow-snippets'
-import { useNodesStore, categoryMeta, type NodeCategory } from '@/stores/nodes'
+import { useNodesStore } from '@/stores/nodes'
+import { nodeTypeColor } from '@/utils/nodeColor'
 import FlowPreview from '@/components/preview/FlowPreview.vue'
 
 defineProps<{
@@ -14,10 +15,8 @@ const emit = defineEmits<{
 const nodesStore = useNodesStore()
 
 // Colour a preview node by its category (neutral fallback for unknown types).
-function nodeColor(nodeType: string): string {
-  const category = nodesStore.getDefinition(nodeType)?.category
-  return categoryMeta[category as NodeCategory]?.color ?? 'var(--color-neutral-400)'
-}
+const nodeColor = (nodeType: string) =>
+  nodeTypeColor(nodeType, (t) => nodesStore.getDefinition(t)?.category)
 </script>
 
 <template>

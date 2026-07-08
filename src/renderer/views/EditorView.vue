@@ -16,9 +16,10 @@ defineOptions({ name: 'EditorView' })
 
 import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
-import { useNodesStore, categoryMeta, type NodeCategory } from '@/stores/nodes'
+import { useNodesStore } from '@/stores/nodes'
 import { flowSnippets } from '@/data/flow-snippets'
 import { snippetToInsertableNodes } from '@/utils/snippets'
+import { nodeTypeColor } from '@/utils/nodeColor'
 import FlowPreview from '@/components/preview/FlowPreview.vue'
 import AnimatedEdge from '@/components/edges/AnimatedEdge.vue'
 import { validateConnection } from '@/utils/connections'
@@ -128,12 +129,7 @@ function showConnectionError(message: string) {
 function getNodeMinimapColor(node: { data?: Record<string, unknown> }): string {
   const nodeType = node.data?.nodeType as string | undefined
   if (!nodeType) return 'var(--color-neutral-400)'
-
-  const definition = nodesStore.getDefinition(nodeType)
-  if (!definition) return 'var(--color-neutral-400)'
-
-  const category = definition.category as NodeCategory
-  return categoryMeta[category]?.color ?? 'var(--color-neutral-400)'
+  return nodeTypeColor(nodeType, (t) => nodesStore.getDefinition(t)?.category)
 }
 
 // ============================================================================
@@ -253,10 +249,8 @@ const starterTemplates = computed(() => {
 })
 
 // Colour a preview node by its category, for the starter-template thumbnails.
-function templateNodeColor(nodeType: string): string {
-  const category = nodesStore.getDefinition(nodeType)?.category
-  return categoryMeta[category as NodeCategory]?.color ?? 'var(--color-neutral-400)'
-}
+const templateNodeColor = (nodeType: string) =>
+  nodeTypeColor(nodeType, (t) => nodesStore.getDefinition(t)?.category)
 
 // Insert a starter flow onto the empty canvas — reuses the same subgraph-insertion
 // path as the node explorer's snippet insertion, then frames the result.
