@@ -6,6 +6,37 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 61) — Refactor: extract the canvas keyboard machine out of EditorView (god-component paydown)
+
+A code-health audit (prompted by "make sure the code isn't becoming shitty") found the real debt: `EditorView.vue`
+had grown to **1539 lines**, ~485 of them a **single inlined canvas-keyboard state machine** (navigate + move +
+wire, ~30 functions) that — because EditorView is app-chrome — was **only ever browser-verifiable**. Chose
+refactor-before-extend.
+
+- **New `composables/useApplicationKeyboard.ts`** — the shared `role="application"` scaffolding (focus flag +
+  polite `announce` string + base focus/blur) that the node canvas and the 4 control editors all need. One home
+  instead of copy-paste across 5 components.
+- **New `composables/useCanvasKeyboard.ts`** — the whole nav/move/wire machine moved verbatim, built on
+  `useApplicationKeyboard`. Vue-Flow viewport helpers (`setCenter`/`getViewport`/`flowToScreenCoordinate`/
+  `addEdges`), the history batch (`startBatch`/`endBatch`), and the connection-error toast are **injected as
+  deps** so the machine is store-mockable. Owns its own move-batch flush on teardown via `onScopeDispose` (was
+  EditorView's `onUnmounted`).
+- **EditorView** now just calls `useCanvasKeyboard({...})` and binds `{ canvasAnnounce, onCanvasKeydown,
+  onCanvasFocus, onCanvasBlur }` to the host — **1539 → 1044 lines (−495)**.
+
+**The payoff the audit was about:** ~485 lines of previously-browser-only logic are now **unit-tested** — a new
+`useCanvasKeyboard.test.ts` (6 tests, `effectScope`-wrapped, mocked deps) covers cursor nav + wrap, Enter-select,
+grid-nudge inside one history batch, and the wire machine (draft → **commit adds a real edge** → cancel). This is
+a behaviour-preserving extraction: the surgery was a content-anchored script (asserts every marker) + a manual
+import fix, and it's verified both ways — **unit** (6 tests, incl. edge-commit) **and browser** (nav/select/wire
+stage progression + commit all behave on the live canvas, 0 console errors).
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2013** (+6) · build ok. Uncommitted on
+`phase0-file-format`; no AI attribution. **Follow-up (deferred, tracked):** migrate the 4 control editors onto
+`useApplicationKeyboard` to finish DRYing the shared scaffolding (lower-risk; each editor is unit-mountable).
+
+---
+
 ## 2026-07-07 (later 60) — Phase 4 non-a11y: starter templates on the empty canvas (first non-a11y Phase-4 feature)
 
 Pivoted from the (now-complete) accessibility stream to the non-a11y Phase-4 body. Shipped the first item:
