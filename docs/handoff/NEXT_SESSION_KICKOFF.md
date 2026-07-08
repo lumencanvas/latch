@@ -2,8 +2,8 @@
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `c0abe89`.
-Tree CLEAN & green; snippets-tab + drag-wire + keyboard-suggest smokes = 0 real console errors. Verify with `git log --oneline -20`.)
+(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `dc9c0d4`.
+Tree CLEAN & green; drag-wire + keyboard-suggest + on-wire-value smokes = 0 real console errors. Verify with `git log --oneline -20`.)
 
 ---
 
@@ -15,14 +15,15 @@ refactor** de-bloated the canvas, and several **experience features** shipped on
 **Get oriented before touching code, then pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **2044 pass + 11 todo** (142 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
+`test:unit` **2050 pass + 11 todo** (143 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
    **Commit/push only when explicitly asked.** Stay on `phase0-file-format` (branch off `main` for new work).
    Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor
    `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 69 → 58)**, newest first. Recent arc: (69) later-68 audit +
+2. `docs/HANDOFF.md` TOP entries **(later 70 → 59)**, newest first. Recent arc: (70) **on-wire debugging inc 1** —
+   live per-port value overlay (`formatPortValue` + a "show values" toggle); (69) later-68 audit +
    **keyboard-trigger** for the wire-drop picker (`n` during a keyboard wire → same picker); (68) **drag-a-wire-
    into-empty → compatible-node suggestions** (inline combobox popover + `suggestNodesForPort`); (67) **dedicated snippets tab** +
    the rule-of-three `nodeTypeColor` extraction; (66) end-of-session runtime smoke + snippets searchable;
@@ -63,21 +64,27 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
     **Fully keyboard-operable (later-69):** during a keyboard wire (`w`), `n` opens the same picker beside the
     source node (also the escape from the "no compatible target" dead-end) — via an optional
     `suggestNodeFromWire` dep on `useCanvasKeyboard`.
-  - **Remaining non-a11y Phase-4:** **onboarding**, **on-wire debugging** (freeze-frame + per-port value preview).
-    `<Controls>`+`<MiniMap>` already cover zoom/fit + the toolbar; snippets tab + marquee + thumbnails +
-    drag-wire suggestions all shipped.
+    **On-wire debugging STARTED (later-70):** a "show values" toggle (eye button in `<Controls>`) overlays each
+    output port's live runtime value while running — `utils/formatPortValue.ts` + `ui.showPortValues`, reading the
+    engine's existing per-frame `runtimeStore` `outputValues` (nothing new computed).
+  - **Remaining non-a11y Phase-4:** **onboarding**; the **rest of on-wire debugging** (freeze-the-frame, value
+    history/sparkline, error→exact-node deep-linking; edge-level value display is a later option).
+    `<Controls>`+`<MiniMap>` cover zoom/fit + the toolbar; snippets tab + marquee + thumbnails + drag-wire
+    suggestions + per-port value preview all shipped.
 - **Phases 5–9: not started.** Phase 5 = the modulation gap (input ports on modulatable params). Phase 6 =
   **full per-node co-location** (`registry/<cat>/<node>/`) — the largest single item and the deepest
   "node-isolation" work. Phase 7 subflow rebuild, 8 VJ/kiosk, 9 multiplayer.
 
 ## WHAT'S NEXT — pick a thread with me (each flagged)
-1. **On-wire debugging** — per-port value preview / freeze-frame + error-to-exact-node deep-linking;
-   persona-critical for a dataflow tool, but larger (needs runtime value exposure from the engine). Scope first.
-2. **Onboarding** — the last named non-a11y Phase-4 experience item (snippets tab + marquee + thumbnails +
-   drag-wire suggestions all done). Self-contained UI.
+1. **On-wire debugging — continue** (inc 1 = per-port value preview DONE later-70). Next slices: **freeze-the-frame**
+   (pause + inspect a held frame), **value history/sparkline** per port, **error→exact-node deep-linking** (the
+   `runtime` store already holds `errors[]` with `nodeId`). Engine value model is proven, so these are unblocked.
+2. **Onboarding** — the last untouched non-a11y Phase-4 item. Self-contained UI, but the *form* (guided tour /
+   spotlight / dismissible first-run hints) is a real design fork — confirm the shape before building.
 3. A **node-isolation pivot** (Phase 6 co-location — the deep per-node isolation work; scope one category
    first), if pivoting off Phase 4.
-4. **Phase 5 modulation gap** (input ports on modulatable params) — can overlap Phase 4.
+4. **Phase 5 modulation gap** (input ports on modulatable params; new primitives atan2/min-max/phasor/edge) —
+   can overlap Phase 4; concrete + low-design-fork, but a new phase (confirm first).
 Ask me which to take. Don't dive into a whole new phase without confirming.
 
 ## HOW TO WORK

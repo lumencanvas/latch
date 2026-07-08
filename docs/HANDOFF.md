@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-08 (later 70) — later-69 audit (clean) + on-wire debugging: live per-port value overlay
+
+**Self-audit of later-69 (the keyboard `n`→picker trigger): clean.** Browser-checked the one path not covered
+last turn — pressing `n`/`Shift+N` on the live canvas with **no wire in progress** is a no-op (no popover, no
+console error). The trigger + overlay-guard + on-screen-clamp fixes all hold. One honest edge noted, not fixed
+(astronomically rare): `n` on a source port that NO node type accepts would silently cancel the wire (no
+popover) — every real port type has compatible nodes via `any` inputs.
+
+**Continue — on-wire debugging, increment 1: live per-port value overlay.** Picked this over onboarding (which
+has an unresolved design fork) because the engine **already exposes the values**: `ExecutionEngine` writes each
+node's per-port `outputValues` to `runtimeStore.updateNodeMetrics` every frame, and `getNodeMetrics().outputValues`
+is UI-reachable + reactive. So this slice computes nothing new — it just surfaces what's there.
+
+- **`utils/formatPortValue.ts`** — pure, non-throwing formatter for any emitted value (numbers with trailing
+  zeros trimmed, booleans, quoted/truncated strings, `[n]` arrays, `{…}` objects, `null` / `—`). **6 unit tests +
+  3 mutations** (trailing-zero trim, boolean, array-length).
+- **`ui` store `showPortValues` + `togglePortValues`** (off by default), beside the existing showMinimap/showGrid.
+- **BaseNode** shows a `.port-value` chip on each output port label when `showPortValues && runtimeStore.isRunning`
+  — reading `getNodeMetrics(id).outputValues[portId]` through the formatter. Reuses the existing hover-label
+  element (forced visible in debug mode), so no new port layout.
+- **Toggle** = an eye `ControlButton` in the Vue Flow `<Controls>` (aria-pressed + active highlight).
+
+Browser-verified (system Chrome, sample flow running): toggle off → 0 chips; toggle on → **17 output-port chips**
+with sensibly-formatted live values (`0`, `false`, `""`, `null`, a truncated `"Model not loaded…"`, `{…}` for
+audio/texture object ports), aria-pressed/is-active correct; toggle off → hidden; **Stop → hidden** (not running,
+state persists); **0 console errors** (screenshot confirms readable chips on the live graph).
+
+**On-wire debugging remaining (future increments):** freeze-the-frame (pause + inspect a held frame), value
+history/sparkline, and error→exact-node deep-linking. Edge-level (value on the wire) vs the current port-level is
+a later option. This increment is the foundation.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2050** (+6 formatPortValue) · build ok · smoke 0
+errors. Committed + pushed on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-08 (later 69) — later-68 audit + make the wire-drop picker keyboard-operable
 
 **Self-audit (ultrathink, browser) of later-68.** Two minor real issues found + fixed, plus one honest gap closed:
