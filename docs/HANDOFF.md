@@ -6,6 +6,45 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 59) — Phase 4 a11y Increment 6: Theme-D port/edge type cue — the LAST a11y finding CLOSED
+
+Closed the one remaining (maintainer-deferred) accessibility finding: port/edge data type conveyed by
+colour alone (WCAG 1.4.1). The maintainer chose **line-style always on + a per-type glyph on hover**; a
+port and its edge share the **same** `lineStyle` cue so they read as one type.
+
+- **Shared line style.** `dataTypeMeta.lineStyle` was defined but wired up nowhere (dead design intent, like
+  the earlier invisible Tailwind badge). Now `AnimatedEdge`'s persistent `BaseEdge` carries a per-type
+  `stroke-dasharray` (`dotted → 1.5 5` round · `dashed → 8 6` · `solid → none`); the running/selection chase
+  overlays keep their own animation dashes. `BaseNode`'s port dot mirrors it — **solid types stay a filled
+  dot (unchanged, the majority)**; **dotted/dashed types become a hollow ring** in the type colour, via a
+  `--port-color` var + a `.port-line-dotted`/`.port-line-dashed` class declared *before* the Theme-F
+  wire-glow rules (so the glow still wins mid-wire). Only `boolean`/`any` (dotted) + `texture` (dashed)
+  change appearance — the red/green-confusable and pink cases.
+- **Per-type glyph.** New `dataTypeMeta.glyph` (`#`,`B`,`~`,`▦`,`[`, 3D = `S/O/G/M/C/L/T`, …) revealed with
+  the existing port label on hover/select/wire — the only cue that separates all 17 types incl. the 7 near-
+  identical 3D blues. Decorative (`aria-hidden`; the Handle `aria-label` already names the type).
+- **Legend.** The node-explorer "PORT TYPES" key now shows glyph + a swatch mirroring the port (filled /
+  dotted / dashed), so it no longer implies colour-only.
+
+Verification: `dataTypeMeta` glyph + BaseNode data-wiring **unit + mutation-verified** (3 new BaseNode tests;
+3 mutations — glyph-fallback / line-class / `--port-color` — each red). Canvas **browser-verified** (system
+Chrome): solid = filled dot; dotted = hollow `#EF4444` dotted ring; dashed = hollow `#EC4899` dashed ring;
+edge dash resolves `none`/`1.5 5`/`8 6`; glyphs render; legend shows glyph + line-style — **0 console
+errors**. typecheck clean · lint 0 err (49 warns) · `test:unit` **2004** (+3 BaseNode) · build ok.
+
+Honest scope (audited): the finding ("type conveyed by colour alone") is addressed — type now carries
+non-colour cues (persistent line-style for the dotted/dashed types, a glyph + text label on interaction).
+It is **not** a strict per-type-at-rest guarantee: the 14 *solid* types are still identical filled dots
+differing only in hue at rest, so two same-hue solid types (e.g. number vs audio, both green) are separated
+by the **glyph on hover/select**, not the resting dot. This is the maintainer's chosen compromise (option 3;
+persistent-glyph option 2 was rejected as too cluttered across 208 nodes), and connection-validity already
+blocks incompatible wires. Glyphs live in one map and are trivially tunable.
+
+**All 33 findings from the app-wide a11y audit are now closed** (Theme-D per the maintainer-chosen approach
+above). All uncommitted on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-04 (later 58) — Phase 4 a11y Increment 5: the low tails — a11y stream now all-closed bar the deferred Theme-D cue
 
 Closed the four remaining low-severity a11y tails from `A11Y_APP_AUDIT_2026-07-03.md`, each a
