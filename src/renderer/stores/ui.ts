@@ -172,6 +172,8 @@ interface UIState {
   showGrid: boolean
   snapToGrid: boolean
   gridSize: number
+  /** On-wire debugging: show each output port's live value on the canvas. */
+  showPortValues: boolean
 
   // View mode
   viewMode: ViewMode
@@ -234,6 +236,7 @@ export const useUIStore = defineStore('ui', {
     showMinimap: true,
     showGrid: true,
     snapToGrid: true,
+    showPortValues: false,
     gridSize: 20,
 
     // View mode
@@ -434,6 +437,10 @@ export const useUIStore = defineStore('ui', {
 
     toggleSnapToGrid() {
       this.snapToGrid = !this.snapToGrid
+    },
+
+    togglePortValues() {
+      this.showPortValues = !this.showPortValues
     },
 
     setGridSize(size: number) {

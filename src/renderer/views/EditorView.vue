@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, onUnmounted, watch, markRaw } from 'vue'
 import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { Controls } from '@vue-flow/controls'
+import { Controls, ControlButton } from '@vue-flow/controls'
+import { Eye } from 'lucide-vue-next'
 import { MiniMap } from '@vue-flow/minimap'
 import type { Connection, NodeChange, XYPosition } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
@@ -919,7 +920,19 @@ onUnmounted(() => {
         :show-zoom="true"
         :show-fit-view="true"
         :show-interactive="false"
-      />
+      >
+        <!-- On-wire debugging: toggle the live per-port value overlay. -->
+        <ControlButton
+          class="port-values-toggle"
+          :class="{ 'is-active': uiStore.showPortValues }"
+          title="Show live port values"
+          aria-label="Show live port values on output ports"
+          :aria-pressed="uiStore.showPortValues"
+          @click="uiStore.togglePortValues()"
+        >
+          <Eye :size="14" />
+        </ControlButton>
+      </Controls>
 
       <MiniMap
         v-if="uiStore.showMinimap"
@@ -1076,6 +1089,16 @@ onUnmounted(() => {
 
 .flow-canvas :deep(.vue-flow__controls-button:hover) {
   background: var(--color-neutral-100);
+}
+
+/* On-wire debugging toggle: highlight when active. */
+.flow-canvas :deep(.vue-flow__controls-button.port-values-toggle.is-active) {
+  background: var(--color-primary-500);
+  color: var(--color-neutral-0);
+}
+
+.flow-canvas :deep(.vue-flow__controls-button.port-values-toggle.is-active svg) {
+  stroke: var(--color-neutral-0);
 }
 
 .flow-canvas :deep(.vue-flow__minimap) {

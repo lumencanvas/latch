@@ -15,6 +15,7 @@ import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useUIStore } from '@/stores/ui'
+import { formatPortValue } from '@/utils/formatPortValue'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 import { getExecutionEngine } from '@/engine/ExecutionEngine'
 import TexturePreview from '@/components/preview/TexturePreview.vue'
@@ -69,6 +70,13 @@ const isWireNode = computed(() => {
 const nodeError = computed<string | null>(
   () => runtimeStore.getNodeMetrics(props.id)?.lastError ?? null,
 )
+
+// On-wire debugging: when the "show values" mode is on and the graph is running,
+// each output port shows its live value (from the same reactive runtime metrics).
+const showValuesActive = computed(() => uiStore.showPortValues && runtimeStore.isRunning)
+function portValue(portId: string): string {
+  return formatPortValue(runtimeStore.getNodeMetrics(props.id)?.outputValues?.[portId])
+}
 
 const isCollapsed = ref(false)
 const hoveredPort = ref<string | null>(null)
@@ -491,7 +499,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         <!-- External label - positioned to the right of the node -->
         <div
           class="port-label port-label-right"
-          :class="{ visible: hoveredPort === `out-${output.id}` || props.selected || isWireNode }"
+          :class="{ visible: hoveredPort === `out-${output.id}` || props.selected || isWireNode || showValuesActive }"
         >
           <span
             class="port-glyph"
@@ -503,6 +511,11 @@ function onLabelKeydown(e: KeyboardEvent) {
             class="label-type"
             :style="{ color: getTypeColor(output.type) }"
           >{{ getSemanticLabel(output.id, output.type) }}</span>
+          <!-- On-wire debugging: the port's live runtime value. -->
+          <span
+            v-if="showValuesActive"
+            class="port-value"
+          >{{ portValue(output.id) }}</span>
         </div>
       </div>
     </div>
@@ -1041,6 +1054,19 @@ function onLabelKeydown(e: KeyboardEvent) {
   font-weight: var(--font-weight-bold);
   text-transform: lowercase;
   opacity: 0.85;
+}
+
+/* On-wire debugging: the live port value chip (distinct from the type label). */
+.port-value {
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-neutral-900);
+  background: var(--color-primary-100, var(--color-neutral-100));
+  border-radius: 3px;
+  padding: 0 4px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Non-colour type glyph, revealed with the port label (WCAG 1.4.1). Monospace so
