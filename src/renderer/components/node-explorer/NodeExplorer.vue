@@ -111,10 +111,17 @@ function handleSelectCategory(category: NodeCategory | null) {
   explorerStore.selectCategory(category)
 }
 
-// Port colour key — the data-type colours used on node handles, which are
-// otherwise undocumented in the UI.
+// Port type key — the colour, non-colour line style (solid/dotted/dashed, shared
+// by a port and its edge) and the glyph shown on hover, all from dataTypeMeta so
+// the legend documents every cue a handle actually carries (WCAG 1.4.1).
 const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video', 'texture', 'array', 'data', 'any'] as DataType[])
-  .map(type => ({ type, label: dataTypeMeta[type].label, color: dataTypeMeta[type].color }))
+  .map(type => ({
+    type,
+    label: dataTypeMeta[type].label,
+    color: dataTypeMeta[type].color,
+    lineStyle: dataTypeMeta[type].lineStyle,
+    glyph: dataTypeMeta[type].glyph,
+  }))
 </script>
 
 <template>
@@ -138,10 +145,19 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
             :key="t.type"
             class="legend-item"
           >
+            <!-- Swatch mirrors the port: solid types are a filled dot, dotted/dashed
+                 types a hollow ring in the type colour (the shared port/edge cue). -->
             <span
               class="legend-swatch"
-              :style="{ background: t.color }"
+              :class="`line-${t.lineStyle}`"
+              :style="t.lineStyle === 'solid'
+                ? { background: t.color }
+                : { borderColor: t.color }"
             />
+            <span
+              class="legend-glyph"
+              :style="{ color: t.color }"
+            >{{ t.glyph }}</span>
             <span class="legend-label">{{ t.label }}</span>
           </div>
         </div>
@@ -429,8 +445,30 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
 .legend-swatch {
   width: 10px;
   height: 10px;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+/* Mirror the port dot: solid = filled, dotted/dashed = hollow ring (the non-colour
+   cue a port shares with its edge). */
+.legend-swatch.line-dotted {
+  background: transparent;
+  border: 2px dotted;
+}
+
+.legend-swatch.line-dashed {
+  background: transparent;
+  border: 2px dashed;
+}
+
+.legend-glyph {
+  width: 10px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--font-weight-bold);
+  text-align: center;
 }
 
 .legend-label {

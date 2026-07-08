@@ -40,6 +40,18 @@ const edgeColor = computed(() => {
   return meta?.color ?? '#D4D4D4'
 })
 
+// Non-colour type cue (WCAG 1.4.1): the persistent edge stroke carries the data
+// type's line style so the type is not conveyed by hue alone — mirroring the port
+// dot's ring style so a port and its wire read as the same type. Applied ONLY to
+// the static BaseEdge; the running/selection chase overlays keep their own dashes.
+const edgeDash = computed((): { strokeDasharray?: string; strokeLinecap?: 'round' } => {
+  switch (dataTypeMeta[edgeDataType.value]?.lineStyle) {
+    case 'dotted': return { strokeDasharray: '1.5 5', strokeLinecap: 'round' }
+    case 'dashed': return { strokeDasharray: '8 6' }
+    default: return {}
+  }
+})
+
 // Check if connected node is selected (for highlight)
 const isConnectedToSelected = computed(() => {
   return props.sourceNode?.selected || props.targetNode?.selected
@@ -90,6 +102,7 @@ const isSelected = computed(() => props.selected)
       :style="{
         stroke: edgeColor,
         strokeWidth: isSelected ? 3 : 2,
+        ...edgeDash,
       }"
     />
 

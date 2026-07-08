@@ -177,6 +177,61 @@ describe('BaseNode number controls', () => {
   })
 })
 
+describe('BaseNode port type cues (WCAG 1.4.1 — non-colour)', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  // Outputs spanning the three line styles: number=solid, boolean=dotted, texture=dashed.
+  function defWithTypedPorts(): NodeDefinition {
+    return {
+      id: 'test-ports', name: 'Test Ports', version: '1.0.0', category: 'data',
+      description: '', icon: 'box', platforms: ['web', 'electron'],
+      inputs: [],
+      outputs: [
+        { id: 'n', label: 'Num', type: 'number' },
+        { id: 'b', label: 'Bool', type: 'boolean' },
+        { id: 't', label: 'Tex', type: 'texture' },
+      ],
+      controls: [],
+    }
+  }
+
+  function mountPorts() {
+    useNodesStore().register(defWithTypedPorts())
+    return mount(BaseNode as unknown as Record<string, unknown>, {
+      props: {
+        id: 'node-1', type: 'test-ports', data: { nodeType: 'test-ports' },
+        selected: false, connectable: true, position: { x: 0, y: 0 },
+        dimensions: { width: 100, height: 50 }, dragging: false, resizing: false, zIndex: 0, events: {},
+      },
+      global: { stubs: { Handle: true, NodeConnectionStatus: true } },
+    })
+  }
+
+  it('renders each port type glyph in its label', () => {
+    const w = mountPorts()
+    const glyphs = w.findAll('.port-glyph').map(g => g.text())
+    expect(glyphs).toEqual(['#', 'B', '▦'])
+  })
+
+  it('gives dotted/dashed ports a line-style class and leaves solid ports plain', () => {
+    const w = mountPorts()
+    // Only boolean (dotted) and texture (dashed) deviate from a filled dot.
+    expect(w.findAll('.port-line-dotted').length).toBe(1)
+    expect(w.findAll('.port-line-dashed').length).toBe(1)
+    // The solid number port carries neither.
+    const handles = w.findAll('.port-handle')
+    expect(handles.length).toBe(3)
+    expect(handles[0].classes()).not.toContain('port-line-dotted')
+    expect(handles[0].classes()).not.toContain('port-line-dashed')
+  })
+
+  it('exposes the port type colour as a --port-color custom property for the ring', () => {
+    const w = mountPorts()
+    const boolHandle = w.findAll('.port-handle')[1]
+    expect(boolHandle.attributes('style')).toContain('--port-color')
+  })
+})
+
 describe('BaseNode conditional visibility (when / visibleWhen)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

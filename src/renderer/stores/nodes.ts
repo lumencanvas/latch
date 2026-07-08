@@ -326,23 +326,27 @@ export const categoryMeta: Record<NodeCategory, { label: string; icon: string; c
 }
 
 // Data type metadata
-export const dataTypeMeta: Record<DataType, { label: string; color: string; lineStyle: string }> = {
-  trigger: { label: 'Trigger', color: '#F59E0B', lineStyle: 'solid' },
-  number: { label: 'Number', color: '#2AAB8A', lineStyle: 'solid' },
-  string: { label: 'String', color: '#8B5CF6', lineStyle: 'solid' },
-  boolean: { label: 'Boolean', color: '#EF4444', lineStyle: 'dotted' },
-  audio: { label: 'Audio', color: '#22C55E', lineStyle: 'solid' },
-  video: { label: 'Video', color: '#3B82F6', lineStyle: 'solid' },
-  texture: { label: 'Texture', color: '#EC4899', lineStyle: 'dashed' },
-  data: { label: 'Data', color: '#6B7280', lineStyle: 'solid' },
-  array: { label: 'Array', color: '#0EA5E9', lineStyle: 'solid' },
-  any: { label: 'Any', color: '#D4D4D4', lineStyle: 'dotted' },
+// Per-type presentation. `color` is the primary cue; `lineStyle` (edge dash / port
+// ring) and `glyph` (revealed in the port label on hover/select/wire) are the
+// non-colour cues so port/edge data type never relies on hue alone (WCAG 1.4.1).
+// A port and its edge share ONE cue — `lineStyle` — so they read as the same type.
+export const dataTypeMeta: Record<DataType, { label: string; color: string; lineStyle: string; glyph: string }> = {
+  trigger: { label: 'Trigger', color: '#F59E0B', lineStyle: 'solid', glyph: '!' },
+  number: { label: 'Number', color: '#2AAB8A', lineStyle: 'solid', glyph: '#' },
+  string: { label: 'String', color: '#8B5CF6', lineStyle: 'solid', glyph: '"' },
+  boolean: { label: 'Boolean', color: '#EF4444', lineStyle: 'dotted', glyph: 'B' },
+  audio: { label: 'Audio', color: '#22C55E', lineStyle: 'solid', glyph: '~' },
+  video: { label: 'Video', color: '#3B82F6', lineStyle: 'solid', glyph: 'V' },
+  texture: { label: 'Texture', color: '#EC4899', lineStyle: 'dashed', glyph: '▦' },
+  data: { label: 'Data', color: '#6B7280', lineStyle: 'solid', glyph: '{' },
+  array: { label: 'Array', color: '#0EA5E9', lineStyle: 'solid', glyph: '[' },
+  any: { label: 'Any', color: '#D4D4D4', lineStyle: 'dotted', glyph: '*' },
   // 3D types
-  scene3d: { label: 'Scene 3D', color: '#0EA5E9', lineStyle: 'solid' },
-  object3d: { label: 'Object 3D', color: '#38BDF8', lineStyle: 'solid' },
-  geometry3d: { label: 'Geometry 3D', color: '#7DD3FC', lineStyle: 'solid' },
-  material3d: { label: 'Material 3D', color: '#BAE6FD', lineStyle: 'solid' },
-  camera3d: { label: 'Camera 3D', color: '#0284C7', lineStyle: 'solid' },
-  light3d: { label: 'Light 3D', color: '#FCD34D', lineStyle: 'solid' },
-  transform3d: { label: 'Transform 3D', color: '#A5F3FC', lineStyle: 'solid' },
+  scene3d: { label: 'Scene 3D', color: '#0EA5E9', lineStyle: 'solid', glyph: 'S' },
+  object3d: { label: 'Object 3D', color: '#38BDF8', lineStyle: 'solid', glyph: 'O' },
+  geometry3d: { label: 'Geometry 3D', color: '#7DD3FC', lineStyle: 'solid', glyph: 'G' },
+  material3d: { label: 'Material 3D', color: '#BAE6FD', lineStyle: 'solid', glyph: 'M' },
+  camera3d: { label: 'Camera 3D', color: '#0284C7', lineStyle: 'solid', glyph: 'C' },
+  light3d: { label: 'Light 3D', color: '#FCD34D', lineStyle: 'solid', glyph: 'L' },
+  transform3d: { label: 'Transform 3D', color: '#A5F3FC', lineStyle: 'solid', glyph: 'T' },
 }

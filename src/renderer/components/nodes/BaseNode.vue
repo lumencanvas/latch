@@ -315,6 +315,27 @@ function getTypeColor(type: string): string {
   return dataTypeMeta[type as keyof typeof dataTypeMeta]?.color ?? 'var(--color-neutral-400)'
 }
 
+// Non-colour type cues (WCAG 1.4.1). The glyph is revealed with the port label on
+// hover/select/wire; the line-style class turns the dotted/dashed types' dots into
+// a hollow ring so type is never conveyed by hue alone. Solid types (the majority)
+// are untouched — they keep the filled dot. `--port-color` feeds the ring colour.
+function getTypeGlyph(type: string): string {
+  return dataTypeMeta[type as keyof typeof dataTypeMeta]?.glyph ?? '*'
+}
+
+function portHandleStyle(type: string): Record<string, string> {
+  const color = getTypeColor(type)
+  return { background: color, '--port-color': color }
+}
+
+function portLineClass(type: string): Record<string, boolean> {
+  const lineStyle = dataTypeMeta[type as keyof typeof dataTypeMeta]?.lineStyle
+  return {
+    'port-line-dotted': lineStyle === 'dotted',
+    'port-line-dashed': lineStyle === 'dashed',
+  }
+}
+
 function getSemanticLabel(portId: string, type: string): string {
   if (portId.includes('norm') || portId.includes('Norm') || portId.startsWith('0-1') || portId.includes('normalized')) {
     return '0→1'
@@ -425,9 +446,9 @@ function onLabelKeydown(e: KeyboardEvent) {
           :id="input.id"
           type="target"
           :position="Position.Left"
-          :style="{ background: getTypeColor(input.type) }"
+          :style="portHandleStyle(input.type)"
           class="port-handle"
-          :class="{ 'wire-target-handle': isWireTargetHandle(input.id) }"
+          :class="[portLineClass(input.type), { 'wire-target-handle': isWireTargetHandle(input.id) }]"
           :aria-label="`${input.label} input (${getSemanticLabel(input.id, input.type)})`"
         />
         <!-- External label - positioned to the left of the node -->
@@ -435,6 +456,11 @@ function onLabelKeydown(e: KeyboardEvent) {
           class="port-label port-label-left"
           :class="{ visible: hoveredPort === `in-${input.id}` || props.selected || isWireNode }"
         >
+          <span
+            class="port-glyph"
+            :style="{ color: getTypeColor(input.type) }"
+            aria-hidden="true"
+          >{{ getTypeGlyph(input.type) }}</span>
           <span class="label-text">{{ input.label }}</span>
           <span
             class="label-type"
@@ -457,9 +483,9 @@ function onLabelKeydown(e: KeyboardEvent) {
           :id="output.id"
           type="source"
           :position="Position.Right"
-          :style="{ background: getTypeColor(output.type) }"
+          :style="portHandleStyle(output.type)"
           class="port-handle"
-          :class="{ 'wire-source-handle': isWireSourceHandle(output.id) }"
+          :class="[portLineClass(output.type), { 'wire-source-handle': isWireSourceHandle(output.id) }]"
           :aria-label="`${output.label} output (${getSemanticLabel(output.id, output.type)})`"
         />
         <!-- External label - positioned to the right of the node -->
@@ -467,6 +493,11 @@ function onLabelKeydown(e: KeyboardEvent) {
           class="port-label port-label-right"
           :class="{ visible: hoveredPort === `out-${output.id}` || props.selected || isWireNode }"
         >
+          <span
+            class="port-glyph"
+            :style="{ color: getTypeColor(output.type) }"
+            aria-hidden="true"
+          >{{ getTypeGlyph(output.type) }}</span>
           <span class="label-text">{{ output.label }}</span>
           <span
             class="label-type"
@@ -1012,6 +1043,14 @@ function onLabelKeydown(e: KeyboardEvent) {
   opacity: 0.85;
 }
 
+/* Non-colour type glyph, revealed with the port label (WCAG 1.4.1). Monospace so
+   the symbols (#, ", ~, [ …) stay legible; coloured with the type hue as a bonus. */
+.port-glyph {
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+}
+
 /* Handle styles */
 :deep(.port-handle) {
   width: var(--node-port-size, 10px) !important;
@@ -1023,6 +1062,22 @@ function onLabelKeydown(e: KeyboardEvent) {
 
 :deep(.port-handle:hover) {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Non-colour port cue (WCAG 1.4.1): dotted/dashed types render as a hollow ring in
+   the type colour (via --port-color) instead of a filled dot, so the data type is
+   distinguishable without relying on hue. Solid types keep the filled dot above.
+   Declared BEFORE the wire-glow rules so an in-progress wire's glow still wins. */
+:deep(.port-handle.port-line-dotted) {
+  background: var(--color-neutral-0) !important;
+  border-color: var(--port-color, var(--color-neutral-400)) !important;
+  border-style: dotted !important;
+}
+
+:deep(.port-handle.port-line-dashed) {
+  background: var(--color-neutral-0) !important;
+  border-color: var(--port-color, var(--color-neutral-400)) !important;
+  border-style: dashed !important;
 }
 
 /* Keyboard-wiring glow on the exact source / candidate-target handle (Theme F). */
