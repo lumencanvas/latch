@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 62) — Refactor cont'd: adopt useApplicationKeyboard across the control editors (finish the DRY)
+
+Completed the shared-scaffolding half of the refactor and, in doing so, **corrected the abstraction's shape**.
+Surveying the four `role="application"` control editors showed they do NOT share the canvas's *imperative*
+announce string — they bind a *reactive* `valueText` computed — so the only genuinely-universal piece is the
+`focused` flag + focus/blur handlers. Two consequences:
+
+- **Tightened `useApplicationKeyboard` to just `{ focused, onFocus, onBlur }`** (dropped `announce`, which 4 of
+  5 consumers would have ignored — a dead surface is the kind of over-abstraction this pass was meant to avoid).
+  The canvas's `canvasAnnounce` now lives in `useCanvasKeyboard`, where the imperative pattern belongs.
+- **Adopted it in EnvelopeEditor, EQEditor, WaveformEditor** — each dropped `const focused = ref(false)` + inline
+  `@focus="focused = true"` for the shared primitive. **XYPad deliberately left alone:** it has no `focused`
+  flag (it manages its cursor differently), so migrating it would *add* behaviour, not DRY it — honest scope.
+
+So the primitive now has 4 real consumers (canvas + 3 editors), which justifies its existence, instead of the
+1 it had when introduced. Locked its contract with a tiny unit test (incl. that each surface gets *independent*
+focus state, not a shared singleton; mutation-verified). Behaviour-preserving: the 3 editors' existing
+role=application tests stay green.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2015** (+2) · build ok. Uncommitted on
+`phase0-file-format`; no AI attribution. The 5-surface a11y-chrome duplication the kickoff flagged is now
+resolved (4 share the primitive; XYPad is a documented, deliberate exception).
+
+---
+
 ## 2026-07-07 (later 61) — Refactor: extract the canvas keyboard machine out of EditorView (god-component paydown)
 
 A code-health audit (prompted by "make sure the code isn't becoming shitty") found the real debt: `EditorView.vue`
