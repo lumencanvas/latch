@@ -216,7 +216,11 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
 
     <!-- Right: Content area -->
     <div class="explorer-content">
-      <!-- Section tabs: nodes / snippets -->
+      <!-- Section tabs: nodes / snippets. Only the active tabpanel is rendered
+           (the node grid mounts all ~238 cards, so keeping both mounted is
+           wasteful), so the tabs deliberately omit `aria-controls` — per WAI-ARIA
+           APG, a tab should not reference a panel that isn't in the DOM. The
+           panel→tab link (`aria-labelledby`) is kept. -->
       <div
         class="explorer-tabs"
         role="tablist"
@@ -232,7 +236,6 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
           :class="{ active: explorerStore.activeTab === tab.id }"
           role="tab"
           :aria-selected="explorerStore.activeTab === tab.id"
-          :aria-controls="`explorer-panel-${tab.id}`"
           :tabindex="explorerStore.activeTab === tab.id ? 0 : -1"
           @click="explorerStore.setTab(tab.id)"
           @keydown="onTabKeydown($event, tab.id)"

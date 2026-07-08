@@ -38,6 +38,14 @@ store + util halves are unit+mutation.
 user-saved-snippet feature exists; the tab surfaces the 6 built-ins. (Also noted, not fixed: `--radius-xs` used
 by `FlowSnippet`'s `.snippet-thumb` is undefined in tokens.css → silent no-radius fallback; pre-existing.)
 
+**Self-audit (ultrathink, browser).** One real finding, fixed: the inactive tab's `aria-controls` pointed at a
+panel that's `v-if`'d out of the DOM (a dangling reference). Since the grid mounts **all 238** node cards,
+keeping both panels mounted (to make `aria-controls` resolve) is the wrong trade — so instead the tabs now
+**omit `aria-controls`** (WAI-ARIA APG: don't reference a panel that isn't rendered; the panel→tab
+`aria-labelledby` reverse link stays). Everything else measured clean: initial focus unchanged (Close button, as
+before), sticky tablist holds on scroll, category filter narrows snippets on the snippets tab (AUDIO → 2), the
+NodeDetail card→detail→back→focus-restore flow still works, 0 console errors, no visual regression (screenshots).
+
 State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2029** (+7: 4 nodeColor, 3 store-tab) · build ok ·
 smoke 0 errors. Committed + pushed on `phase0-file-format`; no AI attribution.
 
