@@ -17,9 +17,9 @@ const definition: NodeDefinition = {
   outputs: [{ id: 'result', type: 'number', label: 'Result' }],
   controls: [],
   info: {
-    overview: 'Divides the first input by the second and outputs the quotient. This is standard numeric division. Be aware that dividing by zero will produce Infinity or NaN.',
+    overview: 'Divides the first input by the second and outputs the quotient. Division by zero is guarded: instead of Infinity or NaN, it outputs 0.',
     tips: [
-      'Use a compare node to guard against division by zero before this node.',
+      'It outputs 0 when the divisor is 0; for a different fallback, guard the denominator with a compare node upstream.',
       'Combine with modulo to get both the quotient and remainder of a division.',
     ],
     pairsWith: ['multiply', 'modulo', 'compare', 'clamp'],
