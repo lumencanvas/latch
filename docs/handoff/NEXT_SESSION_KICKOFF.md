@@ -2,8 +2,8 @@
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `8db05e9`.
-Tree CLEAN & green; snippets-tab + drag-wire smokes = 0 real console errors. Verify with `git log --oneline -20`.)
+(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `c0abe89`.
+Tree CLEAN & green; snippets-tab + drag-wire + keyboard-suggest smokes = 0 real console errors. Verify with `git log --oneline -20`.)
 
 ---
 
@@ -15,15 +15,16 @@ refactor** de-bloated the canvas, and several **experience features** shipped on
 **Get oriented before touching code, then pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **2042 pass + 11 todo** (142 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
+`test:unit` **2044 pass + 11 todo** (142 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
    **Commit/push only when explicitly asked.** Stay on `phase0-file-format` (branch off `main` for new work).
    Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor
    `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 68 → 57)**, newest first. Recent arc: (68) **drag-a-wire-into-empty →
-   compatible-node suggestions** (inline combobox popover + `suggestNodesForPort`); (67) **dedicated snippets tab** +
+2. `docs/HANDOFF.md` TOP entries **(later 69 → 58)**, newest first. Recent arc: (69) later-68 audit +
+   **keyboard-trigger** for the wire-drop picker (`n` during a keyboard wire → same picker); (68) **drag-a-wire-
+   into-empty → compatible-node suggestions** (inline combobox popover + `suggestNodesForPort`); (67) **dedicated snippets tab** +
    the rule-of-three `nodeTypeColor` extraction; (66) end-of-session runtime smoke + snippets searchable;
    (65/64) `flowToPreview` thumbnails on starter + snippet cards + a self-audit;
    (63) marquee/box-select (Vue Flow built-in); (61/62) **canvas-keyboard extraction into a composable** +
@@ -58,8 +59,10 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
     3-copy category-colour resolver was extracted to `utils/nodeColor.ts` (`nodeTypeColor`) (later-67);
     **drag-a-wire-into-empty → compatible-node suggestions** — an inline combobox popover
     (`components/canvas/WireSuggestionPopover.vue`) of type-compatible nodes (pure `suggestNodesForPort`,
-    injected `areTypesCompatible`), pick → insert at drop + auto-wire in one undo; empty-space-only, keyboard-
-    operable (later-68).
+    injected `areTypesCompatible`), pick → insert at drop + auto-wire in one undo; empty-space-only (later-68).
+    **Fully keyboard-operable (later-69):** during a keyboard wire (`w`), `n` opens the same picker beside the
+    source node (also the escape from the "no compatible target" dead-end) — via an optional
+    `suggestNodeFromWire` dep on `useCanvasKeyboard`.
   - **Remaining non-a11y Phase-4:** **onboarding**, **on-wire debugging** (freeze-frame + per-port value preview).
     `<Controls>`+`<MiniMap>` already cover zoom/fit + the toolbar; snippets tab + marquee + thumbnails +
     drag-wire suggestions all shipped.

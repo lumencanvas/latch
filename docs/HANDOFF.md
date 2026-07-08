@@ -6,6 +6,39 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-08 (later 69) — later-68 audit + make the wire-drop picker keyboard-operable
+
+**Self-audit (ultrathink, browser) of later-68.** Two minor real issues found + fixed, plus one honest gap closed:
+- *Drop on canvas overlays opened the picker:* releasing a wire on the **MiniMap / Controls** (which sit over the
+  pane) passed the empty-space guard (they aren't `.vue-flow__node`) → the picker appeared over them. Extended
+  the guard to also exclude `.vue-flow__minimap`/`.vue-flow__controls`/`.vue-flow__panel` — only the actual pane
+  counts. Verified: drop on minimap/controls now suppressed.
+- *Picker overflowed the bottom edge:* the on-screen clamp reserved 320px but the full popover is ~340px (header
+  + input + 260 list + borders), so a low drop pushed it ~11px below the viewport. Bumped the reserve to 344.
+  Verified: edge drop now sits fully on-screen (bottom 887 < 900).
+- Rapid successive drops stay clean; the search input is still editable (`@mousedown.prevent` is on the options,
+  not the input); 0 console errors throughout.
+
+**The gap: the picker was mouse-only** — a keyboard user dragging a wire had no way to reach it, in an
+accessibility-first tool. Closed it by hooking the picker into the existing **keyboard wire machine**
+(`useCanvasKeyboard`): during a keyboard wire (`w`), pressing **`n`** hands the chosen source output to the same
+`WireSuggestionPopover`, positioned beside the source node; pick → insert + auto-wire (the mouse path's
+`openWireSuggestions`, reused). This also gives the **"No compatible target" dead-end an escape** (the wire
+machine used to just announce the dead-end and sit there — now: "…Press N to add a new node"). The source-stage
+live-region string advertises `n`; the trigger is an **optional injected dep** (`suggestNodeFromWire`) so the
+composable stays store/EditorView-agnostic. **+2 unit tests + mutations** (n hands off the right origin + cancels
+the wire; n is a no-op with no wire).
+
+Browser-verified (system Chrome): focus canvas → `w` (wire from a trigger output) → `n` → picker "accepts
+Trigger" (85 options, input focused) → Enter → node+edge added, `textbox` wired, focus returns to
+`#flow-canvas-panel`; **0 console errors**. So the suggestions feature is now fully keyboard-operable end to end.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2044** (+2 useCanvasKeyboard) · build ok · smokes
+0 errors. Committed + pushed on `phase0-file-format`; no AI attribution. (Saved the `latch-canvas-interaction-
+gotchas` memory earlier this session — the `project()` pane-relative + combobox `@mousedown.prevent` traps.)
+
+---
+
 ## 2026-07-08 (later 68) — Phase 4 non-a11y: drag-a-wire-into-empty-space → compatible-node suggestions
 
 Shipped the ROADMAP Phase-4 "drag-a-wire-into-empty-space → compatible-node suggestions" item. Dragging a wire
