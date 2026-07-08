@@ -19,6 +19,7 @@ import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeCategory } from '@/stores/nodes'
 import { flowSnippets } from '@/data/flow-snippets'
 import { snippetToInsertableNodes } from '@/utils/snippets'
+import FlowPreview from '@/components/preview/FlowPreview.vue'
 import AnimatedEdge from '@/components/edges/AnimatedEdge.vue'
 import { validateConnection } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
@@ -250,6 +251,12 @@ const starterTemplates = computed(() => {
     .filter((s): s is (typeof flowSnippets)[number] => s !== undefined)
   return picked.length > 0 ? picked : flowSnippets.slice(0, 4)
 })
+
+// Colour a preview node by its category, for the starter-template thumbnails.
+function templateNodeColor(nodeType: string): string {
+  const category = nodesStore.getDefinition(nodeType)?.category
+  return categoryMeta[category as NodeCategory]?.color ?? 'var(--color-neutral-400)'
+}
 
 // Insert a starter flow onto the empty canvas — reuses the same subgraph-insertion
 // path as the node explorer's snippet insertion, then frames the result.
@@ -816,6 +823,12 @@ onUnmounted(() => {
           class="starter-template"
           @click="insertStarterTemplate(template.id)"
         >
+          <FlowPreview
+            class="starter-thumb"
+            :nodes="template.nodes"
+            :edges="template.edges"
+            :get-color="templateNodeColor"
+          />
           <span class="starter-name">{{ template.name }}</span>
           <span class="starter-desc">{{ template.description }}</span>
         </button>
@@ -969,6 +982,14 @@ onUnmounted(() => {
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-2);
   width: 100%;
+}
+
+.starter-thumb {
+  width: 100%;
+  height: 48px;
+  margin-bottom: var(--space-2);
+  background: var(--color-neutral-50);
+  border-radius: var(--radius-xs);
 }
 
 .starter-template {
