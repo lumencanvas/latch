@@ -6,6 +6,52 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-08 (later 68) — Phase 4 non-a11y: drag-a-wire-into-empty-space → compatible-node suggestions
+
+Shipped the ROADMAP Phase-4 "drag-a-wire-into-empty-space → compatible-node suggestions" item. Dragging a wire
+off a port and releasing it on empty canvas now opens a small **inline picker** (the maintainer chose the
+contextual popover over reusing the node-explorer modal) of the nodes whose ports are type-compatible with the
+dragged-from port; picking one inserts it at the drop point and **auto-wires it, as a single undo**. Two
+increments:
+
+**1. `utils/nodeSuggestions.ts` — `suggestNodesForPort(origin, definitions, isCompatible)`.** Pure: given the
+dragged-from port's `{type, direction}`, returns the node types with a compatible port + the exact port to wire
+(`'source'` drag → candidate INPUT via `isCompatible(originType, portType)`; `'target'` drag → candidate OUTPUT).
+`areTypesCompatible` is injected (store-agnostic), matching the other connection utils. **5 unit tests + 3
+mutations** (invert inputs/outputs, swap the compatibility args — caught by a number↔string asymmetric case, and
+first-vs-last port — caught by a two-compatible-port candidate). A TDD catch: my first "direction" assertion was
+wrong (number→string IS compatible via coercion) — the helper was right; fixed the test.
+
+**2. `components/canvas/WireSuggestionPopover.vue` + EditorView wiring.** The popover is an **ARIA 1.1 combobox**
+(search input + `role=listbox` with `aria-activedescendant`), category-colour dots, keyboard nav
+(arrows/Home/End/Enter/Escape), closing on Escape / click-away / focus-loss; the active option **scrolls into
+view** on the long (85-item) list. **8 unit tests + 3 mutations** (wrap, active-reset-on-filter, Enter-picks-active).
+EditorView captures the origin on `connectStart`, marks `connect` as made, and on `connectEnd` (fired without a
+`connect`) opens the picker; pick → `addNode` at the drop + `addEdge` in one `startBatch`/`endBatch`.
+
+**Bugs the build + the polish pass caught (both browser-only-visible):**
+- *Combobox click-race:* clicking an option blurred the input, and the `focusout`-close fired (via nextTick,
+  before `mouseup`) and unmounted the popover so the click never landed → **nothing inserted**. Fixed with
+  `@mousedown.prevent` on the options (keeps focus on the input; the standard combobox fix).
+- *Placement off by a sidebar-width:* `project()` takes **pane-relative** coordinates, but I passed raw client
+  coords, so the node landed ~283px (the left toolbar width) to the right of the drop. Fixed by subtracting the
+  `.vue-flow__pane` rect (as the existing palette-drop handler does). Verified: drop at screen x≈300 → node at x≈303.
+
+**Polish (maintainer asked):** (A) the picker only opens on a **genuine empty-canvas** drop — a rejected drop onto
+a node no longer hijacks into it (via `elementFromPoint`, robust for touch whose `touchend.target` is the
+touchstart element); (B) active option scrolls into view; (C) the new node is nudged so its wired handle lands
+near the cursor (up to the first port row; input-drags shift left a node-width so the OUTPUT edge meets the drop).
+
+Browser-verified end-to-end (0 console errors): source-drag → 85 trigger-compatible suggestions → pick →
+node+edge wired `trigger→trigger`; keyboard pick (filter + Enter) → `console`; input-handle drag → header "accepts
+Object 3D", pick → new node wired as the edge **source** (reverse direction); Escape cancels + returns focus to
+`#flow-canvas-panel`; undo removes node+edge as one; drop-on-node suppressed; drop-on-empty opens.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2042** (+13: 5 nodeSuggestions, 8 popover) · build ok ·
+smokes 0 errors. Committed + pushed on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-07 (later 67) — Phase 4 non-a11y: dedicated snippets tab (+ the rule-of-three colour-resolver extraction)
 
 Shipped the **dedicated snippets tab** — the ROADMAP Phase-4 item the `flowToPreview` thumbnail primitive was

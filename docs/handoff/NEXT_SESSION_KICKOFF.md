@@ -1,9 +1,9 @@
-# Next-session kickoff — Phase-4 a11y COMPLETE; canvas experience + code-health pass done; snippets tab DONE, onboarding next
+# Next-session kickoff — Phase-4 a11y COMPLETE; canvas experience + code-health pass done; snippets tab + drag-wire suggestions DONE, onboarding next
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-07 — branch `phase0-file-format`, everything **committed + pushed** through `c1eaeff`.
-Tree CLEAN & green; snippets-tab + starter-card smokes = 0 real console errors. Verify with `git log --oneline -20`.)
+(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `8db05e9`.
+Tree CLEAN & green; snippets-tab + drag-wire smokes = 0 real console errors. Verify with `git log --oneline -20`.)
 
 ---
 
@@ -15,14 +15,15 @@ refactor** de-bloated the canvas, and several **experience features** shipped on
 **Get oriented before touching code, then pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **2029 pass + 11 todo** (140 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
+`test:unit` **2042 pass + 11 todo** (142 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
    **Commit/push only when explicitly asked.** Stay on `phase0-file-format` (branch off `main` for new work).
    Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor
    `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 67 → 56)**, newest first. Recent arc: (67) **dedicated snippets tab** +
+2. `docs/HANDOFF.md` TOP entries **(later 68 → 57)**, newest first. Recent arc: (68) **drag-a-wire-into-empty →
+   compatible-node suggestions** (inline combobox popover + `suggestNodesForPort`); (67) **dedicated snippets tab** +
    the rule-of-three `nodeTypeColor` extraction; (66) end-of-session runtime smoke + snippets searchable;
    (65/64) `flowToPreview` thumbnails on starter + snippet cards + a self-audit;
    (63) marquee/box-select (Vue Flow built-in); (61/62) **canvas-keyboard extraction into a composable** +
@@ -54,22 +55,26 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
     starter cards + all explorer snippet cards (later-64/65); snippets now findable by search (later-66);
     **dedicated snippets tab** — the node explorer content area is a `role="tablist"` (Nodes | Snippets, FlowTabs
     roving-tabindex model) with the 6 built-in snippets in their own first-class tabpanel; paired with it the
-    3-copy category-colour resolver was extracted to `utils/nodeColor.ts` (`nodeTypeColor`) (later-67).
-  - **Remaining non-a11y Phase-4:** **onboarding**, **drag-a-wire-into-empty-space → compatible-node suggestions**,
-    **on-wire debugging** (freeze-frame + per-port value preview). `<Controls>`+`<MiniMap>` already cover zoom/fit
-    + the toolbar; snippets tab + marquee + thumbnails all shipped.
+    3-copy category-colour resolver was extracted to `utils/nodeColor.ts` (`nodeTypeColor`) (later-67);
+    **drag-a-wire-into-empty → compatible-node suggestions** — an inline combobox popover
+    (`components/canvas/WireSuggestionPopover.vue`) of type-compatible nodes (pure `suggestNodesForPort`,
+    injected `areTypesCompatible`), pick → insert at drop + auto-wire in one undo; empty-space-only, keyboard-
+    operable (later-68).
+  - **Remaining non-a11y Phase-4:** **onboarding**, **on-wire debugging** (freeze-frame + per-port value preview).
+    `<Controls>`+`<MiniMap>` already cover zoom/fit + the toolbar; snippets tab + marquee + thumbnails +
+    drag-wire suggestions all shipped.
 - **Phases 5–9: not started.** Phase 5 = the modulation gap (input ports on modulatable params). Phase 6 =
   **full per-node co-location** (`registry/<cat>/<node>/`) — the largest single item and the deepest
   "node-isolation" work. Phase 7 subflow rebuild, 8 VJ/kiosk, 9 multiplayer.
 
 ## WHAT'S NEXT — pick a thread with me (each flagged)
-1. **Drag-a-wire-into-empty-space → compatible-node suggestions** — high-value workflow accelerator that
-   leverages the typed-port system (`validateConnection`); reuse the node explorer as the (accessible) picker
-   rather than a new popup. Medium. *The node explorer is now tabbed (Nodes | Snippets) — a good picker host.*
-2. **On-wire debugging** — per-port value preview / freeze-frame; persona-critical for a dataflow tool, but
-   larger (needs runtime value exposure). Scope first.
-3. **Onboarding** — the last named non-a11y Phase-4 experience item (snippets tab + marquee + thumbnails done).
-4. A **node-isolation pivot** (Phase 6 co-location — scope one category first), if pivoting off Phase 4.
+1. **On-wire debugging** — per-port value preview / freeze-frame + error-to-exact-node deep-linking;
+   persona-critical for a dataflow tool, but larger (needs runtime value exposure from the engine). Scope first.
+2. **Onboarding** — the last named non-a11y Phase-4 experience item (snippets tab + marquee + thumbnails +
+   drag-wire suggestions all done). Self-contained UI.
+3. A **node-isolation pivot** (Phase 6 co-location — the deep per-node isolation work; scope one category
+   first), if pivoting off Phase 4.
+4. **Phase 5 modulation gap** (input ports on modulatable params) — can overlap Phase 4.
 Ask me which to take. Don't dive into a whole new phase without confirming.
 
 ## HOW TO WORK
