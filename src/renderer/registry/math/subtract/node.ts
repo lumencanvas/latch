@@ -1,6 +1,8 @@
-import type { NodeDefinition } from '../types'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
-export const subtractNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'subtract',
   name: 'Subtract',
   version: '1.0.0',
@@ -23,3 +25,11 @@ export const subtractNode: NodeDefinition = {
     pairsWith: ['add', 'abs', 'multiply', 'smooth'],
   },
 }
+
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const a = (ctx.inputs.get('a') as number) ?? 0
+  const b = (ctx.inputs.get('b') as number) ?? 0
+  return new Map([['result', a - b]])
+}
+
+export default defineNode({ definition, executor, pure: true })

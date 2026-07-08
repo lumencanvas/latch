@@ -26,9 +26,10 @@ import { stringNodes } from './string'
 import { messagingNodes } from './messaging'
 import { emulationNodes } from './emulation'
 import { opencvNodes } from './opencv'
+import { colocatedDefinitions } from './nodeRegistry'
 
-// Combine all nodes into a single array
-export const allNodes = [
+// Legacy per-category definitions (the not-yet-co-located tail).
+const legacyNodes = [
   ...inputNodes,
   ...debugNodes,
   ...mathNodes,
@@ -48,4 +49,13 @@ export const allNodes = [
   ...messagingNodes,
   ...emulationNodes,
   ...opencvNodes,
+]
+
+// A co-located `registry/<cat>/<node>/node.ts` (ROADMAP Phase 6) is the single
+// source of truth for its id and wins over any legacy copy — so migrating a node
+// is "add its folder, delete its legacy definition" with the total count unchanged.
+const colocatedIds = new Set(colocatedDefinitions.map((d) => d.id))
+export const allNodes = [
+  ...legacyNodes.filter((n) => !colocatedIds.has(n.id)),
+  ...colocatedDefinitions,
 ]

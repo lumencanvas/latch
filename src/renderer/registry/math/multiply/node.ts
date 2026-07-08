@@ -1,6 +1,8 @@
-import type { NodeDefinition } from '../types'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
-export const multiplyNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'multiply',
   name: 'Multiply',
   version: '1.0.0',
@@ -23,3 +25,11 @@ export const multiplyNode: NodeDefinition = {
     pairsWith: ['add', 'divide', 'constant', 'clamp'],
   },
 }
+
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const a = (ctx.inputs.get('a') as number) ?? 0
+  const b = (ctx.inputs.get('b') as number) ?? 1
+  return new Map([['result', a * b]])
+}
+
+export default defineNode({ definition, executor, pure: true })

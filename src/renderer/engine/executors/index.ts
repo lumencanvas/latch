@@ -49,10 +49,6 @@ import {
   lfoExecutor,
 } from './input'
 import {
-  addExecutor,
-  subtractExecutor,
-  multiplyExecutor,
-  divideExecutor,
   mapRangeExecutor,
   clampExecutor,
   absExecutor,
@@ -95,6 +91,7 @@ import {
 } from './debug'
 import { retrieveExecutor, vectorMemoryExecutor } from './rag'
 import { llmExecutor } from './webllm'
+import { colocatedExecutors } from '@/registry/nodeRegistry'
 
 // Re-export CLASP utilities for external use
 export { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus }
@@ -145,11 +142,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   'step-sequencer': stepSequencerExecutor,
   euclidean: euclideanExecutor,
 
-  // Math
-  add: addExecutor,
-  subtract: subtractExecutor,
-  multiply: multiplyExecutor,
-  divide: divideExecutor,
+  // Math (add/subtract/multiply/divide now co-located — see ...colocatedExecutors below)
   'map-range': mapRangeExecutor,
   clamp: clampExecutor,
   abs: absExecutor,
@@ -238,4 +231,8 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
 
   // OpenCV.js (CPU image processing)
   ...opencvExecutors,
+
+  // Co-located `registry/<cat>/<node>/node.ts` executors (ROADMAP Phase 6) — win
+  // over any legacy entry above so a migrated node's folder is authoritative.
+  ...colocatedExecutors,
 }

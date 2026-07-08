@@ -6,29 +6,7 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState } from '../nodeState'
 
-export const addExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 0
-  return new Map([['result', a + b]])
-}
-
-export const subtractExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 0
-  return new Map([['result', a - b]])
-}
-
-export const multiplyExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 1
-  return new Map([['result', a * b]])
-}
-
-export const divideExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 1
-  return new Map([['result', b !== 0 ? a / b : 0]])
-}
+// add / subtract / multiply / divide migrated to co-located node.ts files (Phase 6).
 
 export const mapRangeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = (ctx.inputs.get('value') as number) ?? 0

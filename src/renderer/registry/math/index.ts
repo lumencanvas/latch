@@ -1,7 +1,4 @@
-export { addNode } from './add'
-export { subtractNode } from './subtract'
-export { multiplyNode } from './multiply'
-export { divideNode } from './divide'
+// add / subtract / multiply / divide migrated to co-located registry/math/<node>/node.ts (Phase 6).
 export { clampNode } from './clamp'
 export { absNode } from './abs'
 export { randomNode } from './random'
@@ -27,10 +24,6 @@ export { derivativeNode } from './derivative'
 export { integralNode } from './integral'
 export { tweenToTargetNode } from './tween-to-target'
 
-import { addNode } from './add'
-import { subtractNode } from './subtract'
-import { multiplyNode } from './multiply'
-import { divideNode } from './divide'
 import { clampNode } from './clamp'
 import { absNode } from './abs'
 import { randomNode } from './random'
@@ -57,10 +50,6 @@ import { tweenToTargetNode } from './tween-to-target'
 import type { NodeDefinition } from '../types'
 
 export const mathNodes: NodeDefinition[] = [
-  addNode,
-  subtractNode,
-  multiplyNode,
-  divideNode,
   clampNode,
   absNode,
   randomNode,
