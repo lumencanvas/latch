@@ -6,6 +6,43 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 60) — Phase 4 non-a11y: starter templates on the empty canvas (first non-a11y Phase-4 feature)
+
+Pivoted from the (now-complete) accessibility stream to the non-a11y Phase-4 body. Shipped the first item:
+**starter templates on the empty canvas.** The empty-canvas overlay was a bare "drag nodes to get started"
+hint; it now offers a curated set of 4 beginner-friendly starter flows (Audio Reactive Visuals · Keyboard to
+Synth · Color Cycling · Value Threshold — curated by id with a fallback to the first snippets) as accessible
+`<button>` cards that insert the flow on click, plus a "Browse the node library" button.
+
+- **New helper `utils/snippets.ts` — `snippetToInsertableNodes(snippet, getDefinition)`** maps a snippet's
+  stored nodes into the shape `flowsStore.insertSubgraph` expects (stamping `nodeType`, enriching with the
+  live definition label/ref when known, omitting those keys for unknown types). `getDefinition` is injected
+  so it's store-agnostic + unit-testable, and so the snippet-insertion path can't drift between call sites.
+  **Unit + mutation-verified** (3 tests; 3 mutations — nodeType-stamp / definition-guard / data-spread — each
+  confirmed red; fixed a test-efficacy gap where a stale `nodeType` in the fixture masked the stamp, and an
+  `in`-vs-`toBeUndefined` gap that let the definition-guard mutation survive).
+- **NodeExplorerModal** refactored onto the helper (behavior-preserving; store-verified the modal snippet
+  insert still works).
+- **EditorView** empty-state rewritten with the template cards + a store-reusing `insertStarterTemplate`
+  (same `insertSubgraph` path). The overlay stays `pointer-events: none` (canvas still pans around it); only
+  the buttons opt back in.
+
+**Debugging note (important for future canvas work):** initial smoke looked broken — after insert the store
+had the nodes but the canvas showed 0 and an `.empty-state` seemed stuck. Two red herrings: (1) `.empty-state`
+is a class shared by several panels (PropertiesPanel/DebugPanel/…), so an unscoped `querySelector('.empty-state')`
+matched the WRONG element — scope canvas-empty checks to `.editor-view .empty-state` / the unique `.empty-title`;
+(2) inserted nodes land at world coords outside the empty viewport and `only-render-visible-elements` culls
+them until a fitView. The real fix: frame via `vueFlow.onNodesInitialized(() => { fitView(); off() })` — a bare
+`nextTick(fitView)` fires before Vue Flow ingests the v-model:nodes change, so it frames nothing. **No
+pre-existing app bug** — the alarm was a probe artifact + the fitView-timing issue, now fixed.
+
+Verified (system Chrome): empty flow → 4 starter cards; click → 2 nodes + 1 edge inserted, empty-state hides,
+canvas **auto-frames** the result (`canvasNodes: 2`); buttons are real `<button>`s; **0 console errors**.
+typecheck clean · lint 0 err (49 warns) · `test:unit` **2007** (+3 snippet helper) · build ok. Uncommitted on
+`phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-07 (later 59) — Phase 4 a11y Increment 6: Theme-D port/edge type cue — the LAST a11y finding CLOSED
 
 Closed the one remaining (maintainer-deferred) accessibility finding: port/edge data type conveyed by
