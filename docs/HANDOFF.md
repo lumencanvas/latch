@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 63) — Phase 4 non-a11y: mouse marquee / box-select (Vue Flow built-in)
+
+Enabled rubber-band selection — the mouse counterpart to the keyboard select work — using Vue Flow's
+**built-in** selection (v1.48.2), not a hand-rolled one. Vue Flow's box-select was explicitly disabled
+(`selection-key-code`/`multi-selection-key-code` both `null`); flipped them on:
+
+- `:selection-key-code="'Shift'"` — **Shift+drag draws a marquee** box.
+- `:multi-selection-key-code="['Meta', 'Control']"` — **Cmd/Ctrl+click adds** a node to the selection.
+
+**Chosen for the touch/tablet persona:** this version has no `selectionOnDrag`, so the only way to make
+left-drag itself a marquee is `panOnDrag: [1,2]`, which **breaks one-finger touch panning** — a real downgrade
+for VJs/installation users. So the change is deliberately *additive*: plain left-drag still pans (touch intact);
+Shift+drag and Cmd/Ctrl+click gain new powers. No new selection-sync code needed — the existing
+`getSelectedNodes` watcher already fans Vue Flow's selection into `uiStore.selectedNodes` (so Delete/copy/
+properties all work on a marquee selection).
+
+Browser-verified (system Chrome): Shift+drag box-selected **10 nodes** (propagated to the store) · Cmd+click
+went 1→2 selected · **plain drag still pans** (a node's screen position shifted by the drag delta while its flow
+position stayed put — no regression) · **0 console errors**. typecheck clean · lint 0 err · `test:unit` 2015 ·
+EditorView config change → browser-verified, not unit. Optional follow-up: token-style the `.vue-flow__selection`
+box to match the LATCH theme (default Vue Flow styling for now). Uncommitted on `phase0-file-format`; no AI
+attribution.
+
+---
+
 ## 2026-07-07 (later 62) — Refactor cont'd: adopt useApplicationKeyboard across the control editors (finish the DRY)
 
 Completed the shared-scaffolding half of the refactor and, in doing so, **corrected the abstraction's shape**.
