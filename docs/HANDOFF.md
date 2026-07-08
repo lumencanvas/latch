@@ -6,6 +6,30 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 64) — Phase 4 non-a11y: flowToPreview thumbnails on the starter-template cards
+
+Built the reusable thumbnail primitive the ROADMAP pairs with the snippets tab, and applied it to the
+starter-template cards shipped in later-60 (text-only → visual). Deliberately scoped as a **testable primitive
++ one real consumer** (not the whole snippets tab), so it's clean and immediately useful.
+
+- **`utils/flowPreview.ts` — `flowToPreview(nodes, edges, opts)`** — pure geometry: bounding-box-fit projection
+  of node positions into a target box (uniform scale = aspect-preserving), each node a coloured dot, each edge
+  a line between two dots. Node colour comes from an **injected `getColor(type)` resolver** (the same
+  store-agnostic idiom as `snippetToInsertableNodes`), so it's registry-free and unit-testable. Handles the
+  empty flow (empty model, box size kept) and a single/zero-span node (centred, no NaN/Infinity — a bug caught
+  in TDD: the div-by-zero guard was wrongly feeding the centring math). **7 unit tests + 3 mutations** (aspect,
+  edge-endpoint guard, colour resolver) each confirmed red.
+- **`components/preview/FlowPreview.vue`** — thin, decorative (`aria-hidden`) SVG renderer of that model
+  (edges as `<line>`, nodes as `<circle>`); geometry stays in the tested util.
+- **Starter cards** now show a `FlowPreview` thumbnail, nodes coloured by category (`categoryMeta`).
+
+Browser-verified (system Chrome): all 4 starter cards render an SVG thumbnail with the right node/edge counts,
+category colours (audio green / visual pink / logic red …), every dot inside the viewBox, **0 console errors**.
+typecheck clean · lint 0 err · `test:unit` **2022** (+7) · build ok. The primitive is ready for the snippets
+tab. Uncommitted on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-07 (later 63) — Phase 4 non-a11y: mouse marquee / box-select (Vue Flow built-in)
 
 Enabled rubber-band selection — the mouse counterpart to the keyboard select work — using Vue Flow's
