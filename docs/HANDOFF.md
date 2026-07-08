@@ -6,6 +6,43 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-07 (later 67) — Phase 4 non-a11y: dedicated snippets tab (+ the rule-of-three colour-resolver extraction)
+
+Shipped the **dedicated snippets tab** — the ROADMAP Phase-4 item the `flowToPreview` thumbnail primitive was
+built for. Snippets used to be an appended section at the bottom of the node grid (findable only by scrolling
+past ~200 nodes); they now have a first-class home. Delivered as two clean, individually-revertible changes:
+
+**1. Extracted `utils/nodeColor.ts` — `nodeTypeColor(nodeType, getCategory)` (the rule-of-three trigger later-65
+predicted).** The `categoryMeta[category]?.color ?? neutral` resolver had drifted into **3 copies**
+(`FlowSnippet.nodeColor`, `EditorView.templateNodeColor`, `EditorView.getNodeMinimapColor`). Extracted to one
+pure helper with an **injected `getCategory` resolver** (same store-agnostic idiom as `flowToPreview`'s
+`getColor`) — **4 unit tests + 2 mutations** (dropped-fallback, ignore-resolver) each confirmed red. Routed all
+three call sites through it (behavior-preserving; dropped now-dead `categoryMeta`/`NodeCategory` imports from
+EditorView). Browser-verified the three consumers still colour correctly: snippet thumbnails, starter-template
+cards (audio green / visual pink / logic red — real category colours, not the neutral fallback), and the minimap.
+
+**2. The snippets tab.** Added `activeTab: 'nodes' | 'snippets'` + `setTab` to the node-explorer store (reset on
+open; **3 unit tests + 2 mutations**). NodeExplorer's content area is now a proper **`role="tablist"`** with a
+**Nodes | Snippets** switcher built on the **same roving-tabindex keyboard model as `FlowTabs`** (Enter/Space
+activate, Arrow/Home/End move+select+focus, `aria-selected`/`aria-controls`/`role="tabpanel"`). Snippets moved
+out of the appended grid-section into their own tabpanel (reusing the existing thumbnail cards), each panel with
+its own scoped search + empty-state; a count badge on the Snippets tab tracks the current filter.
+
+Browser-verified end-to-end (system Chrome): tablist with 2 tabs (`Nodes` / `Snippets 6`); click switches panels
+(node grid ↔ 6 snippet cards + 6 SVG thumbnails); search narrows 6→2 with the badge tracking, no-match →
+empty-state; **keyboard roving** (ArrowLeft/Right select + move focus); insert from the tab closes the modal and
+adds the snippet's nodes; **0 console errors**. NodeExplorer is app-chrome → browser-verified, not unit; the
+store + util halves are unit+mutation.
+
+**Doc correction:** later-65 said "all **34** snippets" — the real count is **6** (`data/flow-snippets.ts`). No
+user-saved-snippet feature exists; the tab surfaces the 6 built-ins. (Also noted, not fixed: `--radius-xs` used
+by `FlowSnippet`'s `.snippet-thumb` is undefined in tokens.css → silent no-radius fallback; pre-existing.)
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2029** (+7: 4 nodeColor, 3 store-tab) · build ok ·
+smoke 0 errors. Committed + pushed on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-07 (later 66) — End-of-session audit (runtime clean) + snippets are now searchable
 
 **Audit (ultrathink):** a final full-app runtime smoke after ~11 session increments — boot → **Play**
@@ -38,8 +75,9 @@ All committed + pushed on `phase0-file-format`; no AI attribution.
   (rendered size unchanged, verified). a11y / honesty / over-abstraction lenses were clean.
 
 **Continue: thumbnails on the node-explorer snippet cards.** Applied the same `FlowPreview` primitive to
-`FlowSnippet.vue` (a small 56×40 preview at the left of each card), so **all 34 snippets** get a schematic —
-not just the 4 starters — completing the thumbnail rollout across both snippet surfaces. Kept a local
+`FlowSnippet.vue` (a small 56×40 preview at the left of each card), so **all snippets** get a schematic —
+not just the 4 starters — completing the thumbnail rollout across both snippet surfaces. (NB: later-67 found
+the real snippet count is **6**, not the "34" first written here.) Kept a local
 `nodeColor` resolver (2nd copy of the 2-line category-colour lookup); will extract a shared helper only if the
 dedicated snippets tab becomes a 3rd consumer (rule of three, avoiding premature abstraction).
 

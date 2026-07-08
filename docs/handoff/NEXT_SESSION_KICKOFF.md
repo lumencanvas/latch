@@ -1,9 +1,9 @@
-# Next-session kickoff — Phase-4 a11y COMPLETE; canvas experience + code-health pass done; snippets/onboarding next
+# Next-session kickoff — Phase-4 a11y COMPLETE; canvas experience + code-health pass done; snippets tab DONE, onboarding next
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-07 — branch `phase0-file-format`, everything **committed + pushed** through `1006ec8`.
-Tree CLEAN & green; final full-app runtime smoke = 0 real console errors. Verify with `git log --oneline -20`.)
+(Last updated 2026-07-07 — branch `phase0-file-format`, everything **committed + pushed** through `c1eaeff`.
+Tree CLEAN & green; snippets-tab + starter-card smokes = 0 real console errors. Verify with `git log --oneline -20`.)
 
 ---
 
@@ -15,15 +15,16 @@ refactor** de-bloated the canvas, and several **experience features** shipped on
 **Get oriented before touching code, then pick the next thread with me.**
 
 Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existing `any`-warns ok) ·
-`test:unit` **2022 pass + 11 todo** (139 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
+`test:unit` **2029 pass + 11 todo** (140 files) · `build` ok · boot→Play→Stop smoke 0 real console errors.
 
 ## STEP 1 — Read, in order
 1. `CLAUDE.md` — rules. **NO AI attribution in git, EVER** (commits/PRs/tags read as Moheeb Zara's).
    **Commit/push only when explicitly asked.** Stay on `phase0-file-format` (branch off `main` for new work).
    Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor
    `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 66 → 55)**, newest first. Recent arc: (66) end-of-session runtime
-   smoke + snippets searchable; (65/64) `flowToPreview` thumbnails on starter + snippet cards + a self-audit;
+2. `docs/HANDOFF.md` TOP entries **(later 67 → 56)**, newest first. Recent arc: (67) **dedicated snippets tab** +
+   the rule-of-three `nodeTypeColor` extraction; (66) end-of-session runtime smoke + snippets searchable;
+   (65/64) `flowToPreview` thumbnails on starter + snippet cards + a self-audit;
    (63) marquee/box-select (Vue Flow built-in); (61/62) **canvas-keyboard extraction into a composable** +
    editor DRY; (60) starter templates on the empty canvas; (54–59) the a11y stream (Theme F canvas keyboard,
    Theme D type cues, the low tails).
@@ -50,24 +51,25 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
   - **Experience features on the clean base:** starter templates on the empty canvas (later-60); **mouse
     marquee** — Shift+drag box-select + Cmd/Ctrl-click additive, Vue Flow built-in, *additive* so left-drag still
     pans (touch preserved) (later-63); **`flowToPreview` thumbnail primitive** (pure, tested) rendered on the
-    starter cards + all 34 explorer snippet cards (later-64/65); snippets now findable by search (later-66).
-  - **Remaining non-a11y Phase-4:** a **dedicated snippets tab** (the `flowToPreview` thumbnail primitive it needs
-    is DONE), **onboarding**, **drag-a-wire-into-empty-space → compatible-node suggestions**, **on-wire debugging**
-    (freeze-frame + per-port value preview). `<Controls>`+`<MiniMap>` already cover zoom/fit + the toolbar.
+    starter cards + all explorer snippet cards (later-64/65); snippets now findable by search (later-66);
+    **dedicated snippets tab** — the node explorer content area is a `role="tablist"` (Nodes | Snippets, FlowTabs
+    roving-tabindex model) with the 6 built-in snippets in their own first-class tabpanel; paired with it the
+    3-copy category-colour resolver was extracted to `utils/nodeColor.ts` (`nodeTypeColor`) (later-67).
+  - **Remaining non-a11y Phase-4:** **onboarding**, **drag-a-wire-into-empty-space → compatible-node suggestions**,
+    **on-wire debugging** (freeze-frame + per-port value preview). `<Controls>`+`<MiniMap>` already cover zoom/fit
+    + the toolbar; snippets tab + marquee + thumbnails all shipped.
 - **Phases 5–9: not started.** Phase 5 = the modulation gap (input ports on modulatable params). Phase 6 =
   **full per-node co-location** (`registry/<cat>/<node>/`) — the largest single item and the deepest
   "node-isolation" work. Phase 7 subflow rebuild, 8 VJ/kiosk, 9 multiplayer.
 
 ## WHAT'S NEXT — pick a thread with me (each flagged)
-1. **Dedicated snippets tab** — a browse-all-snippets surface (search + the ready thumbnails), vs the current
-   category-scoped section at the bottom of the node grid. Additive; the thumbnail primitive is done. *If it
-   becomes a 3rd consumer of the category-colour lookup, extract the shared resolver now (rule of three).*
-2. **Drag-a-wire-into-empty-space → compatible-node suggestions** — high-value workflow accelerator that
+1. **Drag-a-wire-into-empty-space → compatible-node suggestions** — high-value workflow accelerator that
    leverages the typed-port system (`validateConnection`); reuse the node explorer as the (accessible) picker
-   rather than a new popup. Medium.
-3. **On-wire debugging** — per-port value preview / freeze-frame; persona-critical for a dataflow tool, but
+   rather than a new popup. Medium. *The node explorer is now tabbed (Nodes | Snippets) — a good picker host.*
+2. **On-wire debugging** — per-port value preview / freeze-frame; persona-critical for a dataflow tool, but
    larger (needs runtime value exposure). Scope first.
-4. **Onboarding**, or a **node-isolation pivot** (Phase 6 co-location — scope one category first).
+3. **Onboarding** — the last named non-a11y Phase-4 experience item (snippets tab + marquee + thumbnails done).
+4. A **node-isolation pivot** (Phase 6 co-location — scope one category first), if pivoting off Phase 4.
 Ask me which to take. Don't dive into a whole new phase without confirming.
 
 ## HOW TO WORK
