@@ -6,6 +6,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
 import { flowSnippets } from '@/data/flow-snippets'
+import { snippetToInsertableNodes } from '@/utils/snippets'
 import NodeExplorer from '@/components/node-explorer/NodeExplorer.vue'
 import { useDialogA11y } from '@/composables/useDialogA11y'
 
@@ -44,19 +45,7 @@ function handleInsertSnippet(snippetId: string) {
 
   // Clone the snippet's nodes AND the wires between them. insertSubgraph
   // remaps the snippet's internal ids to the freshly-created node ids.
-  const nodes = snippet.nodes.map(node => {
-    const definition = nodesStore.getDefinition(node.type)
-    return {
-      id: node.id,
-      nodeType: node.type,
-      position: node.position,
-      data: {
-        ...node.data,
-        nodeType: node.type,
-        ...(definition ? { label: definition.name, definition } : {}),
-      },
-    }
-  })
+  const nodes = snippetToInsertableNodes(snippet, (type) => nodesStore.getDefinition(type))
 
   const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, { x: 400, y: 300 })
   if (nodeIds.length > 0) uiStore.selectNodes(nodeIds)
