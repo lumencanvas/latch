@@ -8,9 +8,14 @@ export const useNodeExplorerStore = defineStore('nodeExplorer', {
     searchQuery: '',
     selectedTags: [] as string[],
     viewMode: 'grid' as 'grid' | 'detail',
+    activeTab: 'nodes' as 'nodes' | 'snippets',
   }),
 
   actions: {
+    setTab(tab: 'nodes' | 'snippets') {
+      this.activeTab = tab
+    },
+
     selectNode(nodeId: string) {
       this.selectedNodeId = nodeId
       this.viewMode = 'detail'
@@ -59,6 +64,7 @@ export const useNodeExplorerStore = defineStore('nodeExplorer', {
       this.searchQuery = ''
       this.selectedTags = []
       this.viewMode = 'grid'
+      this.activeTab = 'nodes'
     },
   },
 })

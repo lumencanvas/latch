@@ -119,6 +119,48 @@ function handleSelectCategory(category: NodeCategory | null) {
   explorerStore.selectCategory(category)
 }
 
+// The two top-level sections of the explorer, driven as an ARIA tablist (roving
+// tabindex + arrow keys) — the same keyboard model as the flow tabs.
+const tabs = [
+  { id: 'nodes', label: 'Nodes' },
+  { id: 'snippets', label: 'Snippets' },
+] as const
+
+function onTabKeydown(event: KeyboardEvent, tab: 'nodes' | 'snippets') {
+  const el = event.currentTarget as HTMLElement
+  const focusSibling = (sibling: Element | null | undefined) => {
+    const next = sibling as HTMLElement | null
+    if (!next) return
+    const id = next.dataset.tab as 'nodes' | 'snippets' | undefined
+    if (id) explorerStore.setTab(id)
+    next.focus()
+  }
+
+  switch (event.key) {
+    case 'Enter':
+    case ' ':
+      event.preventDefault()
+      explorerStore.setTab(tab)
+      break
+    case 'ArrowRight':
+      event.preventDefault()
+      focusSibling(el.nextElementSibling)
+      break
+    case 'ArrowLeft':
+      event.preventDefault()
+      focusSibling(el.previousElementSibling)
+      break
+    case 'Home':
+      event.preventDefault()
+      focusSibling(el.parentElement?.firstElementChild)
+      break
+    case 'End':
+      event.preventDefault()
+      focusSibling(el.parentElement?.lastElementChild)
+      break
+  }
+}
+
 // Port type key — the colour, non-colour line style (solid/dotted/dashed, shared
 // by a port and its edge) and the glyph shown on hover, all from dataTypeMeta so
 // the legend documents every cue a handle actually carries (WCAG 1.4.1).
@@ -174,18 +216,132 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
 
     <!-- Right: Content area -->
     <div class="explorer-content">
-      <!-- Detail view -->
-      <NodeDetail
-        v-if="explorerStore.viewMode === 'detail' && selectedDefinition"
-        :definition="selectedDefinition"
-        @back="handleBack"
-        @add-to-flow="handleAddToFlow"
-        @insert-snippet="handleInsertSnippet"
-        @navigate-to="handleNavigateTo"
-      />
+      <!-- Section tabs: nodes / snippets -->
+      <div
+        class="explorer-tabs"
+        role="tablist"
+        aria-label="Node explorer sections"
+      >
+        <button
+          v-for="tab in tabs"
+          :id="`explorer-tab-${tab.id}`"
+          :key="tab.id"
+          :data-tab="tab.id"
+          type="button"
+          class="explorer-tab"
+          :class="{ active: explorerStore.activeTab === tab.id }"
+          role="tab"
+          :aria-selected="explorerStore.activeTab === tab.id"
+          :aria-controls="`explorer-panel-${tab.id}`"
+          :tabindex="explorerStore.activeTab === tab.id ? 0 : -1"
+          @click="explorerStore.setTab(tab.id)"
+          @keydown="onTabKeydown($event, tab.id)"
+        >
+          {{ tab.label }}
+          <span
+            v-if="tab.id === 'snippets'"
+            class="tab-count"
+          >{{ visibleSnippets.length }}</span>
+        </button>
+      </div>
 
-      <!-- Grid view -->
-      <template v-else>
+      <!-- Nodes panel -->
+      <div
+        v-if="explorerStore.activeTab === 'nodes'"
+        id="explorer-panel-nodes"
+        class="explorer-panel"
+        role="tabpanel"
+        aria-labelledby="explorer-tab-nodes"
+      >
+        <!-- Detail view -->
+        <NodeDetail
+          v-if="explorerStore.viewMode === 'detail' && selectedDefinition"
+          :definition="selectedDefinition"
+          @back="handleBack"
+          @add-to-flow="handleAddToFlow"
+          @insert-snippet="handleInsertSnippet"
+          @navigate-to="handleNavigateTo"
+        />
+
+        <!-- Grid view -->
+        <template v-else>
+          <!-- Search bar -->
+          <div class="search-bar">
+            <Search
+              :size="14"
+              class="search-icon"
+            />
+            <input
+              type="text"
+              class="search-input"
+              placeholder="Search nodes..."
+              aria-label="Search nodes"
+              :value="explorerStore.searchQuery"
+              @input="explorerStore.setSearchQuery(($event.target as HTMLInputElement).value)"
+            >
+          </div>
+
+          <!-- Tag filter chips -->
+          <div
+            v-if="availableTags.length > 0"
+            class="tag-filter"
+          >
+            <button
+              v-for="tag in availableTags"
+              :key="tag"
+              class="tag-chip"
+              :class="{ active: explorerStore.selectedTags.includes(tag) }"
+              :aria-pressed="explorerStore.selectedTags.includes(tag)"
+              @click="explorerStore.toggleTag(tag)"
+            >
+              <!-- Non-color cue (WCAG 1.4.1): a check marks the active chip so its
+                   state does not rely on the primary-colour fill alone. -->
+              <span
+                v-if="explorerStore.selectedTags.includes(tag)"
+                class="tag-check"
+                aria-hidden="true"
+              >✓ </span>{{ tag }}
+            </button>
+            <button
+              v-if="explorerStore.selectedTags.length > 0"
+              class="tag-chip tag-clear"
+              @click="explorerStore.clearTags()"
+            >
+              clear ✕
+            </button>
+          </div>
+
+          <!-- Node grid -->
+          <div
+            ref="gridRef"
+            class="node-grid"
+          >
+            <NodeCard
+              v-for="node in filteredNodes"
+              :key="node.id"
+              :data-node-id="node.id"
+              :definition="node"
+              @select="handleSelectNode"
+            />
+          </div>
+
+          <div
+            v-if="filteredNodes.length === 0"
+            class="empty-state"
+          >
+            No nodes found.
+          </div>
+        </template>
+      </div>
+
+      <!-- Snippets panel -->
+      <div
+        v-else
+        id="explorer-panel-snippets"
+        class="explorer-panel"
+        role="tabpanel"
+        aria-labelledby="explorer-tab-snippets"
+      >
         <!-- Search bar -->
         <div class="search-bar">
           <Search
@@ -195,82 +351,31 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
           <input
             type="text"
             class="search-input"
-            placeholder="Search nodes..."
-            aria-label="Search nodes"
+            placeholder="Search snippets..."
+            aria-label="Search snippets"
             :value="explorerStore.searchQuery"
             @input="explorerStore.setSearchQuery(($event.target as HTMLInputElement).value)"
           >
         </div>
 
-        <!-- Tag filter chips -->
-        <div
-          v-if="availableTags.length > 0"
-          class="tag-filter"
-        >
-          <button
-            v-for="tag in availableTags"
-            :key="tag"
-            class="tag-chip"
-            :class="{ active: explorerStore.selectedTags.includes(tag) }"
-            :aria-pressed="explorerStore.selectedTags.includes(tag)"
-            @click="explorerStore.toggleTag(tag)"
-          >
-            <!-- Non-color cue (WCAG 1.4.1): a check marks the active chip so its
-                 state does not rely on the primary-colour fill alone. -->
-            <span
-              v-if="explorerStore.selectedTags.includes(tag)"
-              class="tag-check"
-              aria-hidden="true"
-            >✓ </span>{{ tag }}
-          </button>
-          <button
-            v-if="explorerStore.selectedTags.length > 0"
-            class="tag-chip tag-clear"
-            @click="explorerStore.clearTags()"
-          >
-            clear ✕
-          </button>
-        </div>
-
-        <!-- Node grid -->
-        <div
-          ref="gridRef"
-          class="node-grid"
-        >
-          <NodeCard
-            v-for="node in filteredNodes"
-            :key="node.id"
-            :data-node-id="node.id"
-            :definition="node"
-            @select="handleSelectNode"
-          />
-        </div>
-
-        <div
-          v-if="filteredNodes.length === 0"
-          class="empty-state"
-        >
-          No nodes found.
-        </div>
-
-        <!-- Flow snippets -->
         <div
           v-if="visibleSnippets.length > 0"
-          class="snippets-section"
+          class="snippets-grid"
         >
-          <h3 class="snippets-title">
-            FLOW SNIPPETS
-          </h3>
-          <div class="snippets-grid">
-            <FlowSnippetCard
-              v-for="snippet in visibleSnippets"
-              :key="snippet.id"
-              :snippet="snippet"
-              @insert="handleInsertSnippet"
-            />
-          </div>
+          <FlowSnippetCard
+            v-for="snippet in visibleSnippets"
+            :key="snippet.id"
+            :snippet="snippet"
+            @insert="handleInsertSnippet"
+          />
         </div>
-      </template>
+        <div
+          v-else
+          class="empty-state"
+        >
+          No snippets found.
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -310,6 +415,68 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
   flex-direction: column;
   overflow-y: auto;
   min-width: 0;
+}
+
+/* Section tabs (nodes / snippets) — pinned to the top of the scrolling content. */
+.explorer-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
+  border-bottom: 2px solid var(--color-neutral-200);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-neutral-0);
+}
+
+.explorer-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  background: transparent;
+  color: var(--color-neutral-500);
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.explorer-tab:hover {
+  color: var(--color-neutral-800);
+}
+
+.explorer-tab.active {
+  color: var(--color-neutral-900);
+  border-bottom-color: var(--color-primary-500);
+}
+
+.explorer-tab:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
+}
+
+.tab-count {
+  font-size: 9px;
+  line-height: 16px;
+  min-width: 16px;
+  padding: 0 5px;
+  text-align: center;
+  border-radius: var(--radius-full);
+  background: var(--color-neutral-200);
+  color: var(--color-neutral-600);
+}
+
+.explorer-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .search-bar {
@@ -397,24 +564,11 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
   font-size: 12px;
 }
 
-.snippets-section {
-  padding: var(--space-3);
-  border-top: 2px solid var(--color-neutral-200);
-}
-
-.snippets-title {
-  font-size: 10px;
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--color-neutral-500);
-  margin: 0 0 var(--space-3) 0;
-}
-
 .snippets-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-2);
+  padding: var(--space-3);
 }
 
 /* Let the category list scroll so the port legend stays pinned to the bottom. */

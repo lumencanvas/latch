@@ -34,3 +34,29 @@ describe('node-explorer store: tag filter', () => {
     expect(s.selectedCategory).toBe('audio')
   })
 })
+
+describe('node-explorer store: tab', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('defaults to the nodes tab', () => {
+    const s = useNodeExplorerStore()
+    expect(s.activeTab).toBe('nodes')
+  })
+
+  it('setTab switches the active tab', () => {
+    const s = useNodeExplorerStore()
+    s.setTab('snippets')
+    expect(s.activeTab).toBe('snippets')
+    s.setTab('nodes')
+    expect(s.activeTab).toBe('nodes')
+  })
+
+  it('reset returns to the nodes tab', () => {
+    const s = useNodeExplorerStore()
+    s.setTab('snippets')
+    s.reset()
+    expect(s.activeTab).toBe('nodes')
+  })
+})
