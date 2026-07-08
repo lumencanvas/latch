@@ -1,9 +1,9 @@
-# Next-session kickoff — Phase-4 a11y COMPLETE; canvas experience + code-health pass done; snippets tab + drag-wire suggestions DONE, onboarding next
+# Next-session kickoff — Phase 6 (per-node co-location) STARTED — the main event; migrate the node tail
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `dc9c0d4`.
-Tree CLEAN & green; drag-wire + keyboard-suggest + on-wire-value smokes = 0 real console errors. Verify with `git log --oneline -20`.)
+(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `9ac7698`.
+Tree CLEAN & green; co-located `add` runs in-engine (2+40=42), boot 0 real console errors. Verify with `git log --oneline -20`.)
 
 ---
 
@@ -22,10 +22,12 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
    **Commit/push only when explicitly asked.** Stay on `phase0-file-format` (branch off `main` for new work).
    Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor
    `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 70 → 59)**, newest first. Recent arc: (70) **on-wire debugging inc 1** —
-   live per-port value overlay (`formatPortValue` + a "show values" toggle); (69) later-68 audit +
-   **keyboard-trigger** for the wire-drop picker (`n` during a keyboard wire → same picker); (68) **drag-a-wire-
-   into-empty → compatible-node suggestions** (inline combobox popover + `suggestNodesForPort`); (67) **dedicated snippets tab** +
+2. `docs/HANDOFF.md` TOP entries **(later 71 → 60)**, newest first. Recent arc: **(71) Phase 6 STARTED — per-node
+   co-location went live; first 4 math nodes migrated (READ THIS ENTRY — it documents the merge path + the
+   per-node migration recipe the tail follows)**; (70) **on-wire debugging inc 1** — live per-port value overlay
+   (`formatPortValue` + a "show values" toggle); (69) later-68 audit + **keyboard-trigger** for the wire-drop
+   picker (`n` during a keyboard wire → same picker); (68) **drag-a-wire-into-empty → compatible-node
+   suggestions**; (67) **dedicated snippets tab** +
    the rule-of-three `nodeTypeColor` extraction; (66) end-of-session runtime smoke + snippets searchable;
    (65/64) `flowToPreview` thumbnails on starter + snippet cards + a self-audit;
    (63) marquee/box-select (Vue Flow built-in); (61/62) **canvas-keyboard extraction into a composable** +
@@ -71,21 +73,29 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
     history/sparkline, error→exact-node deep-linking; edge-level value display is a later option).
     `<Controls>`+`<MiniMap>` cover zoom/fit + the toolbar; snippets tab + marquee + thumbnails + drag-wire
     suggestions + per-port value preview all shipped.
-- **Phases 5–9: not started.** Phase 5 = the modulation gap (input ports on modulatable params). Phase 6 =
-  **full per-node co-location** (`registry/<cat>/<node>/`) — the largest single item and the deepest
-  "node-isolation" work. Phase 7 subflow rebuild, 8 VJ/kiosk, 9 multiplayer.
+- **Phase 6 (full per-node co-location) — STARTED (later-71), now the MAIN thread.** This is "the whole reason
+  for the plan" per the maintainer: every node → a self-contained `registry/<cat>/<node>/node.ts`. The
+  `nodeRegistry` glob is now LIVE; `allNodes.ts` + `engine/executors/index.ts` union colocated defs/executors
+  (deduped, colocated-wins). First 4 math nodes migrated (`add`/`subtract`/`multiply`/`divide`); count stays 238,
+  gates green. **Migrating a node = create its `node.ts` (`defineNode({definition, executor, pure?, ...})`) +
+  delete the legacy `.ts` def + barrel refs + executor body + the `builtinExecutors` map entry & import.** See
+  HANDOFF later-71 for the full recipe + the harder-case list.
+- **Phases 5, 7–9: not started.** Phase 5 = modulation gap; 7 subflow rebuild; 8 VJ/kiosk; 9 multiplayer.
 
-## WHAT'S NEXT — pick a thread with me (each flagged)
-1. **On-wire debugging — continue** (inc 1 = per-port value preview DONE later-70). Next slices: **freeze-the-frame**
-   (pause + inspect a held frame), **value history/sparkline** per port, **error→exact-node deep-linking** (the
-   `runtime` store already holds `errors[]` with `nodeId`). Engine value model is proven, so these are unblocked.
-2. **Onboarding** — the last untouched non-a11y Phase-4 item. Self-contained UI, but the *form* (guided tour /
-   spotlight / dismissible first-run hints) is a real design fork — confirm the shape before building.
-3. A **node-isolation pivot** (Phase 6 co-location — the deep per-node isolation work; scope one category
-   first), if pivoting off Phase 4.
-4. **Phase 5 modulation gap** (input ports on modulatable params; new primitives atan2/min-max/phasor/edge) —
-   can overlap Phase 4; concrete + low-design-fork, but a new phase (confirm first).
-Ask me which to take. Don't dive into a whole new phase without confirming.
+## WHAT'S NEXT — Phase 6 co-location is the confirmed main thread (2026-07-08)
+The maintainer confirmed **node isolation (Phase 6 co-location) is "the whole reason for this plan."** Keep
+migrating the node tail, per category, gates green each time. Suggested order (easy → hard):
+1. **Finish the pure/stateless math + logic nodes** — same shape as the first 4: `abs`, `modulo`, `power`,
+   `map-range`, `clamp`, `lerp`, `step`, `smoothstep`, `remap`, `quantize`, `wrap`, `trig`, `vector-math`
+   (math), then `compare`/`and`/`or`/`not`/`select`/`switch` (logic). These fill out `COLOCATED_PURE_NODE_TYPES`
+   toward the full 24. Watch: some carry controls (map-range/clamp) — copy them verbatim.
+2. **Stateless-but-impure nodes** (no `pure:true`): the rest of a category's simple nodes.
+3. **Stateful nodes** (`defineNodeState`): the store must move into the node folder (or its category state module)
+   and the `public-exports` fixture updated where it pins a store (e.g. `smoothState`, `gateLastValue`).
+4. **The `_`-folders** (rename, drop `_`), **bespoke-`component` nodes** (carry `component:` in the spec), and
+   **`counter`/`sample-hold`** (resolve each to one folder — see `registry-integrity.test.ts`).
+End-state: delete `components.ts` + `executors/index.ts`, tighten the count guard to `=== allNodes.length`.
+(Deferred, optional: onboarding; on-wire-debugging inc 2 (freeze-frame/history/error-deep-link); Phases 5/7/8/9.)
 
 ## HOW TO WORK
 - **Each step ends green:** `typecheck` + `lint` + `test:unit` (`build` for prod-source; **smoke for any

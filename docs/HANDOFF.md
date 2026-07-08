@@ -6,6 +6,49 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-08 (later 71) — Phase 6 STARTED: per-node co-location goes live (first 4 math nodes)
+
+**The main event.** The whole modernization plan (Phase 0 `defineNode`/`defineNodeState`, Phase 1 de-monolith,
+Phase 3 declarative `ui`/`component`) was foundation for **per-node co-location** — every node becoming a
+self-contained `registry/<cat>/<node>/node.ts`. The `nodeRegistry` glob (`registry/**/node.ts` → `defineNode`
+specs) has existed since Phase 0 but was **inert** (0 files). This increment makes it **live** and migrates the
+first 4 nodes, establishing the pattern + the one-time merge infrastructure the other ~234 follow.
+
+**The merge path (the one-time infra — read this before migrating more):**
+- `registry/allNodes.ts` now unions `colocatedDefinitions` (from `nodeRegistry`) with the legacy per-category
+  arrays, **deduped so a co-located node WINS** over any legacy copy of the same id.
+- `engine/executors/index.ts` spreads `colocatedExecutors` at the **end** of `builtinExecutors` (so colocated
+  wins).
+- Net: **migrating a node = (1) create `registry/<cat>/<node>/node.ts` with `export default defineNode({definition,
+  executor, pure?, component?, ...})`, (2) delete its legacy `.ts` def + barrel refs (export/import/array) +
+  executor body + the `id: xExecutor` map entry + its import in `executors/index.ts`.** Total count stays 238.
+
+**Migrated (all pure, stateless, no component — the simplest case):** `add`, `subtract`, `multiply`, `divide` →
+`registry/math/<node>/node.ts` (definition + executor + `pure:true` together). Legacy files/refs deleted.
+
+**Gates all green (the safety net for the whole Phase 6):** count-equality (still **238**; the `nodeRegistry`
+count guard is `≤` today, `TODO(phase6)` tightens to `===` when all are migrated), `COLOCATED_PURE_NODE_TYPES ⊆`
+the 24-id canonical pure set (add/subtract/multiply/divide are all in it), must-not-break public exports, and
+`registry-integrity` (counter/sample-hold). **Verified in-browser:** registry loads 238, a co-located `add(2,40)`
+computes **42** in the live engine, `subtract 10-3=7` / `multiply 6*7=42` / `divide 20/4=5` / divide-by-zero
+guard `1/0→0` preserved; boot→Play→Stop **0 console errors**.
+
+**Notes for the migration tail:**
+- Node order: co-located nodes append after legacy in `allNodes`, so a migrated node moves to the end of its
+  category in the explorer (cosmetic; the whole list becomes glob-ordered once fully migrated).
+- Import idiom in `node.ts`: `defineNode` from `@/engine/defineNode`, `NodeDefinition` type from `@/stores/nodes`,
+  `ExecutionContext`/`NodeExecutorFn` from `@/engine/ExecutionEngine`. No circular-import issues (executor is
+  inline; nodeRegistry only pulls `defineNode`).
+- **Harder cases still ahead:** stateful nodes (`defineNodeState` stores — the `public-exports` gate pins some,
+  e.g. `smoothState`/`gateLastValue`, so co-locating them means moving the store too + updating the fixture);
+  the 6 `_`-prefixed folders (rename, remove `_`); the ~22 bespoke-`component` nodes; and `counter`/`sample-hold`
+  (each currently in two categories — resolve to one folder). Do these per category with the gates green each time.
+
+State: typecheck clean · lint 0 err (49 warns) · `test:unit` **2050** (behavior-preserving; the gate tests already
+existed) · build ok · smoke 0 errors. Committed + pushed on `phase0-file-format`; no AI attribution.
+
+---
+
 ## 2026-07-08 (later 70) — later-69 audit (clean) + on-wire debugging: live per-port value overlay
 
 **Self-audit of later-69 (the keyboard `n`→picker trigger): clean.** Browser-checked the one path not covered
