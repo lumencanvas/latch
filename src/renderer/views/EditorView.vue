@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, markRaw } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, markRaw } from 'vue'
 import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -17,6 +17,8 @@ defineOptions({ name: 'EditorView' })
 import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeCategory } from '@/stores/nodes'
+import { flowSnippets } from '@/data/flow-snippets'
+import { snippetToInsertableNodes } from '@/utils/snippets'
 import AnimatedEdge from '@/components/edges/AnimatedEdge.vue'
 import { validateConnection } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
@@ -243,6 +245,36 @@ watch(
     types.forEach(addNodeAtCenter)
   }
 )
+
+// A handful of beginner-friendly starter flows offered on the empty canvas so a
+// blank document is an actionable starting point, not a dead end. Curated by id
+// with a fallback to the first few snippets if any id is renamed.
+const STARTER_TEMPLATE_IDS = ['audio-reactive-visuals', 'keyboard-synth', 'color-cycling', 'value-threshold']
+const starterTemplates = computed(() => {
+  const picked = STARTER_TEMPLATE_IDS
+    .map(id => flowSnippets.find(s => s.id === id))
+    .filter((s): s is (typeof flowSnippets)[number] => s !== undefined)
+  return picked.length > 0 ? picked : flowSnippets.slice(0, 4)
+})
+
+// Insert a starter flow onto the empty canvas — reuses the same subgraph-insertion
+// path as the node explorer's snippet insertion, then frames the result.
+function insertStarterTemplate(snippetId: string) {
+  const snippet = flowSnippets.find(s => s.id === snippetId)
+  if (!snippet || !flowsStore.activeFlow) return
+  const nodes = snippetToInsertableNodes(snippet, (type) => nodesStore.getDefinition(type))
+  const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, { x: 400, y: 300 })
+  if (nodeIds.length === 0) return
+  uiStore.selectNodes(nodeIds)
+  // The nodes are inserted at world coordinates that may fall outside the empty
+  // canvas's viewport, so frame them — but only once Vue Flow has ingested the
+  // v-model:nodes change and measured them (a bare nextTick fires too early, before
+  // the nodes exist in the pane, and fitView would frame nothing).
+  const stop = vueFlow.onNodesInitialized(() => {
+    fitView({ padding: 0.2 })
+    stop.off()
+  })
+}
 
 // ── Canvas keyboard navigation (Theme F, WCAG 2.1.1) ─────────────────────────
 // Increment 1: focus + cursor roving + select + announcements. Mirrors the
@@ -1266,7 +1298,29 @@ onUnmounted(() => {
       v-if="flowsStore.activeNodes.length === 0"
       class="empty-state"
     >
-      <p>Drag nodes from the sidebar to get started</p>
+      <h2 class="empty-title">
+        Start from a template
+      </h2>
+      <p class="empty-hint">
+        Pick a starter flow, or drag nodes from the sidebar to build your own.
+      </p>
+      <div class="starter-templates">
+        <button
+          v-for="template in starterTemplates"
+          :key="template.id"
+          class="starter-template"
+          @click="insertStarterTemplate(template.id)"
+        >
+          <span class="starter-name">{{ template.name }}</span>
+          <span class="starter-desc">{{ template.description }}</span>
+        </button>
+      </div>
+      <button
+        class="browse-library"
+        @click="uiStore.openNodeExplorer()"
+      >
+        Browse the node library
+      </button>
     </div>
 
     <!-- Connection error toast -->
@@ -1380,10 +1434,82 @@ onUnmounted(() => {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(560px, 80vw);
   text-align: center;
   color: var(--color-neutral-400);
   font-size: var(--font-size-base);
+  /* The overlay itself stays click-through so empty canvas around the widget still
+     pans; only the interactive controls below opt back into pointer events. */
   pointer-events: none;
+}
+
+.empty-title {
+  margin: 0;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-600);
+}
+
+.empty-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.starter-templates {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.starter-template {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 0.1s, box-shadow 0.1s;
+}
+
+.starter-template:hover {
+  border-color: var(--color-primary-400);
+  box-shadow: 2px 2px 0 0 var(--color-neutral-200);
+}
+
+.starter-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-800);
+}
+
+.starter-desc {
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-500);
+  line-height: 1.3;
+}
+
+.browse-library {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-primary-600);
+  background: none;
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  text-decoration: underline;
+}
+
+.browse-library:hover {
+  color: var(--color-primary-700);
 }
 
 .connection-error {
