@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useApplicationKeyboard } from '@/composables/useApplicationKeyboard'
 
 export interface EQBand {
   frequency: number  // 20-20000 Hz
@@ -311,7 +312,8 @@ const PARAMS: Param[] = ['frequency', 'gain', 'q']
 const selectedTarget = ref(0) // 0..8 → band = idx/3, param = PARAMS[idx%3]
 const selBand = computed(() => Math.floor(selectedTarget.value / 3))
 const selParam = computed<Param>(() => PARAMS[selectedTarget.value % 3])
-const focused = ref(false)
+// Shared role="application" focus primitive (see useApplicationKeyboard).
+const { focused, onFocus, onBlur } = useApplicationKeyboard()
 
 const valueText = computed(() => {
   const band = props.modelValue.bands[selBand.value]
@@ -388,8 +390,8 @@ onUnmounted(() => {
       @mousedown.stop
       @touchstart.stop
       @keydown="onKeydown"
-      @focus="focused = true"
-      @blur="focused = false"
+      @focus="onFocus"
+      @blur="onBlur"
     />
     <span
       class="sr-only"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useApplicationKeyboard } from '@/composables/useApplicationKeyboard'
 
 export interface WaveformData {
   samples: number[]  // 64-256 samples, normalized -1 to 1
@@ -34,7 +35,8 @@ const lastDrawX = ref<number | null>(null)
 // vertical (value) axis is adjusted with Up/Down (±step, Shift = coarse). Announced via aria-valuetext.
 // (The 4 preset buttons were already keyboard-accessible and cover the common shapes.)
 const selectedIndex = ref(0)
-const focused = ref(false)
+// Shared role="application" focus primitive (see useApplicationKeyboard).
+const { focused, onFocus, onBlur } = useApplicationKeyboard()
 const VALUE_STEP = 0.05
 
 function clampIndex(i: number): number {
@@ -301,8 +303,8 @@ onUnmounted(() => {
       :aria-valuetext="valueText"
       @mousedown="onMouseDown"
       @keydown="onKeydown"
-      @focus="focused = true"
-      @blur="focused = false"
+      @focus="onFocus"
+      @blur="onBlur"
     />
     <span
       class="sr-only"

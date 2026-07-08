@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useApplicationKeyboard } from '@/composables/useApplicationKeyboard'
 
 export interface EnvelopeData {
   attack: number   // 0-2 seconds
@@ -33,7 +34,8 @@ const isDragging = ref<'attack' | 'decay' | 'sustain' | 'release' | null>(null)
 type Stage = 'attack' | 'decay' | 'sustain' | 'release'
 const STAGES: Stage[] = ['attack', 'decay', 'sustain', 'release']
 const selectedStage = ref<Stage>('attack')
-const focused = ref(false)
+// Shared role="application" focus primitive (see useApplicationKeyboard).
+const { focused, onFocus, onBlur } = useApplicationKeyboard()
 
 // Time scale configuration
 const MAX_ATTACK = 2
@@ -307,8 +309,8 @@ onUnmounted(() => {
       @mousedown="onMouseDown"
       @wheel="onWheel"
       @keydown="onKeydown"
-      @focus="focused = true"
-      @blur="focused = false"
+      @focus="onFocus"
+      @blur="onBlur"
     />
     <span
       class="sr-only"

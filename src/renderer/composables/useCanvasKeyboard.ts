@@ -43,9 +43,11 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
   const nodesStore = useNodesStore()
 
   // The .editor-view host is a focusable role="application" surface with an arrow-key
-  // "cursor" that roves nodes (distinct from selection). `canvasAnnounce` feeds the
-  // polite live region; `canvasFocused` gates the cursor ring.
-  const { focused: canvasFocused, announce: canvasAnnounce, onFocus, onBlur } = useApplicationKeyboard()
+  // "cursor" that roves nodes (distinct from selection). `canvasFocused` gates the
+  // cursor ring; `canvasAnnounce` is the canvas's imperative live-region string (the
+  // announce mechanism is surface-specific, so it lives here, not in the primitive).
+  const { focused: canvasFocused, onFocus, onBlur } = useApplicationKeyboard()
+  const canvasAnnounce = ref('')
 
   // Keyboard MOVE: a burst of arrow-nudges collapses into one undo entry (opened on
   // the first nudge, closed after an idle gap / on any other key / on blur / on
