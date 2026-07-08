@@ -72,6 +72,14 @@ const categorySnippets = computed(() => {
   return flowSnippets.filter(s => s.category === explorerStore.selectedCategory)
 })
 
+// Snippets narrow with the search box too (they used to disappear the moment you
+// typed), so a snippet is findable by name/description — not only by category.
+const visibleSnippets = computed(() => {
+  const query = explorerStore.searchQuery.trim()
+  if (!query) return categorySnippets.value
+  return fuzzySearch(categorySnippets.value, query, s => [s.name, s.description]).map(r => r.item)
+})
+
 // The node grid, so we can return keyboard focus to the originating card when the
 // detail view closes (WCAG 2.4.3 — the swap must not strand focus on <body>).
 const gridRef = ref<HTMLElement | null>(null)
@@ -247,7 +255,7 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
 
         <!-- Flow snippets -->
         <div
-          v-if="categorySnippets.length > 0 && !explorerStore.searchQuery"
+          v-if="visibleSnippets.length > 0"
           class="snippets-section"
         >
           <h3 class="snippets-title">
@@ -255,7 +263,7 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
           </h3>
           <div class="snippets-grid">
             <FlowSnippetCard
-              v-for="snippet in categorySnippets"
+              v-for="snippet in visibleSnippets"
               :key="snippet.id"
               :snippet="snippet"
               @insert="handleInsertSnippet"
