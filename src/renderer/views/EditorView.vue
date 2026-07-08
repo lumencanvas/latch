@@ -75,6 +75,7 @@ const {
 // composable; EditorView just binds it to the host and the live region.
 const { canvasAnnounce, onCanvasKeydown, onCanvasFocus, onCanvasBlur } = useCanvasKeyboard({
   setCenter, getViewport, flowToScreenCoordinate, addEdges, startBatch, endBatch, showConnectionError,
+  suggestNodeFromWire: openWireSuggestionsForNode,
 })
 
 // Track drag state for undo/redo
@@ -185,12 +186,12 @@ onConnectEnd((event) => {
   if (connectionMade || !origin || !event || !flowsStore.activeFlow) return
   const point = 'clientX' in event ? event : event.changedTouches[0]
   if (!point) return
-  // Only offer suggestions on a drop onto EMPTY canvas — a rejected drop onto a
-  // node/handle shouldn't hijack into the picker. elementFromPoint is used (not
-  // event.target) because a touchend's target is the touchstart element, not the
-  // element under the release point.
+  // Only offer suggestions on a drop onto the EMPTY pane — not onto a node or one
+  // of the canvas UI overlays (minimap/controls/panels). elementFromPoint is used
+  // (not event.target) because a touchend's target is the touchstart element, not
+  // the element under the release point.
   const dropEl = document.elementFromPoint(point.clientX, point.clientY)
-  if (dropEl?.closest('.vue-flow__node')) return
+  if (dropEl?.closest('.vue-flow__node, .vue-flow__minimap, .vue-flow__controls, .vue-flow__panel')) return
   openWireSuggestions(origin, point)
 })
 
@@ -237,9 +238,10 @@ function openWireSuggestions(
     y: point.clientY - PORT_ROW - (pane?.top ?? 0),
   })
   wireSuggest.value = {
-    // Clamp so the popover stays fully on-screen near the drop point.
+    // Clamp so the popover stays fully on-screen near the drop point (reserve its
+    // full height: header + input + the 260px max-height list + borders).
     x: Math.min(point.clientX, window.innerWidth - 252),
-    y: Math.min(point.clientY, window.innerHeight - 320),
+    y: Math.min(point.clientY, window.innerHeight - 344),
     items,
     originTypeLabel: meta?.label ?? originType,
     originGlyph: meta?.glyph ?? '',
@@ -276,6 +278,17 @@ function closeWireSuggestions() {
   wireSuggest.value = null
   // Return focus to the canvas host so keyboard users aren't stranded.
   document.getElementById('flow-canvas-panel')?.focus()
+}
+
+// Keyboard entry point (canvas `n` during a wire): open the picker beside the
+// source node — the keyboard equivalent of dropping a wire on empty canvas.
+function openWireSuggestionsForNode(origin: { nodeId: string; handleId: string; handleType: 'source' }) {
+  const el = document.querySelector<HTMLElement>(`.vue-flow__node[data-id="${origin.nodeId}"]`)
+  const r = el?.getBoundingClientRect()
+  const point = r
+    ? { clientX: r.right + 24, clientY: r.top }
+    : { clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }
+  openWireSuggestions(origin, point)
 }
 
 // Handle node drag start - capture state for undo

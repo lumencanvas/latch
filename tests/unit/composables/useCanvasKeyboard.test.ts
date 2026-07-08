@@ -28,6 +28,7 @@ function makeDeps(): CanvasKeyboardDeps {
     startBatch: vi.fn(() => ({ id: 'snap' })) as unknown as CanvasKeyboardDeps['startBatch'],
     endBatch: vi.fn(),
     showConnectionError: vi.fn(),
+    suggestNodeFromWire: vi.fn(),
   }
 }
 
@@ -125,6 +126,26 @@ describe('useCanvasKeyboard — wire', () => {
     expect(uiStore.wireDraft).not.toBeNull()
     api.onCanvasKeydown(key('Escape'))
     expect(uiStore.wireDraft).toBeNull()
+    stop()
+  })
+
+  it('n during a wire hands the source port to the node picker and cancels the wire', () => {
+    const { api, uiStore, deps, srcId, stop } = setup()
+    api.onCanvasFocus()
+    api.onCanvasKeydown(key('w')) // wire from src.out (single output auto-advances)
+    expect(uiStore.wireDraft?.sourceHandle).toBe('out')
+    api.onCanvasKeydown(key('n'))
+    expect(deps.suggestNodeFromWire).toHaveBeenCalledWith({ nodeId: srcId, handleId: 'out', handleType: 'source' })
+    // The picker owns the interaction now, so the in-progress wire is cleared.
+    expect(uiStore.wireDraft).toBeNull()
+    stop()
+  })
+
+  it('n is a no-op when no wire is in progress', () => {
+    const { api, deps, stop } = setup()
+    api.onCanvasFocus()
+    api.onCanvasKeydown(key('n'))
+    expect(deps.suggestNodeFromWire).not.toHaveBeenCalled()
     stop()
   })
 })

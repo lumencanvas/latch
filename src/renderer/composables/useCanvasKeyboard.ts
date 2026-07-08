@@ -33,10 +33,14 @@ export interface CanvasKeyboardDeps {
   startBatch: FlowHistory['startBatch']
   endBatch: FlowHistory['endBatch']
   showConnectionError: (message: string) => void
+  /** Open the compatible-node picker for the wire's source port (keyboard `n`),
+   *  so keyboard users get the same "drag into empty space" suggestions the mouse
+   *  does. Optional — when absent, `n` during a wire is a no-op. */
+  suggestNodeFromWire?: (origin: { nodeId: string; handleId: string; handleType: 'source' }) => void
 }
 
 export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
-  const { setCenter, getViewport, flowToScreenCoordinate, addEdges, startBatch, endBatch, showConnectionError } = deps
+  const { setCenter, getViewport, flowToScreenCoordinate, addEdges, startBatch, endBatch, showConnectionError, suggestNodeFromWire } = deps
 
   const flowsStore = useFlowsStore()
   const uiStore = useUIStore()
@@ -350,7 +354,8 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
     const src = wireSourcePort()
     const srcName = nodeName(nodeById(w.sourceId))
     if (w.stage === 'source') {
-      canvasAnnounce.value = `Wiring from ${srcName}, output ${src?.label ?? ''}. Up/Down to pick an output, Enter to continue, Escape to cancel.`
+      const newNodeHint = suggestNodeFromWire ? ' N to add a new node.' : ''
+      canvasAnnounce.value = `Wiring from ${srcName}, output ${src?.label ?? ''}. Up/Down to pick an output, Enter to continue,${newNodeHint} Escape to cancel.`
     } else if (w.stage === 'target-node') {
       canvasAnnounce.value = `Connect ${src?.label ?? ''} to ${nodeName(nodeById(w.targetId))}. Left/Right for another target, Enter to pick its input.`
     } else {
@@ -379,7 +384,8 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
     if (!w) return
     const candidates = wireCandidateTargets()
     if (candidates.length === 0) {
-      canvasAnnounce.value = `No compatible target for ${wireSourcePort()?.label ?? 'this output'}.`
+      const hint = suggestNodeFromWire ? ' Press N to add a new node.' : ''
+      canvasAnnounce.value = `No compatible target for ${wireSourcePort()?.label ?? 'this output'}.${hint}`
       return
     }
     w.stage = 'target-node'
@@ -497,6 +503,18 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
         else if (w.stage === 'target-node') enterTargetPorts()
         else commitWire()
         break
+      case 'n':
+      case 'N': {
+        // Hand off to the compatible-node picker for the chosen source output —
+        // the keyboard equivalent of dropping a wire on empty canvas. Works at any
+        // stage (also the escape hatch when there is no compatible existing target).
+        const src = wireSourcePort()
+        if (src && suggestNodeFromWire) {
+          suggestNodeFromWire({ nodeId: w.sourceId, handleId: src.id, handleType: 'source' })
+          cancelWire(false)
+        }
+        break
+      }
       case 'ArrowUp':
         if (w.stage === 'source') cycleSourcePort(-1)
         else if (w.stage === 'target-port') cycleTargetPort(-1)
