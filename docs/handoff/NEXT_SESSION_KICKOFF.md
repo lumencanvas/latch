@@ -1,9 +1,9 @@
-# Next-session kickoff — Phase 6 (per-node co-location) STARTED — the main event; migrate the node tail
+# Next-session kickoff — post deep-audit; RECOMMENDED FIRST: close the Phase-5 modulation gap / node-tip honesty; Phase-6 co-location is the confirmed main thread
 
 Copy everything in the block below as your first message to a fresh Claude Code session to continue LATCH
 with full context.
-(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `9ac7698`.
-Tree CLEAN & green; co-located `add` runs in-engine (2+40=42), boot 0 real console errors. Verify with `git log --oneline -20`.)
+(Last updated 2026-07-08 — branch `phase0-file-format`, everything **committed + pushed** through `15a7d50`.
+Tree CLEAN & green; a full plan-vs-reality audit just ran [HANDOFF later-72]. Verify with `git log --oneline -20`.)
 
 ---
 
@@ -22,9 +22,10 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
    **Commit/push only when explicitly asked.** Stay on `phase0-file-format` (branch off `main` for new work).
    Each step ends green. **Never assume — read the real code / verify against the actual git original.** Honor
    `strategy/05` **DON'T-OVERCLAIM**.
-2. `docs/HANDOFF.md` TOP entries **(later 71 → 60)**, newest first. Recent arc: **(71) Phase 6 STARTED — per-node
-   co-location went live; first 4 math nodes migrated (READ THIS ENTRY — it documents the merge path + the
-   per-node migration recipe the tail follows)**; (70) **on-wire debugging inc 1** — live per-port value overlay
+2. `docs/HANDOFF.md` TOP entries **(later 72 → 61)**, newest first. Recent arc: **(72) DEEP PLAN-VS-REALITY AUDIT
+   (READ THIS — it maps what's done/left across all phases, the test-health boundaries, and the recommendation
+   below)**; **(71) Phase 6 STARTED — per-node co-location went live; first 4 math nodes migrated (READ THIS TOO —
+   it documents the merge path + the per-node migration recipe the tail follows)**; (70) **on-wire debugging inc 1** — live per-port value overlay
    (`formatPortValue` + a "show values" toggle); (69) later-68 audit + **keyboard-trigger** for the wire-drop
    picker (`n` during a keyboard wire → same picker); (68) **drag-a-wire-into-empty → compatible-node
    suggestions**; (67) **dedicated snippets tab** +
@@ -80,22 +81,45 @@ Baseline (verify with a quick run): typecheck clean · lint 0 err (49 pre-existi
   gates green. **Migrating a node = create its `node.ts` (`defineNode({definition, executor, pure?, ...})`) +
   delete the legacy `.ts` def + barrel refs + executor body + the `builtinExecutors` map entry & import.** See
   HANDOFF later-71 for the full recipe + the harder-case list.
-- **Phases 5, 7–9: not started.** Phase 5 = modulation gap; 7 subflow rebuild; 8 VJ/kiosk; 9 multiplayer.
+- **Phase 5 (modulation gap): essentially NOT STARTED — the audit's flagged CREDIBILITY GAP** (see below).
+  **Phases 7–9: not started** (7 subflow rebuild — still runtime-dead, AUDIT #1, now unblocked; 8 VJ/kiosk;
+  9 multiplayer).
 
-## WHAT'S NEXT — Phase 6 co-location is the confirmed main thread (2026-07-08)
-The maintainer confirmed **node isolation (Phase 6 co-location) is "the whole reason for this plan."** Keep
-migrating the node tail, per category, gates green each time. Suggested order (easy → hard):
-1. **Finish the pure/stateless math + logic nodes** — same shape as the first 4: `abs`, `modulo`, `power`,
-   `map-range`, `clamp`, `lerp`, `step`, `smoothstep`, `remap`, `quantize`, `wrap`, `trig`, `vector-math`
-   (math), then `compare`/`and`/`or`/`not`/`select`/`switch` (logic). These fill out `COLOCATED_PURE_NODE_TYPES`
-   toward the full 24. Watch: some carry controls (map-range/clamp) — copy them verbatim.
-2. **Stateless-but-impure nodes** (no `pure:true`): the rest of a category's simple nodes.
-3. **Stateful nodes** (`defineNodeState`): the store must move into the node folder (or its category state module)
-   and the `public-exports` fixture updated where it pins a store (e.g. `smoothState`, `gateLastValue`).
-4. **The `_`-folders** (rename, drop `_`), **bespoke-`component` nodes** (carry `component:` in the spec), and
-   **`counter`/`sample-hold`** (resolve each to one folder — see `registry-integrity.test.ts`).
-End-state: delete `components.ts` + `executors/index.ts`, tighten the count guard to `=== allNodes.length`.
-(Deferred, optional: onboarding; on-wire-debugging inc 2 (freeze-frame/history/error-deep-link); Phases 5/7/8/9.)
+## WHAT'S NEXT — RECOMMENDED (from the later-72 audit), then the confirmed main thread
+
+**RECOMMENDED FIRST — close the Phase-5 modulation honesty gap (highest leverage).** The deep audit found the one
+real credibility problem: **node *tips* already promise modulation that doesn't exist.** E.g.
+`registry/visual/image-fx-glitch.ts` tip says "Drive Intensity from an LFO" but the node has only a `source`
+input — no `Intensity` port. Same class across `image-fx-*`, audio (`wet`/`feedback`/`Q`/`ratio`), 3D
+(material/light colour/emissive); LFO has no `phase` out / `reset` in; there's no feedback (frame-delay) node and
+no `atan2`/`edge`/`phasor` primitives (AUDIT §C). Two ways to take it:
+  - **(a) Fast honesty patch (small, do first):** audit every node's `info.tips`/`overview` for promises the ports
+    can't keep and correct the text (grep tips for "LFO"/"modulate"/"drive … from"). Removes the dishonesty now.
+  - **(b) Real fix (the Phase-5 work):** add the input ports to modulatable params + the missing primitives, so
+    the tips become true. Bigger; do per node-group with the leak/pure gates green. This is AUDIT's #2 headline.
+
+**THEN — Phase 6 co-location (the maintainer-confirmed "main reason" thread).** Keep migrating the ~234-node tail,
+per category, gates green each time. Order (easy → hard):
+1. **Pure/stateless math + logic** — same shape as the first 4: `abs`, `modulo`, `power`, `map-range`, `clamp`,
+   `lerp`, `step`, `smoothstep`, `remap`, `quantize`, `wrap`, `trig`, `vector-math` (math), then
+   `compare`/`and`/`or`/`not`/`select`/`switch` (logic) → fills `COLOCATED_PURE_NODE_TYPES` toward the full 24.
+   Watch: some carry controls (map-range/clamp) — copy verbatim.
+2. **Stateless-but-impure** nodes. 3. **Stateful** (`defineNodeState`) — the store moves too + update the
+   `public-exports` fixture where it pins one (`smoothState`, `gateLastValue`). 4. The 6 **`_`-folders** (drop
+   `_`), the ~22 **bespoke-`component`** nodes (carry `component:` in the spec), **`counter`/`sample-hold`** dedup.
+   End-state: delete `components.ts` + `executors/index.ts`, tighten the count guard `≤` → `=== allNodes.length`.
+
+Modulation (a/b) and co-location interleave cleanly — a modulation node you touch can be co-located in the same edit.
+(Also open, lower priority: onboarding; on-wire-debugging inc 2 [freeze-frame/history/error→node deep-link];
+Serial/MIDI adapters + BLE picker UX; `range`/`curve`/`gradient` control types; Phases 7/8/9.)
+
+**Two test/infra gaps the audit surfaced (worth a fix when convenient):** (1) the **POLICIES-mandated a11y-lint
+(axe) CI gate doesn't exist** — add a `vuejs-accessibility` eslint rule subset, or accept the per-component unit
+tests as the substitute and update POLICIES. (2) **`test:e2e` is an empty script** (no `playwright.config`/specs)
+— the app-chrome layer is only *manually* smoked, so CI can't catch EditorView/BaseNode/NodeExplorer regressions.
+Also: **`EditorView.vue` is back to 1239 lines** (was 1044) — extract the `openWireSuggestions*` cluster to a
+composable if it grows. **Governance/sustainability** (funding + a published "never orphan your files" durability
+commitment) is still OPEN and maintainer-owned — needed before marketing the durability narrative.
 
 ## HOW TO WORK
 - **Each step ends green:** `typecheck` + `lint` + `test:unit` (`build` for prod-source; **smoke for any

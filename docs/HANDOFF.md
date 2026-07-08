@@ -6,6 +6,54 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-08 (later 72) — Deep plan-vs-reality audit (whole repo + app) + one doc fix
+
+A full audit (ultrathink, two review agents + direct metrics + Chrome visual pass). **No code changed except one
+doc fix** (`15a7d50`: `divide`'s help text claimed divide-by-zero yields Infinity/NaN, but the executor is guarded
+and returns 0 — a pre-existing inaccuracy carried into the co-located file). Repo is clean, on-branch (`main`
+untouched at `d390b05`), all pushed; full gate green (typecheck · lint 0 err · `test:unit` **2050**/143 · build ok);
+app visually + functionally verified in Chrome, 0 console errors on every surface (editor, explorer both tabs,
+properties, on-wire overlay, control-panel view).
+
+**Adversarial code review of the whole session diff (`c467554..HEAD`): clean** — no critical/major findings.
+Co-location verified byte-faithful (all 4 `node.ts` diffed vs the deleted originals), dedup correct, count 238,
+no circular imports, pure-set intact.
+
+**Plan-vs-reality (vs ROADMAP + POLICIES + EXTENSIBILITY + SECURITY + AUDIT + node-library-review):**
+- **DONE & verified:** Phase 0 (foundations/format/primitives), Phase 1 (de-monolith/leak class; only `subflow`
+  state group deferred to Phase 7).
+- **Mostly done, honest remainders:** Phase 2 (Serial/MIDI adapters, BLE picker UX, MediaPipe derive,
+  model version-resolve/lazy-load open), Phase 3 (`range`/`curve`/`gradient` control types unbuilt — no consumers),
+  Phase 4 (a11y 100%; onboarding + on-wire tail [freeze-frame/history/error-deep-link] open).
+- **The credibility gap — Phase 5 (modulation) is essentially NOT STARTED** ⚠️ — AUDIT's #2 headline, fully open:
+  `image-fx-*`/audio `wet`/`feedback`/`Q`/3D material-light params have **no input ports**; LFO has no
+  `phase`/`reset`; no feedback (frame-delay) node; no `atan2`/`edge`/`phasor` primitives; `connectivity.md` stale.
+  **Worst part: node *tips* already promise these** (e.g. `image-fx-glitch` tip "Drive Intensity from an LFO" —
+  there is no Intensity port). The UI is making claims the engine can't keep — a real honesty problem given the
+  strategy prizes exactly that.
+- **STARTED:** Phase 6 co-location (4/238; infra live). **NOT STARTED (correctly sequenced later):** Phase 7
+  subflow rebuild (still runtime-dead — AUDIT's #1 finding, now unblocked), Phase 8 VJ/kiosk, Phase 9 multiplayer.
+
+**Test health:** 2050/143, strong CI gate net (count-equality, 24-id pure-set, export-list, per-type leak,
+registry-integrity, format round-trip, prompt-format), mutation-verified efficacy. **Two honest boundaries:**
+(1) **CI can't catch app-chrome regressions** — `test:e2e` is a script with NO tests behind it (no
+`playwright.config`/specs); EditorView/BaseNode/NodeExplorer are verified by *manual* Playwright smokes only.
+(2) **The POLICIES-mandated a11y-lint (axe) CI gate does not exist** — no `vuejs-accessibility`/axe eslint plugin;
+a11y is covered by per-component ARIA *unit* tests instead (decent, not the mandated automated gate). Coverage %
+unmeasured. **Code-health watch:** `EditorView.vue` grew **1044 → 1239** this session (drag-wire + on-wire) —
+partially undoing the later-61 de-bloat; the `openWireSuggestions*` cluster is a future extraction candidate.
+
+**Governance/sustainability (POLICIES §3, maintainer-owned, OPEN, flagged "Critical"):** license is MIT ✓, but no
+funding/governance model + no published "we'll never orphan your files" durability commitment — should exist
+*before* marketing the durability narrative publicly.
+
+**Recommendation (carried into the kickoff):** highest-leverage next move is **closing the Phase 5 modulation
+gap** — or, as a fast honesty patch, **correcting the node tips that reference ports that don't exist yet**. It's
+small, concrete, and removes a real credibility problem. Phase 6 co-location remains the maintainer-confirmed
+"main reason" thread; the two can interleave.
+
+---
+
 ## 2026-07-08 (later 71) — Phase 6 STARTED: per-node co-location goes live (first 4 math nodes)
 
 **The main event.** The whole modernization plan (Phase 0 `defineNode`/`defineNodeState`, Phase 1 de-monolith,
