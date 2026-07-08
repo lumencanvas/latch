@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { FlowSnippet } from '@/data/flow-snippets'
+import { useNodesStore, categoryMeta, type NodeCategory } from '@/stores/nodes'
+import FlowPreview from '@/components/preview/FlowPreview.vue'
 
 defineProps<{
   snippet: FlowSnippet
@@ -8,10 +10,24 @@ defineProps<{
 const emit = defineEmits<{
   insert: [snippetId: string]
 }>()
+
+const nodesStore = useNodesStore()
+
+// Colour a preview node by its category (neutral fallback for unknown types).
+function nodeColor(nodeType: string): string {
+  const category = nodesStore.getDefinition(nodeType)?.category
+  return categoryMeta[category as NodeCategory]?.color ?? 'var(--color-neutral-400)'
+}
 </script>
 
 <template>
   <div class="flow-snippet">
+    <FlowPreview
+      class="snippet-thumb"
+      :nodes="snippet.nodes"
+      :edges="snippet.edges"
+      :get-color="nodeColor"
+    />
     <div class="snippet-info">
       <span class="snippet-name">{{ snippet.name }}</span>
       <span class="snippet-desc">{{ snippet.description }}</span>
@@ -44,6 +60,14 @@ const emit = defineEmits<{
 
 .flow-snippet:hover {
   border-color: var(--color-neutral-300);
+}
+
+.snippet-thumb {
+  width: 56px;
+  height: 40px;
+  flex-shrink: 0;
+  background: var(--color-neutral-50);
+  border-radius: var(--radius-xs);
 }
 
 .snippet-info {
