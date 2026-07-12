@@ -23,9 +23,6 @@ export const sampleHoldValue = defineNodeState<unknown>({ label: 'sample-hold' }
 // Latch state: stores boolean state
 export const latchState = defineNodeState<boolean>({ label: 'latch' })
 
-// Counter state: stores count
-export const counterState = defineNodeState<number>({ label: 'counter' })
-
 // Debounce state: stores timer and pending value
 export const debounceState = defineNodeState<{ value: unknown; lastChange: number; settled: boolean }>({ label: 'debounce' })
 
@@ -343,48 +340,6 @@ export const routerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-export const counterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const incrementTrigger = ctx.inputs.get('increment')
-  const decrementTrigger = ctx.inputs.get('decrement')
-  const resetTrigger = ctx.inputs.get('reset')
-  const min = (ctx.controls.get('min') as number) ?? 0
-  const max = (ctx.controls.get('max') as number) ?? 100
-  const wrap = (ctx.controls.get('wrap') as boolean) ?? false
-  const initial = (ctx.controls.get('initial') as number) ?? 0
-
-  // Initialize state if not exists
-  if (!counterState.has(ctx.nodeId)) {
-    counterState.set(ctx.nodeId, initial)
-  }
-
-  let count = counterState.get(ctx.nodeId)!
-
-  const hasIncrement = incrementTrigger === true || incrementTrigger === 1 || (typeof incrementTrigger === 'number' && incrementTrigger > 0)
-  const hasDecrement = decrementTrigger === true || decrementTrigger === 1 || (typeof decrementTrigger === 'number' && decrementTrigger > 0)
-  const hasReset = resetTrigger === true || resetTrigger === 1 || (typeof resetTrigger === 'number' && resetTrigger > 0)
-
-  if (hasReset) {
-    count = initial
-  } else {
-    if (hasIncrement) {
-      count++
-      if (count > max) {
-        count = wrap ? min : max
-      }
-    }
-    if (hasDecrement) {
-      count--
-      if (count < min) {
-        count = wrap ? max : min
-      }
-    }
-  }
-
-  counterState.set(ctx.nodeId, count)
-
-  return new Map([['count', count]])
-}
-
 export const debounceExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
   const delay = (ctx.controls.get('delay') as number) ?? 300
@@ -536,32 +491,7 @@ export const dispatchExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-// ============================================================================
-// Registry
-// ============================================================================
-
-export const utilityExecutors: Record<string, NodeExecutorFn> = {
-  // Value checking
-  'is-null': isNullExecutor,
-  'is-empty': isEmptyExecutor,
-  'pass-if': passIfExecutor,
-  'default-value': defaultValueExecutor,
-  'coalesce': coalesceExecutor,
-  // Type comparison
-  'equals': equalsExecutor,
-  'type-of': typeOfExecutor,
-  'in-range': inRangeExecutor,
-  'match-value': matchValueExecutor,
-  'dispatch': dispatchExecutor,
-  // State/memory
-  'changed': changedExecutor,
-  'sample-hold': sampleHoldExecutor,
-  'latch': latchExecutor,
-  // Flow control
-  'router': routerExecutor,
-  // NOTE: 'counter' is intentionally served by code.ts's counterExecutor (richer
-  // outputs: normalized/atMin/atMax, edge-triggered). The utility counterExecutor
-  // below is kept only for its direct unit tests.
-  'debounce': debounceExecutor,
-  'throttle': throttleExecutor,
-}
+// All utility nodes (is-null/is-empty/…/dispatch/router/changed/latch/debounce/throttle/
+// sample-hold) are co-located at registry/<cat>/<id>/node.ts and import their executors from
+// this module; there is no `utilityExecutors` map to register. `sample-hold` is served by THIS
+// module's sampleHoldExecutor (matches its `result` output) — the code.ts rival was deleted.

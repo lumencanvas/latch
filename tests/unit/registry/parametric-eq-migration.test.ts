@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
-import { parametricEqNode } from '@/registry/audio/_parametric-eq'
+import parametricEqSpec from '@/registry/audio/parametric-eq/node'
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+
+const parametricEqNode = parametricEqSpec.definition
 import NodeView from '@/components/controls/NodeView.vue'
 import EQEditor from '@/components/controls/EQEditor.vue'
 

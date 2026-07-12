@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { nanoid } from 'nanoid'
 import type { Node, Edge, XYPosition } from '@vue-flow/core'
-import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+import { isCustomNodeTypeId } from '@/registry/nodeTypeIds'
 import { useHistoryStore } from './history'
 import { useNodesStore, type NodeDefinition } from './nodes'
 import * as fileFormat from '@/services/fileFormat'
@@ -11,7 +11,7 @@ import * as fileFormat from '@/services/fileFormat'
  * component renders with that component; everything else uses 'custom' (BaseNode).
  */
 function resolveVueFlowType(nodeType: string): string {
-  return CUSTOM_NODE_TYPE_IDS.includes(nodeType) ? nodeType : 'custom'
+  return isCustomNodeTypeId(nodeType) ? nodeType : 'custom'
 }
 
 /** Structured result of an import (back-compat superset of the old shape). */
@@ -335,7 +335,7 @@ export const useFlowsStore = defineStore('flows', {
     healNodeTypes(flow: FlowState) {
       for (const node of flow.nodes) {
         const nt = (node.data as Record<string, unknown> | undefined)?.nodeType as string | undefined
-        if (nt && CUSTOM_NODE_TYPE_IDS.includes(nt) && node.type !== nt) {
+        if (nt && isCustomNodeTypeId(nt) && node.type !== nt) {
           node.type = nt
         }
       }

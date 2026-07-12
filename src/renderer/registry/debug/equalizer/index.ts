@@ -1,1 +1,0 @@
-export { equalizerNode } from './definition'

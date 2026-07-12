@@ -1,1 +1,0 @@
-export { functionNode } from './definition'

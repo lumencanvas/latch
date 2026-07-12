@@ -18,13 +18,11 @@ import {
   sampleHoldExecutor,
   latchExecutor,
   routerExecutor,
-  counterExecutor,
   debounceExecutor,
   throttleExecutor,
   changedPrevValue,
   sampleHoldValue,
   latchState,
-  counterState,
   debounceState,
   throttleState,
 } from '@/engine/executors/utility'
@@ -35,7 +33,6 @@ const disposeAllUtilityState = () => {
   changedPrevValue.disposeAll()
   sampleHoldValue.disposeAll()
   latchState.disposeAll()
-  counterState.disposeAll()
   debounceState.disposeAll()
   throttleState.disposeAll()
 }
@@ -495,48 +492,9 @@ describe('Utility Executors', () => {
     })
   })
 
-  // ============================================================================
-  // Counter
-  // ============================================================================
-  describe('counterExecutor', () => {
-    it('increments on trigger', () => {
-      const nodeId = 'counter-test-1'
-      counterExecutor(createContext({}, { initial: 0 }, nodeId))
-      const result = counterExecutor(createContext({ increment: true }, {}, nodeId))
-      expect(result.get('count')).toBe(1)
-    })
-
-    it('decrements on trigger', () => {
-      const nodeId = 'counter-test-2'
-      counterExecutor(createContext({}, { initial: 5 }, nodeId))
-      const result = counterExecutor(createContext({ decrement: true }, {}, nodeId))
-      expect(result.get('count')).toBe(4)
-    })
-
-    it('resets on trigger', () => {
-      const nodeId = 'counter-test-3'
-      counterExecutor(createContext({ increment: true }, { initial: 0 }, nodeId))
-      counterExecutor(createContext({ increment: true }, {}, nodeId))
-      const result = counterExecutor(createContext({ reset: true }, { initial: 0 }, nodeId))
-      expect(result.get('count')).toBe(0)
-    })
-
-    it('respects max limit', () => {
-      const nodeId = 'counter-test-4'
-      counterExecutor(createContext({}, { initial: 9, max: 10, wrap: false }, nodeId))
-      const result = counterExecutor(createContext({ increment: true }, { max: 10, wrap: false }, nodeId))
-      expect(result.get('count')).toBe(10)
-      const result2 = counterExecutor(createContext({ increment: true }, { max: 10, wrap: false }, nodeId))
-      expect(result2.get('count')).toBe(10)
-    })
-
-    it('wraps when enabled', () => {
-      const nodeId = 'counter-test-5'
-      counterExecutor(createContext({}, { initial: 10, min: 0, max: 10, wrap: true }, nodeId))
-      const result = counterExecutor(createContext({ increment: true }, { min: 0, max: 10, wrap: true }, nodeId))
-      expect(result.get('count')).toBe(0)
-    })
-  })
+  // NOTE: `counter` is co-located at registry/code/counter/node.ts and served by code.ts's
+  // counterExecutor (the rich count/normalized/atMin/atMax variant). The utility.ts rival was
+  // deleted; its behavioural coverage moved to registry-integrity.test.ts (dual-id resolution).
 
   // ============================================================================
   // Throttle

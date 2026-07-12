@@ -2134,26 +2134,9 @@ export function disposeSnapshotNode(nodeId: string): void {
 // Registry
 // ============================================================================
 
-export const visualExecutors: Record<string, NodeExecutorFn> = {
-  snapshot: snapshotExecutor,
-  shader: shaderExecutor,
-  // image-fx-* executors are registered via co-located node.ts (registry/visual/image-fx-*/),
-  // which import the exported imageFx*Executor consts below. Kept out of this map so the
-  // co-located specs are the single registration site (colocated-wins in builtinExecutors).
-  webcam: webcamExecutor,
-  'webcam-snapshot': webcamSnapshotExecutor,
-  color: colorExecutor,
-  'texture-display': textureDisplayExecutor,
-  blend: blendExecutor,
-  'main-output': mainOutputExecutor,
-  blur: blurExecutor,
-  'color-correction': colorCorrectionExecutor,
-  displacement: displacementExecutor,
-  'transform-2d': transform2DExecutor,
-  'texture-to-data': textureToDataExecutor,
-  'image-loader': imageLoaderExecutor,
-  'video-player': videoPlayerExecutor,
-}
+// All visual nodes (image-fx-*, shader, blend, webcam, main-output, …) are co-located
+// (registry/visual/<id>/node.ts) and import their executor consts from this module; there is
+// no `visualExecutors` map to register.
 
 // Visual state cleanup self-registers with the engine's generic lifecycle loop
 // (was hand-wired as gcVisualState / disposeAllVisualNodes calls in ExecutionEngine).

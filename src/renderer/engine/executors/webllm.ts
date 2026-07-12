@@ -6,7 +6,7 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState, defineLifecycle } from '../nodeState'
 import { webLLMService } from '../../services/ai/WebLLMService'
-import { DEFAULT_WEBLLM_MODEL } from '../../registry/ai/llm'
+import { DEFAULT_WEBLLM_MODEL } from '../../registry/ai/llm/node'
 
 /**
  * LLM node: stream text from a local WebGPU model via {@link webLLMService}. On a

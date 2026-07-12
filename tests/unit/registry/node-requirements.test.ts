@@ -1,18 +1,30 @@
 import { describe, it, expect } from 'vitest'
 import type { NodeDefinition } from '@/stores/nodes'
-import { serialNode } from '@/registry/connectivity/serial'
-import { midiInputNode } from '@/registry/connectivity/midi-input'
-import { midiOutputNode } from '@/registry/connectivity/midi-output'
-import { bleNode } from '@/registry/connectivity/ble'
-import { bleDeviceNode } from '@/registry/connectivity/ble-device'
-import { bleScannerNode } from '@/registry/connectivity/ble-scanner'
-import { bleCharacteristicNode } from '@/registry/connectivity/ble-characteristic'
-import { llmNode } from '@/registry/ai/llm'
-import { webcamNode } from '@/registry/visual/webcam'
-import { audioInputNode } from '@/registry/inputs/audio-input'
-import { oscNode } from '@/registry/connectivity/osc'
-import { speechRecognitionNode } from '@/registry/ai/speech-recognition'
-import { mediapipeAudioNode } from '@/registry/ai/mediapipe-audio/definition'
+import midiInputSpec from '@/registry/connectivity/midi-input/node'
+const midiInputNode = midiInputSpec.definition
+import serialSpec from '@/registry/connectivity/serial/node'
+import midiOutputSpec from '@/registry/connectivity/midi-output/node'
+import bleSpec from '@/registry/connectivity/ble/node'
+import bleDeviceSpec from '@/registry/connectivity/ble-device/node'
+import bleScannerSpec from '@/registry/connectivity/ble-scanner/node'
+import bleCharacteristicSpec from '@/registry/connectivity/ble-characteristic/node'
+import oscSpec from '@/registry/connectivity/osc/node'
+const serialNode = serialSpec.definition
+const midiOutputNode = midiOutputSpec.definition
+const bleNode = bleSpec.definition
+const bleDeviceNode = bleDeviceSpec.definition
+const bleScannerNode = bleScannerSpec.definition
+const bleCharacteristicNode = bleCharacteristicSpec.definition
+const oscNode = oscSpec.definition
+import { llmNode } from '@/registry/ai/llm/node'
+import webcamSpec from '@/registry/visual/webcam/node'
+const webcamNode = webcamSpec.definition
+import audioInputSpec from '@/registry/inputs/audio-input/node'
+const audioInputNode = audioInputSpec.definition
+import speechRecognitionSpec from '@/registry/ai/speech-recognition/node'
+const speechRecognitionNode = speechRecognitionSpec.definition
+import mediapipeAudioSpec from '@/registry/ai/mediapipe-audio/node'
+const mediapipeAudioNode = mediapipeAudioSpec.definition
 
 /**
  * Hardware/runtime-gated nodes declare an abstract `requires` capability so

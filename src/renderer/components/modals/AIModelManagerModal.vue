@@ -4,7 +4,7 @@ import { X, Download, Trash2, Loader, CheckCircle2, AlertCircle, Brain, Cpu, Zap
 import { useUIStore } from '@/stores/ui'
 import { aiInference, AI_MODELS, type ModelLoadState } from '@/services/ai/AIInference'
 import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/modelStorage'
-import { WEBLLM_MODELS } from '@/registry/ai/llm'
+import { WEBLLM_MODELS } from '@/registry/ai/llm/node'
 import { webLLMService } from '@/services/ai/WebLLMService'
 import { useDialogA11y } from '@/composables/useDialogA11y'
 

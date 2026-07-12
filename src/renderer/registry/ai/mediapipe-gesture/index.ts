@@ -1,1 +1,0 @@
-export { mediapipeGestureNode } from './definition'

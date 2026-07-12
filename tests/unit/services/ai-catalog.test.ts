@@ -5,13 +5,20 @@ import {
   type ModelDefinition,
   type ModelOption,
 } from '@/services/ai/AIInference'
-import { textGenerationNode } from '@/registry/ai/text-generation'
-import { sentimentAnalysisNode } from '@/registry/ai/sentiment-analysis'
-import { featureExtractionNode } from '@/registry/ai/feature-extraction'
-import { imageCaptioningNode } from '@/registry/ai/image-captioning'
-import { imageClassificationNode } from '@/registry/ai/image-classification'
-import { objectDetectionNode } from '@/registry/ai/object-detection'
-import { textTransformationNode } from '@/registry/ai/text-transformation'
+import textGenerationSpec from '@/registry/ai/text-generation/node'
+import sentimentAnalysisSpec from '@/registry/ai/sentiment-analysis/node'
+import featureExtractionSpec from '@/registry/ai/feature-extraction/node'
+import imageCaptioningSpec from '@/registry/ai/image-captioning/node'
+import imageClassificationSpec from '@/registry/ai/image-classification/node'
+import objectDetectionSpec from '@/registry/ai/object-detection/node'
+import textTransformationSpec from '@/registry/ai/text-transformation/node'
+const textGenerationNode = textGenerationSpec.definition
+const sentimentAnalysisNode = sentimentAnalysisSpec.definition
+const featureExtractionNode = featureExtractionSpec.definition
+const imageCaptioningNode = imageCaptioningSpec.definition
+const imageClassificationNode = imageClassificationSpec.definition
+const objectDetectionNode = objectDetectionSpec.definition
+const textTransformationNode = textTransformationSpec.definition
 
 /**
  * Guards the in-browser AI model catalog (AIInference.ts:AI_MODELS) against

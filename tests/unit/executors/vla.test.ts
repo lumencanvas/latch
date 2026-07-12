@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { vlaExecutor } from '@/engine/executors/ai'
-import { vlaNode } from '@/registry/ai/vla'
+import vlaSpec from '@/registry/ai/vla/node'
+const vlaNode = vlaSpec.definition
 import { AI_MODELS } from '@/services/ai/AIInference'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 

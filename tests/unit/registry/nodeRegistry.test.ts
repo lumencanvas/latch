@@ -40,10 +40,15 @@ describe('nodeRegistry auto-glob', () => {
     }
   })
 
-  it('count guard: co-located set never exceeds the legacy node set', () => {
-    expect(colocatedNodeIds.length).toBeLessThanOrEqual(allNodes.length)
-    // TODO(phase6): tighten to `toBe(allNodes.length)` once every node has a
-    // co-located node.ts — that is the POLICIES count-equality CI gate.
+  it('count-equality gate: EVERY live node is co-located (Phase 6 complete)', () => {
+    // POLICIES §1 count-equality CI gate. `allNodes` = legacy-barrel defs (now all empty) +
+    // colocatedDefinitions; if any node were still legacy-only it would appear in `allNodes`
+    // but not in `colocatedNodeIds`, so the lengths would diverge. Equality proves the whole
+    // library is co-located — no legacy definition lingers, no id resolves twice.
+    expect(colocatedNodeIds.length).toBe(allNodes.length)
+    // Every allNodes id is a co-located id (belt-and-suspenders on the count check).
+    const colocated = new Set(colocatedNodeIds)
+    for (const d of allNodes) expect(colocated.has(d.id)).toBe(true)
   })
 
   it('derived pure set is a subset of the co-located ids', () => {

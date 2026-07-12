@@ -2457,32 +2457,8 @@ export function gcAIState(validNodeIds: Set<string>): void {
   }
 }
 
-// ============================================================================
-// Registry
-// ============================================================================
-
-export const aiExecutors: Record<string, NodeExecutorFn> = {
-  'text-generation': textGenerationExecutor,
-  'image-classification': imageClassificationExecutor,
-  'sentiment-analysis': sentimentAnalysisExecutor,
-  'image-captioning': imageCaptioningExecutor,
-  'vla': vlaExecutor,
-  'feature-extraction': featureExtractionExecutor,
-  'object-detection': objectDetectionExecutor,
-  'object-detection-live': objectDetectionLiveExecutor,
-  'object-detection-yolo': objectDetectionYoloExecutor,
-  'speech-recognition': speechRecognitionExecutor,
-  'text-to-speech': textToSpeechExecutor,
-  'depth-estimation': depthEstimationExecutor,
-  'text-transformation': textTransformationExecutor,
-  'mediapipe-hand': mediapipeHandExecutor,
-  'mediapipe-face': mediapipeFaceExecutor,
-  'mediapipe-pose': mediapipePoseExecutor,
-  'mediapipe-object': mediapipeObjectExecutor,
-  'mediapipe-segmentation': mediapipeSegmentationExecutor,
-  'mediapipe-gesture': mediapipeGestureExecutor,
-  'mediapipe-audio': mediapipeAudioExecutor,
-}
+// All AI nodes are co-located (registry/ai/<id>/node.ts) and import their executor consts
+// from this module; there is no `aiExecutors` map to register.
 
 // Self-register into the engine's generic lifecycle loop (replaces the hand-wired
 // gcAIState / disposeAllAINodes / resetAINodeDisposal calls in ExecutionEngine).

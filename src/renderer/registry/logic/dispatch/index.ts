@@ -1,1 +1,0 @@
-export { dispatchNode } from './definition'

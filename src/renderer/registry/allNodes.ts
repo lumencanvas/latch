@@ -7,6 +7,7 @@
  * (definitions + their co-located `.vue`), never `components.ts`, so the graph stays acyclic.
  */
 
+import { setCustomNodeTypeIds } from './nodeTypeIds'
 import { inputNodes } from './inputs'
 import { debugNodes } from './debug'
 import { mathNodes } from './math'
@@ -59,3 +60,9 @@ export const allNodes = [
   ...legacyNodes.filter((n) => !colocatedIds.has(n.id)),
   ...colocatedDefinitions,
 ]
+
+// Push the bespoke-component id set into the leaf `nodeTypeIds` registry so `stores/flows.ts`
+// can read it WITHOUT importing `components.ts` (which would re-enter the eager glob and close a
+// load-time cycle once component nodes co-locate). One-way: nothing in nodeTypeIds imports back.
+// `allNodes` is the earliest registry module, so this runs before any flow node-type resolution.
+setCustomNodeTypeIds(allNodes.filter((d) => d.component).map((d) => d.id))

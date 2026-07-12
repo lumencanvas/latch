@@ -1680,28 +1680,8 @@ export const bitcrusherExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-export const audioExecutors: Record<string, NodeExecutorFn> = {
-  oscillator: oscillatorExecutor,
-  'audio-input': audioInputExecutor,
-  'audio-output': audioOutputExecutor,
-  'audio-analyzer': audioAnalyzerExecutor,
-  gain: gainExecutor,
-  filter: filterExecutor,
-  'audio-delay': delayExecutor,
-  'beat-detect': beatDetectExecutor,
-  'audio-player': audioPlayerExecutor,
-  envelope: envelopeExecutor,
-  reverb: reverbExecutor,
-  'svf-filter': svfFilterExecutor,
-  'pitch-detect': pitchDetectExecutor,
-  'envelope-visual': envelopeVisualExecutor,
-  'parametric-eq': parametricEqExecutor,
-  wavetable: wavetableExecutor,
-  synth: synthExecutor,
-  'audio-compressor': compressorExecutor,
-  'audio-distortion': distortionExecutor,
-  'audio-bitcrusher': bitcrusherExecutor,
-}
+// All audio nodes are co-located (registry/audio/<id>/node.ts) and import their executor
+// consts from this module; there is no `audioExecutors` map to register.
 
 // Self-register into the engine's generic lifecycle loop (replaces the hand-wired
 // gcAudioState / disposeAllAudioNodes calls in ExecutionEngine). `defineLifecycle`,

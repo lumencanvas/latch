@@ -5,7 +5,7 @@ import {
   colocatedModelSpecs,
 } from '@/services/ai/modelRegistry'
 import { AI_MODELS } from '@/services/ai/AIInference'
-import { WEBLLM_MODELS } from '@/registry/ai/llm'
+import { WEBLLM_MODELS } from '@/registry/ai/llm/node'
 
 /**
  * Guard tests for the AI-model auto-discovery glob (EXTENSIBILITY §8, POLICIES §1).

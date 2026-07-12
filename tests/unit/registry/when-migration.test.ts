@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { NodeDefinition, ControlDefinition } from '@/stores/nodes'
-import { cvThresholdNode } from '@/registry/opencv/cv-threshold'
-import { claspVideoReceiveNode } from '@/registry/clasp/clasp-video-receive'
-import { httpRequestNode } from '@/registry/connectivity/http-request'
+import cvThresholdSpec from '@/registry/opencv/cv-threshold/node'
+import claspVideoReceiveSpec from '@/registry/clasp/clasp-video-receive/node'
+import httpRequestSpec from '@/registry/connectivity/http-request/node'
+const httpRequestNode = httpRequestSpec.definition
+
+// cv-threshold + clasp-video-receive are co-located; read the def off the node.ts default spec.
+const cvThresholdNode = cvThresholdSpec.definition
+const claspVideoReceiveNode = claspVideoReceiveSpec.definition
 
 /**
  * Phase 3b: the built-in producers moved off the three legacy visibility schemas onto the unified

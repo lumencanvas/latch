@@ -370,33 +370,6 @@ export const toggleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 // ============================================================================
-// Sample & Hold Node
-// ============================================================================
-
-export const sampleHoldExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = ctx.inputs.get('input')
-  const trigger = ctx.inputs.get('trigger') as boolean | undefined
-
-  const outputs = new Map<string, unknown>()
-
-  // Get held value
-  let held = getCached(`${ctx.nodeId}:held`, input)
-  const lastTrigger = getCached<boolean>(`${ctx.nodeId}:lastTrigger`, false)
-
-  // Sample on rising edge
-  if (trigger && !lastTrigger) {
-    held = input
-    setCached(`${ctx.nodeId}:held`, held)
-  }
-
-  setCached(`${ctx.nodeId}:lastTrigger`, !!trigger)
-
-  outputs.set('output', held)
-
-  return outputs
-}
-
-// ============================================================================
 // Delay Node (for values, not audio)
 // ============================================================================
 
@@ -428,18 +401,7 @@ export const valueDelayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 }
 
 
-// ============================================================================
-// Registry
-// ============================================================================
-
-export const codeExecutors: Record<string, NodeExecutorFn> = {
-  'function': functionExecutor,
-  'expression': expressionExecutor,
-  'template': templateExecutor,
-  'counter': counterExecutor,
-  'toggle': toggleExecutor,
-  // NOTE: 'sample-hold' is intentionally served by utility.ts's sampleHoldExecutor
-  // (lives with its latch/changed siblings, state via defineNodeState). The code
-  // sampleHoldExecutor above is retained only as a reference implementation.
-  'value-delay': valueDelayExecutor,
-}
+// `counter` (+ function/expression/toggle/value-delay) is co-located at
+// registry/code/<id>/node.ts and imports its executor from this module; there is no
+// `codeExecutors` map to register. `counter` is served by THIS module's counterExecutor
+// (rich count/normalized/atMin/atMax outputs) — the utility.ts rival was deleted.

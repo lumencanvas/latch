@@ -1,1 +1,0 @@
-export { triggerNode } from './definition'

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 import { easingExecutor, EASINGS } from '@/engine/executors/easing'
-import { easingNode } from '@/registry/math/easing'
+import easingSpec from '@/registry/math/easing/node'
+const easingNode = easingSpec.definition
 
 function createContext(
   inputs: Record<string, unknown> = {},

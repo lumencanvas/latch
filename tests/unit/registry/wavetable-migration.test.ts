@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
-import { wavetableNode } from '@/registry/audio/_wavetable'
+import wavetableSpec from '@/registry/audio/wavetable/node'
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+
+const wavetableNode = wavetableSpec.definition
 import NodeView from '@/components/controls/NodeView.vue'
 import WaveformEditor from '@/components/controls/WaveformEditor.vue'
 import type { ControlDefinition } from '@/stores/nodes'

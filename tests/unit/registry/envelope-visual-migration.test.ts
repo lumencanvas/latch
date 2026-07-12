@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
-import { envelopeVisualNode } from '@/registry/audio/_envelope-visual'
+import envelopeVisualSpec from '@/registry/audio/envelope-visual/node'
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
+
+const envelopeVisualNode = envelopeVisualSpec.definition
 import NodeView from '@/components/controls/NodeView.vue'
 import EnvelopeEditor from '@/components/controls/EnvelopeEditor.vue'
 

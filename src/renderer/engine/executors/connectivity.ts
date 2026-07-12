@@ -1858,21 +1858,10 @@ export function gcConnectivityState(validNodeIds: Set<string>): void {
 // Registry
 // ============================================================================
 
-export const connectivityExecutors: Record<string, NodeExecutorFn> = {
-  'http-request': httpRequestExecutor,
-  'websocket': websocketExecutor,
-  'midi-input': midiInputExecutor,
-  'midi-output': midiOutputExecutor,
-  'json-parse': jsonParseExecutor,
-  'json-stringify': jsonStringifyExecutor,
-  'mqtt': mqttExecutor,
-  'osc': oscExecutor,
-  'serial': serialExecutor,
-  'ble': bleExecutor,
-  'ble-scanner': bleScannerExecutor,
-  'ble-device': bleDeviceExecutor,
-  'ble-characteristic': bleCharacteristicExecutor,
-}
+// All connectivity nodes are co-located (registry/connectivity/<id>/node.ts) and import
+// their executors from this module; there is no `connectivityExecutors` map to register.
+// (The old http/websocket/mqtt implementations above are superseded by the
+// ConnectionManager-based http/websocket/mqtt.ts executors and no longer registered.)
 
 // Connectivity state cleanup self-registers with the engine's generic lifecycle loop
 // (was hand-wired as gcConnectivityState / disposeAllConnectivityNodes calls in

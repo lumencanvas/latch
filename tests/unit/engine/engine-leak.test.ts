@@ -33,7 +33,6 @@ import {
   changedPrevValue,
   sampleHoldValue,
   latchState,
-  counterState,
   debounceState,
   throttleState,
 } from '@/engine/executors/utility'
@@ -78,7 +77,6 @@ const CONVERTED_STORES: Array<{ name: string; store: SeedableStore }> = [
   { name: 'changed', store: changedPrevValue as unknown as SeedableStore },
   { name: 'sampleHold', store: sampleHoldValue as unknown as SeedableStore },
   { name: 'latch', store: latchState as unknown as SeedableStore },
-  { name: 'counter', store: counterState as unknown as SeedableStore },
   { name: 'debounce', store: debounceState as unknown as SeedableStore },
   { name: 'throttle', store: throttleState as unknown as SeedableStore },
   { name: 'triggerPrevPressed', store: triggerPrevPressed as unknown as SeedableStore },

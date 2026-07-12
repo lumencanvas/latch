@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
-import { xyPadNode } from '@/registry/inputs/xy-pad/definition'
+import xyPadSpec from '@/registry/inputs/xy-pad/node'
+const xyPadNode = xyPadSpec.definition
 import { CUSTOM_NODE_TYPE_IDS } from '@/registry/components'
 import { useRuntimeStore } from '@/stores/runtime'
 import NodeView from '@/components/controls/NodeView.vue'

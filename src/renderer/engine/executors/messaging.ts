@@ -132,11 +132,5 @@ export const receiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-// ============================================================================
-// Registry
-// ============================================================================
-
-export const messagingExecutors: Record<string, NodeExecutorFn> = {
-  send: sendExecutor,
-  receive: receiveExecutor,
-}
+// `send`/`receive` are co-located (registry/messaging/<id>/node.ts) and import their
+// executors from this module; there is no `messagingExecutors` map to register.

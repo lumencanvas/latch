@@ -1062,34 +1062,6 @@ export const gltfLoader3DExecutor: NodeExecutorFn = async (ctx: ExecutionContext
 // Registry
 // ============================================================================
 
-export const threeExecutors: Record<string, NodeExecutorFn> = {
-  // Core
-  'scene-3d': scene3DExecutor,
-  'camera-3d': camera3DExecutor,
-  'render-3d': render3DExecutor,
-
-  // Primitives
-  'box-3d': box3DExecutor,
-  'sphere-3d': sphere3DExecutor,
-  'plane-3d': plane3DExecutor,
-  'cylinder-3d': cylinder3DExecutor,
-  'torus-3d': torus3DExecutor,
-
-  // Transform & Material
-  'transform-3d': transform3DExecutor,
-  'material-3d': material3DExecutor,
-  'group-3d': group3DExecutor,
-
-  // Lights
-  'ambient-light-3d': ambientLight3DExecutor,
-  'directional-light-3d': directionalLight3DExecutor,
-  'point-light-3d': pointLight3DExecutor,
-  'spot-light-3d': spotLight3DExecutor,
-
-  // Advanced
-  'gltf-loader': gltfLoader3DExecutor,
-}
-
 // 3D state cleanup self-registers with the engine's generic lifecycle loop
 // (was hand-wired as gc3DState / disposeAll3DNodes calls in ExecutionEngine).
 // defineLifecycle-wrap: the Three.js scene/geometry/texture teardown is unchanged,

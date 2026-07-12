@@ -4,72 +4,12 @@
  */
 
 import type { NodeExecutorFn } from '../ExecutionEngine'
-import { audioExecutors } from './audio'
-import { visualExecutors } from './visual'
-import { aiExecutors } from './ai'
-import { connectivityExecutors } from './connectivity'
-import { claspExecutors, disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus } from './clasp'
-import { mqttExecutor, disposeMqttNode, disposeAllMqttNodes, gcMqttState } from './mqtt'
-import { websocketExecutor, disposeWebSocketNode, disposeAllWebSocketNodes, gcWebSocketState } from './websocket'
-import { httpExecutor, disposeHttpNode, disposeAllHttpNodes, gcHttpState } from './http'
-import { codeExecutors } from './code'
-import { noiseExecutor } from './noise'
-import { colorRampExecutor } from './color-ramp'
-import { euclideanExecutor } from './euclidean'
-import { easingExecutor } from './easing'
-import { springExecutor } from './spring'
-import {
-  slewLimiterExecutor,
-  derivativeExecutor,
-  integralExecutor,
-  tweenToTargetExecutor,
-  tapTempoExecutor,
-} from './signal'
+import { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus } from './clasp'
+import { disposeMqttNode, disposeAllMqttNodes, gcMqttState } from './mqtt'
+import { disposeWebSocketNode, disposeAllWebSocketNodes, gcWebSocketState } from './websocket'
+import { disposeHttpNode, disposeAllHttpNodes, gcHttpState } from './http'
 import { subflowExecutors } from './subflow'
-import { threeExecutors } from './3d'
-import { messagingExecutors } from './messaging'
-import { utilityExecutors } from './utility'
-import { gamepadExecutor, gamepadVisualExecutor } from './gamepad'
-import { emulatorExecutor, gcEmulationState, disposeAllEmulationNodes } from './emulation'
-import { opencvExecutors } from './opencv'
-
-// Node-group modules extracted from this file (Phase 1 de-monolith). Imported
-// here for the builtinExecutors registry; re-exported below to keep the barrel.
-import {
-  constantExecutor,
-  triggerExecutor,
-  textboxExecutor,
-  sliderExecutor,
-  knobExecutor,
-  xyPadExecutor,
-  keyboardExecutor,
-  timeExecutor,
-  lfoExecutor,
-} from './input'
-import {
-  smoothExecutor,
-  randomExecutor,
-} from './math'
-import {
-  gateExecutor,
-} from './logic'
-import {
-  startExecutor,
-  intervalExecutor,
-  delayExecutor,
-  timerExecutor,
-  metronomeExecutor,
-  stepSequencerExecutor,
-} from './timing'
-import {
-  monitorExecutor,
-  oscilloscopeExecutor,
-  graphExecutor,
-  equalizerExecutor,
-  consoleExecutor,
-} from './debug'
-import { retrieveExecutor, vectorMemoryExecutor } from './rag'
-import { llmExecutor } from './webllm'
+import { gcEmulationState, disposeAllEmulationNodes } from './emulation'
 import { colocatedExecutors } from '@/registry/nodeRegistry'
 
 // Re-export CLASP utilities for external use
@@ -87,6 +27,9 @@ export { gcEmulationState, disposeAllEmulationNodes }
 // (@/engine/executors) keeps exposing their executors + state stores.
 export * from './input'
 export * from './math'
+// `smooth` (def + executor + its `smoothState` store) is co-located; re-export the
+// store + executor so the governed public-export contract still resolves them here.
+export { smoothState, smoothExecutor } from '@/registry/math/smooth/node'
 export * from './logic'
 export * from './timing'
 export * from './debug'
@@ -98,103 +41,11 @@ export * from './webllm'
 // ============================================================================
 
 export const builtinExecutors: Record<string, NodeExecutorFn> = {
-  // Inputs
-  constant: constantExecutor,
-  trigger: triggerExecutor,
-  textbox: textboxExecutor,
-  slider: sliderExecutor,
-  knob: knobExecutor,
-  'xy-pad': xyPadExecutor,
-  gamepad: gamepadExecutor,
-  'gamepad-visual': gamepadVisualExecutor,
-  emulator: emulatorExecutor,
-  keyboard: keyboardExecutor,
-  time: timeExecutor,
-  lfo: lfoExecutor,
-
-  // Timing
-  start: startExecutor,
-  interval: intervalExecutor,
-  delay: delayExecutor,
-  timer: timerExecutor,
-  metronome: metronomeExecutor,
-  'step-sequencer': stepSequencerExecutor,
-  euclidean: euclideanExecutor,
-
-  // Math — pure nodes (add/subtract/multiply/divide/atan2/min/max + abs/clamp/map-range/
-  // modulo/power/trig/vector-math/lerp/step/smoothstep/remap/quantize/wrap) are co-located;
-  // see ...colocatedExecutors below. Only the stateful/impure remainder is wired here.
-  smooth: smoothExecutor,
-  random: randomExecutor,
-  noise: noiseExecutor,
-  easing: easingExecutor,
-  spring: springExecutor,
-  'slew-limiter': slewLimiterExecutor,
-  derivative: derivativeExecutor,
-  integral: integralExecutor,
-  'tween-to-target': tweenToTargetExecutor,
-  'tap-tempo': tapTempoExecutor,
-
-  // Logic
-  // compare/and/or/not/select/switch are co-located (registry/logic/<node>/node.ts).
-  gate: gateExecutor,
-
-  // Debug
-  monitor: monitorExecutor,
-  oscilloscope: oscilloscopeExecutor,
-  graph: graphExecutor,
-  equalizer: equalizerExecutor,
-  console: consoleExecutor,
-
-  // Audio
-  ...audioExecutors,
-
-  // Visual
-  ...visualExecutors,
-  'color-ramp': colorRampExecutor,
-
-  // AI
-  ...aiExecutors,
-  retrieve: retrieveExecutor,
-  'vector-memory': vectorMemoryExecutor,
-  llm: llmExecutor,
-
-  // Connectivity (legacy)
-  ...connectivityExecutors,
-
-  // Override with new ConnectionManager-based executors
-  'mqtt': mqttExecutor,
-  'websocket': websocketExecutor,
-  'http-request': httpExecutor,
-
-  // CLASP Protocol
-  ...claspExecutors,
-
-  // Code
-  ...codeExecutors,
-
-  // Subflows
-  ...subflowExecutors,
-
-  // 3D
-  ...threeExecutors,
-
-  // String — all co-located (registry/string/<node>/node.ts).
-
-  // Messaging
-  ...messagingExecutors,
-
-  // Utility (value checking, type comparison, flow control)
-  ...utilityExecutors,
-
-  // Data — array/object/type-conversion nodes are co-located (registry/data/<node>/node.ts).
-  // json-parse/json-stringify/router/debounce/throttle/texture-to-data executors live in
-  // their own maps (connectivity/utility/etc.), registered elsewhere in this file.
-
-  // OpenCV.js (CPU image processing)
-  ...opencvExecutors,
-
-  // Co-located `registry/<cat>/<node>/node.ts` executors (ROADMAP Phase 6) — win
-  // over any legacy entry above so a migrated node's folder is authoritative.
+  // Every built-in node (all 241) is co-located at registry/<cat>/<node>/node.ts and
+  // registers its executor here via the glob (Phase 6 complete).
   ...colocatedExecutors,
+
+  // The ONE exception: the `subflow` instance node is dynamically instantiated and has no
+  // NodeDefinition (so it isn't glob-discovered) — it stays keyed in the subflow module's map.
+  ...subflowExecutors,
 }

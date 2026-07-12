@@ -1,23 +1,5 @@
-export { functionNode } from './_function'
-export { expressionNode } from './expression'
-export { templateNode } from './template'
-export { counterNode } from './counter'
-export { toggleNode } from './toggle'
-export { valueDelayNode } from './value-delay'
-
-import { functionNode } from './_function'
-import { expressionNode } from './expression'
-import { templateNode } from './template'
-import { counterNode } from './counter'
-import { toggleNode } from './toggle'
-import { valueDelayNode } from './value-delay'
+// All code nodes are co-located at registry/code/<id>/node.ts (Phase 6), discovered by
+// the nodeRegistry glob. Barrel kept (allNodes.ts imports `codeNodes`) but now empty.
 import type { NodeDefinition } from '../types'
 
-export const codeNodes: NodeDefinition[] = [
-  functionNode,
-  expressionNode,
-  templateNode,
-  counterNode,
-  toggleNode,
-  valueDelayNode,
-]
+export const codeNodes: NodeDefinition[] = []

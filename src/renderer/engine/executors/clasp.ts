@@ -1591,19 +1591,6 @@ export function getClaspConnectionStatus(): Map<string, { status: string; sessio
 // Export all executors
 // ============================================================================
 
-export const claspExecutors: Record<string, NodeExecutorFn> = {
-  'clasp-connection': claspConnectionExecutor,
-  'clasp-subscribe': claspSubscribeExecutor,
-  'clasp-set': claspSetExecutor,
-  'clasp-emit': claspEmitExecutor,
-  'clasp-get': claspGetExecutor,
-  'clasp-stream': claspStreamExecutor,
-  'clasp-bundle': claspBundleExecutor,
-  'clasp-video-receive': claspVideoReceiveExecutor,
-  'clasp-video-send': claspVideoSendExecutor,
-  'clasp-gesture': claspGestureExecutor,
-}
-
 // CLASP state cleanup self-registers with the engine's generic lifecycle loop
 // (was hand-wired as gcClaspState / disposeAllClaspConnections calls in
 // ExecutionEngine). defineLifecycle-wrap: the connection + video/gesture media

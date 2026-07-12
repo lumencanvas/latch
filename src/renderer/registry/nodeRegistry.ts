@@ -7,9 +7,9 @@
  * `registry/index.ts` + `components.ts` so the guard tests exist from the first
  * commit (EXTENSIBILITY_ARCHITECTURE §6, POLICIES §1).
  *
- * Today the glob matches ZERO files (the tree is still `<name>.ts` + category
- * barrels), so this is inert — the app continues to use the legacy registry. The
- * collector becomes authoritative only as co-location authors `node.ts` files.
+ * This collector is now authoritative (ROADMAP Phase 6 complete): all 241 built-in
+ * nodes are co-located `registry/<cat>/<id>/node.ts` files the glob discovers; the
+ * category barrels are empty and `builtinExecutors` = `{...colocatedExecutors, ...}`.
  *
  * MUST live under `src/renderer` so Vite's `import.meta.glob` and `vite/client`
  * types resolve and the relative glob is correct.

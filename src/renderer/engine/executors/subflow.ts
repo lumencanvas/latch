@@ -281,8 +281,10 @@ function topologicalSort(nodes: Node[], edges: Edge[]): string[] {
 // Registry
 // ============================================================================
 
+// `subflow-input` / `subflow-output` are co-located (registry/subflows/<id>/node.ts);
+// their executor consts stay here (imported by those node.ts). Only the `subflow`
+// instance node — dynamically instantiated, no NodeDefinition in any barrel — is
+// still registered by id here.
 export const subflowExecutors: Record<string, NodeExecutorFn> = {
-  'subflow-input': subflowInputExecutor,
-  'subflow-output': subflowOutputExecutor,
   'subflow': subflowExecutor,
 }

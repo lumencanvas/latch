@@ -13,8 +13,8 @@
  * EXTENSIBILITY_ARCHITECTURE §3 (`ui`, `models`, `lifecycle`) arrive with their
  * owning phases (§9/§8/§4); being optional, adding them later is non-breaking.
  *
- * Additive: nothing is auto-discovered through this yet — the `nodeRegistry` glob
- * and per-node co-location come later (ROADMAP Phase 0 §2c / Phase 6).
+ * Live: all 241 built-in nodes are co-located as `registry/<cat>/<id>/node.ts` and
+ * auto-discovered by the `nodeRegistry` glob (ROADMAP Phase 6 complete).
  */
 
 import type { Component } from 'vue'

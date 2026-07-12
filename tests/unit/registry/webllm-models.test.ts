@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { WEBLLM_MODELS, DEFAULT_WEBLLM_MODEL, llmNode } from '@/registry/ai/llm'
+import { WEBLLM_MODELS, DEFAULT_WEBLLM_MODEL, llmNode } from '@/registry/ai/llm/node'
 import { WEBLLM_MODEL_ORDER } from '@/services/ai/models/webllm/order'
 
 /**

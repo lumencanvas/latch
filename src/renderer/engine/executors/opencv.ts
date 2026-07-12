@@ -444,18 +444,6 @@ export const cvBackgroundSubtractionExecutor: NodeExecutorFn = (ctx) =>
 // Registry
 // ============================================================================
 
-export const opencvExecutors: Record<string, NodeExecutorFn> = {
-  'cv-grayscale': cvGrayscaleExecutor,
-  'cv-canny': cvCannyExecutor,
-  'cv-threshold': cvThresholdExecutor,
-  'cv-blur': cvBlurExecutor,
-  'cv-morphology': cvMorphologyExecutor,
-  'cv-contours': cvContoursExecutor,
-  'cv-corners': cvCornersExecutor,
-  'cv-optical-flow': cvOpticalFlowExecutor,
-  'cv-background-subtraction': cvBackgroundSubtractionExecutor,
-}
-
 // Self-register into the engine's generic lifecycle loop (replaces the hand-wired
 // gcOpenCVState / disposeAllOpenCVNodes / resetOpenCVNodeDisposal calls in
 // ExecutionEngine). `defineLifecycle`, NOT `defineNodeState`: the `disposedNodes`

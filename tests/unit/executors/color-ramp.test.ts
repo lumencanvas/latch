@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 import { colorRampExecutor, sampleStops, PALETTES } from '@/engine/executors/color-ramp'
-import { colorRampNode } from '@/registry/visual/color-ramp'
+import colorRampSpec from '@/registry/visual/color-ramp/node'
+const colorRampNode = colorRampSpec.definition
 
 function createContext(
   inputs: Record<string, unknown> = {},
