@@ -1,685 +1,355 @@
-# CLASP Flow - Node Specification
+# LATCH — Node Specification
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-17
+**Document Version**: 2.0
+**Last Updated**: 2026-07-12 (post-Phase-6 co-location)
+
+> Naming note: the product is **LATCH**. "CLASP" is only the first-party realtime-connectivity
+> protocol/service (`@clasp-to/core`), surfaced as the `clasp` node category — not the app.
 
 ---
 
 ## Overview
 
-This document defines the specification for creating nodes in CLASP Flow. Nodes are the fundamental building blocks of any flow, representing operations that transform, generate, or consume data.
+Nodes are LATCH's fundamental building blocks — operations that transform, generate, or consume
+data on a per-frame execution graph. Since **Phase 6 (co-location)**, every built-in node is a
+**single self-contained module** at `src/renderer/registry/<category>/<id>/node.ts` that pairs the
+node's *definition* (ports/controls/metadata) with its *executor* (runtime behavior) via
+`defineNode(...)`, and is **auto-discovered by a glob** — there is no central registration file to
+edit. All 241 built-in nodes follow this shape.
 
 ---
 
-## Node Definition Schema
+## The `defineNode` contract
 
-### Complete Definition
+A node module's default export is a `NodeSpec` built with `defineNode`:
 
-```typescript
-interface NodeDefinition {
-  // Identity
-  id: string;                    // Unique identifier (kebab-case)
-  name: string;                  // Display name
-  version: string;               // Semantic version
-  author?: string;               // Author/creator
+```ts
+// src/renderer/registry/math/add/node.ts
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
-  // Classification
-  category: NodeCategory;        // Category for organization
-  tags?: string[];               // Search tags
-  description: string;           // Brief description
-  documentation?: string;        // Extended markdown documentation
-
-  // Visual
-  icon: string;                  // Lucide icon name or custom SVG
-  color?: string;                // Override category color
-
-  // Platform
-  platforms: Platform[];         // Where node can run
-  webFallback?: string;          // Alternative node ID for web
-
-  // Ports
-  inputs: PortDefinition[];      // Input ports
-  outputs: PortDefinition[];     // Output ports
-
-  // Controls
-  controls: ControlDefinition[]; // User-adjustable parameters
-
-  // Connection requirements (protocols it needs)
-  connections?: NodeConnectionRequirement[];
-
-  // Additional info displayed in the Info tab of the properties panel
-  info?: NodeInfo;
+const definition: NodeDefinition = {
+  id: 'add',
+  name: 'Add',
+  version: '1.0.0',
+  category: 'math',
+  description: 'Add two numbers',
+  icon: 'plus',
+  platforms: ['web', 'electron'],
+  inputs: [
+    { id: 'a', type: 'number', label: 'A' },
+    { id: 'b', type: 'number', label: 'B' },
+  ],
+  outputs: [{ id: 'result', type: 'number', label: 'Result' }],
+  controls: [],
+  info: { overview: 'Adds two numbers.', pairsWith: ['subtract', 'multiply'] },
 }
 
-interface NodeInfo {
-  /** 2-4 sentence explanation of what this node does and when to use it. */
-  overview: string;
-  /** Short, actionable tips. One sentence each. */
-  tips?: string[];
-  /** Node IDs of nodes that complement this one. */
-  pairsWith?: string[];
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const a = ctx.num('a', 0)
+  const b = ctx.num('b', 0)
+  return new Map([['result', a + b]])
+}
+
+export default defineNode({ definition, executor, pure: true })
+```
+
+### `NodeSpec` fields (`src/renderer/engine/defineNode.ts`)
+
+```ts
+interface NodeSpec {
+  readonly definition: NodeDefinition          // ports / controls / metadata
+  readonly executor: NodeExecutorFn            // runtime behavior
+  readonly version?: number                     // node-data schema version (default 1); drives migrate()
+  readonly migrate?: (data, from: number) => data   // upgrade saved control data
+  readonly pure?: boolean                       // no side-effects/state → safe to skip in dirty mode
+  readonly deferred?: boolean                   // fire-and-latch async (don't block the frame)
+  readonly component?: Component                // bespoke-SFC UI escape hatch (else BaseNode / `ui`)
+  readonly requires?: NodeRequirement[]         // hardware/runtime capabilities (serial/webgpu/mic…)
+  readonly connections?: NodeConnectionRequirement[]  // connection protocols the node needs
+  readonly models?: ModelRequirement[]          // AI model/task needs → derives a model select + std outputs
+}
+```
+
+`defineNode` is a **frozen public contract** (POLICIES §2): fields are additive-only within a major
+version — never repurposed or removed; retirement goes through a deprecation cycle with a node-data
+`migrate()`. Built-in and custom (user) nodes converge on this one contract.
+
+---
+
+## `NodeDefinition` schema
+
+Declared in `src/renderer/stores/nodes.ts`.
+
+```ts
+interface NodeDefinition {
+  // Identity
+  id: string                     // unique, kebab-case, OPAQUE (never .split() on it)
+  name: string
+  version: string                // semantic version string (distinct from NodeSpec.version)
+  // Classification
+  category: NodeCategory
+  description: string
+  tags?: string[]                // search tags
+  // Visual
+  icon: string                   // lucide icon name
+  color?: string                 // override category color
+  // Platform
+  platforms: Platform[]          // ('web' | 'electron')[]
+  webFallback?: string           // alternative node id when unavailable on web
+  // Ports & controls
+  inputs: PortDefinition[]
+  outputs: PortDefinition[]
+  controls: ControlDefinition[]
+  // UI (choose at most one; else BaseNode auto-layout)
+  ui?: UISchema                  // declarative custom UI (preferred) — see below
+  component?: Component          // bespoke SFC escape hatch (markRaw); single source of truth for routing
+  // Info tab
+  info?: { overview: string; tips?: string[]; pairsWith?: string[] }
 }
 
 type NodeCategory =
-  | 'debug'
-  | 'inputs'
-  | 'outputs'
-  | 'timing'
-  | 'math'
-  | 'logic'
-  | 'audio'
-  | 'video'
-  | 'visual'
-  | 'shaders'
-  | 'data'
-  | 'ai'
-  | 'code'
-  | '3d'
-  | 'connectivity'
-  | 'clasp'
-  | 'subflows'
-  | 'string'
-  | 'messaging'
-  | 'custom';
+  | 'debug' | 'inputs' | 'outputs' | 'timing' | 'math' | 'logic' | 'audio' | 'video'
+  | 'visual' | 'shaders' | 'data' | 'ai' | 'code' | '3d' | 'connectivity' | 'clasp'
+  | 'subflows' | 'string' | 'messaging' | 'custom'
 
-type Platform = 'web' | 'electron';
+type Platform = 'web' | 'electron'
 ```
 
-### Port Definition
+### Ports
 
-```typescript
+```ts
 interface PortDefinition {
-  id: string;                    // Unique within node
-  type: DataType;                // Data type
-  label: string;                 // Display label
-  description?: string;          // Tooltip text
-
-  // Behavior
-  required?: boolean;            // Must be connected (default: false)
-  multiple?: boolean;            // Allow multiple connections (default: false)
-  default?: any;                 // Default value when not connected
-
-  // Validation
-  min?: number;                  // For numeric types
-  max?: number;                  // For numeric types
-  options?: string[];            // For enum/select types
+  id: string                     // unique within the node
+  type: DataType
+  label: string
+  description?: string
+  required?: boolean             // must be connected (default false)
+  multiple?: boolean             // allow multiple connections (default false)
+  default?: unknown              // value when unconnected
 }
 
 type DataType =
-  | 'trigger'    // Event signal (no data)
-  | 'number'     // Numeric value
-  | 'string'     // Text
-  | 'boolean'    // True/false
-  | 'audio'      // AudioBuffer or stream
-  | 'video'      // VideoFrame or stream
-  | 'texture'    // WebGL texture
-  | 'data'       // JSON object
-  | 'array'      // Array of values
-  | 'any';       // Any type (universal)
+  | 'trigger' | 'number' | 'string' | 'boolean'
+  | 'audio' | 'video' | 'texture' | 'data' | 'array' | 'any'
+  // 3D types
+  | 'scene3d' | 'object3d' | 'geometry3d' | 'material3d' | 'camera3d' | 'light3d' | 'transform3d'
 ```
 
-### Control Definition
+Connection legality is decided by the type matrix in `src/renderer/utils/connections.ts`.
 
-```typescript
+### Controls
+
+```ts
 interface ControlDefinition {
-  id: string;                    // Unique within node
-  type: ControlType;             // Control widget type
-  label: string;                 // Display label
-  description?: string;          // Tooltip text
-
-  // Value
-  default?: any;                 // Default value
-
-  // Behavior
-  exposable?: boolean;           // Can appear in control panel
-  bindable?: boolean;            // Can be overridden by input port
-
-  // Type-specific properties
-  props?: ControlProps;
-}
-
-type ControlType =
-  | 'number'     // Numeric input
-  | 'slider'     // Range slider
-  | 'knob'       // Rotary knob
-  | 'xy-pad'     // 2D position
-  | 'select'     // Dropdown
-  | 'toggle'     // Boolean switch
-  | 'button'     // Trigger button
-  | 'text'       // Text input
-  | 'textarea'   // Multi-line text
-  | 'code'       // Code editor
-  | 'color'      // Color picker
-  | 'file'       // File selector
-  | 'image'      // Image preview
-  | 'meter'      // Read-only meter
-  | 'waveform'   // Audio waveform display
-  | 'custom';    // Custom Vue component
-
-interface ControlProps {
-  // Number/Slider/Knob
-  min?: number;
-  max?: number;
-  step?: number;
-  unit?: string;
-
-  // Select
-  options?: SelectOption[];
-
-  // Code
-  language?: string;
-  height?: number;
-
-  // File
-  accept?: string;
-  multiple?: boolean;
-
-  // Custom
-  component?: string;
-}
-
-interface SelectOption {
-  value: any;
-  label: string;
-  icon?: string;
+  id: string
+  type: string                   // 'number' | 'slider' | 'select' | 'toggle' | 'text' | 'color' | 'code' | …
+  label: string
+  description?: string
+  default?: unknown
+  exposable?: boolean            // may appear in the control panel
+  bindable?: boolean             // may be overridden by a same-id input port
+  when?: WhenSchema              // unified conditional visibility (preferred)
+  visibleWhen?: { controlId; value }   // @deprecated single-key form
+  props?: Record<string, unknown>      // type-specific (min/max/step/options/language/…)
 }
 ```
+
+**Conditional visibility** uses the unified `when` schema — keys are sibling control ids; the control
+shows only when EVERY entry matches (AND). Operators: bare value (equality), `{ in: [...] }`,
+`{ ne }`, `{ gt }`, `{ lt }`.
 
 ---
 
-## Example Node Definitions
+## Executor contract
 
-### Simple: Constant Node
+Executors are **functional**, not class-based. Each receives an `ExecutionContext` and returns a
+`Map<string, unknown>` of output-port-id → value (sync or async).
 
-```json
-{
-  "id": "constant",
-  "name": "Constant",
-  "version": "1.0.0",
-  "category": "inputs",
-  "description": "Output a constant value",
-  "icon": "hash",
-  "platforms": ["web", "electron"],
-  "inputs": [],
-  "outputs": [
-    {
-      "id": "value",
-      "type": "number",
-      "label": "Value"
-    }
-  ],
-  "controls": [
-    {
-      "id": "value",
-      "type": "number",
-      "label": "Value",
-      "default": 0,
-      "exposable": true
-    }
-  ],
-}
-```
-
-### Medium: Map Range Node
-
-```json
-{
-  "id": "map-range",
-  "name": "Map Range",
-  "version": "1.0.0",
-  "category": "math",
-  "description": "Remap a value from one range to another",
-  "icon": "arrow-right-left",
-  "platforms": ["web", "electron"],
-  "inputs": [
-    {
-      "id": "value",
-      "type": "number",
-      "label": "Value",
-      "required": true
-    }
-  ],
-  "outputs": [
-    {
-      "id": "result",
-      "type": "number",
-      "label": "Result"
-    }
-  ],
-  "controls": [
-    {
-      "id": "inMin",
-      "type": "number",
-      "label": "Input Min",
-      "default": 0,
-      "bindable": true
-    },
-    {
-      "id": "inMax",
-      "type": "number",
-      "label": "Input Max",
-      "default": 1,
-      "bindable": true
-    },
-    {
-      "id": "outMin",
-      "type": "number",
-      "label": "Output Min",
-      "default": 0,
-      "bindable": true
-    },
-    {
-      "id": "outMax",
-      "type": "number",
-      "label": "Output Max",
-      "default": 1,
-      "bindable": true
-    },
-    {
-      "id": "clamp",
-      "type": "toggle",
-      "label": "Clamp",
-      "default": false
-    }
-  ],
-}
-```
-
-### Complex: Audio Input Node
-
-```json
-{
-  "id": "audio-input",
-  "name": "Audio Input",
-  "version": "1.0.0",
-  "category": "audio",
-  "description": "Capture audio from microphone or audio device",
-  "icon": "mic",
-  "platforms": ["web", "electron"],
-  "inputs": [],
-  "outputs": [
-    {
-      "id": "audio",
-      "type": "audio",
-      "label": "Audio"
-    },
-    {
-      "id": "level",
-      "type": "number",
-      "label": "Level"
-    },
-    {
-      "id": "bass",
-      "type": "number",
-      "label": "Bass"
-    },
-    {
-      "id": "mid",
-      "type": "number",
-      "label": "Mid"
-    },
-    {
-      "id": "treble",
-      "type": "number",
-      "label": "Treble"
-    },
-    {
-      "id": "beat",
-      "type": "trigger",
-      "label": "Beat"
-    }
-  ],
-  "controls": [
-    {
-      "id": "source",
-      "type": "select",
-      "label": "Source",
-      "default": "default",
-      "props": {
-        "options": [
-          { "value": "default", "label": "Default Device" }
-        ]
-      }
-    },
-    {
-      "id": "gain",
-      "type": "slider",
-      "label": "Gain",
-      "default": 1,
-      "props": {
-        "min": 0,
-        "max": 2,
-        "step": 0.01
-      },
-      "exposable": true
-    },
-    {
-      "id": "fftSize",
-      "type": "select",
-      "label": "FFT Size",
-      "default": 2048,
-      "props": {
-        "options": [
-          { "value": 512, "label": "512" },
-          { "value": 1024, "label": "1024" },
-          { "value": 2048, "label": "2048" },
-          { "value": 4096, "label": "4096" }
-        ]
-      }
-    },
-    {
-      "id": "smoothing",
-      "type": "slider",
-      "label": "Smoothing",
-      "default": 0.8,
-      "props": {
-        "min": 0,
-        "max": 1,
-        "step": 0.01
-      }
-    }
-  ],
-}
-```
-
-### Shader Node
-
-```json
-{
-  "id": "shader",
-  "name": "Shader",
-  "version": "1.0.0",
-  "category": "shaders",
-  "description": "Custom GLSL fragment shader",
-  "icon": "code",
-  "platforms": ["web", "electron"],
-  "inputs": [
-    {
-      "id": "texture0",
-      "type": "texture",
-      "label": "Texture 0"
-    }
-  ],
-  "outputs": [
-    {
-      "id": "texture",
-      "type": "texture",
-      "label": "Output"
-    }
-  ],
-  "controls": [
-    {
-      "id": "code",
-      "type": "code",
-      "label": "Fragment Shader",
-      "default": "void main() {\n  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n}",
-      "props": {
-        "language": "glsl",
-        "height": 300
-      }
-    },
-    {
-      "id": "width",
-      "type": "number",
-      "label": "Width",
-      "default": 1920,
-      "props": {
-        "min": 1,
-        "max": 4096
-      }
-    },
-    {
-      "id": "height",
-      "type": "number",
-      "label": "Height",
-      "default": 1080,
-      "props": {
-        "min": 1,
-        "max": 4096
-      }
-    }
-  ],
-}
-```
-
----
-
-## Node Executor Implementation
-
-### Functional Executors
-
-LATCH uses functional executors rather than class-based ones. Each executor is a function that receives an `ExecutionContext` and returns a `Map<string, unknown>` of outputs.
-
-```typescript
+```ts
 // src/renderer/engine/ExecutionEngine.ts
-
 interface ExecutionContext {
-  nodeId: string;
-  inputs: Map<string, unknown>;      // Values from connected input ports
-  controls: Map<string, unknown>;    // Values from inline controls
-  definition: NodeDefinition;
-  deltaTime: number;
-  totalTime: number;
-  frameCount: number;
+  nodeId: string
+  inputs: Map<string, unknown>       // values from connected input ports (coerced to the target port type)
+  controls: Map<string, unknown>     // inline control values
+  definition: NodeDefinition
+  deltaTime: number
+  totalTime: number
+  frameCount: number
+  // Typed, coercing, NaN/±Infinity-guarded accessors (prefer these over raw .get()):
+  num(id: string, fallback?: number): number   // input ?? control ?? fallback, coerced
+  bool(id: string, fallback?: boolean): boolean
+  str(id: string, fallback?: string): string
+  trig(id: string): boolean          // rising-edge (state auto-GC'd via defineNodeState)
+  level(id: string): boolean         // level test (accepts legacy true | 1 | >0)
 }
 
-type NodeExecutorFn = (ctx: ExecutionContext) => Promise<Map<string, unknown>> | Map<string, unknown>;
+type NodeExecutorFn = (ctx: ExecutionContext) => Map<string, unknown> | Promise<Map<string, unknown>>
 ```
 
-### Registration
+**Input-over-control precedence** is handled at the boundary: a connected input port overrides the
+same-id inline control. The `ctx.num/bool/str` accessors implement `input ?? control ?? fallback`
+and coerce to the target port's declared type — prefer them over hand-rolled
+`(ctx.inputs.get(id) as number) ?? (ctx.controls.get(id) as number) ?? 0` chains.
 
-Executors are registered in `src/renderer/engine/executors/index.ts`:
+Trigger-emitting nodes should output the canonical fired value `TRIGGER` (`= 1`, from
+`@/engine/trigger`); trigger inputs are read with `ctx.trig(id)` (rising-edge) or `ctx.level(id)`.
 
-```typescript
-export const builtinExecutors: Record<string, NodeExecutorFn> = {
-  constant: constantExecutor,
-  compare: compareExecutor,
-  // ... all executors
-  ...audioExecutors,
-  ...visualExecutors,
-  ...claspExecutors,
-  ...utilityExecutors,
-  // etc.
-}
-```
+---
 
-### Control Fallback Pattern
+## Per-node state — `defineNodeState`
 
-When a node has both an input port and an inline control with the same ID, the input connection takes precedence:
+Stateful nodes keep per-node state in a `defineNodeState` store, which **self-registers its
+gc/dispose** into the engine's generic lifecycle loop — so a stateful node touches only its own
+module and the "forgotten cleanup = leak" class is structurally impossible.
 
-```typescript
-// Input connection overrides inline control value
-const a = (ctx.inputs.get('a') as number) ?? (ctx.controls.get('a') as number) ?? 0;
-```
+```ts
+// src/renderer/engine/nodeState.ts
+import { defineNodeState } from '@/engine/nodeState'
 
-This is the standard pattern used by compare, equals, and, or, gate, in-range, modulo, and other nodes.
+const smoothState = defineNodeState<number>({ label: 'smooth' /*, dispose?, onStart?, endFrame?, keyToNodeId? */ })
 
-### Example: Map Range Executor
-
-```typescript
-export const mapRangeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0;
-  const inMin = (ctx.controls.get('inMin') as number) ?? 0;
-  const inMax = (ctx.controls.get('inMax') as number) ?? 1;
-  const outMin = (ctx.controls.get('outMin') as number) ?? 0;
-  const outMax = (ctx.controls.get('outMax') as number) ?? 100;
-
-  const normalized = inMax !== inMin ? (value - inMin) / (inMax - inMin) : 0;
-  const result = normalized * (outMax - outMin) + outMin;
-
-  return new Map([['result', result]]);
+const executor: NodeExecutorFn = (ctx) => {
+  const prev = smoothState.get(ctx.nodeId) ?? target
+  const next = prev + (target - prev) * factor
+  smoothState.set(ctx.nodeId, next)          // gc'd automatically for dead nodes; disposed on stop()
+  return new Map([['result', next]])
 }
 ```
 
-### Example: Compare Executor (with Control Fallback)
+The engine drains all collected lifecycles generically (`gc(validIds)` on graph update,
+`disposeAll()` on stop, `endFrame()`/`onStart()` as needed) — it never imports `nodeState.ts`, only
+receives the collected hooks, keeping the graph acyclic. For heavy resources (Tone nodes, sockets,
+workers) pass a `dispose(state, nodeId)` callback. Non-per-node cleanup uses `defineLifecycle`.
 
-```typescript
-export const compareExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? (ctx.controls.get('a') as number) ?? 0;
-  const b = (ctx.inputs.get('b') as number) ?? (ctx.controls.get('b') as number) ?? 0;
-  const operator = (ctx.controls.get('operator') as string) ?? '==';
+---
 
-  let result = false;
-  switch (operator) {
-    case '==': result = a === b; break;
-    case '!=': result = a !== b; break;
-    case '>':  result = a > b;   break;
-    case '>=': result = a >= b;  break;
-    case '<':  result = a < b;   break;
-    case '<=': result = a <= b;  break;
-  }
+## Custom UI: `ui` schema (preferred) vs `component` (escape hatch)
 
-  return new Map([['result', result]]);
+A node with neither `ui` nor `component` renders with **BaseNode**'s auto-layout (the default —
+ports + declarative controls). For custom UI, prefer the **declarative `ui` schema**, rendered by
+the single `<NodeView>` interpreter on both the node canvas and the properties panel:
+
+```ts
+ui: {
+  rows: [
+    { widgets: [{ type: 'xy', bind: '', props: { fields: ['normalizedX', 'normalizedY'] } }] },
+    { widgets: [{ type: 'readout', bind: 'rawX', source: 'output', label: 'X' }] },
+    { label: 'Range', widgets: [{ type: 'number', bind: 'minX', label: 'X Min' }] },
+  ],
 }
+```
+
+A widget binds to a control id (2-way) or, with `source: 'output'`, an output-port id (read-only
+readout). The `type` is a **closed enum** (never a component path or code). **Widget types NodeView
+currently dispatches:**
+
+- primitives: `slider` · `number` · `toggle` · `select` · `text` · `color`
+- rich: `knob` · `xy` · `eq` · `env` · `wave` · `readout` · `asset` · `connection`
+
+`piano`, `gamepad`, `curve`, `gradient`, `image`, `button` are **reserved enum slots with no
+renderer yet** — a node needing one must use the `component` escape hatch.
+
+The **`component` escape hatch** (`component: markRaw(MyNode)` on the definition) is for nodes that
+capture raw input (keyboard/MIDI/gamepad), render a live surface (video/canvas/scope/code
+editor/emulator), or need bespoke geometry. It is the **single source of truth** for custom
+rendering: `registry/components.ts` derives both the Vue Flow `nodeTypes` map and the
+`CUSTOM_NODE_TYPE_IDS` set from the definitions that carry `component`.
+
+---
+
+## Node-data versioning & migration
+
+Saved `.latch` flows store the node-data schema version each node was created with. On load, the
+flows store runs `spec.migrate(data, fromVersion)` for any node whose saved version is behind the
+current `spec.version`, before instantiating — so a control-set change **degrades gracefully, never
+shatters**. Node ids are stable and opaque forever (never renamed, never `.split()`); a missing node
+type loads as a graceful placeholder rather than dropping the node.
+
+---
+
+## Registration & auto-discovery (the glob)
+
+There is **no central registration edit**. `src/renderer/registry/nodeRegistry.ts` eagerly globs
+every `node.ts` and assembles the registry, failing loudly at import (CI-caught) on a missing
+default export or a duplicate id:
+
+```ts
+const modules = import.meta.glob<NodeSpec>('./**/node.ts', { eager: true, import: 'default' })
+// → nodeSpecs, colocatedDefinitions, colocatedExecutors, COLOCATED_PURE_NODE_TYPES
+```
+
+`src/renderer/engine/executors/index.ts` then exposes `builtinExecutors = { ...colocatedExecutors,
+...subflowExecutors }` — the glob plus the one dynamically-instantiated `subflow` instance node
+(which has no `NodeDefinition`, so it isn't glob-discovered). The `pure` set is derived from
+`pure: true`; a `models` declaration auto-appends standardized `loading/progress/done/error` outputs
+plus a populated `model` select.
+
+**Adding a built-in node** = drop one folder `registry/<cat>/<id>/node.ts` (+ an optional `.vue` if
+using `component`). Nothing else. CI guard tests enforce the invariants:
+
+- `nodeRegistry.test.ts` — count-equality (`colocatedNodeIds.length === allNodes.length`), no dup ids, default-export present, pure ⊆ colocated.
+- `node-import-hygiene.test.ts` — no `node.ts` may value-import a store/registry/ExecutionEngine-value (would close the eager-glob load-time cycle; use `import type` or a lazy dynamic import).
+- `registry-integrity.test.ts` — the historically dual-id `counter`/`sample-hold` are each served by the executor whose outputs match their def.
+- `custom-node-components.test.ts` — `nodeTypes`/`CUSTOM_NODE_TYPE_IDS` derive correctly from `component`.
+- `public-exports.test.ts` (+ `tests/contracts/public-exports.ts`) — the governed `@/engine/executors` export surface still resolves.
+
+---
+
+## Example: a stateful node with a rich definition
+
+```ts
+// src/renderer/registry/math/smooth/node.ts
+import { defineNode } from '@/engine/defineNode'
+import { defineNodeState } from '@/engine/nodeState'
+import type { NodeDefinition } from '@/stores/nodes'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+
+const definition: NodeDefinition = {
+  id: 'smooth', name: 'Smooth', version: '1.0.0', category: 'math',
+  description: 'Smooth value changes over time', icon: 'trending-up',
+  platforms: ['web', 'electron'],
+  inputs: [{ id: 'value', type: 'number', label: 'Value' }],
+  outputs: [{ id: 'result', type: 'number', label: 'Result' }],
+  controls: [{ id: 'factor', type: 'slider', label: 'Factor', default: 0.1, props: { min: 0.01, max: 1, step: 0.01 } }],
+}
+
+export const smoothState = defineNodeState<number>({ label: 'smooth' })
+
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const target = ctx.num('value', 0)
+  const factor = ctx.num('factor', 0.1)
+  const prev = smoothState.get(ctx.nodeId) ?? target
+  const next = prev + (target - prev) * Math.min(1, factor * ctx.deltaTime * 60)
+  smoothState.set(ctx.nodeId, next)
+  return new Map([['result', next]])
+}
+
+export default defineNode({ definition, executor })   // stateful ⇒ not pure
 ```
 
 ---
 
-## Custom Node UI Components
+## Best practices
 
-Custom nodes use Vue Flow's `NodeProps` and manage their own handles. They are registered in `src/renderer/registry/components.ts` using `markRaw()` and listed in `specialNodeTypes` in `src/renderer/stores/flows.ts`.
+**DO** — self-contain the node in its folder; give every control a sensible default; use
+`ctx.num/bool/str/trig` (typed + coerced) over raw `.get()`; put per-node state in `defineNodeState`
+(auto-cleanup); prefer the declarative `ui` schema, reserving `component` for genuinely bespoke
+surfaces; document with `info.overview`/`tips`/`pairsWith`; bump `version` + write `migrate()` before
+any control-schema change.
 
-### Custom Component Structure
-
-```vue
-<script setup lang="ts">
-import { computed } from 'vue'
-import { NodeProps, Handle, Position } from '@vue-flow/core'
-import { useNodesStore } from '@/stores/nodes'
-import { useFlowsStore } from '@/stores/flows'
-
-const props = defineProps<NodeProps>()
-const nodesStore = useNodesStore()
-const flowsStore = useFlowsStore()
-
-const definition = computed(() =>
-  nodesStore.getDefinition(props.data?.nodeType as string)
-)
-
-function updateValue(key: string, value: unknown) {
-  flowsStore.updateNodeData(props.id, { [key]: value })
-}
-</script>
-
-<template>
-  <div class="custom-node">
-    <!-- Custom UI here -->
-    <Handle type="target" :position="Position.Left" />
-    <Handle type="source" :position="Position.Right" />
-  </div>
-</template>
-```
-
-### Registration
-
-```typescript
-// src/renderer/registry/components.ts
-import { markRaw } from 'vue'
-import { DispatchNode } from './logic/dispatch'
-
-export const nodeTypes = {
-  default: markRaw(BaseNode),
-  dispatch: markRaw(DispatchNode),
-  // ... other custom nodes
-}
-
-// src/renderer/stores/flows.ts
-const specialNodeTypes = ['trigger', 'monitor', 'dispatch', /* ... */]
-```
+**DON'T** — value-import a store / the registry / an ExecutionEngine value into a `node.ts`
+(closes the eager-glob cycle — `import type`, or lazy `import()` the executor module, like the clasp
+nodes); block the frame (mark heavy async work `deferred`, offload to a worker); leak resources
+(always give `defineNodeState` a `dispose` for Tone/sockets/workers); `.split()` a node id (ids are
+opaque); hand-edit a central registry list (there isn't one — the glob discovers your folder).
 
 ---
 
-## Node Auto-Discovery
-
-### Custom Nodes Folder Structure
-
-```
-custom-nodes/
-├── my-color-mixer/
-│   ├── definition.json       # Required: Node definition
-│   ├── executor.ts           # Required: Executor class
-│   ├── ui.vue               # Optional: Custom UI component
-│   ├── icon.svg             # Optional: Custom icon
-│   └── README.md            # Optional: Documentation
-├── my-data-processor/
-│   └── ...
-```
-
-### Auto-Discovery Logic
-
-```typescript
-// src/nodes/discovery.ts
-
-export async function discoverCustomNodes(
-  basePath: string
-): Promise<NodeDefinition[]> {
-  const nodes: NodeDefinition[] = [];
-
-  // Only in Electron
-  if (!window.electronAPI) {
-    return nodes;
-  }
-
-  const folders = await window.electronAPI.listDirectory(basePath);
-
-  for (const folder of folders) {
-    const defPath = `${basePath}/${folder}/definition.json`;
-
-    try {
-      const content = await window.electronAPI.readFile(defPath);
-      const definition = JSON.parse(content) as NodeDefinition;
-
-      // Validate required fields
-      if (!definition.id || !definition.name) {
-        console.warn(`Invalid node definition in ${folder}`);
-        continue;
-      }
-
-      // Mark as custom
-      definition.category = 'custom';
-
-      // Check for custom icon
-      const iconPath = `${basePath}/${folder}/icon.svg`;
-      if (await window.electronAPI.fileExists(iconPath)) {
-        definition.icon = `custom:${folder}`;
-      }
-
-      nodes.push(definition);
-    } catch (error) {
-      console.warn(`Failed to load custom node from ${folder}:`, error);
-    }
-  }
-
-  return nodes;
-}
-```
-
----
-
-## Best Practices
-
-### DO
-
-1. **Use descriptive IDs**: `audio-frequency-analyzer` not `afa`
-2. **Provide defaults**: Every control should have a sensible default
-3. **Document thoroughly**: Include descriptions and tooltips
-4. **Handle errors gracefully**: Don't crash on bad input
-5. **Clean up resources**: Implement `dispose()` properly
-6. **Use typed outputs**: Match declared types exactly
-7. **Support both platforms**: Provide web fallbacks when possible
-
-### DON'T
-
-1. **Block the main thread**: Use workers for heavy computation
-2. **Leak memory**: Release buffers, textures, streams
-3. **Ignore dispose**: Always clean up in `dispose()`
-4. **Hardcode values**: Use controls for configuration
-5. **Assume platform**: Check capabilities before using
-
----
-
-## Related Documents
+## Related documents
 
 - [Architecture](./ARCHITECTURE.md)
-- [Execution Engine](./EXECUTION_ENGINE.md)
-- [Master Plan](../plans/MASTER_PLAN.md)
+- [Extensibility Architecture](../plans/EXTENSIBILITY_ARCHITECTURE_2026-06-28.md) — the design + risk register
+- [Declarative UI / NodeView design](../plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md)
+- [File Format Spec](../plans/FILE_FORMAT_SPEC_2026-06-28.md) · [Security Model](../plans/SECURITY_MODEL_2026-06-28.md) · [Policies](../plans/POLICIES_2026-06-28.md)

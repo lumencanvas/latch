@@ -6,6 +6,307 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 87) — committed the Phase-6 completion to phase0-file-format (2 commits)
+
+The whole later-80→86 body (Phase 6 finished to 241/241 + the deep-audit fixes + the doc refresh) is now committed
+to `phase0-file-format` — author Moheeb Zara, no AI attribution — as two each-green commits:
+- **`254d77d`** — *Complete Phase-6 per-node co-location: all 241 nodes.* The ~168-node tail (shared-executor /
+  clean-inline / stateful / component buckets, import-variant) + the `nodeTypeIds` component-`.vue` cycle-break +
+  the `node-import-hygiene` guard + the `counter`/`sample-hold` dual-id resolution (winning def+executor co-located,
+  losing rivals deleted) + the tightened count-equality gate. 251 files, +1477/−1533. Gate at tip: typecheck clean ·
+  lint 0 err · `test:unit` 2299 pass + 11 todo · build ok.
+- **(this docs commit)** — *docs: Phase 6 complete + refresh NODE_SPEC/ARCHITECTURE to v2.0* + HANDOFF/ROADMAP.
+
+`main` untouched. `smooth` and everything else from earlier this session (later-73→79) was already on the branch;
+the split here is code (254d77d) vs docs, each independently green. Nothing material remains on the co-location
+thread — see later-86 for the ui-migration audit (migrate 0) and the honest end-state.
+
+---
+
+## 2026-07-12 (later 86) — maturity close-out: ui-migration audit (verdict 0) + architecture-doc refresh + stale-comment fixes
+
+The remaining optional Phase-6 polish, done and closed honestly.
+
+**ui-schema migration AUDITED (22-agent workflow + adversarial verify) → migrate ZERO more.** The optional
+Phase-D item ("migrate bespoke component SFCs → declarative `ui` schema") is effectively COMPLETE: the 4 cleanly-
+mappable nodes were already migrated (xy-pad→xy, parametric-eq→eq, wavetable→wave, envelope-visual→env); a rigorous
+per-node investigation of the remaining **22 found 0 safe migrations** — every one correctly stays `component`.
+Root cause: `NodeView.vue` only dispatches `slider/number/toggle/select/text/color/xy/eq/env/wave/knob/readout/asset/
+connection`; the `WidgetType` enum also declares `piano/gamepad/button/curve/gradient/image` but they have NO
+render branch. Every remaining component needs a `<canvas>` (7 mediapipe overlays, oscilloscope/graph, main-output),
+an embedded runtime (emulator), a code editor (function), an interactive instrument/control with an unimplemented
+widget (keyboard/synth→piano, gamepad-visual→gamepad, trigger→button, monitor→button + JSON pretty-print, textbox→
+multi-line textarea), or bespoke port/resize chrome (knob, dispatch, step-sequencer). **These ARE the legitimate
+`component` escape-hatch cases** (EXTENSIBILITY principle #1: declarative for the 90%, code for the 10%). Migrating
+more would mean BUILDING new NodeView widgets — a separate feature effort, deliberately NOT done (marginal benefit,
+real regression risk, unverifiable visual parity). Verdict recorded in the `latch-colocation-phase6` memory so it
+isn't re-litigated.
+
+**Architecture docs refreshed to post-Phase-6 reality (fork).** `docs/architecture/NODE_SPEC.md` (v1.0→2.0) and
+`ARCHITECTURE.md` (v1.0→2.0, −1610/+433) rewritten: excised the never-built class-based design (`class NodeRegistry`/
+`BaseNodeExecutor`/`FlowGraph`/`WorkerPool`, `src/nodes/` layout, `ClaspFlowDB`) and documented the ACTUAL
+architecture — `defineNode` frozen contract, the eager-glob co-location registry, the engine's acyclic
+never-imports-registry/stores injection rule, per-frame rAF execution, `defineNodeState` lifecycle draining, the
+`nodeTypeIds` cycle-breaker, `builtinExecutors = {...colocatedExecutors, ...subflow}`, the guard-test suite, and the
+`ui`-vs-`component` widget reality. Renamed "CLASP Flow"→"LATCH" throughout (CLASP = only the connectivity
+protocol/`clasp` category). Reviewed for accuracy against the live code — sound.
+
+**3 stale source comments fixed** (flagged by the doc fork): `defineNode.ts` + `nodeRegistry.ts` said co-location/
+glob "come later / matches ZERO files" (now complete); `stores/nodes.ts` `WidgetType` said "only `env` dispatched,
+xy/eq/wave reserved" (all 4 dispatched; piano/gamepad/curve/gradient/image/button correctly noted as reserved/no
+render branch).
+
+**State:** Phase 6 fully complete + matured. typecheck clean · lint 0 err · count 241 · (no functional code changed
+this pass — comments + docs only, so the later-85 gate results stand: test:unit 2299, build ok, browser smoke 0
+errors). On `phase0-file-format`; `main` untouched; **not committed**. Nothing material remains on the co-location
+thread; further work is net-new features (build NodeView widgets to migrate more nodes; the Phase 7+ roadmap items).
+
+---
+
+## 2026-07-12 (later 85) — Phase 6 COMPLETE: 241/241 co-located (counter/sample-hold dual-id resolved) + end-state cleanup
+
+**Resolved the final 2 dual-id nodes and finished the migration.** `counter` (historically defined in data+code)
+and `sample-hold` (logic+code) each shipped TWO executor implementations; the registry deduped by id and could pair
+the surviving definition with the WRONG executor (the real historical bug: sample-hold's def declared output
+`output` while its executor wrote `result`). **The mature fix: co-locate each id in ONE folder pairing the surviving
+def with its WINNING executor — which structurally eliminates the crossing hazard — and DELETE the losing rivals.**
+The winners align with each node's own category, so no merged-folder awkwardness:
+- **`counter` → `registry/code/counter/node.ts`** (imports code.ts's rich counterExecutor: count/normalized/atMin/
+  atMax). Deleted utility.ts's poorer `counterExecutor` + `counterState` (dead — never registered, only self-tested).
+- **`sample-hold` → `registry/logic/sample-hold/node.ts`** (imports utility.ts's sampleHoldExecutor: outputs
+  `result`). Deleted code.ts's dead `sampleHoldExecutor` (the `output`-writing crossed rival).
+- Both defs **byte-faithful**. `code`/`logic` barrels → `[]`; the now-empty `codeExecutors`/`utilityExecutors` maps
+  deleted (+ their index.ts import/spread).
+
+**Tests reworked:** `registry-integrity.test.ts` rewritten from map-key-presence checks (which referenced the now-
+deleted maps) to a **behavioural dual-id guard** — imports the co-located node.ts defaults and asserts each
+executor's outputs match its def's ports (counter emits count/normalized/atMin/atMax; sample-hold holds `result`),
+so a future wrong-executor swap fails. Removed the deleted-rival coverage: utility.test.ts's counter block (5 cases,
+tested dead code) + engine-leak's counter seed.
+
+**Count-equality gate TIGHTENED (POLICIES §1):** `nodeRegistry.test.ts` now asserts `colocatedNodeIds.length ===
+allNodes.length` (+ every allNodes id ∈ colocated) — this **PROVES the whole library is co-located**: any lingering
+legacy-only def would diverge the counts. `find registry -name node.ts` = **241**; zero legacy definition files
+remain.
+
+**End-state cleanup:** `builtinExecutors` collapsed to `{ ...colocatedExecutors, ...subflowExecutors }` — the glob
+plus the ONE dynamic `subflow` instance node (no NodeDefinition, so not glob-discovered). Deleted the now-empty
+`audioExecutors`/`visualExecutors`/`aiExecutors` maps + their imports/spreads. `executors/index.ts` is now a thin
+barrel: the public-export contract re-exports + this minimal assembly. (Honest note: `executors/index.ts` and
+`components.ts` are NOT deleted — the EXTENSIBILITY end-state hoped to, but they serve real roles: assembling
+`builtinExecutors` + the contract surface, and deriving `nodeTypes` for Vue Flow. They're now minimal, not the
+"node smeared across 6 files" problem Phase 6 solved.)
+
+**Phase 6 DONE: 241/241 (100%).** Gates: typecheck clean · lint 0 err (49 any-warns) · `test:unit` **2299** / 144
+· build ok · **browser smoke: count 241, counter/sample-hold present, Play→Stop clean, 0 errors.** On
+`phase0-file-format`; `main` untouched; **not committed**. Remaining Phase-6-adjacent polish (optional): migrate the
+~22 bespoke component SFCs to the declarative `ui` schema where sensible (canvas-heavy ones like oscilloscope stay
+`component`); refresh the stale `NODE_SPEC.md`/`ARCHITECTURE.md` (still say "CLASP Flow", pre-`defineNode`).
+
+---
+
+## 2026-07-12 (later 84) — deep audit (clean) + broke the component cycle + finished the bucket: 214 → 239/241 (99%)
+
+**Deep adversarial audit first (27-agent workflow: 16 per-category byte-faith diffs vs git + 8 dimension audits,
+each finding adversarially verified).** Result: **0 critical, 0 major, 0 refuted.** All 141 session migrations
+byte-faithful (def objects identical to HEAD originals; import-variant executors unchanged in their category
+files); registration/contract-pins/test-integrity/state-lifecycle/runtime-functional all clean; plan-honesty
+verified the docs TRUE (214/241, bucket counts, the component-cycle claim all real). Only **3 minor + a few nits**,
+all fixed:
+1. **Cycle-safety is an unenforced convention** → added `tests/unit/registry/node-import-hygiene.test.ts`: scans
+   every co-located `node.ts` and fails on a non-`type` value-import of `@/stores/*`, `@/registry/{components,
+   allNodes,nodeRegistry}`, or `@/engine/ExecutionEngine` (the eager-glob boot-crash footgun). Mutation-verified.
+2. **`messagingExecutors` empty dead map** → deleted (+ its index.ts import/spread).
+3. **`connectivityExecutors` shadowed http/ws/mqtt entries** (superseded by the ConnectionManager execs) → removed.
+
+**Then broke the component blocker (later-83's cycle) with a leaf registry.** New `registry/nodeTypeIds.ts` (imports
+NOTHING) holds the bespoke-component id set; `allNodes.ts` (the earliest registry module) PUSHES it via
+`setCustomNodeTypeIds`; `stores/flows.ts` reads `isCustomNodeTypeId` instead of importing `CUSTOM_NODE_TYPE_IDS`
+from `components.ts`. That severs the sole `stores → registry` edge (`flows → components → allNodes → nodeRegistry`),
+so a component `node.ts`'s `.vue → stores/flows → leaf` now dead-ends — no cycle. `components.ts` still owns
+`CUSTOM_NODE_TYPE_IDS` + `nodeTypes` (usePersistence + tests unchanged). **Boot-order proven safe empirically:** the
+browser smoke's auto-loaded starter flow has **9 component nodes and all 9 resolved to their bespoke types (0
+misresolved)** through the real rehydration path.
+
+**Then co-located all 22 component `.vue` nodes + 3 specials (25 nodes → 239/241):** debug monitor/oscilloscope/
+graph/equalizer · inputs trigger/textbox/keyboard/knob/gamepad-visual · ai mediapipe×7 · logic dispatch · outputs
+main-output · timing step-sequencer · audio synth · code function · emulation emulator (in-place `definition.ts`→
+`node.ts`, keeping the `./XNode.vue` import; `_synth`/`_knob`/`_function` de-underscored; emulator's CORE_LIST/
+DEFAULT_EJS_DATA imports preserved) + **llm** (moved the WEBLLM catalog consts + repointed the `webllm.ts ↔
+registry/ai/llm` import to `/node`; the resulting `node.ts ⇄ webllm.ts` cycle is harmless — neither touches the
+other's export at init) + **midi-input/webcam** (re-categorized flat nodes → co-located in their home folders,
+inputs barrel emptied). All defs **byte-faithful**. `input`/`audio`/`emulation`/`connectivity`/`messaging` barrels
++ maps now fully drained.
+
+**Co-located total: 239 / 241 (99.2%).** Remaining **2 = `counter` + `sample-hold`** — dual-id nodes (code+utility,
+guarded by `registry-integrity`); co-locating needs a merged-folder decision (which category owns the id + update
+the guard), not a mechanical migration. **Gates:** typecheck clean · lint 0 err (49 any-warns) · `test:unit`
+**2302** / 144 (+ the 240-case hygiene guard) · build ok · **browser smoke: count 241, all component/special ids
+present, starter-flow component nodes resolve correctly, 0 errors.** On `phase0-file-format`; `main` untouched;
+**not committed** (~409 changed files, git diff HEAD −9451 lines).
+
+---
+
+## 2026-07-12 (later 83) — component bucket BLOCKED by a module-load cycle (investigated, attempted, reverted clean)
+
+Ran a 54-agent verification workflow → precise per-node manifest for the final 27 (component `.vue` bucket +
+specials). Generated the 17 clean component-folder nodes (`definition.ts`→`node.ts` in-place, keeping the
+`./XNode.vue` import) — typecheck passed, but the **coupled tests exposed a systemic circular-import**, so the
+whole batch was **reverted to a clean 214/241** (all defs/barrels/maps restored; typecheck clean · `test:unit`
+2062 · build ok · browser smoke count 241, all 22 component/special ids present, 0 errors).
+
+**THE BLOCKER (why component co-location can't be a mechanical migration):** the eager `nodeRegistry` glob loads
+every `node.ts` at startup. A component `node.ts` must `import XNode from './XNode.vue'` and put
+`component: markRaw(XNode)` on the definition **synchronously** (the `custom-node-components.test.ts` gate asserts
+`nodeTypes[id].__name === 'MonitorNode'` AND reference-identity `nodeTypes[id] === def.component`, so
+`defineAsyncComponent`/lazy wrapping is out). But **all 22 component `.vue` files import `@/stores/flows`**, and
+`stores/flows` → `@/registry/components` (for `CUSTOM_NODE_TYPE_IDS`) → `@/registry/allNodes` →
+`@/registry/nodeRegistry` (the glob, mid-run) → back to the component `node.ts` → `colocatedDefinitions` is still
+`undefined` → `allNodes.ts:57` throws (`Cannot read properties of undefined (reading 'map')`). Same cycle class as
+clasp (later-81) but via the `.vue`, so the lazy-executor trick does NOT help — you can't defer the component ref.
+
+**THE FIX (deliberate, not tail-of-session):** break the `stores/flows → registry/components` module-load edge.
+`flows.ts` uses `CUSTOM_NODE_TYPE_IDS` only at runtime (line 14 `resolveNodeType`, line 338 rehydration). Introduce
+a leaf `registry/nodeTypeIds.ts` (`setCustomNodeTypeIds`/`isCustomNodeTypeId`) that `components.ts` populates after
+deriving, and switch `flows.ts` to the leaf getter. **RISK that needs care:** the rehydration path (flows.ts:338)
+can run early at boot — if `isCustomNodeTypeId` fires before `components.ts` has evaluated, nodes silently render as
+generic `custom`. Must guarantee population order (or a safe fallback) + test the persistence/rehydrate path. This
+is a core-store change → do it focused, with the maintainer aware, then the 22 component nodes co-locate mechanically
+via the recipe below. `counter`/`sample-hold` (dual-id) still need the merged-folder decision; `llm` needs its
+`webllm.ts ↔ registry/ai/llm` import repointed (manifest has the exact 9-step plan).
+
+**Component-node recipe (once the cycle is broken):** each is `registry/<cat>/<id>/` = `definition.ts` (imports
+`markRaw`+`./XNode.vue`, `export const xNode`) + `index.ts` (shim) + `XNode.vue`. Convert `definition.ts`→`node.ts`
+IN-PLACE: keep `markRaw`+`./XNode.vue` (same folder), swap type import to `@/stores/nodes`, add `import { defineNode }`
++ the executor import, `export const xNode`→`const definition`, append `export default defineNode({ definition,
+executor })`; delete `index.ts`; trim barrel; strip map entry (mediapipe→aiExecutors, dispatch→utilityExecutors,
+main-output→visualExecutors, monitor/osc/graph/eq + trigger/textbox/keyboard + step-sequencer→index builtin;
+synth→audioExecutors, function→codeExecutors; knob/gamepad-visual/emulator have the def in `index.ts` not
+`definition.ts`; synth/knob are `_`-folders to de-underscore; emulator's def imports CORE_LIST/DEFAULT_EJS_DATA).
+Generator: `scratchpad/gen-component.mjs` (works for the 17 clean ones; the cycle is the only blocker). Full verified
+per-node manifest archived in the workflow output.
+
+---
+
+## 2026-07-12 (later 82) — clean-inline (23) + stateful (24) buckets co-located: 167 → 214 (89%)
+
+Continued the Phase-6 sweep with the same import-variant recipe (co-locate the def in node.ts, import the
+executor const from its category file — the executor **and any `defineNodeState` store stay put**, so every
+leak/gc/pin test keeps passing with no store move). All gates green each step; browser-verified.
+
+- **Clean-inline (23): logic 9 · data 3 · visual color+color-ramp 2 · code template 1 · inputs constant/slider/
+  xy-pad 3 · timing time/lfo/euclidean 3 · math random 1 · ai retrieve 1.** Import-variant (not literal inline —
+  faster/safer; executors stay in their shared files which still hold non-migrated nodes). Handled: `index.ts`
+  builtin-map entries (constant/slider/xy-pad/time/lfo/euclidean/random/color-ramp/retrieve register there, not a
+  category map) removed + their now-unused imports dropped (tsconfig `noUnusedLocals` catches these precisely).
+  `_`-folder/`definition.ts` orphans (xy-pad) deleted + tests repointed. `retrieve`/`color-ramp` pins stay valid
+  via `export * from './rag'`/per-cat.
+- **Stateful (24 of 31): timing start/interval/delay/timer/metronome/tap-tempo 6 · math spring/slew/deriv/integral/
+  tween 5 · connectivity http/ws/mqtt 3 · logic gate/changed/latch 3 · data debounce/throttle 2 · messaging send/
+  receive 2 · debug console 1 · inputs gamepad 1 · ai vector-memory 1.** Stores stay in the category files →
+  `engine-leak`/`executor-gc`/`public-exports` (59) all green with zero repoints.
+  - **AUDIT MISCLASSIFICATION caught (7 reverted):** the audit tagged `debug/monitor`, `debug/oscilloscope`,
+    `debug/equalizer`, `inputs/trigger`, `timing/step-sequencer` as *stateful* but they are **component+stateful**
+    (bespoke `.vue` via `markRaw` — verbatim def copy pulled in `component: markRaw(X)` with no import → typecheck
+    caught it). `ai/llm` is special (WEBLLM catalog + a `webllm.ts ↔ registry/ai/llm` import cycle). `logic/
+    sample-hold` is **dual-id** (logic+code, guarded by `registry-integrity` like `counter`). All 7 reverted to
+    legacy (barrels + defs + map entries restored) → belong to the component bucket / dual-id follow-up.
+
+**Co-located total: 214 / 241 (89%).** Gates: typecheck clean · lint 0 err (49 any-warns) · `test:unit` **2062** /
+144 · build ok · **browser smoke: count 241, 31 sampled stateful+reverted ids present, Play→Stop drains state
+stores cleanly, 0 errors.** On `phase0-file-format`; `main` untouched; **not committed** (~327 changed files).
+
+**Remaining 27 — the component + special bucket (hardest; per-node care needed):** ~20 component nodes (bespoke
+`.vue`): ai 7 mediapipe, inputs textbox/knob/keyboard/gamepad-visual/trigger, debug graph/monitor/oscilloscope/
+equalizer, timing step-sequencer, audio synth, code function, logic dispatch, + emulation/outputs. **Recipe
+(worked out, folder-structured):** each lives in `registry/<cat>/<id>/` with `definition.ts` (imports `markRaw`
++ `./XNode.vue`) + `index.ts` (shim) + `XNode.vue`. Convert `definition.ts` → `node.ts` in-place: keep the
+`markRaw`+`./XNode.vue` imports (same folder → path unchanged), swap the type import to `@/stores/nodes`, add
+`import { defineNode }` + the executor import, change `export const xNode` → `const definition`, append
+`export default defineNode({ definition, executor: xExec })`; delete `index.ts`; trim barrel; strip the map entry;
+delete the orphaned `definition.ts`. The `custom-node-components.test.ts` gate verifies the `component`-derivation.
+**Specials:** `llm` (break the webllm cycle — lazy or move the WEBLLM constants), `counter`+`sample-hold` (dual-id
+→ merged-folder decision), `midi-input`/`webcam` (re-categorized cross-imports). Generators in scratchpad
+(`migrate-shared.mjs`).
+
+---
+
+## 2026-07-12 (later 81) — ultracode audit + shared-executor sweep: 74 → 167 co-located (93 nodes this session)
+
+**Full Phase-6 audit (Workflow, 36 agents): verified inventory + per-node migration manifest.** 167 legacy + 74
+co-located = 241 (clean 1:1 file→node; the count "gap" was `_`-folder re-export shims). Remaining tail buckets
+(verified against real code, not the stale later-77 guess): **shared-executor 94, clean-inline 23, stateful 31,
+component 15.** Full test-coupling + contract-pin map captured (audit.json in scratchpad; workflow output archived).
+
+**Then swept the shared-executor bucket — 93 nodes co-located across two batches, all gates green each step:**
+- **Batch 1 (37, fully-migratable categories):** 3d 16 · opencv 9 · clasp 10 · subflows 2. Barrels → `[]`; the
+  `<cat>Executors` map + its import/`...spread` removed from `executors/index.ts`; the `.ts` files KEPT (executor
+  consts + dispose/gc infra stay — node.ts import them). subflows keeps its map's third `subflow` key (instance
+  node, no def). **Cycle trap hit + solved:** clasp.ts imports a Pinia store → the eager glob loading
+  `clasp/node.ts` formed a load-time cycle (`node.ts→clasp.ts→stores/flows→registry/components→allNodes→
+  nodeRegistry`, undefined executor). Fix = **lazy executor** in node.ts: `const executor = async (ctx) => (await
+  import('@/engine/executors/clasp')).xExecutor(ctx)` — glob no longer loads the cyclic module; it still loads at
+  startup via index.ts. Only store-importing executor files need this (`grep -lE "from '@/stores/" executors/*.ts`
+  = clasp only; subflow's is `import type`, safe).
+- **Sweep (56, partial-map categories):** visual 11 · audio 18 · ai 13 · connectivity 7 · code 3 · inputs
+  (audio-input) 1 · data (texture-to-data) 1 · math (noise/easing) 2. Per-category: generate node.ts (import the
+  executor const), remove only the migrated keys from the category map + barrel, delete the flat def file, keep
+  the executor file. **Variants handled:** (a) audio's `wavetable`/`parametric-eq`/`envelope-visual` were
+  `_`-folder shims → the manifest defFile pointed at the real `_folder/index.ts`; co-located byte-faithfully, the
+  3 orphaned `_folders` deleted, their migration tests repointed to `node.ts`. (b) ai's 7 model nodes wrap the def
+  in `withModelSelect(definition, 'task')` (task ≠ id for image-captioning/text-transformation) → node.ts
+  replicates the wrapper; behavior preserved. (c) `noise`/`easing` map entries live in `index.ts`'s builtin map,
+  not a category map → removed manually. (d) `code.counter` DEFERRED — dual-id (code+utility), guarded by
+  `registry-integrity.test.ts`. **Def-side test repoints** (legacy flat-file def imports → `node.ts` default's
+  `.definition`): when-migration, vla, node-requirements (7 connectivity + speech-recognition + audio-input),
+  ai-catalog (7), easing, + the 3 audio migration tests. All **byte-faithful** (def diffs clean, generator-driven).
+
+**Co-located total: 167 / 241 (69%).** Gates at checkpoint: typecheck clean · lint 0 err (49 any-warns) ·
+`test:unit` **2062** / 144 · build ok · **browser smoke: count 241, 22 sampled ids across all swept categories
+present, Play→Stop clean, 0 errors.** On `phase0-file-format`; `main` untouched; **not committed**. Remaining 74:
+clean-inline 23 (executor-body inline), stateful 31 (smooth pattern + barrel re-export for pinned stores),
+component 15 (carry `component:`, incl. 6 `_`-folders), + `counter`/`sample-hold` dual-id. Reusable generators in
+scratchpad (`migrate-shared.mjs`, `gen-data.mjs` pattern).
+
+---
+
+## 2026-07-12 (later 80) — de-risked the stateful `defineNodeState` co-location path (proven on `smooth`)
+
+**The biggest un-proven Phase-6 bucket (~57 stateful nodes) is now proven end-to-end.** Per the maintainer's
+call, took the one node that isolates the risk — `smooth` (simplest stateful node: a single `number` store, no
+dispose) — and co-located it fully, then verified the state-lifecycle survives the move.
+
+**The risk, resolved.** The open question was whether a `defineNodeState` store still gets its gc/dispose drained
+after moving out of `executors/math.ts` into a co-located `node.ts`. It does, structurally: the `nodeRegistry`
+glob is **`{ eager: true }`**, so `node.ts` loads at startup and its module-scope `defineNodeState(...)`
+self-registers into `nodeState.ts`'s module-level `lifecycles[]` exactly as before; the engine holds that array
+**by reference** (`registerLifecycles(collectedLifecycles())` in `composables/useExecutionEngine.ts:26`), so a
+registration from any eagerly-imported module is seen. No leak, no timing gap.
+
+**What moved.** `registry/math/smooth/node.ts` now owns the def + the `smoothState` store + `smoothExecutor`
+(all **byte-identical** to their git originals — def-diff + exec/state-diff both clean). Stripped from
+`executors/math.ts` (now just `randomExecutor`; the `defineNodeState` import went with it), the barrel/import/
+map-entry in `registry/math/index.ts` + `executors/index.ts`.
+
+**The contract wrinkle — the memory's warning was RIGHT.** `tests/contracts/public-exports.ts` pins `smoothState`
+AND `smoothExecutor` (plus ~14 other state stores + several executors) as resolving from `@/engine/executors`.
+Deleting them from `math.ts` would drop them from the `export * from './math'` surface and red the
+`public-exports` gate. **Template established (keeps the gate green with ZERO fixture edits):**
+`executors/index.ts` adds `export { smoothState, smoothExecutor } from '@/registry/math/smooth/node'`. Bonus:
+`smooth.test.ts` (imports both from `@/engine/executors`) needed **no change** — same instance, identity
+preserved. So for the ~16 pinned stateful nodes, prefer the barrel re-export over repointing the test. No cycle
+risk (`executors/index.ts` already imports `colocatedExecutors` from nodeRegistry → already depends on every
+node.ts transitively).
+
+**Co-located total: 74 nodes** (73 + smooth). **Gates:** typecheck clean · lint 0 err (49 any-warns) · `test:unit`
+**2062** / **144 files** (smooth.test.ts + public-exports 59 both green unchanged) · build ok · **browser smoke:
+count 241, `smooth` registered once, Play→Stop drained the store cleanly, 0 real console errors**. On
+`phase0-file-format`; `main` untouched; **not committed**. Next: the recipe is now proven for the whole stateful
+tail — sweep it (each pinned store needs the barrel re-export; dispose-bearing stores also verify teardown), OR
+knock out the highest-yield low-risk shared-executor batch (3d 16 / opencv 9 — zero test/component coupling).
+
+---
+
 ## 2026-07-12 (later 79) — committed later-73→78 to phase0-file-format (3 commits)
 
 The whole uncommitted body (later-73 through later-78, ~120 files) was reviewed clean (two ultracode audits) and
