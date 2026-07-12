@@ -5,20 +5,33 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import {
-  stringConcatExecutor,
-  stringSplitExecutor,
-  stringReplaceExecutor,
-  stringSliceExecutor,
-  stringCaseExecutor,
-  stringLengthExecutor,
-  stringContainsExecutor,
-  stringStartsEndsExecutor,
-  stringTrimExecutor,
-  stringPadExecutor,
-  stringTemplateExecutor,
-  stringMatchExecutor,
-} from '@/engine/executors/string'
+// These string nodes are co-located (Phase 6); their executors ship on the
+// node.ts default export, not a legacy executor barrel. Alias so call sites are unchanged.
+import stringConcatNode from '@/registry/string/string-concat/node'
+import stringSplitNode from '@/registry/string/string-split/node'
+import stringReplaceNode from '@/registry/string/string-replace/node'
+import stringSliceNode from '@/registry/string/string-slice/node'
+import stringCaseNode from '@/registry/string/string-case/node'
+import stringLengthNode from '@/registry/string/string-length/node'
+import stringContainsNode from '@/registry/string/string-contains/node'
+import stringStartsEndsNode from '@/registry/string/string-starts-ends/node'
+import stringTrimNode from '@/registry/string/string-trim/node'
+import stringPadNode from '@/registry/string/string-pad/node'
+import stringTemplateNode from '@/registry/string/string-template/node'
+import stringMatchNode from '@/registry/string/string-match/node'
+
+const stringConcatExecutor = stringConcatNode.executor
+const stringSplitExecutor = stringSplitNode.executor
+const stringReplaceExecutor = stringReplaceNode.executor
+const stringSliceExecutor = stringSliceNode.executor
+const stringCaseExecutor = stringCaseNode.executor
+const stringLengthExecutor = stringLengthNode.executor
+const stringContainsExecutor = stringContainsNode.executor
+const stringStartsEndsExecutor = stringStartsEndsNode.executor
+const stringTrimExecutor = stringTrimNode.executor
+const stringPadExecutor = stringPadNode.executor
+const stringTemplateExecutor = stringTemplateNode.executor
+const stringMatchExecutor = stringMatchNode.executor
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 // Helper to create a mock execution context

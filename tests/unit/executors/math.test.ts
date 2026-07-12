@@ -5,18 +5,29 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import {
-  trigExecutor,
-  powerExecutor,
-  vectorMathExecutor,
-  moduloExecutor,
-  lerpExecutor,
-  stepExecutor,
-  smoothstepExecutor,
-  remapExecutor,
-  quantizeExecutor,
-  wrapExecutor,
-} from '@/engine/executors/index'
+// These pure math nodes are co-located (Phase 6); their executors ship on the
+// node.ts default export, not the legacy executor barrel. Alias so call sites are unchanged.
+import trigNode from '@/registry/math/trig/node'
+import powerNode from '@/registry/math/power/node'
+import vectorMathNode from '@/registry/math/vector-math/node'
+import moduloNode from '@/registry/math/modulo/node'
+import lerpNode from '@/registry/math/lerp/node'
+import stepNode from '@/registry/math/step/node'
+import smoothstepNode from '@/registry/math/smoothstep/node'
+import remapNode from '@/registry/math/remap/node'
+import quantizeNode from '@/registry/math/quantize/node'
+import wrapNode from '@/registry/math/wrap/node'
+
+const trigExecutor = trigNode.executor
+const powerExecutor = powerNode.executor
+const vectorMathExecutor = vectorMathNode.executor
+const moduloExecutor = moduloNode.executor
+const lerpExecutor = lerpNode.executor
+const stepExecutor = stepNode.executor
+const smoothstepExecutor = smoothstepNode.executor
+const remapExecutor = remapNode.executor
+const quantizeExecutor = quantizeNode.executor
+const wrapExecutor = wrapNode.executor
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 // Helper to create a mock execution context

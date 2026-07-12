@@ -5,35 +5,63 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import {
-  arrayLengthExecutor,
-  arrayGetExecutor,
-  arrayFirstLastExecutor,
-  arrayContainsExecutor,
-  arraySliceExecutor,
-  arrayJoinExecutor,
-  arrayReverseExecutor,
-  arrayPushExecutor,
-  arrayFilterNullsExecutor,
-  arrayUniqueExecutor,
-  arraySortExecutor,
-  arrayRangeExecutor,
-  objectGetExecutor,
-  objectSetExecutor,
-  objectKeysExecutor,
-  objectValuesExecutor,
-  objectHasExecutor,
-  objectMergeExecutor,
-  objectCreateExecutor,
-  objectEntriesExecutor,
-  toStringExecutor,
-  toNumberExecutor,
-  toBooleanExecutor,
-  parseIntExecutor,
-  parseFloatExecutor,
-  toArrayExecutor,
-  formatNumberExecutor,
-} from '@/engine/executors/data'
+// These data nodes are co-located (Phase 6); their executors ship on the node.ts
+// default export, not the legacy executor barrel. Alias so call sites are unchanged.
+import arrayLengthNode from '@/registry/data/array-length/node'
+import arrayGetNode from '@/registry/data/array-get/node'
+import arrayFirstLastNode from '@/registry/data/array-first-last/node'
+import arrayContainsNode from '@/registry/data/array-contains/node'
+import arraySliceNode from '@/registry/data/array-slice/node'
+import arrayJoinNode from '@/registry/data/array-join/node'
+import arrayReverseNode from '@/registry/data/array-reverse/node'
+import arrayPushNode from '@/registry/data/array-push/node'
+import arrayFilterNullsNode from '@/registry/data/array-filter-nulls/node'
+import arrayUniqueNode from '@/registry/data/array-unique/node'
+import arraySortNode from '@/registry/data/array-sort/node'
+import arrayRangeNode from '@/registry/data/array-range/node'
+import objectGetNode from '@/registry/data/object-get/node'
+import objectSetNode from '@/registry/data/object-set/node'
+import objectKeysNode from '@/registry/data/object-keys/node'
+import objectValuesNode from '@/registry/data/object-values/node'
+import objectHasNode from '@/registry/data/object-has/node'
+import objectMergeNode from '@/registry/data/object-merge/node'
+import objectCreateNode from '@/registry/data/object-create/node'
+import objectEntriesNode from '@/registry/data/object-entries/node'
+import toStringNode from '@/registry/data/to-string/node'
+import toNumberNode from '@/registry/data/to-number/node'
+import toBooleanNode from '@/registry/data/to-boolean/node'
+import parseIntNode from '@/registry/data/parse-int/node'
+import parseFloatNode from '@/registry/data/parse-float/node'
+import toArrayNode from '@/registry/data/to-array/node'
+import formatNumberNode from '@/registry/data/format-number/node'
+
+const arrayLengthExecutor = arrayLengthNode.executor
+const arrayGetExecutor = arrayGetNode.executor
+const arrayFirstLastExecutor = arrayFirstLastNode.executor
+const arrayContainsExecutor = arrayContainsNode.executor
+const arraySliceExecutor = arraySliceNode.executor
+const arrayJoinExecutor = arrayJoinNode.executor
+const arrayReverseExecutor = arrayReverseNode.executor
+const arrayPushExecutor = arrayPushNode.executor
+const arrayFilterNullsExecutor = arrayFilterNullsNode.executor
+const arrayUniqueExecutor = arrayUniqueNode.executor
+const arraySortExecutor = arraySortNode.executor
+const arrayRangeExecutor = arrayRangeNode.executor
+const objectGetExecutor = objectGetNode.executor
+const objectSetExecutor = objectSetNode.executor
+const objectKeysExecutor = objectKeysNode.executor
+const objectValuesExecutor = objectValuesNode.executor
+const objectHasExecutor = objectHasNode.executor
+const objectMergeExecutor = objectMergeNode.executor
+const objectCreateExecutor = objectCreateNode.executor
+const objectEntriesExecutor = objectEntriesNode.executor
+const toStringExecutor = toStringNode.executor
+const toNumberExecutor = toNumberNode.executor
+const toBooleanExecutor = toBooleanNode.executor
+const parseIntExecutor = parseIntNode.executor
+const parseFloatExecutor = parseFloatNode.executor
+const toArrayExecutor = toArrayNode.executor
+const formatNumberExecutor = formatNumberNode.executor
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
 // Helper to create a mock execution context

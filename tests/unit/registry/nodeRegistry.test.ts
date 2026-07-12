@@ -25,9 +25,19 @@ describe('nodeRegistry auto-glob', () => {
     expect(new Set(colocatedNodeIds).size).toBe(colocatedNodeIds.length)
   })
 
-  it('every co-located id is a real legacy node id (no orphans)', () => {
-    const legacy = new Set(allNodes.map((n) => n.id))
-    for (const id of colocatedNodeIds) expect(legacy.has(id)).toBe(true)
+  it('every co-located id resolves exactly once in allNodes (colocated-wins dedup holds)', () => {
+    // The old form (colocated ⊆ allNodes ids) was tautological: allNodes.ts spreads
+    // colocatedDefinitions in unconditionally, so it could never fail. It was also
+    // premised on colocated ⊆ legacy, now false — migrated nodes are deleted from
+    // their category barrel, and atan2/min/max were born co-located (never legacy).
+    // The invariant with teeth: each co-located id appears in the live registry EXACTLY
+    // once — a lingering legacy definition of the same id must be filtered out
+    // (colocated-wins), never double-registered, and a co-located node is never dropped.
+    const counts = new Map<string, number>()
+    for (const n of allNodes) counts.set(n.id, (counts.get(n.id) ?? 0) + 1)
+    for (const id of colocatedNodeIds) {
+      expect(counts.get(id), `co-located id "${id}" not registered exactly once in allNodes`).toBe(1)
+    }
   })
 
   it('count guard: co-located set never exceeds the legacy node set', () => {

@@ -27,10 +27,8 @@ import {
 } from './signal'
 import { subflowExecutors } from './subflow'
 import { threeExecutors } from './3d'
-import { stringExecutors } from './string'
 import { messagingExecutors } from './messaging'
 import { utilityExecutors } from './utility'
-import { dataExecutors } from './data'
 import { gamepadExecutor, gamepadVisualExecutor } from './gamepad'
 import { emulatorExecutor, gcEmulationState, disposeAllEmulationNodes } from './emulation'
 import { opencvExecutors } from './opencv'
@@ -49,30 +47,11 @@ import {
   lfoExecutor,
 } from './input'
 import {
-  mapRangeExecutor,
-  clampExecutor,
-  absExecutor,
   smoothExecutor,
   randomExecutor,
-  trigExecutor,
-  powerExecutor,
-  vectorMathExecutor,
-  moduloExecutor,
-  lerpExecutor,
-  stepExecutor,
-  smoothstepExecutor,
-  remapExecutor,
-  quantizeExecutor,
-  wrapExecutor,
 } from './math'
 import {
-  compareExecutor,
-  andExecutor,
-  orExecutor,
-  notExecutor,
   gateExecutor,
-  selectExecutor,
-  switchExecutor,
 } from './logic'
 import {
   startExecutor,
@@ -142,10 +121,9 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   'step-sequencer': stepSequencerExecutor,
   euclidean: euclideanExecutor,
 
-  // Math (add/subtract/multiply/divide now co-located — see ...colocatedExecutors below)
-  'map-range': mapRangeExecutor,
-  clamp: clampExecutor,
-  abs: absExecutor,
+  // Math — pure nodes (add/subtract/multiply/divide/atan2/min/max + abs/clamp/map-range/
+  // modulo/power/trig/vector-math/lerp/step/smoothstep/remap/quantize/wrap) are co-located;
+  // see ...colocatedExecutors below. Only the stateful/impure remainder is wired here.
   smooth: smoothExecutor,
   random: randomExecutor,
   noise: noiseExecutor,
@@ -156,26 +134,10 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   integral: integralExecutor,
   'tween-to-target': tweenToTargetExecutor,
   'tap-tempo': tapTempoExecutor,
-  trig: trigExecutor,
-  power: powerExecutor,
-  'vector-math': vectorMathExecutor,
-  modulo: moduloExecutor,
-  // Advanced Math
-  lerp: lerpExecutor,
-  step: stepExecutor,
-  smoothstep: smoothstepExecutor,
-  remap: remapExecutor,
-  quantize: quantizeExecutor,
-  wrap: wrapExecutor,
 
   // Logic
-  compare: compareExecutor,
-  and: andExecutor,
-  or: orExecutor,
-  not: notExecutor,
+  // compare/and/or/not/select/switch are co-located (registry/logic/<node>/node.ts).
   gate: gateExecutor,
-  select: selectExecutor,
-  switch: switchExecutor,
 
   // Debug
   monitor: monitorExecutor,
@@ -217,8 +179,7 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   // 3D
   ...threeExecutors,
 
-  // String
-  ...stringExecutors,
+  // String — all co-located (registry/string/<node>/node.ts).
 
   // Messaging
   ...messagingExecutors,
@@ -226,8 +187,9 @@ export const builtinExecutors: Record<string, NodeExecutorFn> = {
   // Utility (value checking, type comparison, flow control)
   ...utilityExecutors,
 
-  // Data (arrays, objects, type conversion)
-  ...dataExecutors,
+  // Data — array/object/type-conversion nodes are co-located (registry/data/<node>/node.ts).
+  // json-parse/json-stringify/router/debounce/throttle/texture-to-data executors live in
+  // their own maps (connectivity/utility/etc.), registered elsewhere in this file.
 
   // OpenCV.js (CPU image processing)
   ...opencvExecutors,

@@ -1,10 +1,6 @@
-export { compareNode } from './compare'
-export { andNode } from './and'
-export { orNode } from './or'
-export { notNode } from './not'
+// compare / and / or / not / select / switch are co-located in
+// registry/logic/<node>/node.ts (Phase 6).
 export { gateNode } from './gate'
-export { switchNode } from './switch'
-export { selectNode } from './select'
 // New value checking nodes
 export { isNullNode } from './is-null'
 export { isEmptyNode } from './is-empty'
@@ -20,14 +16,7 @@ export { latchNode } from './latch'
 export { matchValueNode } from './match-value'
 export { dispatchNode } from './dispatch'
 
-import { compareNode } from './compare'
-import { andNode } from './and'
-import { orNode } from './or'
-import { notNode } from './not'
 import { gateNode } from './gate'
-import { switchNode } from './switch'
-import { selectNode } from './select'
-// New value checking nodes
 import { isNullNode } from './is-null'
 import { isEmptyNode } from './is-empty'
 import { passIfNode } from './pass-if'
@@ -44,13 +33,7 @@ import { dispatchNode } from './dispatch'
 import type { NodeDefinition } from '../types'
 
 export const logicNodes: NodeDefinition[] = [
-  compareNode,
-  andNode,
-  orNode,
-  notNode,
   gateNode,
-  switchNode,
-  selectNode,
   // New value checking nodes
   isNullNode,
   isEmptyNode,
