@@ -57,7 +57,8 @@ export type ExecutionMode = 'full' | 'dirty'
 export const PURE_NODE_TYPES: ReadonlySet<string> = new Set([
   'constant',
   'add', 'subtract', 'multiply', 'divide',
-  'map-range', 'clamp', 'abs', 'trig', 'power', 'vector-math', 'modulo',
+  'map-range', 'clamp', 'abs', 'trig', 'atan2', 'power', 'vector-math', 'modulo',
+  'min', 'max',
   'lerp', 'step', 'smoothstep', 'remap', 'quantize', 'wrap',
   'compare', 'and', 'or', 'not', 'select', 'switch',
 ])

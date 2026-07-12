@@ -1,9 +1,11 @@
-import type { NodeDefinition } from '../types'
-import { getPresetById, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
+import { imageFxRgbShiftExecutor } from '@/engine/executors/visual'
 
 const preset = getPresetById('chromatic-aberration')!
 
-export const imageFxRgbShiftNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-fx-rgb-shift',
   name: 'RGB Shift FX',
   version: '1.0.0',
@@ -11,7 +13,7 @@ export const imageFxRgbShiftNode: NodeDefinition = {
   description: 'Chromatic aberration — separates the red/green/blue channels.',
   icon: 'shuffle',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'source', type: 'texture', label: 'Source' }],
+  inputs: [{ id: 'source', type: 'texture', label: 'Source' }, ...generateModulationInputs(preset.uniforms)],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   controls: generateControlsFromUniforms(preset.uniforms),
   tags: ['fx', 'rgb shift', 'chromatic aberration', 'effect', 'video', 'vj'],
@@ -25,3 +27,5 @@ export const imageFxRgbShiftNode: NodeDefinition = {
     pairsWith: ['webcam', 'image-fx-glitch', 'blend', 'main-output'],
   },
 }
+
+export default defineNode({ definition, executor: imageFxRgbShiftExecutor })

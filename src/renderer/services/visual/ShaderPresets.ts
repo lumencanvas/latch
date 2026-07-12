@@ -999,6 +999,30 @@ export function generateInputsFromUniforms(uniforms: UniformDefinition[]): Array
 }
 
 /**
+ * Generate `number` input ports for the numeric (float/int) uniforms of a preset, so those
+ * params can be modulated by wiring an LFO / audio / time node into them. The port id matches
+ * the uniform name (and the auto-generated control's id), so the executor resolves a connected
+ * input over the control value (`ctx.inputs.get(name) ?? ctx.controls.get(name)`). Numeric-only
+ * by design: vec/color uniforms stay control-only. The `as const` type keeps the result
+ * assignable to `PortDefinition[]` without importing the store type here.
+ */
+export function generateModulationInputs(uniforms: UniformDefinition[]): Array<{
+  id: string
+  type: 'number'
+  label: string
+  default: unknown
+}> {
+  return uniforms
+    .filter(u => u.type === 'float' || u.type === 'int')
+    .map(u => ({
+      id: u.name,
+      type: 'number' as const,
+      label: u.label,
+      default: u.default,
+    }))
+}
+
+/**
  * Generate control definitions from parsed uniforms
  * This creates sliders, color pickers, etc. for the properties panel
  */

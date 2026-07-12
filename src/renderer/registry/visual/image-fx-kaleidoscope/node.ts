@@ -1,9 +1,11 @@
-import type { NodeDefinition } from '../types'
-import { getPresetById, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
+import { imageFxKaleidoscopeExecutor } from '@/engine/executors/visual'
 
 const preset = getPresetById('kaleidoscope')!
 
-export const imageFxKaleidoscopeNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-fx-kaleidoscope',
   name: 'Kaleidoscope FX',
   version: '1.0.0',
@@ -11,7 +13,7 @@ export const imageFxKaleidoscopeNode: NodeDefinition = {
   description: 'Mirror-segment kaleidoscope symmetry.',
   icon: 'aperture',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'source', type: 'texture', label: 'Source' }],
+  inputs: [{ id: 'source', type: 'texture', label: 'Source' }, ...generateModulationInputs(preset.uniforms)],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   controls: generateControlsFromUniforms(preset.uniforms),
   tags: ['fx', 'kaleidoscope', 'mirror', 'symmetry', 'effect', 'video', 'vj'],
@@ -25,3 +27,5 @@ export const imageFxKaleidoscopeNode: NodeDefinition = {
     pairsWith: ['webcam', 'shader', 'blend', 'main-output'],
   },
 }
+
+export default defineNode({ definition, executor: imageFxKaleidoscopeExecutor })

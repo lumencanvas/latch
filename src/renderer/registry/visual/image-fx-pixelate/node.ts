@@ -1,9 +1,11 @@
-import type { NodeDefinition } from '../types'
-import { getPresetById, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
+import { imageFxPixelateExecutor } from '@/engine/executors/visual'
 
 const preset = getPresetById('pixelate')!
 
-export const imageFxPixelateNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-fx-pixelate',
   name: 'Pixelate FX',
   version: '1.0.0',
@@ -11,7 +13,7 @@ export const imageFxPixelateNode: NodeDefinition = {
   description: 'Mosaic / pixelation effect by quantizing UV coordinates.',
   icon: 'grid-3x3',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'source', type: 'texture', label: 'Source' }],
+  inputs: [{ id: 'source', type: 'texture', label: 'Source' }, ...generateModulationInputs(preset.uniforms)],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   controls: generateControlsFromUniforms(preset.uniforms),
   tags: ['fx', 'pixelate', 'mosaic', 'lo-fi', 'effect', 'video', 'vj'],
@@ -25,3 +27,5 @@ export const imageFxPixelateNode: NodeDefinition = {
     pairsWith: ['webcam', 'image-fx-posterize', 'blend', 'main-output'],
   },
 }
+
+export default defineNode({ definition, executor: imageFxPixelateExecutor })

@@ -11,6 +11,7 @@ import {
   getPresetById,
   getPresetsByCategory,
   generateInputsFromUniforms,
+  generateModulationInputs,
   generateControlsFromUniforms,
   uniformTypeToDataType,
   SHADER_PRESETS,
@@ -408,6 +409,53 @@ describe('ShaderPresets - generateInputsFromUniforms', () => {
       label: 'Color',
       default: [1, 1, 1],
     })
+  })
+})
+
+describe('ShaderPresets - generateModulationInputs', () => {
+  it('should generate number input ports for float and int uniforms', () => {
+    const uniforms: UniformDefinition[] = [
+      { name: 'u_intensity', type: 'float', label: 'Intensity', default: 0.5 },
+      { name: 'u_levels', type: 'int', label: 'Levels', default: 4 },
+    ]
+
+    const inputs = generateModulationInputs(uniforms)
+
+    expect(inputs).toHaveLength(2)
+    expect(inputs[0]).toEqual({
+      id: 'u_intensity',
+      type: 'number',
+      label: 'Intensity',
+      default: 0.5,
+    })
+    expect(inputs[1]).toEqual({
+      id: 'u_levels',
+      type: 'number',
+      label: 'Levels',
+      default: 4,
+    })
+  })
+
+  it('should skip non-numeric (vec/color/sampler) uniforms — numeric-only by design', () => {
+    const uniforms: UniformDefinition[] = [
+      { name: 'u_amount', type: 'float', label: 'Amount', default: 0.1 },
+      { name: 'u_key_color', type: 'vec3', label: 'Key Color', default: [0, 1, 0] },
+      { name: 'u_offset', type: 'vec2', label: 'Offset', default: [0, 0] },
+      { name: 'u_tex', type: 'sampler2D', label: 'Tex', default: 0 },
+    ]
+
+    const inputs = generateModulationInputs(uniforms)
+
+    expect(inputs).toHaveLength(1)
+    expect(inputs[0].id).toBe('u_amount')
+    expect(inputs.every(i => i.type === 'number')).toBe(true)
+  })
+
+  it('should return an empty array when no numeric uniforms exist', () => {
+    const uniforms: UniformDefinition[] = [
+      { name: 'u_color', type: 'vec3', label: 'Color', default: [1, 1, 1] },
+    ]
+    expect(generateModulationInputs(uniforms)).toEqual([])
   })
 })
 

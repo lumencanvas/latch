@@ -777,11 +777,14 @@ function runImageFx(ctx: ExecutionContext, presetId: string): Map<string, unknow
 
   renderer.setTime(ctx.totalTime)
 
-  // Build uniforms from controls (control id === uniform name). Presets here use
-  // only float and a single vec3 color, so the marshaling stays small.
+  // Build uniforms (control/port id === uniform name). Presets here use only float and a
+  // single vec3 color, so the marshaling stays small.
   const uniforms: ThreeShaderUniform[] = []
   for (const def of preset.uniforms) {
-    const raw = ctx.controls.get(def.name) ?? def.default
+    // A wired input port modulates the param; otherwise fall back to the control, then the
+    // preset default. Mirrors the color-correction executor idiom. Numeric ports only —
+    // vec3 uniforms have no input port, so they always resolve from the control.
+    const raw = ctx.inputs.get(def.name) ?? ctx.controls.get(def.name) ?? def.default
     if (def.type === 'vec3') {
       let value: number[]
       if (typeof raw === 'string' && raw.startsWith('#')) value = hexToVec3(raw)
@@ -2134,14 +2137,9 @@ export function disposeSnapshotNode(nodeId: string): void {
 export const visualExecutors: Record<string, NodeExecutorFn> = {
   snapshot: snapshotExecutor,
   shader: shaderExecutor,
-  'image-fx-glitch': imageFxGlitchExecutor,
-  'image-fx-rgb-shift': imageFxRgbShiftExecutor,
-  'image-fx-pixelate': imageFxPixelateExecutor,
-  'image-fx-kaleidoscope': imageFxKaleidoscopeExecutor,
-  'image-fx-scanlines': imageFxScanlinesExecutor,
-  'image-fx-posterize': imageFxPosterizeExecutor,
-  'image-fx-dither': imageFxDitherExecutor,
-  'image-fx-chroma-key': imageFxChromaKeyExecutor,
+  // image-fx-* executors are registered via co-located node.ts (registry/visual/image-fx-*/),
+  // which import the exported imageFx*Executor consts below. Kept out of this map so the
+  // co-located specs are the single registration site (colocated-wins in builtinExecutors).
   webcam: webcamExecutor,
   'webcam-snapshot': webcamSnapshotExecutor,
   color: colorExecutor,

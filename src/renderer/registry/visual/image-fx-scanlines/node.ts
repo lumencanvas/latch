@@ -1,9 +1,11 @@
-import type { NodeDefinition } from '../types'
-import { getPresetById, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
+import { imageFxScanlinesExecutor } from '@/engine/executors/visual'
 
 const preset = getPresetById('scanlines')!
 
-export const imageFxScanlinesNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-fx-scanlines',
   name: 'Scanlines FX',
   version: '1.0.0',
@@ -11,7 +13,7 @@ export const imageFxScanlinesNode: NodeDefinition = {
   description: 'CRT-style horizontal scanlines with optional roll.',
   icon: 'tv',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'source', type: 'texture', label: 'Source' }],
+  inputs: [{ id: 'source', type: 'texture', label: 'Source' }, ...generateModulationInputs(preset.uniforms)],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   controls: generateControlsFromUniforms(preset.uniforms),
   tags: ['fx', 'scanlines', 'crt', 'retro', 'effect', 'video', 'vj'],
@@ -25,3 +27,5 @@ export const imageFxScanlinesNode: NodeDefinition = {
     pairsWith: ['webcam', 'image-fx-rgb-shift', 'shader', 'main-output'],
   },
 }
+
+export default defineNode({ definition, executor: imageFxScanlinesExecutor })

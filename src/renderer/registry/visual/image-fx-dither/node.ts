@@ -1,9 +1,11 @@
-import type { NodeDefinition } from '../types'
-import { getPresetById, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
+import { imageFxDitherExecutor } from '@/engine/executors/visual'
 
 const preset = getPresetById('dither')!
 
-export const imageFxDitherNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-fx-dither',
   name: 'Dither FX',
   version: '1.0.0',
@@ -11,7 +13,7 @@ export const imageFxDitherNode: NodeDefinition = {
   description: 'Ordered (Bayer) dithering with color quantization.',
   icon: 'grip',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'source', type: 'texture', label: 'Source' }],
+  inputs: [{ id: 'source', type: 'texture', label: 'Source' }, ...generateModulationInputs(preset.uniforms)],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   controls: generateControlsFromUniforms(preset.uniforms),
   tags: ['fx', 'dither', 'bayer', 'retro', 'lo-fi', 'effect', 'video', 'vj'],
@@ -25,3 +27,5 @@ export const imageFxDitherNode: NodeDefinition = {
     pairsWith: ['webcam', 'image-fx-posterize', 'cv-grayscale', 'main-output'],
   },
 }
+
+export default defineNode({ definition, executor: imageFxDitherExecutor })

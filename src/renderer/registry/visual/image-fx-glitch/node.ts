@@ -1,9 +1,11 @@
-import type { NodeDefinition } from '../types'
-import { getPresetById, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
+import { imageFxGlitchExecutor } from '@/engine/executors/visual'
 
 const preset = getPresetById('glitch')!
 
-export const imageFxGlitchNode: NodeDefinition = {
+const definition: NodeDefinition = {
   id: 'image-fx-glitch',
   name: 'Glitch FX',
   version: '1.0.0',
@@ -11,7 +13,7 @@ export const imageFxGlitchNode: NodeDefinition = {
   description: 'Digital glitch / datamosh effect — block displacement and RGB tearing.',
   icon: 'zap',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'source', type: 'texture', label: 'Source' }],
+  inputs: [{ id: 'source', type: 'texture', label: 'Source' }, ...generateModulationInputs(preset.uniforms)],
   outputs: [{ id: 'texture', type: 'texture', label: 'Texture' }],
   controls: generateControlsFromUniforms(preset.uniforms),
   tags: ['fx', 'glitch', 'datamosh', 'effect', 'video', 'vj', 'distortion'],
@@ -25,3 +27,5 @@ export const imageFxGlitchNode: NodeDefinition = {
     pairsWith: ['webcam', 'shader', 'blend', 'main-output'],
   },
 }
+
+export default defineNode({ definition, executor: imageFxGlitchExecutor })
