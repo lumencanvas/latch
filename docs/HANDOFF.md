@@ -6,6 +6,270 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 79) — committed later-73→78 to phase0-file-format (3 commits)
+
+The whole uncommitted body (later-73 through later-78, ~120 files) was reviewed clean (two ultracode audits) and
+is now committed to `phase0-file-format` as three dependency-ordered, each-green commits (no AI attribution;
+author Moheeb Zara):
+- **`6c28815`** — *Add modulation input ports to the image-fx shader nodes + atan2/min/max.* The Phase-5
+  feature work: real modulation ports on all 8 image-fx nodes (tips now true), + the atan2/min/max primitives,
+  PURE_NODE_TYPES 24→27.
+- **`91cf4d1`** — *Co-locate the pure math, logic, string, and data nodes (Phase 6).* 58 nodes moved to
+  registry/<cat>/<node>/node.ts (13 math + 6 logic + 12 string + 27 data); executors inline verbatim;
+  string.ts/data.ts deleted; test repoints; pathHelpers shared module; nodeRegistry guard fixed.
+- **(this docs commit)** — HANDOFF later-73→79 + ROADMAP/kickoff/strategy sync.
+
+**Co-located total: 73 nodes** (the 4 math from later-71 were already committed; +8 image-fx +3 primitives +13
+math +6 logic +12 string +27 data this body). `main` untouched. Split rationale: per-increment commits were
+infeasible (the 4 co-location increments all edit `executors/index.ts`), so the split is by clean file boundary
+(Phase-5 files ∩ Phase-6 files = ∅), each commit a self-contained green unit. Gate baseline at commit tip:
+typecheck clean · lint 0 err · `test:unit` 2062/144 · build ok · browser 0 errors · count 241.
+
+**Remaining tail (from the later-77 classification, ~132 legacy nodes):** clean-inline one-offs (visual `color`,
+math `random`, code `template`, logic `match-value`, inputs constant/slider/xy-pad, timing lfo/time — cross-file
+execs); the **shared-executor sweep** (~68: 3d 16 / opencv 9 / clasp 10 / ai / audio / visual-remaining — import
+the exported executor, image-fx style); the **stateful `defineNodeState` path** (~57, NOT yet proven — the
+biggest un-de-risked chunk); component (~18); data's 6 deferred. See the co-location memory for the full map.
+
+---
+
+## 2026-07-12 (later 78) — ultracode per-node verify + 27 data nodes co-located (generator-assisted)
+
+**Per-node verification workflow (33 agents, one per data node): exact migration manifest.** Each returned
+executor location, purity, test-coupling, output ids, and gotchas — catching what a coarse classification misses.
+Buckets: **27 clean-inline in data.ts** (array-* 12, object-* 8, type-conversion 7), 3 cross-file (json-parse/
+json-stringify executors in connectivity.ts, router in utility.ts), 2 stateful (debounce/throttle), 1 service
+(texture-to-data). The manifest's gotchas were load-bearing: e.g. several "boolean" output ports actually emit
+numeric 1/0, array-get JSON.parses its default + supports negative indexing — all preserved by verbatim copy.
+
+**Migrated the 27 clean-inline data nodes** → registry/data/<id>/node.ts. Because 27 is large, I generated them
+with a **byte-faithful generator script** (`scratchpad/gen-data.mjs`): id→executor from the `dataExecutors` map
+(source of truth), def extracted from each legacy file, executor extracted from data.ts by name, assembled
+verbatim. **Verified: all 27 defs + executors byte-identical** to git originals (the safety net — no generator
+drift). Shared-helper handling: `getByPath` (used by object-get + object-has) and `setByPath` (object-set) were
+extracted verbatim into **`registry/data/pathHelpers.ts`**; those 3 node.ts import from it (rule-of-three → shared
+module, not duplication).
+
+**Full-category cleanup:** `executors/data.ts` **deleted** (its map held exactly the 27; helpers moved); the
+`dataExecutors` import + spread removed from `executors/index.ts`; barrel trimmed to the 6 deferred. The 6
+deferred nodes keep their defs + executors (json-* in connectivity.ts, router/debounce/throttle in utility.ts,
+texture-to-data in visual.ts — all verified still registered). `data.test.ts` (73 tests) repointed to the 27
+node.ts defaults (aliased).
+
+**Co-located so far: 73 nodes** (20 math + 8 image-fx + 6 logic + 12 string + 27 data). **Gates:** typecheck
+clean · lint 0 err · `test:unit` **2062** / **144 files** (data.test.ts green via repoint) · build ok · **browser
+0 errors**, count **241** (all 27 + 6 deferred present, object-get pathHelpers import works at runtime). On
+`phase0-file-format`; `main` untouched; **not committed** (~120 files across later-73→78). Next per the plan:
+data's 6 remainders + the shared-executor sweep (3d 16 / opencv 9 — service-singleton import variant), or the
+stateful `defineNodeState` path.
+
+---
+
+## 2026-07-11 (later 77) — ultracode tail-classification plan + string category fully co-located (12)
+
+**Multi-agent classification of the whole remaining tail (Workflow, 16 category agents): 204 legacy nodes
+classified** into migration buckets, giving a verified map for draining Phase-6. Result:
+- **clean-inline** (pure/simple self-contained → inline the executor): biggest in **data (~30)**, **string (12)**,
+  **logic-remaining (9)**, **inputs (3)**, **timing (2, cross-file — lfo/time executors live in input.ts)**,
+  plus one-offs (visual `color`, math `random`, code `template`, logic `match-value`, data `json-parse`/
+  `json-stringify` whose executors live in connectivity.ts).
+- **shared-executor** (import the exported executor, image-fx style): **~68** — all of 3d (16), opencv (9), clasp
+  (10), most ai (15) + audio + most visual-remaining (12). These call service singletons (three renderer / audio
+  manager / cv service).
+- **stateful** (`defineNodeState` / module Map → the NOT-yet-proven path): **~57** — connectivity (11), most
+  audio, timing (6), math-remaining (6: random is the exception), messaging (2), logic gate/latch/sample-hold, etc.
+- **component** (bespoke SFC): **~18** — ai (7 vision), debug (4), inputs (3), etc.
+- **CAVEAT (never trust the plan blindly):** the string agent misclassified string as "no test coupling", but
+  `string.test.ts` imports all 12 executors directly. I verified every node against the actual code before
+  migrating — the plan is a guide, not gospel. Full plan JSON archived in the workflow output.
+
+**Then continued — co-located the entire `string` category (12 nodes):** `string-concat`/`-split`/`-replace`/
+`-slice`/`-case`/`-length`/`-contains`/`-starts-ends`/`-trim`/`-pad`/`-template`/`-match` → registry/string/
+<id>/node.ts (executor INLINE). Notes: (1) migrated **without `pure:true`** — they're pure fns but none were in
+PURE_NODE_TYPES, so omitting preserves exact current behavior (a pure-promotion is a separate optional increment).
+(2) `string-case`'s 4 helpers (toCamelCase/Snake/Kebab/Title) moved inline with it. (3) **Fully-migrated category
+handling:** barrel → `export const stringNodes = []` (kept so allNodes.ts import stays), and `executors/string.ts`
++ its `stringExecutors` map + the `import`/`...spread` in executors/index.ts were **deleted** wholesale.
+(4) `string.test.ts` (106 tests) repointed to the node.ts defaults (aliased). All 12 defs + executors
+**byte-identical** to git originals.
+
+**Co-located so far: 46 nodes** (20 math + 8 image-fx + 6 logic + 12 string). **Gates:** typecheck clean · lint
+0 err · `test:unit` **2062** / **144 files** (string.test.ts green via repoint) · build ok · **browser 0 errors**,
+count **241**. On `phase0-file-format`; `main` untouched; **not committed**. Next per the plan: `data` (~30 clean,
+mostly test-coupled array-ops), then the shared-executor sweep (3d/opencv), then the stateful path.
+
+---
+
+## 2026-07-11 (later 76) — ultracode audit of later-73/74/75 (clean) + 4 nit fixes + logic co-location
+
+**Multi-agent adversarial audit (Workflow, 11 agents): 4 confirmed findings, 0 critical/major, 0 dismissed.**
+7 review dimensions (byte-faithfulness, registration/imports, purity/dirty-mode, modulation, tests, honesty/docs,
+whole-diff bug hunt) each with an independent high-effort skeptic verify pass. Every core dimension came back
+**clean** — byte-faithful migrations, sound registration (count 241, dedup, colocated-wins, no cycles), all pure
+nodes genuinely pure, modulation correct end-to-end (the dead-slider risk confirmed absent), test integrity
+intact, tips honest, no functional defect in the whole diff. The 4 findings + fixes:
+1. **[minor, test-quality] `nodeRegistry.test.ts` "no orphans" guard was tautological** — it checked colocated
+   ids against `allNodes` (which unconditionally contains them), so it could never fail; its premise (colocated ⊆
+   legacy) is also now false (atan2/min/max born co-located; migrated nodes leave the barrel). **Fix:** rewrote it
+   to the real invariant — each colocated id resolves in `allNodes` **exactly once** (colocated-wins dedup holds;
+   catches a dropped node or a double-registration). *Note: the verify agent's suggested fix (compare vs
+   `legacyNodes`) was WRONG — migrated ids aren't in the barrels either, so it would fail for every migrated node;
+   applied the correct invariant instead.*
+2. **[nit] doc off-by-one** — ROADMAP/HANDOFF said "only 7 image-fx nodes lacked ports"; actually all 8 did (4 had
+   over-promising tips; later-73 retrofitted 7, chroma-key in later-74). Corrected both docs.
+3. **[nit] `pure-node-types.test.ts` stale docstring** — "literal 24-id set" + "no nodes co-located yet"/
+   "Vacuously true until Phase 6" now false (27 ids; co-location live). Refreshed the comments.
+4. **[nit] stray `orig_math.ts` backup at repo root** — a migration backup that `git add` would stage. Deleted.
+
+**Then continued the main thread — co-located the 6 pure logic nodes** (`compare`/`and`/`or`/`not`/`select`/
+`switch`) to registry/logic/<node>/node.ts (executor moved INLINE, `pure:true`). Cleaner than math: the 6 pure
+executors have ZERO test imports and `public-exports.ts` explicitly does NOT pin individual logic executors (only
+the stateful `gate`/`monitor`), so no test rewiring. `gate` (stateful `defineNodeState`) correctly stays legacy;
+`executors/logic.ts` trimmed to just `gateLastValue`/`gateExecutor`; barrel + index import/map stripped. All 6
+defs + executors **byte-identical** to git originals.
+
+**Co-located so far: 34 nodes** (20 math + 8 image-fx + 6 logic). **Gates:** typecheck clean · lint 0 err ·
+`test:unit` **2062** / **144 files** · build ok · **browser 0 errors**, count **241** (migrations preserve count;
+all 6 logic present, `gate` still legacy). On `phase0-file-format`; `main` untouched; **not committed**. Next:
+continue the tail, or take the stateful `defineNodeState` co-location path (gate/smooth/counter/monitor).
+
+---
+
+## 2026-07-11 (later 75) — Phase-6 co-location: the 13 pure math nodes (true self-containment)
+
+Continued the confirmed main thread (per-node co-location). Migrated the whole **pure-math subset** —
+`abs`, `clamp`, `map-range`, `modulo`, `power`, `trig`, `vector-math`, `lerp`, `step`, `smoothstep`, `remap`,
+`quantize`, `wrap` (13) — to `registry/math/<node>/node.ts`. Unlike the image-fx family (heavy shared executor
+→ imported), these executors are trivial and self-contained, so each moved **inline** into its `node.ts` (true
+co-location: def + executor together, `pure: true`), and the bodies were deleted from `executors/math.ts`.
+
+**The one non-obvious wrinkle — tested executors.** `executors/index.ts` does `export * from './math'`, and
+`math.test.ts` imported 10 of these executors (`trig`/`power`/`vector-math`/`modulo`/`lerp`/`step`/`smoothstep`/
+`remap`/`quantize`/`wrap`) directly to unit-test them. Deleting the bodies would break those imports. Fix:
+`math.test.ts` now imports each co-located `node.ts` default and aliases `const trigExecutor = trigNode.executor`
+— **zero call-site changes**, all assertions preserved. (This is the recipe for co-locating any executor that has
+a direct unit test; the untested `abs`/`clamp`/`map-range` were clean moves.)
+
+**Strips:** deleted the 13 legacy defs + barrel refs (`registry/math/index.ts` now lists only the 9
+stateful/impure remainders — `random`/`noise`/`easing`/`spring`/`smooth`/`slew-limiter`/`derivative`/`integral`/
+`tween-to-target`); trimmed `executors/math.ts` to just `smoothState`/`smoothExecutor`/`randomExecutor`; removed
+the 13 imports + 13 map entries from `executors/index.ts`. No circular imports (executors/math.ts imports nothing
+from registry). `smooth` (stateful, `defineNodeState`) and `random` (impure) correctly stayed legacy.
+
+**Verification:** all 13 defs **byte-identical** to their git originals (def-object diff) and all 13 executor
+bodies **byte-identical** (stripped-signature diff) — no transcription drift. `PURE_NODE_TYPES` unchanged (these
+ids were already in it; the pure-set gate stayed green). Co-located math count so far: the 7 from later-71/73
+(add/subtract/multiply/divide/atan2/min/max) + these 13 = 20; plus the 8 image-fx = 28 nodes co-located.
+
+**Gates:** typecheck clean · lint **0 err** (49 any-warns) · `test:unit` **2062** / **144 files** (math.test.ts
+rewired, count unchanged) · build ok · **browser 0 errors**, count **241** (migrations preserve count; all 13
+present, `vector-math` outputs x/y/z/magnitude intact). On `phase0-file-format`; `main` untouched; **not
+committed**. Next: continue the co-location tail (logic category is the next clean pure batch) or the stateful
+`defineNodeState` co-location path (smooth/counter/etc.), or the remaining Phase-5 stateful primitives.
+
+---
+
+## 2026-07-11 (later 74) — Deep adversarial audit of later-73 (clean) + chroma-key consistency + doc sync
+
+**Ultrathink audit of the later-73 increment: no bugs.** Two independent review agents (adversarial correctness +
+gate/honesty completeness) plus my own decisive checks. Everything still uncommitted; gates green throughout.
+
+**What was verified:**
+- **The crux — no control-shadowing regression.** The input-override (`ctx.inputs.get ?? ctx.controls.get ??
+  default`) is correct because `ExecutionEngine.getNodeInputs` (line ~395) **only** sets `ctx.inputs` for edges
+  that actually target the node with a defined source value — it never pre-populates unconnected ports. So an
+  unwired modulation port ⇒ `ctx.inputs.get` is `undefined` ⇒ the slider is honored; a wired one ⇒ coerced value
+  wins. Proven by reading the engine, not assumed. (This closes the verification boundary later-73 flagged.)
+- **Behavior preservation:** all 8 co-located image-fx defs diffed **byte-identical** to their pre-migration
+  git originals (only a trailing blank line differs) — no field transcription errors.
+- **Correctness review (agent): clean, 0 bugs** — no circular imports (`executors/visual.ts` never imports
+  `@/registry`), single registration path (colocated-wins), no dangling refs (`makeImageFxExecutor` + the 8
+  exported consts still used by the co-located `node.ts`), `atan2`/`min`/`max` genuinely pure (safe in dirty mode).
+- **Honesty sweep (agent): no over-promising tips remain anywhere** across all 290 registry files — the 4 image-fx
+  tips are now true against the generated ports; every other wiring tip names a real input port, routes an output,
+  or references dynamic ports.
+- **Hard gates all derived, none stale.** Live browser: count 241, all image-fx modulation ports + `atan2`/`min`/
+  `max` present and discoverable via the real fuzzySearch path, 0 console errors. (Note: Vue Flow keeps its own
+  internal node state, so direct store-mutation smokes don't reflect on canvas — registry-level checks are the
+  reliable signal; BaseNode renders `definition.inputs` via existing, tested layout.)
+
+**Follow-ups done (from the reviewers' notes):**
+- **chroma-key modulation ports** — the one flagged family inconsistency: `image-fx-chroma-key` now exposes its 3
+  numeric keying params (`u_similarity`/`u_smoothness`/`u_spill`) as modulation input ports like the other 7
+  (the vec3 `u_key_color` stays control-only); the executor already read `ctx.inputs ?? ctx.controls` for them, so
+  it "just works." All 8 image-fx nodes are now uniformly modulatable. Browser-verified.
+- **Doc drift sync** — the audit found no stale *hard gate*, only soft doc drift. Fixed the actively-misleading
+  ones: `docs/handoff/NEXT_SESSION_KICKOFF.md` got a later-73/74 UPDATE banner (it still said "count stays 238 /
+  first 4 math migrated"); `docs/strategy/00-repo-orientation.md` 238→241. **Deliberately NOT cherry-patched:**
+  `docs/nodes/*` (README "208 nodes", math.md documents 14 of ~31 live math nodes) is broadly stale and slated for
+  Phase-5 auto-regeneration from live defs — half-fixing it for 3 nodes would falsely imply it's maintained.
+
+**Gates:** typecheck clean · lint **0 err** (49 pre-existing any-warns) · `test:unit` **2062** / **144 files** ·
+build ok · browser **0 real errors**, count **241**. On `phase0-file-format`; `main` untouched; no AI attribution;
+**nothing committed** (awaiting ask). Next: stateful Phase-5 primitives (`phasor`/`edge`-detector/LFO `reset` via
+`defineNodeState`) or continue Phase-6 co-location on the next category.
+
+---
+
+## 2026-07-08 (later 73) — Close the Phase-5 honesty gap (image-fx modulation, for real) + first primitives, co-located
+
+Acted on later-72's recommendation. Three interleaved increments, each gate-green; **not committed** (awaiting ask).
+
+**First, an empirical correction to the audit's scope.** later-72/AUDIT §C said `image-fx-*`, audio (`wet`/
+`feedback`/`Q`), and 3D material/light all lack modulation input ports. Reading the actual defs: **only the 8
+shader-preset `image-fx-*` nodes did** (retrofitted 7 in this increment; chroma-key followed in later-74). Audio
+(`svf-filter` cutoff/resonance, `filter` frequency, `distortion`
+amount, `wavetable` frequency), 3D (`camera` posX/…, `transform` rotX/…), and the rest of visual (`blur` radius,
+`blend` mix, `displacement` strength, `color-correction` hue/…, `color-ramp` t, `transform-2d` rotate) **already
+had** input ports — their "Drive X from an LFO" tips are honest. The dishonesty was localized to four image-fx
+tips (glitch "Intensity", kaleidoscope "Rotation", pixelate "Pixels", rgb-shift "Angle") whose params were
+control-only. So instead of deleting those tips, I made them **true**.
+
+**A — Retrofit image-fx modulation for real (honesty via capability).** The infra already existed: added
+`generateModulationInputs(uniforms)` (numeric-only; `type:'number' as const` so it's `PortDefinition`-assignable
+without importing the store type) beside the existing `generateInputsFromUniforms`, and a **one-line** change in
+`runImageFx` — `ctx.inputs.get(def.name) ?? ctx.controls.get(def.name) ?? def.default` — **byte-identical idiom to
+the live `colorCorrectionExecutor`**. Every image-fx float uniform (Intensity/Speed/Segments/Rotation/Pixels/
+Amount/Angle/Lines/Scroll/Levels/Scale) is now a real input port; the four tips are honest. Unit-tested the pure
+generator (numeric-only filter **mutation-verified**: neuter it → 2 tests red) + **browser-verified** all 7 nodes
+expose the new ports in the live bundle, 0 console errors.
+  - *Verification boundary (honest):* the executor input-override path is verified by **code inspection +
+    parity** with the proven `colorCorrectionExecutor`, plus the def/port change fully verified (unit + mutation +
+    live-registry browser check). I did **not** run a full WebGL pixel-diff of a wired LFO→uniform modulation (a
+    brittle headless-GPU harness for a 1-line nullish-coalesce); the port generation is the genuinely new logic
+    and it is thoroughly covered.
+
+**B — Co-locate the whole image-fx family (Phase 6, 8 nodes).** Moved all 8 `image-fx-*` defs to
+`registry/visual/image-fx-*/node.ts` (`export default defineNode({definition, executor})`). The executors are
+**shared** (heavy renderer plumbing in `executors/visual.ts`), so each `node.ts` imports the exported
+`imageFx*Executor` const; the `visualExecutors` map entries were removed so the co-located spec is the single
+registration site (colocated-wins). Deleted the 8 legacy defs + all barrel refs. No circular import (visual.ts
+doesn't import registry). chroma-key co-located **behavior-preserving** (no new ports — its tips were already
+honest). Count for these stays 238 (co-location preserves count); browser re-verified 238, ports intact, 0 errors.
+
+**C — First new primitives, born co-located (Phase 5 + Phase 6 at once).** Verified genuinely missing (never
+assume): `trig` has single-input `atan` but **no `atan2`**; `min`/`max` existed only as clamp/wrap *bound
+controls*, never as two-signal nodes. Added `registry/math/{atan2,min,max}/node.ts` (pure, inline executors,
+mirroring the `add` reference). `PURE_NODE_TYPES` **24→27** (engine set + the canonical witness in
+`pure-node-types.test.ts`, all three `24` counts bumped — the deliberate "read the executor first" friction). New
+`math-primitives.test.ts` exercises each via its `node.ts` default export; **atan2 arg-order mutation-verified**
+(swap `(y,x)`→`(x,y)` → red). Node count **238→241** (new nodes legitimately grow the library; no hardcoded-238
+gate exists — count-equality is dynamic legacy-vs-colocated).
+
+**Still open in the modulation gap** (deferred, correctly): `phasor`/`ramp` + an `edge` *detector* + LFO
+`phase`/`reset` (all **stateful** → the `defineNodeState` co-location path, the recipe's harder case), a
+**feedback (frame-delay) visual node**, audio `wet`/`feedback`/`Q`/`ratio`/sidechain + 3D material/light
+colour/emissive ports, `blur.passes` wiring, gain/volume unit unification, filter response-curve, the inline
+connection picker, and `connectivity.md` regen.
+
+**Gates (all green):** typecheck clean · lint **0 err** (49 pre-existing any-warns) · `test:unit` **2062**/**144
+files** (+3 ShaderPresets, +9 math-primitives; pure-set gate rewritten to 27) · build ok · **browser 0 real
+errors**, live count **241**, all image-fx modulation ports + all 3 new primitives present. On `phase0-file-format`;
+`main` untouched; no AI attribution. Next: continue Phase-6 co-location per category, or take the stateful Phase-5
+primitives (phasor/edge/LFO-reset) as their own `defineNodeState` increment.
+
+---
+
 ## 2026-07-08 (later 72) — Deep plan-vs-reality audit (whole repo + app) + one doc fix
 
 A full audit (ultrathink, two review agents + direct metrics + Chrome visual pass). **No code changed except one

@@ -7,7 +7,7 @@ see `docs/AUDIT_2026-06-28.md` and `docs/plans/*`; this is the mental model.
 
 A node-based creative flow programming environment ("Live Art Tool for Creative
 Humans"). Vue 3 + TypeScript + Vite, shipped for web (Netlify, `latch.design`) and
-desktop (Electron Forge). ~238 nodes across 18 categories. Targets creative coders,
+desktop (Electron Forge). ~241 nodes across 18 categories. Targets creative coders,
 VJs, installation artists, hardware hackers, IoT makers. Key libs: Vue Flow (node
 editor canvas), Pinia (state), Three.js (3D/shaders), Tone.js + Meyda (audio),
 Transformers.js + ONNX Runtime + MediaPipe (in-browser ML), Dexie (IndexedDB),
