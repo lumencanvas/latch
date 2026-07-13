@@ -6,6 +6,54 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 93) — Workstream B begins: `3d` behavior co-location (executor bodies → node.ts)
+
+**Workstream B (full behavior co-location) started — first category `3d` done, verified, uncommitted.** Moved
+each 3d executor BODY out of the 1073-line `engine/executors/3d.ts` inline into its `registry/3d/<id>/node.ts`,
+and relocated the shared module-level state + helpers + lifecycle into a new `registry/3d/shared.ts`. The giant
+file is DELETED.
+
+**How the category was chosen:** a 7-agent mapping workflow classified all 6 giant executor files (ai/visual/
+connectivity/audio/clasp/3d) and recommended `3d` FIRST — lowest external coupling: no test imports a 3d
+executor const by identity, `executors/index.ts` never re-exported from `./3d` (nodes reach the engine only via
+the `colocatedExecutors` glob), no `public-exports` pin, no `@/stores` value-import (so no load cycle like
+clasp), no lazy-import wrapper. Cleanest proof of the body-inline method.
+
+**What moved to `registry/3d/shared.ts` (verbatim):** the 10 state Maps (`nodeObjects`, `nodeMaterials`,
+`nodeSceneRefs`, `loadedGLTFs`, `loadedGLTFUrls`, `videoTextures`, `dataTextures`, `canvasTextures`,
+`nodeTextureKeys`, `groupState`); the helpers `trackTextureKey` / `convertToThreeTexture` / `disposeGLTFGroup`;
+the cleanup `dispose3DNode` / `disposeAll3DNodes` / `gc3DState`; and the `defineLifecycle({label:'3d', gc,
+disposeAll})` registration. Only the 8 symbols node.ts files consume are `export`ed (the 4 texture-cache Maps +
+`trackTextureKey` stay module-private). `shared.ts` is a store-free leaf (imports only `@/engine/nodeState` +
+`@/services/visual/ThreeRenderer`), so a co-located `node.ts` importing `../shared` never closes the eager-glob
+cycle (the two carried-over relative engine imports were fixed: dropped the now-unused ExecutionEngine type
+import, absolutized `nodeState`).
+
+**Per-node:** each `node.ts` drops `import { xExecutor } from '@/engine/executors/3d'`, inlines the body as a
+local `const executor: NodeExecutorFn = (ctx: ExecutionContext) => {…}` (byte-identical — `gltf-loader` keeps its
+`async`), and imports what the body uses: `getThreeRenderer`/`THREE` from the service + the needed symbols from
+`../shared`. The 3 self-contained nodes (`camera-3d`/`render-3d`/`transform-3d`) import nothing from shared.
+Definitions are byte-untouched. Generator + byte-faithful self-diff: `scratchpad/migrate-3d.mjs` (extracts each
+body by banner boundary, comment-aware import detection so a symbol named only in a comment isn't a false import
+— caught `material-3d`'s `// …THREE.Texture`).
+
+**Gates (all green):** byte-faithful (16/16 bodies char-identical to the git original) · typecheck clean · lint
+0 err (49 pre-existing warns) · `test:unit` **2333** pass + 11 todo (149 files, unchanged) · build ok · browser
+smoke (241 defs, all 16 3d ids register ⇒ `shared.ts` loaded at boot with no cycle/TDZ, Play→Stop 0 real
+errors). **Adversarial review (5-agent workflow): SHIP** — byte-faithfulness, `shared.ts` dispose/Map integrity,
+import/cycle hygiene, and lifecycle-at-boot all clean; the 2 lifecycle-boot nits refuted (ES-module singleton
+registers once, drains via the engine's generic loop exactly like opencv).
+
+**Recommended B order for the remaining 5** (from the map): `audio` (no store imports / pins) → `visual` (keep
+the `getThreeShaderRenderer` re-export shim that opencv/clasp/ai import) → `ai` (6+ tests import executor consts
+by identity → needs a `registry/ai` barrel re-export or test repoints) → `connectivity` (BLE/MIDI cross-node
+state to shared.ts; 5 dead executors — prune separately) → `clasp` LAST (the `useConnectionsStore` load cycle +
+pinned `stopVideoElement`/`gcClaspState` exports). **State: `3d` migration uncommitted on `phase0-file-format`
+(16 node.ts + new shared.ts + deleted 3d.ts + this HANDOFF); awaiting maintainer commit go (B commits not
+pre-authorized).**
+
+---
+
 ## 2026-07-12 (later 92) — commit the authoring-DX delta + A1/A4 docs rewrite
 
 **Committed the accumulated A5+A3+E1+A2 delta** (maintainer said the word) as one clean boundary before

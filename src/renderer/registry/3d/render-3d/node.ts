@@ -1,6 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { render3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
 
 const definition: NodeDefinition = {
   id: 'render-3d',
@@ -35,4 +36,37 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: render3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const scene = ctx.inputs.get('scene') as THREE.Scene | undefined
+  const camera = ctx.inputs.get('camera') as THREE.Camera | undefined
+
+  if (!scene || !camera) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('texture', null)
+    outputs.set('depth', null)
+    return outputs
+  }
+
+  const renderer = getThreeRenderer()
+  const width = (ctx.controls.get('width') as number) ?? 512
+  const height = (ctx.controls.get('height') as number) ?? 512
+  const includeDepth = (ctx.controls.get('includeDepth') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+
+  if (includeDepth) {
+    // Render to render target with depth texture support
+    const result = renderer.render(scene, camera, ctx.nodeId, width, height, true)
+    outputs.set('texture', result.texture) // WebGLTexture
+    outputs.set('depth', result.depthTexture ?? null) // WebGLTexture (depth values: 0=near, 1=far)
+  } else {
+    // Render to default framebuffer (canvas) for better compatibility
+    renderer.renderToCanvas(scene, camera, width, height)
+    outputs.set('texture', renderer.getCanvas()) // HTMLCanvasElement
+    outputs.set('depth', null)
+  }
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

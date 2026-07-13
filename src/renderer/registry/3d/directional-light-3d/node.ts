@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { directionalLight3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
+import { nodeObjects } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'directional-light-3d',
@@ -40,4 +42,26 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: directionalLight3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const colorHex = (ctx.controls.get('color') as string) ?? '#ffffff'
+  const intensity = (ctx.inputs.get('intensity') as number) ?? (ctx.controls.get('intensity') as number) ?? 1
+  const castShadow = (ctx.controls.get('castShadow') as boolean) ?? true
+
+  const posX = (ctx.inputs.get('posX') as number) ?? (ctx.controls.get('posX') as number) ?? 5
+  const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 5
+  const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 5
+
+  const color = parseInt(colorHex.replace('#', ''), 16)
+
+  const renderer = getThreeRenderer()
+  const light = renderer.createDirectionalLight(color, intensity, [posX, posY, posZ], castShadow)
+
+  nodeObjects.set(ctx.nodeId, light)
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('light', light)
+  outputs.set('object', light)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

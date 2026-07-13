@@ -1,6 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { camera3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
 
 const definition: NodeDefinition = {
   id: 'camera-3d',
@@ -46,4 +47,37 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: camera3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const renderer = getThreeRenderer()
+
+  const cameraType = (ctx.controls.get('type') as 'perspective' | 'orthographic') ?? 'perspective'
+  const fov = (ctx.controls.get('fov') as number) ?? 50
+  const near = (ctx.controls.get('near') as number) ?? 0.1
+  const far = (ctx.controls.get('far') as number) ?? 1000
+  const orthoSize = (ctx.controls.get('orthoSize') as number) ?? 5
+
+  // Get position from inputs or controls
+  const posX = (ctx.inputs.get('posX') as number) ?? (ctx.controls.get('posX') as number) ?? 0
+  const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 2
+  const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 5
+
+  // Get target from inputs or controls
+  const targetX = (ctx.inputs.get('targetX') as number) ?? (ctx.controls.get('targetX') as number) ?? 0
+  const targetY = (ctx.inputs.get('targetY') as number) ?? (ctx.controls.get('targetY') as number) ?? 0
+  const targetZ = (ctx.inputs.get('targetZ') as number) ?? (ctx.controls.get('targetZ') as number) ?? 0
+
+  const camera = renderer.getOrCreateCamera(ctx.nodeId, cameraType, {
+    fov,
+    near,
+    far,
+    orthoSize,
+    position: [posX, posY, posZ],
+    target: [targetX, targetY, targetZ],
+  })
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('camera', camera)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

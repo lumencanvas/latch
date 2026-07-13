@@ -1,6 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { transform3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
 
 const definition: NodeDefinition = {
   id: 'transform-3d',
@@ -49,4 +50,49 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: transform3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const object = ctx.inputs.get('object') as THREE.Object3D | undefined
+
+  if (!object) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('object', null)
+    outputs.set('transform', null)
+    return outputs
+  }
+
+  // Get transform values
+  const posX = (ctx.inputs.get('posX') as number) ?? (ctx.controls.get('posX') as number) ?? 0
+  const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 0
+  const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 0
+
+  const rotX = (ctx.inputs.get('rotX') as number) ?? (ctx.controls.get('rotX') as number) ?? 0
+  const rotY = (ctx.inputs.get('rotY') as number) ?? (ctx.controls.get('rotY') as number) ?? 0
+  const rotZ = (ctx.inputs.get('rotZ') as number) ?? (ctx.controls.get('rotZ') as number) ?? 0
+
+  const scaleX = (ctx.inputs.get('scaleX') as number) ?? (ctx.controls.get('scaleX') as number) ?? 1
+  const scaleY = (ctx.inputs.get('scaleY') as number) ?? (ctx.controls.get('scaleY') as number) ?? 1
+  const scaleZ = (ctx.inputs.get('scaleZ') as number) ?? (ctx.controls.get('scaleZ') as number) ?? 1
+
+  // Apply transforms
+  const renderer = getThreeRenderer()
+  renderer.applyTransform(
+    object,
+    [posX, posY, posZ],
+    [rotX, rotY, rotZ],
+    [scaleX, scaleY, scaleZ]
+  )
+
+  // Create transform data
+  const transformData = {
+    position: { x: posX, y: posY, z: posZ },
+    rotation: { x: rotX, y: rotY, z: rotZ },
+    scale: { x: scaleX, y: scaleY, z: scaleZ },
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('object', object)
+  outputs.set('transform', transformData)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

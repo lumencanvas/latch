@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { pointLight3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
+import { nodeObjects } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'point-light-3d',
@@ -42,4 +44,28 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: pointLight3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const colorHex = (ctx.controls.get('color') as string) ?? '#ffffff'
+  const intensity = (ctx.inputs.get('intensity') as number) ?? (ctx.controls.get('intensity') as number) ?? 1
+  const distance = (ctx.controls.get('distance') as number) ?? 0
+  const decay = (ctx.controls.get('decay') as number) ?? 2
+  const castShadow = (ctx.controls.get('castShadow') as boolean) ?? false
+
+  const posX = (ctx.inputs.get('posX') as number) ?? (ctx.controls.get('posX') as number) ?? 0
+  const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 2
+  const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 0
+
+  const color = parseInt(colorHex.replace('#', ''), 16)
+
+  const renderer = getThreeRenderer()
+  const light = renderer.createPointLight(color, intensity, distance, decay, [posX, posY, posZ], castShadow)
+
+  nodeObjects.set(ctx.nodeId, light)
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('light', light)
+  outputs.set('object', light)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

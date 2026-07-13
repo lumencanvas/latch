@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { spotLight3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
+import { nodeObjects } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'spot-light-3d',
@@ -47,4 +49,45 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: spotLight3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const colorHex = (ctx.controls.get('color') as string) ?? '#ffffff'
+  const intensity = (ctx.inputs.get('intensity') as number) ?? (ctx.controls.get('intensity') as number) ?? 1
+  const distance = (ctx.controls.get('distance') as number) ?? 0
+  const angle = (ctx.controls.get('angle') as number) ?? 30 // degrees
+  const penumbra = (ctx.controls.get('penumbra') as number) ?? 0.1
+  const decay = (ctx.controls.get('decay') as number) ?? 2
+  const castShadow = (ctx.controls.get('castShadow') as boolean) ?? true
+
+  const posX = (ctx.inputs.get('posX') as number) ?? (ctx.controls.get('posX') as number) ?? 0
+  const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 5
+  const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 0
+
+  const targetX = (ctx.controls.get('targetX') as number) ?? 0
+  const targetY = (ctx.controls.get('targetY') as number) ?? 0
+  const targetZ = (ctx.controls.get('targetZ') as number) ?? 0
+
+  const color = parseInt(colorHex.replace('#', ''), 16)
+  const angleRad = THREE.MathUtils.degToRad(angle)
+
+  const renderer = getThreeRenderer()
+  const light = renderer.createSpotLight(
+    color,
+    intensity,
+    distance,
+    angleRad,
+    penumbra,
+    decay,
+    [posX, posY, posZ],
+    [targetX, targetY, targetZ],
+    castShadow
+  )
+
+  nodeObjects.set(ctx.nodeId, light)
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('light', light)
+  outputs.set('object', light)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

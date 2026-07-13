@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { material3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
+import { nodeMaterials, convertToThreeTexture } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'material-3d',
@@ -45,4 +47,62 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: material3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const renderer = getThreeRenderer()
+
+  const materialType = (ctx.controls.get('type') as 'standard' | 'basic' | 'phong' | 'physical') ?? 'standard'
+  const colorHex = (ctx.controls.get('color') as string) ?? '#808080'
+  const metalness = (ctx.inputs.get('metalness') as number) ?? (ctx.controls.get('metalness') as number) ?? 0
+  const roughness = (ctx.inputs.get('roughness') as number) ?? (ctx.controls.get('roughness') as number) ?? 0.5
+  const opacity = (ctx.inputs.get('opacity') as number) ?? (ctx.controls.get('opacity') as number) ?? 1
+  const wireframe = (ctx.controls.get('wireframe') as boolean) ?? false
+  const side = (ctx.controls.get('side') as 'front' | 'back' | 'double') ?? 'front'
+  const emissiveHex = (ctx.controls.get('emissive') as string) ?? '#000000'
+  const emissiveIntensity = (ctx.controls.get('emissiveIntensity') as number) ?? 0
+
+  // Get texture inputs - convert from pipeline textures (WebGLTexture, HTMLVideoElement) to THREE.Texture
+  const colorMapInput = ctx.inputs.get('colorMap')
+  const normalMapInput = ctx.inputs.get('normalMap')
+  const roughnessMapInput = ctx.inputs.get('roughnessMap')
+  const metalnessMapInput = ctx.inputs.get('metalnessMap')
+
+  // Convert pipeline textures to Three.js textures
+  // Cache keys include nodeId to ensure proper disposal
+  const colorMap = convertToThreeTexture(colorMapInput, `${ctx.nodeId}_colorMap`)
+  const normalMap = convertToThreeTexture(normalMapInput, `${ctx.nodeId}_normalMap`)
+  const roughnessMap = convertToThreeTexture(roughnessMapInput, `${ctx.nodeId}_roughnessMap`)
+  const metalnessMap = convertToThreeTexture(metalnessMapInput, `${ctx.nodeId}_metalnessMap`)
+
+  const color = parseInt(colorHex.replace('#', ''), 16)
+  const emissive = parseInt(emissiveHex.replace('#', ''), 16)
+
+  const material = renderer.createMaterial({
+    type: materialType,
+    color,
+    metalness,
+    roughness,
+    opacity,
+    transparent: opacity < 1,
+    wireframe,
+    side,
+    emissive,
+    emissiveIntensity,
+    map: colorMap,
+    normalMap,
+    roughnessMap,
+    metalnessMap,
+  })
+
+  // Dispose old material
+  const oldMat = nodeMaterials.get(ctx.nodeId)
+  if (oldMat) {
+    oldMat.dispose()
+  }
+  nodeMaterials.set(ctx.nodeId, material)
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('material', material)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

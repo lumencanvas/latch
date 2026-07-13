@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { ambientLight3DExecutor } from '@/engine/executors/3d'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
+import { nodeObjects } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'ambient-light-3d',
@@ -33,4 +35,22 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: ambientLight3DExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const colorHex = (ctx.controls.get('color') as string) ?? '#ffffff'
+  const intensity = (ctx.inputs.get('intensity') as number) ?? (ctx.controls.get('intensity') as number) ?? 0.5
+
+  const color = parseInt(colorHex.replace('#', ''), 16)
+
+  const renderer = getThreeRenderer()
+  const light = renderer.createAmbientLight(color, intensity)
+
+  // Store reference
+  nodeObjects.set(ctx.nodeId, light)
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('light', light)
+  outputs.set('object', light)
+  return outputs
+}
+
+export default defineNode({ definition, executor })
