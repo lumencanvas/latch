@@ -1,66 +1,55 @@
-# Contributing Nodes
+# Contributing a Node
 
-> Guide for creating new nodes in LATCH.
+> How to author a node, a nodeset, or a whole category in LATCH.
 
-## Table of Contents
+Since **Phase 6 (co-location)**, a node is **one self-contained folder** —
+`src/renderer/registry/<category>/<id>/node.ts` — that pairs the node's
+*definition* (ports/controls/metadata) with its *executor* (runtime behavior) via
+`defineNode(...)`, and is **auto-discovered by a glob**. There is no central
+registration file, no separate executor file, and no barrel to edit. Drop the
+folder in and it appears.
 
-- [Quick Start](#quick-start)
-- [File Structure](#file-structure)
-- [Creating a Simple Node](#creating-a-simple-node)
-- [Creating a Custom UI Node](#creating-a-custom-ui-node)
-- [Node Definition Reference](#node-definition-reference)
-- [Writing Executors](#writing-executors)
-- [Best Practices](#best-practices)
-- [Testing Your Node](#testing-your-node)
+The exhaustive schema reference is
+[`docs/architecture/NODE_SPEC.md`](../architecture/NODE_SPEC.md) (v2.0) — this
+guide is the practical, task-oriented companion.
 
----
+## Table of contents
 
-## Quick Start
-
-1. Choose the appropriate category for your node
-2. Create the node definition file in `src/renderer/registry/{category}/`
-3. Export from the category's `index.ts`
-4. Write the executor in `src/renderer/engine/executors/`
-5. Test in the application
-
----
-
-## File Structure
-
-### Simple Node (BaseNode UI)
-
-Most nodes use the default BaseNode component:
-
-```
-src/renderer/registry/{category}/
-├── index.ts              # Category exports
-├── your-node.ts          # Node definition
-└── ...
-```
-
-### Custom UI Node
-
-Nodes with custom interfaces need a folder:
-
-```
-src/renderer/registry/{category}/your-node/
-├── index.ts              # Exports definition + component
-├── definition.ts         # NodeDefinition
-└── YourNode.vue          # Custom Vue component
-```
+- [Quick start (60 seconds)](#quick-start-60-seconds)
+- [What a node is](#what-a-node-is)
+- [The definition](#the-definition)
+- [The executor](#the-executor)
+- [Stateful nodes](#stateful-nodes)
+- [Custom UI: `ui` schema vs `component`](#custom-ui-ui-schema-vs-component)
+- [Testing your node](#testing-your-node)
+- [Versioning & migration](#versioning--migration)
+- [Nodesets — one file, many nodes](#nodesets--one-file-many-nodes)
+- [Drop-in categories](#drop-in-categories)
+- [Declarable subsystems: `models` & `connections`](#declarable-subsystems-models--connections)
+- [Rules & guards](#rules--guards)
+- [Custom (user) nodes](#custom-user-nodes)
 
 ---
 
-## Creating a Simple Node
+## Quick start (60 seconds)
 
-### Step 1: Create the Definition
+Scaffold, edit, test — that's the whole loop.
 
-Create `src/renderer/registry/math/lerp.ts`:
+```bash
+# 1. Scaffold a co-located node.ts + node.test.ts from a template
+npm run new-node -- math lerp --name "Lerp"
 
-```typescript
-import type { NodeDefinition } from '../types'
+#    → src/renderer/registry/math/lerp/node.ts
+#    → src/renderer/registry/math/lerp/node.test.ts
+```
 
-export const lerpNode: NodeDefinition = {
+```ts
+// 2. Edit registry/math/lerp/node.ts — declare ports + write the executor
+import { defineNode } from '@/engine/defineNode'
+import type { NodeDefinition } from '@/stores/nodes'
+import type { ExecutionContext } from '@/engine/ExecutionEngine'
+
+const definition: NodeDefinition = {
   id: 'lerp',
   name: 'Lerp',
   version: '1.0.0',
@@ -68,565 +57,430 @@ export const lerpNode: NodeDefinition = {
   description: 'Linear interpolation between two values',
   icon: 'git-merge',
   platforms: ['web', 'electron'],
-
   inputs: [
     { id: 'a', type: 'number', label: 'A' },
     { id: 'b', type: 'number', label: 'B' },
     { id: 't', type: 'number', label: 'T' },
   ],
-
-  outputs: [
-    { id: 'result', type: 'number', label: 'Result' },
-  ],
-
+  outputs: [{ id: 'result', type: 'number', label: 'Result' }],
   controls: [
-    { id: 'a', type: 'number', label: 'A', default: 0 },
-    { id: 'b', type: 'number', label: 'B', default: 1 },
-    { id: 't', type: 'slider', label: 'T', default: 0.5,
-      props: { min: 0, max: 1, step: 0.01 } },
+    { id: 't', type: 'slider', label: 'T', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
   ],
 }
-```
 
-### Step 2: Export from Category Index
-
-Add to `src/renderer/registry/math/index.ts`:
-
-```typescript
-// Add export
-export { lerpNode } from './lerp'
-
-// Add import
-import { lerpNode } from './lerp'
-
-// Add to array
-export const mathNodes: NodeDefinition[] = [
-  // ... existing nodes
-  lerpNode,
-]
-```
-
-### Step 3: Write the Executor
-
-Add to `src/renderer/engine/executors/math.ts`:
-
-```typescript
-case 'lerp': {
-  const a = getInput('a') ?? getData('a') ?? 0
-  const b = getInput('b') ?? getData('b') ?? 1
-  const t = getInput('t') ?? getData('t') ?? 0.5
-
-  const result = a + (b - a) * t
-
-  setOutput('result', result)
-  break
+const executor = (ctx: ExecutionContext) => {
+  const a = ctx.num('a', 0)
+  const b = ctx.num('b', 1)
+  const t = ctx.num('t', 0.5)
+  return new Map<string, unknown>([['result', a + (b - a) * t]])
 }
+
+export default defineNode({ definition, executor, pure: true })
+```
+
+```bash
+# 3. Run the co-located test + the guard suite
+npm run test:unit
+```
+
+That's it — no barrel imports, no executor-file edits, no registration. The glob
+discovers your folder; the palette shows the node on next `npm run dev`.
+
+Scaffold flags:
+
+| Command | Emits |
+|---------|-------|
+| `npm run new-node -- <cat> <id>` | `node.ts` + `node.test.ts` |
+| `… --name "Nice Name"` | sets the display name (defaults to Title Case of the id) |
+| `… --component` | also emits `<Pascal>Node.vue` and wires `component:` (bespoke SFC) |
+| `… --stateful` | emits a `defineNodeState` store scaffold |
+| `npm run new-node -- <cat> <family> --set a b c` | one `nodes.ts` registering the whole family |
+| `npm run new-category -- <id> [--label] [--icon LucideName] [--color "#abc"]` | `category.ts` + a starter node |
+
+The scaffold fails loudly if an id already exists (mirroring the registry's dup-id
+guard) and only emits code that uses the public authoring surface.
+
+---
+
+## What a node is
+
+A node's default export is a `NodeSpec`, built with `defineNode`:
+
+```ts
+interface NodeSpec {
+  readonly definition: NodeDefinition          // ports / controls / metadata
+  readonly executor: NodeExecutorFn            // runtime behavior
+  readonly version?: number                     // node-data schema version (default 1); drives migrate()
+  readonly migrate?: (data, from: number) => data
+  readonly pure?: boolean                       // no side-effects/state → skippable in dirty mode
+  readonly deferred?: boolean                   // fire-and-latch async (don't block the frame)
+  readonly component?: Component                // bespoke-SFC UI escape hatch (else BaseNode / `ui`)
+  readonly requires?: NodeRequirement[]         // hardware/runtime capabilities (serial/webgpu/mic…)
+  readonly connections?: NodeConnectionRequirement[]  // connection protocols the node needs
+  readonly models?: ModelRequirement[]          // AI model/task needs → derives a model select + std outputs
+}
+```
+
+`defineNode` is a **frozen public contract**: fields are additive-only within a
+major version — never repurposed or removed. Built-in and custom (user) nodes
+converge on this one shape.
+
+The folder layout:
+
+```
+src/renderer/registry/<category>/<id>/
+├── node.ts            # export default defineNode({ definition, executor, … })
+├── node.test.ts       # co-located isolated test (optional but encouraged)
+└── <Pascal>Node.vue   # only if the node uses a bespoke `component`
 ```
 
 ---
 
-## Creating a Custom UI Node
+## The definition
 
-### Step 1: Create the Folder Structure
+The `NodeDefinition` (declared in `src/renderer/stores/nodes.ts`) describes the
+node's identity, ports, and controls. The most-used fields:
 
-```
-src/renderer/registry/inputs/color-wheel/
-├── index.ts
-├── definition.ts
-└── ColorWheelNode.vue
-```
-
-### Step 2: Write the Definition
-
-`definition.ts`:
-
-```typescript
-import type { NodeDefinition } from '../../types'
-
-export const colorWheelNode: NodeDefinition = {
-  id: 'color-wheel',
-  name: 'Color Wheel',
-  version: '1.0.0',
-  category: 'inputs',
-  description: 'Pick colors from a wheel interface',
-  icon: 'palette',
+```ts
+const definition: NodeDefinition = {
+  id: 'my-node',                 // unique, kebab-case, OPAQUE (never .split() on it)
+  name: 'My Node',
+  version: '1.0.0',              // semver STRING (distinct from NodeSpec.version)
+  category: 'math',              // a registered category id
+  description: 'What it does',
+  icon: 'box',                   // a lucide icon name (https://lucide.dev/icons)
   platforms: ['web', 'electron'],
+  inputs: [ /* PortDefinition[] */ ],
+  outputs: [ /* PortDefinition[] */ ],
+  controls: [ /* ControlDefinition[] */ ],
+  info: { overview: 'One-liner shown on the Info tab.', tips: [], pairsWith: [] },
+}
+```
 
-  inputs: [],
+**Ports** (`PortDefinition`): `{ id, type, label, description?, required?, multiple?, default? }`.
+Data types: `trigger · number · string · boolean · audio · video · texture ·
+data · array · any`, plus the 3D set (`scene3d · object3d · geometry3d ·
+material3d · camera3d · light3d · transform3d`). Connection legality is decided by
+the type matrix in `src/renderer/utils/connections.ts`.
 
-  outputs: [
-    { id: 'color', type: 'data', label: 'Color' },
-    { id: 'r', type: 'number', label: 'R' },
-    { id: 'g', type: 'number', label: 'G' },
-    { id: 'b', type: 'number', label: 'B' },
-    { id: 'h', type: 'number', label: 'H' },
-    { id: 's', type: 'number', label: 'S' },
-    { id: 'l', type: 'number', label: 'L' },
+**Controls** (`ControlDefinition`): `{ id, type, label, default?, exposable?,
+bindable?, when?, props? }`. Give every control a sensible `default`. Control
+types include `number · slider · select · toggle · text · color · code`, with
+type-specific `props` (`min`/`max`/`step`, `options`, `language`, …). Conditional
+visibility uses the `when` schema (keys are sibling control ids; the control shows
+only when EVERY entry matches).
+
+**Input-over-control precedence:** when an input port and a control share an id, a
+connected input overrides the control value. The `ctx.num/bool/str` accessors
+implement this for you (see below) — don't hand-roll it.
+
+See [NODE_SPEC.md](../architecture/NODE_SPEC.md) for the complete field-by-field
+schema.
+
+---
+
+## The executor
+
+Executors are **functional**, not class-based. Each receives an `ExecutionContext`
+and returns a `Map<string, unknown>` of output-port-id → value (sync or async):
+
+```ts
+type NodeExecutorFn = (ctx: ExecutionContext) => Map<string, unknown> | Promise<Map<string, unknown>>
+```
+
+Read inputs and controls through the **typed, coercing, NaN/±Infinity-guarded**
+accessors — prefer them over raw `ctx.inputs.get()` / `ctx.controls.get()`:
+
+| Accessor | Returns |
+|----------|---------|
+| `ctx.num(id, fallback?)` | number — `input ?? control ?? fallback`, coerced |
+| `ctx.bool(id, fallback?)` | boolean |
+| `ctx.str(id, fallback?)` | string |
+| `ctx.trig(id)` | boolean — rising-edge (state auto-GC'd) |
+| `ctx.level(id)` | boolean — level test (accepts legacy `true` / `1` / `>0`) |
+
+Also on `ctx`: `nodeId`, `definition`, `deltaTime`, `totalTime`, `frameCount`, and
+the raw `inputs`/`controls` Maps.
+
+Trigger-emitting nodes should output the canonical fired value `TRIGGER` (`= 1`,
+from `@/engine/trigger`).
+
+```ts
+const executor = (ctx: ExecutionContext) => {
+  const freq = ctx.num('frequency', 440)
+  const on = ctx.bool('enabled', true)
+  return new Map<string, unknown>([['out', on ? freq : 0]])
+}
+```
+
+---
+
+## Stateful nodes
+
+Per-node state goes in a `defineNodeState` store. It **self-registers its
+gc/dispose** into the engine's generic lifecycle loop — so a stateful node touches
+only its own module, and the "forgotten cleanup = leak" bug class is structurally
+impossible.
+
+```ts
+import { defineNodeState } from '@/engine/nodeState'
+
+// Keyed by node id; auto-GC'd for dead nodes, disposed on stop().
+export const smoothState = defineNodeState<number>({ label: 'smooth' })
+
+const executor = (ctx: ExecutionContext) => {
+  const target = ctx.num('value', 0)
+  const factor = ctx.num('factor', 0.1)
+  const prev = smoothState.get(ctx.nodeId) ?? target
+  const next = prev + (target - prev) * Math.min(1, factor * ctx.deltaTime * 60)
+  smoothState.set(ctx.nodeId, next)
+  return new Map<string, unknown>([['result', next]])
+}
+```
+
+For heavy resources (Tone nodes, sockets, workers) pass a `dispose(state, nodeId)`
+callback to `defineNodeState` — the engine calls it on stop and on GC. A stateful
+node is **not pure**, so omit `pure: true`.
+
+---
+
+## Custom UI: `ui` schema vs `component`
+
+A node with neither `ui` nor `component` renders with **BaseNode**'s auto-layout
+(ports + declarative controls) — the default, and the right choice for the vast
+majority of nodes.
+
+For custom UI, prefer the **declarative `ui` schema**, interpreted by the single
+`<NodeView>` renderer on both the canvas and the properties panel:
+
+```ts
+ui: {
+  rows: [
+    { widgets: [{ type: 'xy', bind: '', props: { fields: ['normalizedX', 'normalizedY'] } }] },
+    { widgets: [{ type: 'readout', bind: 'rawX', source: 'output', label: 'X' }] },
+    { label: 'Range', widgets: [{ type: 'number', bind: 'minX', label: 'X Min' }] },
   ],
-
-  controls: [
-    { id: 'hue', type: 'number', label: 'Hue', default: 0 },
-    { id: 'saturation', type: 'number', label: 'Saturation', default: 1 },
-    { id: 'lightness', type: 'number', label: 'Lightness', default: 0.5 },
-  ],
 }
 ```
 
-### Step 3: Create the Vue Component
+A widget binds to a control id (2-way) or, with `source: 'output'`, an output-port
+id (read-only readout). **Widget types `NodeView` currently dispatches:**
 
-`ColorWheelNode.vue`:
+- primitives: `slider` · `number` · `toggle` · `select` · `text` · `color`
+- rich: `knob` · `xy` · `eq` · `env` · `wave` · `readout` · `asset` · `connection`
 
-```vue
-<script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Handle, Position } from '@vue-flow/core'
-import type { NodeProps } from '@vue-flow/core'
-import { useFlowsStore } from '@/stores/flows'
-import { useNodesStore } from '@/stores/nodes'
+> `piano`, `gamepad`, `curve`, `gradient`, `image`, and `button` are reserved enum
+> slots with **no renderer yet** — a node needing one must use the `component`
+> escape hatch below (adding the widget is a separate framework task).
 
-const props = defineProps<NodeProps>()
-const flowsStore = useFlowsStore()
-const nodesStore = useNodesStore()
-
-const definition = computed(() =>
-  nodesStore.getDefinition(props.data?.nodeType as string)
-)
-
-const hue = computed(() => props.data?.hue ?? 0)
-const saturation = computed(() => props.data?.saturation ?? 1)
-const lightness = computed(() => props.data?.lightness ?? 0.5)
-
-const colorStyle = computed(() =>
-  `hsl(${hue.value * 360}, ${saturation.value * 100}%, ${lightness.value * 100}%)`
-)
-
-function updateHue(event: MouseEvent) {
-  const rect = (event.target as HTMLElement).getBoundingClientRect()
-  const x = event.clientX - rect.left - rect.width / 2
-  const y = event.clientY - rect.top - rect.height / 2
-  const angle = Math.atan2(y, x)
-  const normalizedHue = (angle + Math.PI) / (2 * Math.PI)
-
-  flowsStore.updateNodeData(props.id, { hue: normalizedHue })
-}
-</script>
-
-<template>
-  <div class="color-wheel-node" :class="{ selected: props.selected }">
-    <div class="node-header">
-      <span class="node-title">{{ definition?.name }}</span>
-    </div>
-
-    <div class="node-body">
-      <div
-        class="wheel"
-        @click="updateHue"
-      >
-        <div
-          class="preview"
-          :style="{ backgroundColor: colorStyle }"
-        />
-      </div>
-    </div>
-
-    <!-- Output handles -->
-    <Handle
-      v-for="output in definition?.outputs"
-      :key="output.id"
-      type="source"
-      :position="Position.Right"
-      :id="output.id"
-    />
-  </div>
-</template>
-
-<style scoped>
-.color-wheel-node {
-  background: var(--node-bg);
-  border: 1px solid var(--node-border);
-  border-radius: 8px;
-  min-width: 150px;
-}
-
-.node-header {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--node-border);
-}
-
-.node-body {
-  padding: 12px;
-}
-
-.wheel {
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  background: conic-gradient(
-    hsl(0, 100%, 50%),
-    hsl(60, 100%, 50%),
-    hsl(120, 100%, 50%),
-    hsl(180, 100%, 50%),
-    hsl(240, 100%, 50%),
-    hsl(300, 100%, 50%),
-    hsl(360, 100%, 50%)
-  );
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.preview {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 2px solid white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-</style>
-```
-
-### Step 4: Create the Index
-
-`index.ts`:
-
-```typescript
-export { colorWheelNode } from './definition'
-export { default as ColorWheelNode } from './ColorWheelNode.vue'
-```
-
-### Step 5: Register the Component
-
-Add to `src/renderer/registry/components.ts`:
-
-```typescript
-import { ColorWheelNode } from './inputs/color-wheel'
-
-export const nodeTypes = {
-  // ... existing entries
-  'color-wheel': markRaw(ColorWheelNode),
-}
-```
-
-### Step 6: Export from Category
-
-Add to `src/renderer/registry/inputs/index.ts`:
-
-```typescript
-export { colorWheelNode, ColorWheelNode } from './color-wheel'
-
-import { colorWheelNode } from './color-wheel'
-
-export const inputNodes: NodeDefinition[] = [
-  // ... existing
-  colorWheelNode,
-]
-```
+The **`component` escape hatch** (`component: markRaw(MyNode)` on the definition,
+or `--component` from the scaffold) is for nodes that capture raw input
+(keyboard/MIDI/gamepad), render a live surface (video/canvas/scope/code
+editor/emulator), or need bespoke geometry. It is the single source of truth for
+custom rendering: `registry/components.ts` derives both the Vue Flow `nodeTypes`
+map and the `CUSTOM_NODE_TYPE_IDS` set from the definitions that carry `component`.
 
 ---
 
-## Node Definition Reference
+## Testing your node
 
-### Required Fields
+Co-locate a `node.test.ts` next to `node.ts`. The
+[`tests/helpers/testNode.ts`](../../tests/helpers/testNode.ts) helper runs your
+executor with a **faithful** `ExecutionContext` (built by the engine's own
+`createExecutionContext`, so `ctx.num/bool/str/trig/level` coerce exactly as at
+runtime) — no engine, no graph, just the one node.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | Unique identifier (kebab-case) |
-| `name` | `string` | Display name |
-| `version` | `string` | Semver version |
-| `category` | `NodeCategory` | Category for palette |
-| `description` | `string` | Brief description |
-| `icon` | `string` | Lucide icon name |
-| `platforms` | `Platform[]` | `['web', 'electron']` |
-| `inputs` | `PortDefinition[]` | Input ports |
-| `outputs` | `PortDefinition[]` | Output ports |
-| `controls` | `ControlDefinition[]` | Inline controls |
+```ts
+// src/renderer/registry/math/smooth/node.test.ts
+import { describe, it, expect, beforeEach } from 'vitest'
+import smoothSpec from './node'
+import { runNode, runFrames, resetNodeState } from '../../../../../tests/helpers/testNode'
 
-### Optional Fields
+beforeEach(resetNodeState) // only needed for a stateful node
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `color` | `string` | Custom node color (hex) |
-| `tags` | `string[]` | Search tags |
-| `webFallback` | `string` | Fallback node for web-only features |
+describe('smooth', () => {
+  it('initializes to the first target', async () => {
+    const out = await runNode(smoothSpec, { inputs: { value: 0 }, controls: { factor: 0.3 } })
+    expect(out.get('result')).toBe(0)
+  })
 
-### Port Definition
-
-```typescript
-interface PortDefinition {
-  id: string           // Unique within node
-  type: DataType       // Data type
-  label: string        // Display label
-  description?: string // Tooltip
-  required?: boolean   // Node won't execute without this
-  multiple?: boolean   // Accept multiple connections
-  default?: unknown    // Default value
-}
+  it('eases toward a changed target instead of jumping to it', async () => {
+    const [, second] = await runFrames(smoothSpec, [
+      { inputs: { value: 0 }, controls: { factor: 0.3 } },
+      { inputs: { value: 1 }, controls: { factor: 0.3 } },
+    ])
+    const r = second.get('result') as number
+    expect(r).toBeGreaterThan(0)
+    expect(r).toBeLessThan(1)
+  })
+})
 ```
 
-### Control Definition
+Helper API:
 
-```typescript
-interface ControlDefinition {
-  id: string           // Control ID (key in node.data)
-  type: ControlType    // Control type
-  label: string        // Display label
-  default?: unknown    // Default value
-  exposable?: boolean  // Can be exposed to parent flow
-  props?: object       // Type-specific props
-}
-```
+- `runNode(spec, { inputs?, controls?, nodeId?, deltaTime?, totalTime?, frameCount? })` → the output `Map`.
+- `runFrames(spec, frames[], nodeId?)` → drive a stateful node across frames with a persistent `nodeId`.
+- `resetNodeState()` → drain every `defineNodeState` store (put in a `beforeEach` for stateful nodes).
 
-### Control Types
-
-| Type | Props | Description |
-|------|-------|-------------|
-| `number` | `min`, `max`, `step` | Numeric input |
-| `slider` | `min`, `max`, `step` | Range slider |
-| `toggle` | - | Boolean checkbox |
-| `select` | `options`, `deviceType` | Dropdown |
-| `text` | `placeholder` | Text input |
-| `color` | - | Color picker |
-| `code` | - | Code editor |
-| `asset-picker` | `assetType` | Asset selector |
-
-### Data Types
-
-| Type | Description | Use Case |
-|------|-------------|----------|
-| `trigger` | One-shot event | Buttons, events |
-| `number` | Float value | Parameters, math |
-| `string` | Text | Labels, URLs |
-| `boolean` | True/false | Toggles, conditions |
-| `audio` | AudioNode | Audio processing |
-| `video` | HTMLVideoElement | Video sources |
-| `texture` | WebGLTexture | Visual processing |
-| `data` | Any object | Structured data |
-| `array` | Array | Lists, collections |
-| `any` | Polymorphic | Generic nodes |
-| `scene3d` | THREE.Scene | 3D scenes |
-| `object3d` | THREE.Object3D | 3D objects |
-| `geometry3d` | THREE.BufferGeometry | 3D geometry |
-| `material3d` | THREE.Material | 3D materials |
-| `camera3d` | THREE.Camera | 3D cameras |
-| `light3d` | THREE.Light | 3D lights |
-| `transform3d` | Transform data | 3D transforms |
+Vitest discovers co-located tests via the `src/renderer/registry/**` include, so
+`npm run test:unit` runs them alongside the guard suite.
 
 ---
 
-## Writing Executors
+## Versioning & migration
 
-Executors contain the runtime logic for nodes. Located in `src/renderer/engine/executors/`.
+`NodeSpec.version` is the **node-data schema version** (an integer, default 1) —
+distinct from the human-facing `definition.version` string. Saved `.latch` flows
+record the version each node was created with. On load, the flows store runs
+`spec.migrate(data, fromVersion)` for any node whose saved data is behind the
+current `spec.version`, before instantiating — so a control-set change **degrades
+gracefully, never shatters**.
 
-### Basic Pattern
-
-```typescript
-// In the appropriate executor file
-case 'your-node-id': {
-  // Get inputs (port connections override control values)
-  const inputA = getInput('a') ?? getData('a') ?? defaultValue
-
-  // Get control-only values
-  const mode = getData('mode') ?? 'default'
-
-  // Perform computation
-  const result = doSomething(inputA, mode)
-
-  // Set outputs
-  setOutput('result', result)
-  break
-}
-```
-
-### Available Functions
-
-| Function | Description |
-|----------|-------------|
-| `getInput(id)` | Get connected input value |
-| `getData(id)` | Get control/stored data value |
-| `setOutput(id, value)` | Set output port value |
-| `getState(key, default)` | Get persistent state |
-| `setState(key, value)` | Set persistent state |
-
-### Handling Different Categories
-
-**Math/Logic** - Pure computation:
-```typescript
-case 'add': {
-  const a = getInput('a') ?? getData('a') ?? 0
-  const b = getInput('b') ?? getData('b') ?? 0
-  setOutput('result', a + b)
-  break
-}
-```
-
-**Audio** - Web Audio API:
-```typescript
-case 'gain': {
-  const audio = getInput('audio')
-  const gainValue = getInput('gain') ?? getData('gain') ?? 1
-
-  if (!audio) break
-
-  // Create or get cached GainNode
-  let gainNode = getState('gainNode')
-  if (!gainNode) {
-    gainNode = audioContext.createGain()
-    setState('gainNode', gainNode)
-  }
-
-  gainNode.gain.value = gainValue
-  audio.connect(gainNode)
-
-  setOutput('audio', gainNode)
-  break
-}
-```
-
-**Visual** - Three.js/WebGL:
-```typescript
-case 'blur': {
-  const texture = getInput('texture')
-  const radius = getInput('radius') ?? getData('radius') ?? 5
-
-  if (!texture) break
-
-  const result = applyBlurShader(texture, radius)
-  setOutput('texture', result)
-  break
-}
-```
+Bump `version` and write `migrate()` **before** any change to the control schema
+(renamed/removed/retyped control). Node ids are stable and opaque forever (never
+renamed); a missing node type loads as a graceful placeholder rather than dropping.
 
 ---
 
-## Best Practices
+## Nodesets — one file, many nodes
 
-### Naming Conventions
+When a family of nodes is near-identical (a parametric set, or a cohesive unit),
+register them all from one `nodes.ts` (plural) with `defineNodes([...])` instead of
+N near-identical folders:
 
-- **Node ID**: `kebab-case` (e.g., `map-range`, `audio-input`)
-- **Port IDs**: `camelCase` (e.g., `audioIn`, `resultValue`)
-- **Control IDs**: `camelCase` (e.g., `frequency`, `waveform`)
-- **File names**: `kebab-case.ts` matching node ID
+```ts
+// src/renderer/registry/logic/checks/nodes.ts
+import { defineNodes } from '@/engine/defineNode'
+import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
-### Default Values
+const makeCheck = (id: string, label: string, test: (v: unknown) => boolean) => ({
+  definition: {
+    id, name: label, version: '1.0.0', category: 'logic',
+    description: `${label} check`, icon: 'check', platforms: ['web', 'electron'] as const,
+    inputs: [{ id: 'value', type: 'any', label: 'Value' }],
+    outputs: [{ id: 'result', type: 'boolean', label: 'Result' }],
+    controls: [],
+  },
+  executor: (ctx: ExecutionContext) =>
+    new Map<string, unknown>([['result', test(ctx.inputs.get('value'))]]),
+})
 
-Always provide sensible defaults:
-
-```typescript
-controls: [
-  // Good - useful defaults
-  { id: 'frequency', type: 'number', default: 440 },
-  { id: 'volume', type: 'slider', default: 0.5, props: { min: 0, max: 1 } },
-
-  // Bad - no defaults
-  { id: 'value', type: 'number' },
-]
+export default defineNodes([
+  makeCheck('is-null', 'Is Null', (v) => v == null),
+  makeCheck('is-empty', 'Is Empty', (v) => v === '' || (Array.isArray(v) && v.length === 0)),
+])
 ```
 
-### Input/Control Overlap
-
-When an input port has a matching control, the input takes precedence:
-
-```typescript
-// Definition
-inputs: [{ id: 'frequency', type: 'number', label: 'Freq' }],
-controls: [{ id: 'frequency', type: 'number', label: 'Frequency', default: 440 }],
-
-// Executor - input overrides control
-const freq = getInput('frequency') ?? getData('frequency') ?? 440
-```
-
-### Icon Selection
-
-Use [Lucide icons](https://lucide.dev/icons/). Common choices:
-
-| Use Case | Icons |
-|----------|-------|
-| Audio | `music`, `volume-2`, `mic`, `waves` |
-| Visual | `image`, `camera`, `palette`, `layers` |
-| Math | `calculator`, `plus`, `minus`, `percent` |
-| Logic | `git-branch`, `git-compare`, `toggle-left` |
-| Timing | `clock`, `timer`, `play`, `pause` |
-| Data | `database`, `braces`, `hash` |
-| Network | `globe`, `radio`, `plug`, `wifi` |
-
-### Version Management
-
-- Start at `1.0.0`
-- Increment patch for bug fixes: `1.0.1`
-- Increment minor for new features: `1.1.0`
-- Increment major for breaking changes: `2.0.0`
+The glob discovers `node.ts` **and** `nodes.ts`; the collector flattens the array
+and applies the dup-id / count / pure-set guards **per spec**. Scaffold it with
+`npm run new-node -- logic checks --set is-null is-empty`.
 
 ---
 
-## Testing Your Node
+## Drop-in categories
 
-### Manual Testing
+Adding a whole category is a folder drop — **zero edits to `stores/nodes.ts`**. Drop
+a `registry/<cat>/category.ts` that exports `defineCategory({...})`; the
+`categoryRegistry` glob discovers it and merges its presentation metadata into
+`categoryMeta` at assembly (a one-way registry→stores push).
 
-1. Start the dev server: `npm run dev`
-2. Find your node in the palette
-3. Add it to the canvas
-4. Connect inputs and verify outputs
-5. Test edge cases (null inputs, extreme values)
+```ts
+// src/renderer/registry/sensors/category.ts
+import { defineCategory } from '@/engine/defineCategory'
+import { Radio } from 'lucide-vue-next'
 
-### Checklist
-
-- [ ] Node appears in correct category
-- [ ] Icon displays correctly
-- [ ] All inputs accept connections
-- [ ] All outputs produce values
-- [ ] Controls have correct types and ranges
-- [ ] Default values work
-- [ ] Node handles missing inputs gracefully
-- [ ] No console errors during execution
-- [ ] Works in both web and Electron (if applicable)
-
----
-
-## Adding to Documentation
-
-After creating your node, add it to the documentation:
-
-1. Add entry to `docs/nodes/README.md` in the appropriate category table
-2. Add full documentation to `docs/nodes/{category}.md`
-
-Documentation template:
-
-```markdown
-## Node Name
-
-Brief description.
-
-| Property | Value |
-|----------|-------|
-| **ID** | `node-id` |
-| **Icon** | `icon-name` |
-| **Version** | 1.0.0 |
-
-### Inputs
-| Port | Type | Description |
-|------|------|-------------|
-| `portId` | `type` | Description |
-
-### Outputs
-| Port | Type | Description |
-|------|------|-------------|
-| `portId` | `type` | Description |
-
-### Controls
-| Control | Type | Default | Props | Description |
-|---------|------|---------|-------|-------------|
-| `controlId` | `type` | `default` | props | Description |
-
-### Implementation
-Explain what the node does and any libraries/APIs it uses.
+export default defineCategory({
+  id: 'sensors',
+  label: 'Sensors',
+  icon: Radio,        // pass a lucide COMPONENT to render it in the palette;
+  color: '#A855F7',   // a string is accepted as inert metadata (renders the neutral fallback icon)
+})
 ```
 
+Then any `registry/sensors/<id>/node.ts` with `category: 'sensors'` joins it.
+`NodeDefinition.category` is a `LiteralUnion<KnownNodeCategory>` — built-in ids
+autocomplete, and a new registered id is accepted. Scaffold the whole thing (a
+`category.ts` + a starter node) with `npm run new-category -- sensors --icon Radio`.
+
+Built-in category ids win over drop-ins, so a drop-in never silently overrides a
+seeded category.
+
 ---
 
-## Need Help?
+## Declarable subsystems: `models` & `connections`
 
-- Check existing nodes in the same category for patterns
-- Review [node-types.md](./node-types.md) for type definitions
-- Look at custom UI nodes for Vue component patterns
-- Search the codebase for similar functionality
+Heavy subsystems are figured out once and usable by **any** node — declaratively.
+
+**AI models.** Declare `models: [{ task }]` and the framework supplies a populated
+`model` select control **plus** the standardized `loading` / `progress` / `done` /
+`error` outputs — no per-node shim:
+
+```ts
+export default defineNode({
+  definition,                              // your own inputs/outputs/controls
+  executor,                                // call runModelInference() inside
+  models: [{ task: 'object-detection' }],  // → model select + std outputs, populated
+})
+```
+
+The AI catalog resolver is injected globally at registry assembly, so a plain
+`models:` declaration works from any node (built-in or hand-authored), not just the
+AI category. Inference is driven by `services/ai/AIInference.ts`
+(`runModelInference()` — load → fire-and-latch → error-latch).
+
+**Connections.** Declare `connections: [{ protocol }]` and the framework supplies a
+`connection` picker control and `ctx.connection<Adapter>()` (auto-connect, shared
+throttle):
+
+```ts
+export default defineNode({
+  definition,
+  executor,                               // uses await ctx.connection<MqttAdapter>()
+  connections: [{ protocol: 'mqtt' }],
+})
+```
+
+Both are the declarative twin of a fully bespoke path — you can always ignore them
+and wire a subsystem by hand.
+
+---
+
+## Rules & guards
+
+A handful of invariants keep the eager-discovery model safe. CI enforces them —
+`npm run test:unit` must stay green.
+
+- **No store/registry/engine value-imports in `node.ts`.** A `node.ts` (or
+  `nodes.ts` / `category.ts`) may not value-import a Pinia store, the registry, or
+  an `ExecutionEngine` value — that would close a load-time cycle in the eager glob
+  and crash boot. Use `import type` (erased), or lazy `import()` the executor module
+  at call time (the pattern the clasp nodes use). Guarded by
+  `node-import-hygiene.test.ts`.
+- **Ids are opaque.** Never `.split()` a node id; never rename one.
+- **Every node needs a default export** (`defineNode(...)` or `defineNodes([...])`);
+  ids must be unique. Guarded by `nodeRegistry.test.ts` (count-equality + dup-id).
+- **Don't block the frame.** Mark heavy async work `deferred`; offload to a worker.
+- **Don't leak.** Give `defineNodeState` a `dispose` for Tone/sockets/workers.
+- **Don't hand-edit a central registry list** — there isn't one; the glob discovers
+  your folder.
+
+Other guards you may trip: `registry-integrity.test.ts` (executor outputs match the
+def's ports), `custom-node-components.test.ts` (`component` derivation),
+`public-exports.test.ts` (the governed `@/engine/executors` surface).
+
+---
+
+## Custom (user) nodes
+
+A distributable **user** node and a built-in node are the *same shape* — both are a
+`defineNode` `NodeSpec` (definition + executor, optionally `ui`/`models`/
+`connections`), differing only in delivery (a built-in ships in the folder tree; a
+user node loads through the sandboxed loader). Learning to author one teaches both.
+
+---
+
+## Related documents
+
+- [NODE_SPEC.md](../architecture/NODE_SPEC.md) — the complete schema reference (v2.0)
+- [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) — how the engine, registry, and stores fit together
+- [Node reference catalog](./README.md) — every built-in node, by category

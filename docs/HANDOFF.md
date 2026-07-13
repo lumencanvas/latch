@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 92) — commit the authoring-DX delta + A1/A4 docs rewrite
+
+**Committed the accumulated A5+A3+E1+A2 delta** (maintainer said the word) as one clean boundary before
+Workstream B's churn: `95a4303` "Add node-authoring toolkit: multi-node units, drop-in categories, models,
+scaffold" (34 files, +1312/−146; author Moheeb Zara, no AI attribution). Baseline re-verified green first:
+typecheck clean · `test:unit` **2333** pass + 11 todo (149 files); tree now clean through `95a4303`, `main`
+untouched.
+
+**A1/A4 docs done — Workstream A is complete.** Rewrote the STALE `docs/nodes/contributing.md` (632 lines that
+still taught the deleted pre-Phase-6 model: `index.ts` barrel exports, executor `case` statements in giant
+files, `definition.ts`+`index.ts` custom-UI shims, the removed `getInput`/`getData`/`setOutput` executor API)
+to the real reality:
+- A node = one `registry/<cat>/<id>/node.ts` = `defineNode({ definition, executor, pure?, component?, version?,
+  migrate?, requires?, connections?, models? })`, auto-discovered by the glob — no barrel/registration edits.
+- Covers: the `NodeDefinition`/ports/controls/`info` schema; the `ctx.num/bool/str/trig/level` accessors;
+  `defineNodeState` (self-registering gc/dispose); the `ui`-schema-vs-`component` decision **with the exact
+  widget list `NodeView` dispatches** (primitives slider/number/toggle/select/text/color + rich knob/xy/eq/env/
+  wave/readout/asset/connection; piano/gamepad/curve/gradient/image/button = reserved, no renderer → use
+  `component`); versioning + `migrate()`; **testing via `tests/helpers/testNode`** (the real `smooth` worked
+  example); the **nodeset** (`nodes.ts`/`defineNodes`) + **drop-in category** (`defineCategory`/`new-category`)
+  shapes; and the declarable **`models:`/`connections:`** paths. Opens with a **60-second quickstart** (the A4
+  deliverable) — `npm run new-node` → edit → `test:unit`.
+- **Reconciliation (plan-vs-reality):** the plan named `docs/nodes/README.md` for the quickstart, but that file
+  is already the *node reference catalog*. Kept the catalog; folded the 60-sec quickstart into `contributing.md`'s
+  top section, and added a prominent **"Authoring a node? → contributing.md"** callout atop the catalog README
+  for discoverability. (Left the catalog's stale "208 nodes" counts alone — that's a Workstream-D honesty task,
+  not A1/A4.)
+- Source of truth: `docs/architecture/NODE_SPEC.md` (v2.0). This increment is **markdown-only** — no `.ts`/`.vue`
+  touched, so the code gates are unaffected (baseline green preserved); all relative doc links resolve.
+
+**State:** `95a4303` committed; docs rewrite (`contributing.md` + README callout + this HANDOFF entry) uncommitted
+on `phase0-file-format`. **Next: commit the docs (on the maintainer's word), then B** (behavior co-location — move
+executor bodies into node.ts, the big multi-session refactor), then C / D.
+
+---
+
 ## 2026-07-12 (later 91) — holistic audit (SAFE TO COMMIT) + A2 scaffold (`new-node`/`new-category`)
 
 **Holistic audit of the whole uncommitted delta** (increments 1–3 + E1) via a 16-agent workflow (5 dimensions

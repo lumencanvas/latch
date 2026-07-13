@@ -2,6 +2,11 @@
 
 > Complete reference documentation for all nodes in LATCH, the visual node-based creative coding environment.
 
+> **Authoring a node?** See **[contributing.md](./contributing.md)** — a node is
+> one self-contained `registry/<category>/<id>/node.ts`, auto-discovered by a glob.
+> Scaffold one in seconds with `npm run new-node`. This page below is the *reference
+> catalog* of existing nodes.
+
 ## Overview
 
 LATCH uses a node-based system where each node represents a discrete operation or data source. Nodes are connected via ports (inlets and outlets) to create dataflow graphs called "flows". This document provides a comprehensive reference of all available nodes.
