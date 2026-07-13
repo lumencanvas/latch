@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
-import { imageFxPixelateExecutor } from '@/engine/executors/visual'
+import { makeImageFxExecutor } from '../shared'
 
 const preset = getPresetById('pixelate')!
 
@@ -28,4 +28,6 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: imageFxPixelateExecutor })
+const executor = makeImageFxExecutor('pixelate')
+
+export default defineNode({ definition, executor })

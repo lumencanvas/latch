@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { colorCorrectionExecutor } from '@/engine/executors/visual'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
+import { resolveEffectSource, COLOR_CORRECT_FRAGMENT_THREE } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'color-correction',
@@ -38,4 +40,52 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: colorCorrectionExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
+  const brightness = (ctx.inputs.get('brightness') as number) ?? (ctx.controls.get('brightness') as number) ?? 0
+  const contrast = (ctx.inputs.get('contrast') as number) ?? (ctx.controls.get('contrast') as number) ?? 1
+  const saturation = (ctx.inputs.get('saturation') as number) ?? (ctx.controls.get('saturation') as number) ?? 1
+  const hue = (ctx.inputs.get('hue') as number) ?? (ctx.controls.get('hue') as number) ?? 0
+  const gamma = (ctx.inputs.get('gamma') as number) ?? (ctx.controls.get('gamma') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+
+  if (!texture) {
+    outputs.set('texture', null)
+    return outputs
+  }
+
+  const renderer = getThreeShaderRenderer()
+
+  // Get or compile color correction shader
+  let shader = renderer.getEffectShader('_color_correct')
+  if (!shader) {
+    const result = renderer.compileEffectShader(COLOR_CORRECT_FRAGMENT_THREE, '_color_correct')
+    if ('error' in result) {
+      outputs.set('texture', null)
+      outputs.set('_error', result.error)
+      return outputs
+    }
+    shader = result
+  }
+
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
+
+  uniforms.u_texture.value = texture
+  uniforms.u_brightness.value = brightness
+  uniforms.u_contrast.value = contrast
+  uniforms.u_saturation.value = saturation
+  uniforms.u_hue.value = hue
+  uniforms.u_gamma.value = gamma
+
+  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  outputs.set('texture', resultTexture)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

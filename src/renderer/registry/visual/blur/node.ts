@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { blurExecutor } from '@/engine/executors/visual'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
+import { resolveEffectSource, BLUR_FRAGMENT_THREE } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'blur',
@@ -31,4 +33,61 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: blurExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
+  const radius = (ctx.inputs.get('radius') as number) ?? (ctx.controls.get('radius') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+
+  if (!texture) {
+    outputs.set('texture', null)
+    return outputs
+  }
+
+  const renderer = getThreeShaderRenderer()
+
+  // Get or compile blur shader
+  let shader = renderer.getEffectShader('_blur')
+  if (!shader) {
+    const result = renderer.compileEffectShader(BLUR_FRAGMENT_THREE, '_blur')
+    if ('error' in result) {
+      outputs.set('texture', null)
+      outputs.set('_error', result.error)
+      return outputs
+    }
+    shader = result
+  }
+
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
+
+  const width = 512
+  const height = 512
+
+  // Horizontal pass
+  uniforms.u_texture.value = texture
+  uniforms.u_resolution.value.set(width, height)
+  uniforms.u_radius.value = radius
+  uniforms.u_direction.value = 0
+
+  const horizontalTexture = renderer.render(shader, [], `${ctx.nodeId}_h`)
+
+  // Vertical pass
+  if (horizontalTexture) {
+    uniforms.u_texture.value = horizontalTexture
+    uniforms.u_direction.value = 1
+
+    const resultTexture = renderer.render(shader, [], ctx.nodeId)
+    outputs.set('texture', resultTexture)
+  } else {
+    outputs.set('texture', null)
+  }
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

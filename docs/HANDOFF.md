@@ -6,6 +6,41 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 95) — Workstream B: `visual` behavior co-location (3rd, hardest category)
+
+**`visual` done, verified, committed.** Moved each of the 23 visual executor bodies out of the 2150-line
+`engine/executors/visual.ts` into `registry/visual/<id>/node.ts` (+ cross-folder `outputs/main-output`,
+`data/texture-to-data`); shared state/helpers/lifecycle → new `registry/visual/shared.ts`. The hardest category
+by far — a classification-based generator with several new mechanisms:
+
+- **Factory nodes:** the 8 `image-fx-*` executors are `makeImageFxExecutor('<preset>')` consts, inlined as
+  `const executor = makeImageFxExecutor('<preset>')` (presets verified: glitch / chromatic-aberration / pixelate
+  / kaleidoscope / scanlines / posterize / dither / chroma-key). `makeImageFxExecutor` + `runImageFx` stay shared.
+- **KEEP_SHARED executors:** `snapshotExecutor` + `textureToDataExecutor` stay in `shared.ts` (like audio's
+  `envelopeExecutor`) because each reassigns a module-level `let` canvas (`snapshotScratchCanvas` /
+  `textureToDataCanvas`) that `disposeAllVisualNodes` also clears — shared mutable `let` can't cross a module
+  boundary (imports are read-only). Their node.ts just import the executor from shared.
+- **Re-export shim (NOT deleted):** `executors/visual.ts` is reduced to a 2-line shim re-exporting
+  `getThreeShaderRenderer` + `getShaderRenderer`, because `opencv.ts:24` / `clasp.ts:34` / `ai.ts:16` import
+  `getThreeShaderRenderer` from the relative `'./visual'`. (When those categories co-locate they can repoint to
+  the service and the shim can go.) `opencv.test.ts`'s `vi.mock('@/engine/executors/visual')` still matches.
+- **Reconstructed service imports:** the generator parses visual.ts's OWN import statements (incl. a mid-file
+  `assetStorageManager` import used only by image-loader) and re-emits per node.ts only the ones its body uses,
+  from the correct service module — so ~7 service modules resolve correctly. All-type groups emit whole-statement
+  `import type { … }` (the node-import-hygiene guard only treats that form as type-only; inline `import { type X }`
+  reads as a value import and trips the eager-glob cycle guard — a bug caught + fixed mid-migration).
+- **Test repoint:** `gc-underscore-ids.test.ts` `shaderCacheKeyOwned` import → `@/registry/visual/shared`.
+
+**Gates (all green):** byte-faithful (15 bodies char-identical + 8 factory presets correct + 2 kept-shared) ·
+typecheck clean · lint 0 err · `test:unit` **2333** + 11 todo (149 files) · build ok · browser smoke (241 defs,
+16 3d + 19 audio + 30 visual register, Play→Stop 0 real errors). **Adversarial review (5-agent): SHIP** — all 4
+dimensions clean, 0 confirmed issues, all concerns refuted. Generator: `scratchpad/migrate-visual.mjs`.
+
+**State: committed. B progress: `3d`+`audio`+`visual` DONE (3 of 6 giants). Remaining: ai → connectivity →
+clasp.** Autopilot: migrating each with the same method + gates + adversarial review, committing each.
+
+---
+
 ## 2026-07-12 (later 94) — Workstream B: `audio` behavior co-location (2nd category)
 
 **`audio` done, verified, uncommitted.** Moved each audio executor BODY out of the 1696-line

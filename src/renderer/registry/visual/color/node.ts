@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { colorExecutor } from '@/engine/executors/visual'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
 const definition: NodeDefinition = {
   id: 'color',
@@ -41,4 +41,19 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: colorExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const r = (ctx.inputs.get('r') as number) ?? (ctx.controls.get('r') as number) ?? 1
+  const g = (ctx.inputs.get('g') as number) ?? (ctx.controls.get('g') as number) ?? 1
+  const b = (ctx.inputs.get('b') as number) ?? (ctx.controls.get('b') as number) ?? 1
+  const a = (ctx.inputs.get('a') as number) ?? (ctx.controls.get('a') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('color', [r, g, b, a])
+  outputs.set('r', r)
+  outputs.set('g', g)
+  outputs.set('b', b)
+  outputs.set('a', a)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { blendExecutor } from '@/engine/executors/visual'
+import * as THREE from 'three'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
+import { BLEND_FRAGMENT_THREE } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'blend',
@@ -32,4 +35,64 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: blendExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const texture0 = ctx.inputs.get('a') as THREE.Texture | null
+  const texture1 = ctx.inputs.get('b') as THREE.Texture | null
+  const mixAmount = (ctx.inputs.get('mix') as number) ?? (ctx.controls.get('mix') as number) ?? 0.5
+  const modeStr = (ctx.controls.get('mode') as string) ?? 'normal'
+
+  const modeMap: Record<string, number> = {
+    normal: 0,
+    add: 1,
+    multiply: 2,
+    screen: 3,
+    overlay: 4,
+  }
+  const mode = modeMap[modeStr] ?? 0
+
+  const outputs = new Map<string, unknown>()
+
+  if (!texture0 && !texture1) {
+    outputs.set('texture', null)
+    return outputs
+  }
+
+  const renderer = getThreeShaderRenderer()
+
+  // Get or compile blend shader
+  let shader = renderer.getEffectShader('_blend')
+  if (!shader) {
+    const result = renderer.compileEffectShader(BLEND_FRAGMENT_THREE, '_blend')
+    if ('error' in result) {
+      outputs.set('texture', null)
+      outputs.set('_error', result.error)
+      return outputs
+    }
+    shader = result
+  }
+
+  // Update uniforms
+  const { uniforms } = shader
+  if (!uniforms) {
+    outputs.set('texture', null)
+    outputs.set('_error', 'Shader uniforms not initialized')
+    return outputs
+  }
+
+  uniforms.u_mix.value = mixAmount
+  uniforms.u_mode.value = mode
+
+  if (texture0) {
+    uniforms.u_texture0.value = texture0
+  }
+  if (texture1) {
+    uniforms.u_texture1.value = texture1
+  }
+
+  // Render to per-node render target
+  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  outputs.set('texture', resultTexture)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

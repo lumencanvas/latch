@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { textureToDataExecutor } from '@/engine/executors/visual'
+import { textureToDataExecutor } from '../../visual/shared'
 
 const definition: NodeDefinition = {
   id: 'texture-to-data',

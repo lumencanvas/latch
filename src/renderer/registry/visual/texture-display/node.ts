@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { textureDisplayExecutor } from '@/engine/executors/visual'
+import * as THREE from 'three'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 
 const definition: NodeDefinition = {
   id: 'texture-display',
@@ -25,4 +27,23 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: textureDisplayExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const texture = ctx.inputs.get('texture') as THREE.Texture | null
+
+  const outputs = new Map<string, unknown>()
+
+  if (!texture) {
+    outputs.set('_display', null)
+    return outputs
+  }
+
+  const renderer = getThreeShaderRenderer()
+
+  // Render texture to internal canvas for display
+  renderer.renderToCanvas(texture, renderer.getCanvas())
+
+  outputs.set('_display', renderer.getCanvas())
+  return outputs
+}
+
+export default defineNode({ definition, executor })

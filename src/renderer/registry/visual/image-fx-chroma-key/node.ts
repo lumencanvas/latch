@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import { getPresetById, generateModulationInputs } from '@/services/visual/ShaderPresets'
-import { imageFxChromaKeyExecutor } from '@/engine/executors/visual'
+import { makeImageFxExecutor } from '../shared'
 
 /**
  * Chroma-key controls are written explicitly (rather than auto-generated from the
@@ -40,4 +40,6 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: imageFxChromaKeyExecutor })
+const executor = makeImageFxExecutor('chroma-key')
+
+export default defineNode({ definition, executor })

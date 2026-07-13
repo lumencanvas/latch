@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { webcamSnapshotExecutor } from '@/engine/executors/visual'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
+import { webcamSnapshotState, initWebcamSnapshot } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'webcam-snapshot',
@@ -58,4 +60,86 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: webcamSnapshotExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const trigger = ctx.inputs.get('trigger')
+  const deviceId = ctx.controls.get('device') as string | undefined
+  const resolution = (ctx.controls.get('resolution') as string) ?? '720p'
+  const mirror = (ctx.controls.get('mirror') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize webcam if not already
+  await initWebcamSnapshot(ctx.nodeId, deviceId, resolution)
+
+  const state = webcamSnapshotState.get(ctx.nodeId)
+  if (!state || !state.initialized || !state.video || !state.canvas) {
+    outputs.set('texture', null)
+    outputs.set('imageData', null)
+    outputs.set('width', 0)
+    outputs.set('height', 0)
+    outputs.set('captured', false)
+    outputs.set('_error', 'Webcam not initialized')
+    return outputs
+  }
+
+  // Check if trigger fired
+  const hasTrigger =
+    trigger === true ||
+    trigger === 1 ||
+    (typeof trigger === 'number' && trigger > 0) ||
+    (typeof trigger === 'string' && trigger.length > 0)
+
+  let capturedThisFrame = false
+
+  if (hasTrigger) {
+    const now = Date.now()
+    // Debounce captures to prevent rapid-fire
+    if (now - state.lastCaptureTime > 100) {
+      // Capture frame to canvas
+      const ctx2d = state.canvas.getContext('2d')!
+
+      // Update canvas size to match video
+      state.canvas.width = state.video.videoWidth
+      state.canvas.height = state.video.videoHeight
+
+      // Apply mirror transform if needed
+      if (mirror) {
+        ctx2d.save()
+        ctx2d.scale(-1, 1)
+        ctx2d.drawImage(state.video, -state.canvas.width, 0)
+        ctx2d.restore()
+      } else {
+        ctx2d.drawImage(state.video, 0, 0)
+      }
+
+      // Get image data
+      state.capturedImageData = ctx2d.getImageData(
+        0,
+        0,
+        state.canvas.width,
+        state.canvas.height
+      )
+
+      // Create or update THREE.Texture
+      const renderer = getThreeShaderRenderer()
+      if (state.texture) {
+        renderer.updateTexture(state.texture, state.canvas)
+      } else {
+        state.texture = renderer.createTexture(state.canvas)
+      }
+
+      state.lastCaptureTime = now
+      capturedThisFrame = true
+    }
+  }
+
+  outputs.set('texture', state.texture)
+  outputs.set('imageData', state.capturedImageData)
+  outputs.set('width', state.canvas.width)
+  outputs.set('height', state.canvas.height)
+  outputs.set('captured', capturedThisFrame)
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

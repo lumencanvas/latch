@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { snapshotExecutor } from '@/engine/executors/visual'
+import { snapshotExecutor } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'snapshot',

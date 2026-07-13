@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { webcamExecutor } from '@/engine/executors/visual'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
+import { webcamCapture } from '@/services/visual/WebcamCapture'
+import { nodeTextures } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'webcam',
@@ -40,4 +43,56 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: webcamExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+  const deviceId = ctx.controls.get('device') as string | undefined
+
+  if (!enabled) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('texture', null)
+    outputs.set('video', null)
+    return outputs
+  }
+
+  // Start webcam if not already
+  if (!webcamCapture.isCapturing) {
+    try {
+      await webcamCapture.start(deviceId)
+    } catch {
+      const outputs = new Map<string, unknown>()
+      outputs.set('texture', null)
+      outputs.set('video', null)
+      outputs.set('_error', 'Webcam access denied')
+      return outputs
+    }
+  }
+
+  const video = webcamCapture.getVideo()
+  if (!video) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('texture', null)
+    outputs.set('video', null)
+    return outputs
+  }
+
+  // Get or create THREE.Texture for this node
+  const threeRenderer = getThreeShaderRenderer()
+  let texture = nodeTextures.get(ctx.nodeId)
+
+  if (!texture) {
+    texture = threeRenderer.createTexture(video)
+    nodeTextures.set(ctx.nodeId, texture)
+  } else {
+    // Update texture with current frame
+    threeRenderer.updateTexture(texture, video)
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('texture', texture)
+  outputs.set('video', video)
+  outputs.set('width', video.videoWidth)
+  outputs.set('height', video.videoHeight)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

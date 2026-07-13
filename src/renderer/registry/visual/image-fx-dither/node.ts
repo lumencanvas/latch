@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import { getPresetById, generateControlsFromUniforms, generateModulationInputs } from '@/services/visual/ShaderPresets'
-import { imageFxDitherExecutor } from '@/engine/executors/visual'
+import { makeImageFxExecutor } from '../shared'
 
 const preset = getPresetById('dither')!
 
@@ -28,4 +28,6 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: imageFxDitherExecutor })
+const executor = makeImageFxExecutor('dither')
+
+export default defineNode({ definition, executor })

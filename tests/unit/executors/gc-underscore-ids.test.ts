@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { audioNodeBaseId } from '@/registry/audio/shared'
-import { shaderCacheKeyOwned } from '@/engine/executors/visual'
+import { shaderCacheKeyOwned } from '@/registry/visual/shared'
 
 /**
  * Regression guard for the `_`-split GC bug: gcAudioState/gcVisualState derived a
