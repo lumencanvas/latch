@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { jsonParseExecutor } from '@/engine/executors/connectivity'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+
+// Split a JSON path on dots and brackets (e.g. `a.b[0]` → a, b, 0).
+const JSON_PATH_SPLIT_REGEX = /[.[\]]/
 
 const definition: NodeDefinition = {
   id: 'json-parse',
@@ -30,4 +33,49 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: jsonParseExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const input = ctx.inputs.get('input') as string | undefined
+  const path = (ctx.controls.get('path') as string) ?? ''
+
+  const outputs = new Map<string, unknown>()
+
+  if (!input) {
+    outputs.set('output', null)
+    outputs.set('error', null)
+    return outputs
+  }
+
+  try {
+    let parsed: unknown
+    if (typeof input === 'string') {
+      parsed = JSON.parse(input)
+    } else {
+      parsed = input
+    }
+
+    // Navigate path if provided (e.g., "data.items[0].name")
+    if (path.trim()) {
+      const parts = path.split(JSON_PATH_SPLIT_REGEX).filter(Boolean)
+      let current: unknown = parsed
+      for (const part of parts) {
+        if (current && typeof current === 'object') {
+          current = (current as Record<string, unknown>)[part]
+        } else {
+          current = undefined
+          break
+        }
+      }
+      outputs.set('output', current)
+    } else {
+      outputs.set('output', parsed)
+    }
+    outputs.set('error', null)
+  } catch (error) {
+    outputs.set('output', null)
+    outputs.set('error', error instanceof Error ? error.message : 'Parse error')
+  }
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { bleDeviceExecutor } from '@/engine/executors/connectivity'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { getServiceName, getCharacteristicName } from '@/services/ble/BleProfileRegistry'
+import { BleAdapter } from '@/services/connections/adapters/BleAdapter'
+import { bleAdapters, bleDeviceState } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'ble-device',
@@ -58,4 +61,125 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: bleDeviceExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const deviceInput = ctx.inputs.get('device') as BluetoothDevice | null
+  const connectTrigger = ctx.inputs.get('connect')
+  const disconnectTrigger = ctx.inputs.get('disconnect')
+  const autoConnect = (ctx.controls.get('autoConnect') as boolean) ?? false
+  const autoReconnect = (ctx.controls.get('autoReconnect') as boolean) ?? true
+  const serviceUUID = (ctx.controls.get('serviceUUID') as string) ?? ''
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize state
+  let state = bleDeviceState.get(ctx.nodeId)
+  if (!state) {
+    state = { adapter: null, services: [], connected: false, status: 'idle', error: null }
+    bleDeviceState.set(ctx.nodeId, state)
+  }
+
+  // Check if we have a device
+  if (!deviceInput) {
+    outputs.set('services', [])
+    outputs.set('characteristics', [])
+    outputs.set('deviceName', '')
+    outputs.set('deviceId', '')
+    outputs.set('connected', false)
+    outputs.set('status', 'no device')
+    outputs.set('error', null)
+    return outputs
+  }
+
+  // Create or update adapter if device changed
+  const existingAdapter = bleAdapters.get(ctx.nodeId)
+  if (!existingAdapter || existingAdapter.getDeviceInfo()?.id !== deviceInput.id) {
+    // Dispose old adapter
+    if (existingAdapter) {
+      existingAdapter.dispose()
+    }
+
+    // Create new adapter
+    const adapter = new BleAdapter(ctx.nodeId, {
+      id: ctx.nodeId,
+      name: deviceInput.name || 'BLE Device',
+      protocol: 'ble',
+      serviceUUID: serviceUUID,
+      autoConnect: false,
+      autoReconnect: autoReconnect,
+      reconnectDelay: 1000,
+      maxReconnectAttempts: 5,
+    })
+
+    bleAdapters.set(ctx.nodeId, adapter)
+    state.adapter = adapter
+
+    // Set up status listener
+    adapter.onStatusChange((statusInfo) => {
+      const nodeState = bleDeviceState.get(ctx.nodeId)
+      if (nodeState) {
+        nodeState.connected = statusInfo.status === 'connected'
+        nodeState.status = statusInfo.status
+        nodeState.error = statusInfo.error || null
+      }
+    })
+  }
+
+  const adapter = state.adapter
+
+  // Handle connect trigger
+  const hasConnectTrigger = connectTrigger === true || connectTrigger === 1 || (typeof connectTrigger === 'number' && connectTrigger > 0)
+  const hasDisconnectTrigger = disconnectTrigger === true || disconnectTrigger === 1 || (typeof disconnectTrigger === 'number' && disconnectTrigger > 0)
+
+  if (adapter) {
+    if (hasDisconnectTrigger && state.connected) {
+      try {
+        await adapter.disconnect()
+        state.connected = false
+        state.status = 'disconnected'
+        state.services = []
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : 'Disconnect failed'
+      }
+    } else if ((hasConnectTrigger || (autoConnect && !state.connected)) && !state.connected) {
+      state.status = 'connecting'
+
+      try {
+        await adapter.connect()
+        state.connected = true
+        state.status = 'connected'
+
+        // Enumerate services
+        state.services = await adapter.getServices()
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : 'Connection failed'
+        state.status = 'error'
+      }
+    }
+  }
+
+  // Build characteristics list from services
+  const characteristics: Array<{ uuid: string; name: string; serviceUuid: string; serviceName: string; properties: Record<string, boolean> }> = []
+  for (const service of state.services) {
+    for (const char of service.characteristics) {
+      characteristics.push({
+        uuid: char.uuid,
+        name: getCharacteristicName(char.uuid),
+        serviceUuid: service.uuid,
+        serviceName: getServiceName(service.uuid),
+        properties: char.properties as unknown as Record<string, boolean>,
+      })
+    }
+  }
+
+  outputs.set('services', state.services)
+  outputs.set('characteristics', characteristics)
+  outputs.set('deviceName', deviceInput.name || '')
+  outputs.set('deviceId', deviceInput.id)
+  outputs.set('connected', state.connected)
+  outputs.set('status', state.status)
+  outputs.set('error', state.error)
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

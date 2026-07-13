@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { jsonStringifyExecutor } from '@/engine/executors/connectivity'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
 const definition: NodeDefinition = {
   id: 'json-stringify',
@@ -29,4 +29,25 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: jsonStringifyExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const input = ctx.inputs.get('input')
+  const pretty = (ctx.controls.get('pretty') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+
+  if (input === undefined) {
+    outputs.set('output', '')
+    return outputs
+  }
+
+  try {
+    const result = pretty ? JSON.stringify(input, null, 2) : JSON.stringify(input)
+    outputs.set('output', result)
+  } catch {
+    outputs.set('output', String(input))
+  }
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

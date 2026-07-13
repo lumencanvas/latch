@@ -6,6 +6,37 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 97) — Workstream B: `connectivity` behavior co-location (5th category)
+
+**`connectivity` done, verified, committed.** Inlined the 10 LIVE executor bodies out of the 1875-line
+`engine/executors/connectivity.ts` (DELETED) into their node.ts; shared state/helpers/lifecycle → new
+`registry/connectivity/shared.ts`. No test coupling, no store imports → clean delete (no shim).
+
+- **Live vs dead (map was wrong both ways):** the map called `json-parse`/`json-stringify` dead, but they're
+  LIVE consumers under `registry/data/` (cross-folder, import shared via `../../connectivity/shared`). The
+  actual dead code = `httpRequest`/`websocket`/`mqtt` executors *inside* connectivity.ts — zero importers (the
+  live ws/mqtt/http nodes wire SEPARATE tested files `engine/executors/{websocket,mqtt,http}.ts`). Kept those 3
+  dead execs byte-faithful in `shared.ts` with a header note; **pruning them (+ their httpCache/wsConnections/
+  wsState/mqttConnections/mqttState Maps) is a deferred cleanup pass** — verify the gc/dispose Maps aren't shared
+  with a live exec before removing.
+- **Cross-node state to shared:** `bleAdapters` (ble-device + ble-characteristic), `midiState` (midi-input +
+  midi-output) — both in shared. All ~20 state Maps preserved; `disposeConnectivityNode`/`disposeAll…`/`gc…`
+  byte-identical.
+- **Review nit fixed:** `json-parse` had imported a generic `JSON_PATH_SPLIT_REGEX` from `connectivity/shared`
+  (odd data→connectivity coupling, byte-faithful but semantically wrong) → inlined the one-line regex locally in
+  `json-parse/node.ts`, dropped from shared.
+
+**Gates (all green):** byte-faithful (10/10 live) · typecheck clean · lint 0 err · `test:unit` **2333** + 11 todo
+· build ok · browser smoke (241 defs, connectivity 10 register, Play→Stop 0 real errors). **Adversarial review
+(5-agent): SHIP-with-nits** — byte-faithful + shared-integrity clean; nits = the deferred dead-exec prune + the
+now-fixed regex coupling. Generator: `scratchpad/migrate-connectivity.mjs`.
+
+**State: committed. B progress: 5 of 6 giants done (3d+audio+visual+ai+connectivity). LAST: clasp** (1603 LOC —
+the trickiest: `useConnectionsStore` load-time cycle already dodged by node.ts `await import()` lazy wrappers,
+pinned public-exports `stopVideoElement`/`gcClaspState`, WebCodecs video state machines).
+
+---
+
 ## 2026-07-12 (later 96) — Workstream B: `ai` behavior co-location (4th category)
 
 **`ai` done, verified, committed.** Moved the 20 ai executor bodies out of the 2474-line

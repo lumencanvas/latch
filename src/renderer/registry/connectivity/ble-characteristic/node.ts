@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { bleCharacteristicExecutor } from '@/engine/executors/connectivity'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { parseCharacteristicValue } from '@/services/ble/BleProfileRegistry'
+import { BleAdapter, type BleDataFormat } from '@/services/connections/adapters/BleAdapter'
+import { bleAdapters, bleCharacteristicState } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'ble-characteristic',
@@ -87,4 +90,169 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: bleCharacteristicExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const deviceInput = ctx.inputs.get('device') as BluetoothDevice | null
+  const readTrigger = ctx.inputs.get('read')
+  const writeData = ctx.inputs.get('write')
+  const writeTrigger = ctx.inputs.get('writeTrigger')
+  const serviceUUID = (ctx.controls.get('serviceUUID') as string) ?? ''
+  const characteristicUUID = (ctx.controls.get('characteristicUUID') as string) ?? ''
+  const dataFormat = (ctx.controls.get('dataFormat') as string) ?? 'auto'
+  const enableNotifications = (ctx.controls.get('enableNotifications') as boolean) ?? true
+  const continuous = (ctx.controls.get('continuous') as boolean) ?? false
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize state
+  let state = bleCharacteristicState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      subscribed: false,
+      value: null,
+      rawValue: null,
+      text: '',
+      formatted: '',
+      notified: false,
+      properties: null,
+      error: null,
+    }
+    bleCharacteristicState.set(ctx.nodeId, state)
+  }
+
+  // Reset notified flag each frame
+  state.notified = false
+
+  // Check prerequisites
+  if (!deviceInput || !serviceUUID || !characteristicUUID) {
+    outputs.set('value', state.value)
+    outputs.set('rawValue', state.rawValue)
+    outputs.set('text', state.text)
+    outputs.set('formatted', state.formatted)
+    outputs.set('notified', false)
+    outputs.set('properties', state.properties)
+    outputs.set('error', !deviceInput ? 'No device connected' : 'Service/Characteristic UUID required')
+    return outputs
+  }
+
+  // Get or create adapter for this device
+  const adapterKey = `char_${ctx.nodeId}`
+  let adapter = bleAdapters.get(adapterKey)
+
+  if (!adapter || adapter.getDeviceInfo()?.id !== deviceInput.id) {
+    // Dispose old adapter
+    if (adapter) {
+      adapter.dispose()
+    }
+
+    // Create adapter for this characteristic node
+    adapter = new BleAdapter(adapterKey, {
+      id: adapterKey,
+      name: `Characteristic ${characteristicUUID}`,
+      protocol: 'ble',
+      serviceUUID: serviceUUID,
+      characteristicUUIDs: [characteristicUUID],
+      autoConnect: false,
+      autoReconnect: true,
+      reconnectDelay: 1000,
+      maxReconnectAttempts: 5,
+    })
+
+    bleAdapters.set(adapterKey, adapter)
+
+    // Connect if device is already connected
+    if (deviceInput.gatt?.connected) {
+      try {
+        await adapter.connect()
+        await adapter.discoverServices()
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : 'Connection failed'
+      }
+    }
+  }
+
+  // Ensure connected
+  if (!adapter.isConnected()) {
+    try {
+      await adapter.connect()
+      await adapter.discoverServices()
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : 'Connection failed'
+      outputs.set('value', state.value)
+      outputs.set('rawValue', state.rawValue)
+      outputs.set('text', state.text)
+      outputs.set('formatted', state.formatted)
+      outputs.set('notified', false)
+      outputs.set('properties', state.properties)
+      outputs.set('error', state.error)
+      return outputs
+    }
+  }
+
+  // Determine actual data format
+  const format: BleDataFormat = dataFormat === 'auto' ? 'raw' : dataFormat as BleDataFormat
+
+  // Subscribe to notifications if enabled and not yet subscribed
+  if (enableNotifications && !state.subscribed) {
+    try {
+      await adapter.subscribeToNotifications(characteristicUUID, (_value, raw) => {
+        const charState = bleCharacteristicState.get(ctx.nodeId)
+        if (charState) {
+          // Use profile parser if available
+          const parsed = parseCharacteristicValue(characteristicUUID, raw)
+
+          charState.value = parsed.value
+          charState.rawValue = new Uint8Array(raw.buffer)
+          charState.text = typeof parsed.value === 'string' ? parsed.value : JSON.stringify(parsed.value)
+          charState.formatted = parsed.formatted
+          charState.notified = true
+        }
+      }, format)
+      state.subscribed = true
+    } catch (error) {
+      // Notifications may not be supported
+      console.warn('[BLE Characteristic] Could not subscribe to notifications:', error)
+    }
+  }
+
+  // Handle read trigger
+  const hasReadTrigger = readTrigger === true || readTrigger === 1 || (typeof readTrigger === 'number' && readTrigger > 0) || continuous
+
+  if (hasReadTrigger) {
+    try {
+      const value = await adapter.readCharacteristic(characteristicUUID, format)
+
+      // Parse with profile
+      // Need to get raw DataView for parsing - we'll store last raw value
+      state.value = value
+      state.text = typeof value === 'string' ? value : JSON.stringify(value)
+      state.formatted = state.text
+      state.error = null
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : 'Read failed'
+    }
+  }
+
+  // Handle write trigger
+  const hasWriteTrigger = writeTrigger === true || writeTrigger === 1 || (typeof writeTrigger === 'number' && writeTrigger > 0)
+
+  if (hasWriteTrigger && writeData !== undefined) {
+    try {
+      await adapter.writeCharacteristic(characteristicUUID, writeData as ArrayBuffer | Uint8Array | number | string, format)
+      state.error = null
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : 'Write failed'
+    }
+  }
+
+  outputs.set('value', state.value)
+  outputs.set('rawValue', state.rawValue)
+  outputs.set('text', state.text)
+  outputs.set('formatted', state.formatted)
+  outputs.set('notified', state.notified)
+  outputs.set('properties', state.properties)
+  outputs.set('error', state.error)
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

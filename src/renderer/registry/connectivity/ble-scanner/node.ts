@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { bleScannerExecutor } from '@/engine/executors/connectivity'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { BleAdapter } from '@/services/connections/adapters/BleAdapter'
+import { bleScannerState } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'ble-scanner',
@@ -70,4 +72,92 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: bleScannerExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const trigger = ctx.inputs.get('trigger')
+  const serviceFilter = (ctx.controls.get('serviceFilter') as string) ?? 'any'
+  const customServiceUUID = (ctx.controls.get('customServiceUUID') as string) ?? ''
+  const nameFilter = (ctx.controls.get('nameFilter') as string) ?? ''
+
+  const outputs = new Map<string, unknown>()
+
+  // Initialize state
+  let state = bleScannerState.get(ctx.nodeId)
+  if (!state) {
+    state = { device: null, scanning: false, status: 'idle', error: null }
+    bleScannerState.set(ctx.nodeId, state)
+  }
+
+  // Check if Web Bluetooth API is available
+  if (!('bluetooth' in navigator)) {
+    outputs.set('device', null)
+    outputs.set('deviceName', '')
+    outputs.set('deviceId', '')
+    outputs.set('scanning', false)
+    outputs.set('status', 'unsupported')
+    outputs.set('error', 'Web Bluetooth API not supported')
+    return outputs
+  }
+
+  // Handle scan trigger
+  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
+
+  if (hasTrigger && !state.scanning) {
+    state.scanning = true
+    state.status = 'scanning'
+    state.error = null
+
+    try {
+      // Build filters
+      const filters: BluetoothLEScanFilter[] = []
+      const optionalServices: BluetoothServiceUUID[] = []
+
+      // Add service filter
+      if (serviceFilter !== 'any' && !serviceFilter.startsWith('---')) {
+        const uuid = serviceFilter === 'custom' ? customServiceUUID : serviceFilter
+        if (uuid) {
+          filters.push({ services: [uuid] })
+          optionalServices.push(uuid)
+        }
+      }
+
+      // Add name filter
+      if (nameFilter) {
+        if (filters.length > 0) {
+          filters[0] = { ...filters[0], namePrefix: nameFilter }
+        } else {
+          filters.push({ namePrefix: nameFilter })
+        }
+      }
+
+      // Request device
+      const device = await BleAdapter.scanDevices({
+        filters: filters.length > 0 ? filters : undefined,
+        optionalServices,
+        acceptAllDevices: filters.length === 0,
+      })
+
+      if (device) {
+        state.device = device
+        state.status = 'selected'
+      } else {
+        state.status = 'cancelled'
+      }
+    } catch (error) {
+      state.error = error instanceof Error ? error.message : 'Scan failed'
+      state.status = 'error'
+    } finally {
+      state.scanning = false
+    }
+  }
+
+  outputs.set('device', state.device)
+  outputs.set('deviceName', state.device?.name || '')
+  outputs.set('deviceId', state.device?.id || '')
+  outputs.set('scanning', state.scanning)
+  outputs.set('status', state.status)
+  outputs.set('error', state.error)
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })

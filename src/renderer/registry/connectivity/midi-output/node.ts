@@ -1,6 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { midiOutputExecutor } from '@/engine/executors/connectivity'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { midiOutputs, midiState, midiNoteOffTimeouts, getCached, setCached } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'midi-output',
@@ -34,4 +35,65 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: midiOutputExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const note = ctx.inputs.get('note') as number | null
+  const velocity = (ctx.inputs.get('velocity') as number) ?? 0.8
+  const channel = (ctx.controls.get('channel') as number) ?? 0
+  const trigger = ctx.inputs.get('trigger') as boolean | undefined
+
+  const outputs = new Map<string, unknown>()
+
+  // Request MIDI access if not already done
+  const midiKey = `${ctx.nodeId}:midi`
+  if (!midiOutputs.has(midiKey) && navigator.requestMIDIAccess) {
+    try {
+      const access = await navigator.requestMIDIAccess()
+
+      // Get first available output
+      const outputList = Array.from(access.outputs.values())
+      if (outputList.length > 0) {
+        const output = outputList[0]
+        midiOutputs.set(midiKey, output)
+        setCached(midiState, `${ctx.nodeId}:connected`, true)
+      }
+    } catch (error) {
+      console.error('[MIDI] Access denied:', error)
+      setCached(midiState, `${ctx.nodeId}:connected`, false)
+    }
+  }
+
+  const output = midiOutputs.get(midiKey)
+
+  // Send note if triggered
+  if (trigger && note !== null && output) {
+    const velocityByte = Math.round(velocity * 127)
+    const noteOnStatus = 0x90 | channel
+    const noteOffStatus = 0x80 | channel
+
+    // Send Note On
+    output.send([noteOnStatus, note, velocityByte])
+
+    // Schedule Note Off after 100ms - track for cleanup
+    const timeoutId = setTimeout(() => {
+      output.send([noteOffStatus, note, 0])
+      // Remove from tracking after execution
+      const timeouts = midiNoteOffTimeouts.get(ctx.nodeId)
+      if (timeouts) {
+        const idx = timeouts.indexOf(timeoutId)
+        if (idx >= 0) timeouts.splice(idx, 1)
+      }
+    }, 100)
+
+    // Track the timeout for cleanup
+    if (!midiNoteOffTimeouts.has(ctx.nodeId)) {
+      midiNoteOffTimeouts.set(ctx.nodeId, [])
+    }
+    midiNoteOffTimeouts.get(ctx.nodeId)!.push(timeoutId)
+  }
+
+  outputs.set('connected', getCached(`${ctx.nodeId}:connected`, false))
+
+  return outputs
+}
+
+export default defineNode({ definition, executor })
