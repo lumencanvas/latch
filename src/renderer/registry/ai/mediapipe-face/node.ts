@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { mediapipeFaceExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { mediaPipeService, extractHeadRotation, calculateFaceBox, extractBlendshapeValues } from '@/services/ai/MediaPipeService'
+import { getCached, setCached } from '../shared'
 
 import { markRaw } from 'vue'
 import MediaPipeFaceNode from './MediaPipeFaceNode.vue'
@@ -89,6 +91,124 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'mediapipe-hand', 'mediapipe-pose', 'shader'],
   },
+}
+
+export const mediapipeFaceExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  if (!enabled || !videoInput) {
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('blendshapes', getCached(`${ctx.nodeId}:blendshapes`, {}))
+    outputs.set('headRotation', getCached(`${ctx.nodeId}:headRotation`, null))
+    outputs.set('pitch', 0)
+    outputs.set('yaw', 0)
+    outputs.set('roll', 0)
+    outputs.set('faceBox', getCached(`${ctx.nodeId}:faceBox`, null))
+    outputs.set('mouthOpen', 0)
+    outputs.set('eyeBlinkLeft', 0)
+    outputs.set('eyeBlinkRight', 0)
+    outputs.set('browRaise', 0)
+    outputs.set('smile', 0)
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('face'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('face')) {
+    outputs.set('landmarks', [])
+    outputs.set('blendshapes', {})
+    outputs.set('headRotation', null)
+    outputs.set('pitch', 0)
+    outputs.set('yaw', 0)
+    outputs.set('roll', 0)
+    outputs.set('faceBox', null)
+    outputs.set('mouthOpen', 0)
+    outputs.set('eyeBlinkLeft', 0)
+    outputs.set('eyeBlinkRight', 0)
+    outputs.set('browRaise', 0)
+    outputs.set('smile', 0)
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.detectFace(videoInput, ctx.totalTime * 1000)
+
+    if (!result || result.landmarks.length === 0) {
+      outputs.set('landmarks', [])
+      outputs.set('blendshapes', {})
+      outputs.set('headRotation', null)
+      outputs.set('pitch', 0)
+      outputs.set('yaw', 0)
+      outputs.set('roll', 0)
+      outputs.set('faceBox', null)
+      outputs.set('mouthOpen', 0)
+      outputs.set('eyeBlinkLeft', 0)
+      outputs.set('eyeBlinkRight', 0)
+      outputs.set('browRaise', 0)
+      outputs.set('smile', 0)
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    const landmarks = result.landmarks[0] || []
+    // faceBlendshapes[0] is a Classifications object with a 'categories' array
+    const blendshapeCategories = result.blendshapes[0]?.categories
+    const blendshapes = blendshapeCategories ? extractBlendshapeValues(blendshapeCategories) : {}
+    const headRotation = result.transformationMatrixes[0] ? extractHeadRotation(result.transformationMatrixes[0]) : { pitch: 0, yaw: 0, roll: 0 }
+    const faceBox = calculateFaceBox(landmarks)
+
+    // Extract specific blendshape values
+    const mouthOpen = blendshapes['jawOpen'] || blendshapes['mouthOpen'] || 0
+    const eyeBlinkLeft = blendshapes['eyeBlinkLeft'] || 0
+    const eyeBlinkRight = blendshapes['eyeBlinkRight'] || 0
+    const browRaise = ((blendshapes['browInnerUp'] || 0) + (blendshapes['browOuterUpLeft'] || 0) + (blendshapes['browOuterUpRight'] || 0)) / 3
+    const smile = ((blendshapes['mouthSmileLeft'] || 0) + (blendshapes['mouthSmileRight'] || 0)) / 2
+
+    setCached(`${ctx.nodeId}:landmarks`, landmarks)
+    setCached(`${ctx.nodeId}:blendshapes`, blendshapes)
+    setCached(`${ctx.nodeId}:headRotation`, headRotation)
+    setCached(`${ctx.nodeId}:faceBox`, faceBox)
+
+    outputs.set('landmarks', landmarks)
+    outputs.set('blendshapes', blendshapes)
+    outputs.set('headRotation', headRotation)
+    outputs.set('pitch', headRotation.pitch)
+    outputs.set('yaw', headRotation.yaw)
+    outputs.set('roll', headRotation.roll)
+    outputs.set('faceBox', faceBox)
+    outputs.set('mouthOpen', mouthOpen)
+    outputs.set('eyeBlinkLeft', eyeBlinkLeft)
+    outputs.set('eyeBlinkRight', eyeBlinkRight)
+    outputs.set('browRaise', browRaise)
+    outputs.set('smile', smile)
+    outputs.set('detected', true)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Face] Detection error:', error)
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('blendshapes', {})
+    outputs.set('headRotation', null)
+    outputs.set('pitch', 0)
+    outputs.set('yaw', 0)
+    outputs.set('roll', 0)
+    outputs.set('faceBox', null)
+    outputs.set('mouthOpen', 0)
+    outputs.set('eyeBlinkLeft', 0)
+    outputs.set('eyeBlinkRight', 0)
+    outputs.set('browRaise', 0)
+    outputs.set('smile', 0)
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Detection failed')
+  }
+
+  return outputs
 }
 
 export default defineNode({ definition, executor: mediapipeFaceExecutor })

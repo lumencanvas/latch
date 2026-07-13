@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { textTransformationExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { hasTriggerValue, runModelInference } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'text-transformation',
@@ -46,4 +48,48 @@ const definition: NodeDefinition = {
 // Declares its model need — `defineNode` derives the populated `model` select + the
 // standardized loading/progress/done/error outputs (deduped against those already
 // declared) from the globally-injected AI catalog resolver.
+export const textTransformationExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const trigger = ctx.inputs.get('trigger')
+
+  // Get text from input or control
+  let text = (ctx.inputs.get('text') as string) ?? ''
+  if (!text) {
+    text = (ctx.controls.get('text') as string) ?? ''
+  }
+
+  const taskName = (ctx.controls.get('task') as string) ?? 'summarize'
+  const maxTokens = (ctx.controls.get('maxTokens') as number) ?? 100
+
+  // Prepend the task instruction for T5/Flan models.
+  let taskPrompt: string
+  switch (taskName) {
+    case 'summarize':
+      taskPrompt = `summarize: ${text}`
+      break
+    case 'translate':
+      taskPrompt = `translate English to French: ${text}`
+      break
+    case 'paraphrase':
+      taskPrompt = `paraphrase: ${text}`
+      break
+    default:
+      taskPrompt = text
+  }
+
+  // Transform only on an explicit trigger carrying non-empty text.
+  const triggered = hasTriggerValue(trigger)
+  const shouldRun = triggered && !!text.trim()
+  const { result } = runModelInference<string>(ctx, outputs, {
+    task: 'text2text-generation',
+    shouldRun,
+    infer: (modelId) => aiInference.text2text(taskPrompt, { maxLength: maxTokens }, modelId),
+  })
+
+  // Preserve prior behavior: empty/whitespace text clears the result unconditionally
+  // (the original cleared on empty text regardless of trigger). Otherwise serve the latest.
+  outputs.set('result', !text.trim() ? '' : (result ?? ''))
+  return outputs
+}
+
 export default defineNode({ definition, executor: textTransformationExecutor, models: [{ task: 'text2text-generation' }] })

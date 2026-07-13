@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { objectDetectionLiveExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { runLiveDetection, overlayOptions, type Detection } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'object-detection-live',
@@ -80,6 +82,16 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'snapshot', 'object-detection', 'main-output', 'gate'],
   },
+}
+
+export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const modelId = (ctx.controls.get('model') as string) || 'Xenova/yolos-tiny'
+  const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
+  return runLiveDetection(
+    ctx,
+    (img) => aiInference.detectObjects(img, threshold, modelId) as Promise<Detection[]>,
+    overlayOptions(ctx, 20)
+  )
 }
 
 export default defineNode({ definition, executor: objectDetectionLiveExecutor })

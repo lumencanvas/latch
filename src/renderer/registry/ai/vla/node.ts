@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { vlaExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { getCached, setCached, hasTriggerValue, runModelInference, convertToImageData } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'vla',
@@ -56,6 +58,47 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'image-captioning', 'llm', 'text-generation'],
   },
+}
+
+export const vlaExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const imageInput = ctx.inputs.get('image')
+  const trigger = ctx.inputs.get('trigger')
+  const modelId = ctx.controls.get('model') as string | undefined
+  const instruction =
+    (ctx.inputs.get('instruction') as string) || (ctx.controls.get('instruction') as string) || ''
+  const maxTokens = Math.floor((ctx.controls.get('maxTokens') as number) ?? 64)
+
+  // Defer the image conversion until the model is loaded (VLA models are heavy).
+  const imageData = aiInference.isModelLoaded('image-text-to-text', modelId)
+    ? convertToImageData(imageInput)
+    : null
+
+  // Run on an explicit trigger or every `interval` frames (VLA is expensive).
+  const currentFrame = ctx.frameCount
+  const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
+  const interval = (ctx.controls.get('interval') as number) ?? 120
+  const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
+  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
+
+  const { result, started, state } = runModelInference<string>(ctx, outputs, {
+    task: 'image-text-to-text',
+    shouldRun,
+    notLoadedMessage: 'Model not loaded. Open AI Model Manager → Vision-Language (VLA) → Load.',
+    infer: (m) => aiInference.visionAction(imageData as ImageData, instruction, { modelId: m, maxNewTokens: maxTokens }),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  outputs.set('action', result ?? '')
+  // A bad/absent image (model loaded) clears the stale action — the original cleared it via
+  // emit('', false). Leaving it latched could drive a policy off a frame that no longer exists.
+  if (state !== 'not-loaded' && !imageData) {
+    outputs.set('action', '')
+    if (imageInput) {
+      outputs.set('error', 'Unsupported image input. Use Webcam Snapshot or Texture to Data.')
+    }
+  }
+  return outputs
 }
 
 export default defineNode({ definition, executor: vlaExecutor })

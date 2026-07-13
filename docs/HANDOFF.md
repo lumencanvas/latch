@@ -6,6 +6,39 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 96) — Workstream B: `ai` behavior co-location (4th category)
+
+**`ai` done, verified, committed.** Moved the 20 ai executor bodies out of the 2474-line
+`engine/executors/ai.ts` into `registry/ai/<id>/node.ts`; shared state/helpers/lifecycle → new
+`registry/ai/shared.ts`. **Named-export + shim approach** (7 test files import ai executor consts by identity):
+each executor stays a `export const <name>Executor` in its node.ts (byte-identical, NOT renamed to `const
+executor`), and `executors/ai.ts` becomes a shim re-exporting all 20 from their node.ts — so the 7 tests
+(ai-text-vla, live-detection, ai-vision-text, ai-object-detection, vla, text-generation, ai-stt-error) import
+them unchanged (zero test churn). The shim is imported only by those tests (grep-verified); production reaches
+the executors via the glob's `default` export.
+
+- **E1 `models:` preserved:** 7 nodes carry `models: [{ task }]` on their `defineNode` — insert the executor
+  block via a regex before `export default defineNode(` so the `models:` suffix stays intact (an exact-string
+  match failed on these).
+- **Mid-file import handled:** ai.ts had a mid-file import (~line 1336) of mediapipe utils; `tight()` now trims
+  trailing import lines so it isn't swept into a neighbor's body — it lands in mediapipe-hand/mediapipe-face by
+  usage, no cross-contamination.
+- **String-literal false-import fix:** import detection now strips simple string literals too (a `'Detection'`
+  string was matching the `Detection` TYPE → phantom unused import). Template literals kept (for `${code}` refs).
+- `getThreeShaderRenderer` repointed from `./visual` to `@/services/visual/ThreeShaderRenderer` (the shim's real
+  source). `drawBoundingBox` from `@/registry/ai/utils/mediapipe-drawing`, `COCO_LABELS` from `@/services/ai/yolo`
+  (registry-util import allowed by hygiene — not a store/registry-index).
+
+**Gates (all green):** byte-faithful (20/20) · typecheck clean · lint 0 err · `test:unit` **2333** + 11 todo
+(149 files, all 7 ai tests pass via shim) · build ok · browser smoke (241 defs, ai category 23 register,
+Play→Stop 0 real errors). **Adversarial review (5-agent): SHIP** — all 4 dimensions clean, 2 nits (the
+intentional service-path import; a stale relocation-artifact comment — FIXED). Generator: `scratchpad/migrate-ai.mjs`.
+
+**State: committed. B progress: `3d`+`audio`+`visual`+`ai` DONE (4 of 6 giants). Remaining: connectivity →
+clasp.** Autopilot continues.
+
+---
+
 ## 2026-07-12 (later 95) — Workstream B: `visual` behavior co-location (3rd, hardest category)
 
 **`visual` done, verified, committed.** Moved each of the 23 visual executor bodies out of the 2150-line

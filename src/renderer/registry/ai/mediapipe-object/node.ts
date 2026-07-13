@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { mediapipeObjectExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { mediaPipeService } from '@/services/ai/MediaPipeService'
+import { getCached, setCached } from '../shared'
 
 import { markRaw } from 'vue'
 import MediaPipeObjectNode from './MediaPipeObjectNode.vue'
@@ -90,6 +92,102 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'object-detection', 'image-classification', 'gate'],
   },
+}
+
+export const mediapipeObjectExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+  const minConfidence = (ctx.controls.get('minConfidence') as number) ?? 0.5
+  const maxResults = (ctx.controls.get('maxResults') as number) ?? 10
+  const labelFilter = (ctx.controls.get('labelFilter') as string) ?? ''
+
+  if (!enabled || !videoInput) {
+    outputs.set('detections', getCached(`${ctx.nodeId}:detections`, []))
+    outputs.set('count', getCached(`${ctx.nodeId}:count`, 0))
+    outputs.set('filtered', getCached(`${ctx.nodeId}:filtered`, []))
+    outputs.set('topLabel', '')
+    outputs.set('topConfidence', 0)
+    outputs.set('topBox', null)
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('object'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('object')) {
+    outputs.set('detections', [])
+    outputs.set('count', 0)
+    outputs.set('filtered', [])
+    outputs.set('topLabel', '')
+    outputs.set('topConfidence', 0)
+    outputs.set('topBox', null)
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.detectObjects(videoInput, ctx.totalTime * 1000)
+
+    if (!result || result.detections.length === 0) {
+      outputs.set('detections', [])
+      outputs.set('count', 0)
+      outputs.set('filtered', [])
+      outputs.set('topLabel', '')
+      outputs.set('topConfidence', 0)
+      outputs.set('topBox', null)
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    // Filter by confidence
+    let detections = result.detections.filter(d =>
+      d.categories.some(c => c.score >= minConfidence)
+    )
+
+    // Filter by label if specified
+    const filterLabels = labelFilter.split(',').map(l => l.trim().toLowerCase()).filter(Boolean)
+    if (filterLabels.length > 0) {
+      detections = detections.filter(d =>
+        d.categories.some(c => filterLabels.includes(c.categoryName.toLowerCase()))
+      )
+    }
+
+    // Limit results
+    detections = detections.slice(0, maxResults)
+
+    // Get top detection
+    const topDetection = detections[0]
+    const topCategory = topDetection?.categories[0]
+
+    setCached(`${ctx.nodeId}:detections`, detections)
+    setCached(`${ctx.nodeId}:count`, detections.length)
+    setCached(`${ctx.nodeId}:filtered`, detections)
+
+    outputs.set('detections', detections)
+    outputs.set('count', detections.length)
+    outputs.set('filtered', detections)
+    outputs.set('topLabel', topCategory?.categoryName || '')
+    outputs.set('topConfidence', topCategory?.score || 0)
+    outputs.set('topBox', topDetection?.boundingBox || null)
+    outputs.set('detected', detections.length > 0)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Object] Detection error:', error)
+    outputs.set('detections', getCached(`${ctx.nodeId}:detections`, []))
+    outputs.set('count', 0)
+    outputs.set('filtered', [])
+    outputs.set('topLabel', '')
+    outputs.set('topConfidence', 0)
+    outputs.set('topBox', null)
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Detection failed')
+  }
+
+  return outputs
 }
 
 export default defineNode({ definition, executor: mediapipeObjectExecutor })

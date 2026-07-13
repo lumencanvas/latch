@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { mediapipeGestureExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { mediaPipeService } from '@/services/ai/MediaPipeService'
+import { getCached, setCached } from '../shared'
 
 import { markRaw } from 'vue'
 import MediaPipeGestureNode from './MediaPipeGestureNode.vue'
@@ -70,6 +72,99 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'mediapipe-hand', 'gate', 'monitor'],
   },
+}
+
+export const mediapipeGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+  const confidenceThreshold = (ctx.controls.get('confidenceThreshold') as number) ?? 0.5
+
+  if (!enabled || !videoInput) {
+    outputs.set('gesture', 'None')
+    outputs.set('confidence', 0)
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('handedness', '')
+    outputs.set('handCount', 0)
+    outputs.set('allGestures', [])
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('gesture'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('gesture')) {
+    outputs.set('gesture', getCached(`${ctx.nodeId}:gesture`, 'None'))
+    outputs.set('confidence', getCached(`${ctx.nodeId}:confidence`, 0))
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('handedness', '')
+    outputs.set('handCount', 0)
+    outputs.set('allGestures', [])
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.recognizeGestures(videoInput, ctx.totalTime * 1000)
+
+    if (!result || result.gestures.length === 0) {
+      setCached(`${ctx.nodeId}:detected`, false)
+      outputs.set('gesture', 'None')
+      outputs.set('confidence', 0)
+      outputs.set('landmarks', [])
+      outputs.set('handedness', '')
+      outputs.set('handCount', 0)
+      outputs.set('allGestures', [])
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    // Build all gestures data for visualization
+    const allGestures = result.gestures.map((gestureArray, i) => {
+      const topGesture = gestureArray[0]
+      return {
+        gesture: topGesture?.categoryName || 'None',
+        confidence: topGesture?.score || 0,
+        handedness: result.handedness[i]?.categoryName || '',
+        landmarks: result.landmarks[i] || [],
+      }
+    }).filter(g => g.confidence >= confidenceThreshold)
+
+    // Get top gesture from first hand
+    const topGesture = result.gestures[0]?.[0]
+    const topGestureName = topGesture?.categoryName || 'None'
+    const topConfidence = topGesture?.score || 0
+
+    setCached(`${ctx.nodeId}:gesture`, topGestureName)
+    setCached(`${ctx.nodeId}:confidence`, topConfidence)
+    setCached(`${ctx.nodeId}:landmarks`, result.landmarks[0] || [])
+    setCached(`${ctx.nodeId}:allGestures`, allGestures)
+    setCached(`${ctx.nodeId}:detected`, topGestureName !== 'None')
+
+    outputs.set('gesture', topGestureName)
+    outputs.set('confidence', topConfidence)
+    outputs.set('landmarks', result.landmarks[0] || [])
+    outputs.set('handedness', result.handedness[0]?.categoryName || '')
+    outputs.set('handCount', result.landmarks.length)
+    outputs.set('allGestures', allGestures)
+    outputs.set('detected', topGestureName !== 'None' && topConfidence >= confidenceThreshold)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Gesture] Recognition error:', error)
+    outputs.set('gesture', getCached(`${ctx.nodeId}:gesture`, 'None'))
+    outputs.set('confidence', 0)
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('handedness', '')
+    outputs.set('handCount', 0)
+    outputs.set('allGestures', [])
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Recognition failed')
+  }
+
+  return outputs
 }
 
 export default defineNode({ definition, executor: mediapipeGestureExecutor })

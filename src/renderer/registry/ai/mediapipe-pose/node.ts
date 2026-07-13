@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { mediapipePoseExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { mediaPipeService } from '@/services/ai/MediaPipeService'
+import { getCached, setCached, POSE_LANDMARKS } from '../shared'
 
 import { markRaw } from 'vue'
 import MediaPipePoseNode from './MediaPipePoseNode.vue'
@@ -96,6 +98,121 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'mediapipe-hand', 'mediapipe-face', 'shader'],
   },
+}
+
+export const mediapipePoseExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  if (!enabled || !videoInput) {
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('worldLandmarks', getCached(`${ctx.nodeId}:worldLandmarks`, []))
+    outputs.set('visibility', getCached(`${ctx.nodeId}:visibility`, {}))
+    outputs.set('nose', null)
+    outputs.set('leftShoulder', null)
+    outputs.set('rightShoulder', null)
+    outputs.set('leftElbow', null)
+    outputs.set('rightElbow', null)
+    outputs.set('leftWrist', null)
+    outputs.set('rightWrist', null)
+    outputs.set('leftHip', null)
+    outputs.set('rightHip', null)
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('pose'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('pose')) {
+    outputs.set('landmarks', [])
+    outputs.set('worldLandmarks', [])
+    outputs.set('visibility', {})
+    outputs.set('nose', null)
+    outputs.set('leftShoulder', null)
+    outputs.set('rightShoulder', null)
+    outputs.set('leftElbow', null)
+    outputs.set('rightElbow', null)
+    outputs.set('leftWrist', null)
+    outputs.set('rightWrist', null)
+    outputs.set('leftHip', null)
+    outputs.set('rightHip', null)
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.detectPose(videoInput, ctx.totalTime * 1000)
+
+    if (!result || result.landmarks.length === 0) {
+      outputs.set('landmarks', [])
+      outputs.set('worldLandmarks', [])
+      outputs.set('visibility', {})
+      outputs.set('nose', null)
+      outputs.set('leftShoulder', null)
+      outputs.set('rightShoulder', null)
+      outputs.set('leftElbow', null)
+      outputs.set('rightElbow', null)
+      outputs.set('leftWrist', null)
+      outputs.set('rightWrist', null)
+      outputs.set('leftHip', null)
+      outputs.set('rightHip', null)
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    const landmarks = result.landmarks[0] || []
+    const worldLandmarks = result.worldLandmarks[0] || []
+
+    // Build visibility map
+    const visibility: Record<string, number> = {}
+    landmarks.forEach((lm, i) => {
+      visibility[`landmark_${i}`] = (lm as { visibility?: number }).visibility ?? 1
+    })
+
+    // Extract key body points
+    const getPoint = (idx: number) => landmarks[idx] || null
+
+    setCached(`${ctx.nodeId}:landmarks`, landmarks)
+    setCached(`${ctx.nodeId}:worldLandmarks`, worldLandmarks)
+    setCached(`${ctx.nodeId}:visibility`, visibility)
+
+    outputs.set('landmarks', landmarks)
+    outputs.set('worldLandmarks', worldLandmarks)
+    outputs.set('visibility', visibility)
+    outputs.set('nose', getPoint(POSE_LANDMARKS.NOSE))
+    outputs.set('leftShoulder', getPoint(POSE_LANDMARKS.LEFT_SHOULDER))
+    outputs.set('rightShoulder', getPoint(POSE_LANDMARKS.RIGHT_SHOULDER))
+    outputs.set('leftElbow', getPoint(POSE_LANDMARKS.LEFT_ELBOW))
+    outputs.set('rightElbow', getPoint(POSE_LANDMARKS.RIGHT_ELBOW))
+    outputs.set('leftWrist', getPoint(POSE_LANDMARKS.LEFT_WRIST))
+    outputs.set('rightWrist', getPoint(POSE_LANDMARKS.RIGHT_WRIST))
+    outputs.set('leftHip', getPoint(POSE_LANDMARKS.LEFT_HIP))
+    outputs.set('rightHip', getPoint(POSE_LANDMARKS.RIGHT_HIP))
+    outputs.set('detected', true)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Pose] Detection error:', error)
+    outputs.set('landmarks', getCached(`${ctx.nodeId}:landmarks`, []))
+    outputs.set('worldLandmarks', [])
+    outputs.set('visibility', {})
+    outputs.set('nose', null)
+    outputs.set('leftShoulder', null)
+    outputs.set('rightShoulder', null)
+    outputs.set('leftElbow', null)
+    outputs.set('rightElbow', null)
+    outputs.set('leftWrist', null)
+    outputs.set('rightWrist', null)
+    outputs.set('leftHip', null)
+    outputs.set('rightHip', null)
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Detection failed')
+  }
+
+  return outputs
 }
 
 export default defineNode({ definition, executor: mediapipePoseExecutor })

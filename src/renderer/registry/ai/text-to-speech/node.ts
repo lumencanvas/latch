@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { textToSpeechExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { textToSpeechService } from '@/services/ai/TextToSpeechService'
+import { isNodeDisposed, hasTriggerValue, ttsState } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'text-to-speech',
@@ -34,6 +36,61 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['text-generation', 'speech-recognition', 'string-template', 'trigger'],
   },
+}
+
+export const textToSpeechExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const text = String(ctx.inputs.get('text') ?? ctx.controls.get('text') ?? '')
+  const trigger = ctx.inputs.get('trigger')
+  const autoSpeak = (ctx.controls.get('autoSpeak') as boolean) ?? false
+  const rate = (ctx.controls.get('rate') as number) ?? 1
+  const pitch = (ctx.controls.get('pitch') as number) ?? 1
+  const volume = (ctx.controls.get('volume') as number) ?? 1
+  const voiceName = (ctx.controls.get('voice') as string) ?? ''
+
+  let state = ttsState.get(ctx.nodeId)
+  if (!state) {
+    state = { lastText: '', lastTriggerHigh: false, speaking: false, utterance: null }
+    ttsState.set(ctx.nodeId, state)
+  }
+
+  if (!textToSpeechService.isSupported()) {
+    outputs.set('speaking', false)
+    outputs.set('_error', 'Text-to-speech is not supported in this browser.')
+    return outputs
+  }
+
+  // Speak on a rising-edge trigger, or (when Auto Speak) whenever text changes.
+  const triggerHigh = hasTriggerValue(trigger)
+  const risingTrigger = triggerHigh && !state.lastTriggerHigh
+  state.lastTriggerHigh = triggerHigh
+  const shouldSpeak =
+    text.trim().length > 0 && (risingTrigger || (autoSpeak && text !== state.lastText))
+
+  if (shouldSpeak) {
+    textToSpeechService.cancel() // interrupt any in-progress utterance first
+    const nodeId = ctx.nodeId
+    const clearSpeaking = () => {
+      const s = ttsState.get(nodeId)
+      if (s && !isNodeDisposed(nodeId)) s.speaking = false
+    }
+    const utterance = textToSpeechService.speak(text, {
+      rate,
+      pitch,
+      volume,
+      voiceName,
+      onend: clearSpeaking,
+      onerror: clearSpeaking,
+    })
+    if (utterance) {
+      state.speaking = true
+      state.utterance = utterance
+    }
+  }
+  state.lastText = text
+
+  outputs.set('speaking', state.speaking)
+  return outputs
 }
 
 export default defineNode({ definition, executor: textToSpeechExecutor })

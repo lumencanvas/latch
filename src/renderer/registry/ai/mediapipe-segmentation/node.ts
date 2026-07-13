@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { mediapipeSegmentationExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { mediaPipeService } from '@/services/ai/MediaPipeService'
+import { getCached, setCached } from '../shared'
 
 import { markRaw } from 'vue'
 import MediaPipeSegmentationNode from './MediaPipeSegmentationNode.vue'
@@ -71,6 +73,54 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'shader', 'mediapipe-pose', 'mediapipe-face'],
   },
+}
+
+export const mediapipeSegmentationExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const videoInput = ctx.inputs.get('video') as HTMLVideoElement | null
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  if (!enabled || !videoInput) {
+    outputs.set('mask', getCached(`${ctx.nodeId}:mask`, null))
+    outputs.set('detected', false)
+    outputs.set('loading', mediaPipeService.isLoading('segmentation'))
+    return outputs
+  }
+
+  // Check if loading
+  if (mediaPipeService.isLoading('segmentation')) {
+    outputs.set('mask', getCached(`${ctx.nodeId}:mask`, null))
+    outputs.set('detected', false)
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  try {
+    const result = await mediaPipeService.segmentImage(videoInput, ctx.totalTime * 1000)
+
+    if (!result || !result.categoryMask) {
+      setCached(`${ctx.nodeId}:detected`, false)
+      outputs.set('mask', null)
+      outputs.set('detected', false)
+      outputs.set('loading', false)
+      return outputs
+    }
+
+    setCached(`${ctx.nodeId}:mask`, result.categoryMask)
+    setCached(`${ctx.nodeId}:detected`, true)
+
+    outputs.set('mask', result.categoryMask)
+    outputs.set('detected', true)
+    outputs.set('loading', false)
+  } catch (error) {
+    console.error('[MediaPipe Segmentation] Error:', error)
+    outputs.set('mask', getCached(`${ctx.nodeId}:mask`, null))
+    outputs.set('detected', false)
+    outputs.set('loading', false)
+    outputs.set('_error', error instanceof Error ? error.message : 'Segmentation failed')
+  }
+
+  return outputs
 }
 
 export default defineNode({ definition, executor: mediapipeSegmentationExecutor })

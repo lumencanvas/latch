@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { speechRecognitionExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { pendingOperations, getCached, setCached, hasTriggerValue, getSTTState, isToneAudioNode } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'speech-recognition',
@@ -73,6 +75,193 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['audio-input', 'sentiment-analysis', 'text-generation', 'string-template'],
   },
+}
+
+export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const audioInput = ctx.inputs.get('audio')
+  const trigger = ctx.inputs.get('trigger')
+
+  // Get controls
+  const mode = (ctx.controls.get('mode') as string) ?? 'manual'
+  const bufferDuration = (ctx.controls.get('bufferDuration') as number) ?? 5
+  const vadThreshold = (ctx.controls.get('vadThreshold') as number) ?? 0.01
+  const vadSilenceDuration = (ctx.controls.get('vadSilenceDuration') as number) ?? 500
+  const chunkInterval = (ctx.controls.get('chunkInterval') as number) ?? 3000
+  const modelId = ctx.controls.get('model') as string | undefined
+
+  // Check if model is loaded
+  const isLoaded = aiInference.isModelLoaded('automatic-speech-recognition', modelId)
+
+  if (!isLoaded) {
+    outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+    outputs.set('speaking', false)
+    outputs.set('loading', false)
+    outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
+    return outputs
+  }
+
+  // Get node-specific STT state
+  const state = getSTTState(ctx.nodeId)
+  const now = Date.now()
+
+  // Update AudioBufferService settings
+  state.audioBufferService.setVadThreshold(vadThreshold)
+  state.audioBufferService.setVadSilenceDuration(vadSilenceDuration)
+
+  // Handle audio input - can be Tone.js node, Float32Array, or null
+  let hasAudioSource = false
+
+  if (isToneAudioNode(audioInput)) {
+    hasAudioSource = true
+    // Connect AudioBufferService to Tone.js node if not already connected or if node changed
+    if (state.connectedAudioNode !== audioInput && !state.connecting) {
+      state.connecting = true
+      state.connectedAudioNode = audioInput
+
+      // Connect async - will be ready on next frame
+      state.audioBufferService
+        .connectSource(audioInput, {
+          bufferDuration,
+          sampleRate: 16000, // Whisper requires 16kHz
+          vadThreshold,
+          vadSilenceDuration,
+        })
+        .then(() => {
+          state.connecting = false
+        })
+        .catch((err) => {
+          console.error('[STT] Failed to connect AudioBufferService:', err)
+          state.connecting = false
+          state.connectedAudioNode = null
+        })
+    }
+  } else if (audioInput === null || audioInput === undefined) {
+    // No audio input - disconnect if was connected
+    if (state.connectedAudioNode !== null) {
+      state.audioBufferService.disconnect()
+      state.connectedAudioNode = null
+    }
+  }
+
+  // If connecting or not connected, return early
+  if (state.connecting || !state.audioBufferService.connected) {
+    outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+    outputs.set('speaking', false)
+    outputs.set('loading', state.connecting)
+    if (!hasAudioSource) {
+      outputs.set('_error', 'No audio input connected')
+    } else if (state.connecting) {
+      outputs.set('_error', 'Connecting to audio source...')
+    }
+    return outputs
+  }
+
+  // Get VAD state from AudioBufferService
+  const vadState = state.audioBufferService.getVadState()
+  const isSpeaking = vadState.speaking
+  outputs.set('speaking', isSpeaking)
+  // Surface a previously-swallowed transcription failure on the public error port
+  // (badge via the engine latch); cleared by the next successful transcribe. The
+  // transient connecting/no-audio states stay on the internal `_error` channel.
+  outputs.set('error', getCached<string | null>(`${ctx.nodeId}:sttError`, null) ?? '')
+
+  // Determine if we should transcribe based on mode
+  let shouldTranscribe = false
+  let audioToTranscribe: Float32Array | null = null
+
+  if (mode === 'manual') {
+    // Manual mode: transcribe on trigger
+    if (hasTriggerValue(trigger)) {
+      // Get the full buffer (resampled to 16kHz)
+      const buffer = state.audioBufferService.getBuffer(bufferDuration * 1000)
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+      }
+    }
+  } else if (mode === 'continuous') {
+    // Continuous mode: transcribe at regular intervals
+    if (now - state.lastChunkTime >= chunkInterval) {
+      // Get recent audio buffer (resampled to 16kHz)
+      const buffer = state.audioBufferService.getBuffer(chunkInterval)
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+        state.lastChunkTime = now
+      }
+    }
+  } else if (mode === 'vad') {
+    // VAD mode: transcribe on speech→silence transition
+    if (!isSpeaking && state.vadWasSpeaking) {
+      // Speech just ended - transcribe the captured speech
+      const buffer = state.audioBufferService.getFullBuffer()
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+        // Clear buffer after capturing for VAD mode
+        state.audioBufferService.clearBuffer()
+      }
+    }
+    state.vadWasSpeaking = isSpeaking
+  }
+
+  // If not transcribing, return cached values
+  if (!shouldTranscribe || !audioToTranscribe || audioToTranscribe.length === 0) {
+    outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
+    return outputs
+  }
+
+  // Check if already processing
+  if (pendingOperations.has(ctx.nodeId)) {
+    outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+    outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+    outputs.set('loading', true)
+    return outputs
+  }
+
+  setCached(`${ctx.nodeId}:loading`, true)
+
+  const audioData = audioToTranscribe // Capture for closure
+
+  const operation = (async () => {
+    try {
+      const text = await aiInference.transcribe(audioData, modelId)
+
+      if (mode === 'continuous') {
+        // In continuous mode, update partial and accumulate text
+        setCached(`${ctx.nodeId}:partial`, text)
+        if (text.trim()) {
+          state.fullText = state.fullText ? `${state.fullText} ${text}` : text
+          setCached(`${ctx.nodeId}:text`, state.fullText)
+        }
+      } else {
+        // In manual/vad mode, replace text
+        setCached(`${ctx.nodeId}:text`, text)
+        setCached(`${ctx.nodeId}:partial`, text)
+      }
+
+      setCached(`${ctx.nodeId}:loading`, false)
+      setCached(`${ctx.nodeId}:sttError`, null)
+    } catch (error) {
+      console.error('[STT] Speech recognition error:', error)
+      setCached(`${ctx.nodeId}:loading`, false)
+      setCached(`${ctx.nodeId}:sttError`, error instanceof Error ? error.message : String(error))
+    } finally {
+      pendingOperations.delete(ctx.nodeId)
+    }
+  })()
+
+  pendingOperations.set(ctx.nodeId, operation)
+
+  outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
+  outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
+  outputs.set('loading', true)
+  return outputs
 }
 
 export default defineNode({ definition, executor: speechRecognitionExecutor })

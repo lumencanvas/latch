@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { sentimentAnalysisExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { getCached, setCached, hasTriggerValue, runModelInference } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'sentiment-analysis',
@@ -39,4 +41,36 @@ const definition: NodeDefinition = {
 // Declares its model need — `defineNode` derives the populated `model` select + the
 // standardized loading/progress/done/error outputs (deduped against those already
 // declared) from the globally-injected AI catalog resolver.
+export const sentimentAnalysisExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const text = (ctx.inputs.get('text') as string) ?? ''
+  const trigger = ctx.inputs.get('trigger')
+
+  // Run on an explicit trigger or when the (non-empty) text changes.
+  const textChanged = text !== getCached<string>(`${ctx.nodeId}:lastText`, '')
+  const shouldRun = !!text.trim() && (hasTriggerValue(trigger) || textChanged)
+
+  const { result, started } = runModelInference<Array<{ label: string; score: number }>>(ctx, outputs, {
+    task: 'sentiment-analysis',
+    shouldRun,
+    infer: (modelId) => aiInference.analyzeSentiment(text, modelId),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastText`, text)
+
+  // Empty/whitespace text clears the outputs to zero — the original cleared these ports
+  // unconditionally on empty text (independent of any trigger). Otherwise serve the latest.
+  const results = !text.trim() ? [] : (result ?? [])
+  let positive = 0
+  let negative = 0
+  for (const r of results) {
+    if (r.label.toLowerCase().includes('positive')) positive = r.score
+    else if (r.label.toLowerCase().includes('negative')) negative = r.score
+  }
+  outputs.set('sentiment', results[0]?.label ?? '')
+  outputs.set('score', results[0]?.score ?? 0)
+  outputs.set('positive', positive)
+  outputs.set('negative', negative)
+  return outputs
+}
+
 export default defineNode({ definition, executor: sentimentAnalysisExecutor, models: [{ task: 'sentiment-analysis' }] })

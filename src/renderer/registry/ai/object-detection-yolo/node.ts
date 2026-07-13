@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { objectDetectionYoloExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { DEFAULT_YOLO_URL, runLiveDetection, overlayOptions, type Detection } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'object-detection-yolo',
@@ -83,6 +85,17 @@ const definition: NodeDefinition = {
     ],
     pairsWith: ['webcam', 'snapshot', 'object-detection-live', 'main-output', 'gate'],
   },
+}
+
+export const objectDetectionYoloExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const modelUrl = (ctx.controls.get('modelUrl') as string) || DEFAULT_YOLO_URL
+  const threshold = (ctx.controls.get('threshold') as number) ?? 0.25
+  const iou = (ctx.controls.get('iou') as number) ?? 0.45
+  return runLiveDetection(
+    ctx,
+    (img) => aiInference.detectYolo(img, modelUrl, threshold, iou) as Promise<Detection[]>,
+    overlayOptions(ctx, 30)
+  )
 }
 
 export default defineNode({ definition, executor: objectDetectionYoloExecutor })

@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { imageClassificationExecutor } from '@/engine/executors/ai'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { aiInference } from '@/services/ai/AIInference'
+import { getCached, setCached, hasTriggerValue, runModelInference, convertToImageData } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'image-classification',
@@ -41,4 +43,43 @@ const definition: NodeDefinition = {
 // Declares its model need — `defineNode` derives the populated `model` select + the
 // standardized loading/progress/done/error outputs (deduped against those already
 // declared) from the globally-injected AI catalog resolver.
+export const imageClassificationExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const outputs = new Map<string, unknown>()
+  const imageInput = ctx.inputs.get('image')
+  const trigger = ctx.inputs.get('trigger')
+  const modelId = ctx.controls.get('model') as string | undefined
+  const topK = (ctx.controls.get('topK') as number) ?? 5
+
+  // Defer the (potentially expensive — e.g. WebGL texture readback) image conversion
+  // until the model is loaded, matching the prior gate ordering.
+  const imageData = aiInference.isModelLoaded('image-classification', modelId)
+    ? convertToImageData(imageInput)
+    : null
+
+  // Run on an explicit trigger or after a frame interval, only with valid image data.
+  const currentFrame = ctx.frameCount
+  const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
+  const interval = (ctx.controls.get('interval') as number) ?? 60
+  const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
+  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
+
+  const { result, started, state } = runModelInference<Array<{ label: string; score: number }>>(ctx, outputs, {
+    task: 'image-classification',
+    shouldRun,
+    infer: (modelId) => aiInference.classifyImage(imageData as ImageData, topK, modelId),
+  })
+  if (started) setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+
+  const labels = result ?? []
+  outputs.set('labels', labels)
+  outputs.set('topLabel', labels[0]?.label ?? '')
+  outputs.set('topScore', labels[0]?.score ?? 0)
+  // A present-but-unconvertible image is a node input error (distinct from "no input").
+  // Only when the model is loaded — otherwise "model not loaded" takes precedence.
+  if (state !== 'not-loaded' && imageInput && !imageData) {
+    outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
+  }
+  return outputs
+}
+
 export default defineNode({ definition, executor: imageClassificationExecutor, models: [{ task: 'image-classification' }] })
