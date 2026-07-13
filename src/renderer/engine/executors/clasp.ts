@@ -16,6 +16,21 @@
  * - clasp-video-receive: Receives video from CLASP relay room
  * - clasp-video-send: Sends video to CLASP relay room
  * - clasp-gesture: Receives gesture signals
+ *
+ * Workstream B (behavior co-location) — INTENTIONAL EXCEPTION. Unlike the other five
+ * service-backed categories (3d/audio/visual/ai/connectivity), whose executor bodies were
+ * moved into each `registry/<cat>/<id>/node.ts` (shared state → `registry/<cat>/shared.ts`),
+ * clasp's executors stay HERE on purpose:
+ *   1. This module value-imports the `@/stores/connections` Pinia store, which transitively
+ *      re-enters the eager `nodeRegistry` glob — a load-time cycle. The 10 `registry/clasp/<id>/
+ *      node.ts` files already dodge it by LAZY-importing this module (`await import(
+ *      '@/engine/executors/clasp')`); inlining the bodies would force a store value-import that
+ *      the `node-import-hygiene` guard forbids and that would re-close the cycle.
+ *   2. `tests/contracts/public-exports.ts` pins the FILE PATH `@/engine/executors/clasp` as
+ *      exporting `disposeAllClaspConnections`/`gcClaspState`; `executors/index.ts` imports from
+ *      `./clasp`; clasp tests import `stopVideoElement` from here.
+ * These executors are store-coupled shared infrastructure by nature, so this file IS the
+ * category's shared module. Leave it here (maintainer decision, 2026-07-12).
  */
 
 import { Clasp, ClaspBuilder, type Value } from '@clasp-to/core'

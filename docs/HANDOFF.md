@@ -6,6 +6,44 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 98) — Workstream B COMPLETE: 5/6 giants co-located; clasp is the documented exception
+
+**Workstream B (full behavior co-location) is done.** Five of the six giant executor files were dissolved —
+each executor BODY moved into its `registry/<cat>/<id>/node.ts`, shared state/helpers/lifecycle into a slim
+`registry/<cat>/shared.ts`, byte-faithful, all gates green, each adversarially reviewed (SHIP), each its own
+commit:
+- `3d` (1073 LOC → deleted) — `be7f0c8`
+- `audio` (1696 → deleted) — `030d2b3`
+- `visual` (2150 → re-export shim) — `724a75a`
+- `ai` (2474 → re-export shim) — `8ce2b3d`
+- `connectivity` (1875 → deleted) — `7562821`
+
+Net: ~9,300 LOC of executor bodies relocated from 5 monolith files into their node folders; the two shims
+(`visual.ts`, `ai.ts`) survive only to serve cross-category / test imports.
+
+**clasp = the intentional exception (maintainer decision).** `engine/executors/clasp.ts` (1603 LOC) STAYS as the
+category's shared module. It value-imports the `@/stores/connections` Pinia store (a load-time cycle the 10 clasp
+node.ts already dodge via `await import('@/engine/executors/clasp')` lazy wrappers) and its FILE PATH is pinned by
+`tests/contracts/public-exports.ts` (`disposeAllClaspConnections`/`gcClaspState`) + imported by `executors/index.ts`
++ clasp tests. Its executors are store-coupled shared infrastructure by nature, so a per-node inline isn't
+applicable without a non-byte-faithful store-lazy rewrite. Documented with a header note in clasp.ts so no future
+pass "fixes" it. (Full inline was offered + declined.)
+
+**End state of `engine/executors/`:** `index.ts` (builtin assembly + contract re-exports), `components.ts`
+(nodeTypes derivation), `clasp.ts` (the exception), `visual.ts`/`ai.ts` (thin re-export shims), plus the small
+standalone `websocket.ts`/`mqtt.ts`/`http.ts`/`subflow.ts`/`opencv.ts`… The category monoliths are gone.
+
+**Deferred cleanups (noted, not blocking):** prune the 3 dead http/websocket/mqtt executor duplicates now sitting
+in `registry/connectivity/shared.ts` (+ their orphan Maps — verify not shared with a live exec first); optionally
+retire the `visual.ts`/`ai.ts` shims when opencv/clasp/the ai tests repoint. Refresh NODE_SPEC/ARCHITECTURE to
+state behavior is now co-located (Workstream D honesty pass).
+
+**Gates at close:** typecheck clean · lint 0 err (49 warns) · `test:unit` **2333** + 11 todo (149 files) · build
+ok · browser smoke 241, Play→Stop 0 real errors. **Remaining plan workstreams: C (converge custom-node loader on
+defineNode) · D (docs reorg + README honesty).**
+
+---
+
 ## 2026-07-12 (later 97) — Workstream B: `connectivity` behavior co-location (5th category)
 
 **`connectivity` done, verified, committed.** Inlined the 10 LIVE executor bodies out of the 1875-line
