@@ -20,6 +20,8 @@
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx --fix",
+    "new-node": "node scripts/new-node.mjs node",
+    "new-category": "node scripts/new-node.mjs category",
     "typecheck": "vue-tsc --noEmit",
     "package": "electron-vite build && electron-forge package",
     "make": "electron-vite build && electron-forge make"

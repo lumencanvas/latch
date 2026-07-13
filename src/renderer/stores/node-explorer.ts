@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
-import type { NodeCategory } from './nodes'
 
 export const useNodeExplorerStore = defineStore('nodeExplorer', {
   state: () => ({
     selectedNodeId: null as string | null,
-    selectedCategory: null as NodeCategory | null,
+    // A category id (built-in or drop-in) or null — a plain string so a drop-in
+    // category can be selected without a core-type edit.
+    selectedCategory: null as string | null,
     searchQuery: '',
     selectedTags: [] as string[],
     viewMode: 'grid' as 'grid' | 'detail',
@@ -26,7 +27,7 @@ export const useNodeExplorerStore = defineStore('nodeExplorer', {
       this.viewMode = 'grid'
     },
 
-    selectCategory(category: NodeCategory | null) {
+    selectCategory(category: string | null) {
       this.selectedCategory = category
       this.selectedNodeId = null
       // Available tags depend on the category, so a stale selection could filter

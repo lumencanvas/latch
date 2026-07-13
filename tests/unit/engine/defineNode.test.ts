@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { defineNode, deriveModelDefinition } from '@/engine/defineNode'
+import { describe, it, expect, afterEach } from 'vitest'
+import { defineNode, deriveModelDefinition, setModelSelectResolver } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 
 const def: NodeDefinition = {
@@ -51,16 +51,15 @@ describe('defineNode', () => {
 describe('defineNode model derivation (A2)', () => {
   const ids = (ports: { id: string }[]) => ports.map((p) => p.id)
 
-  it('appends loading/progress/done/error outputs + a model select in canonical order', () => {
+  it('appends the loading/progress/done/error outputs, and defers the select with no resolver', () => {
     const spec = defineNode({
       definition: def,
       executor: () => new Map(),
       models: [{ task: 'object-detection' }],
     })
     expect(ids(spec.definition.outputs)).toEqual(['loading', 'progress', 'done', 'error'])
-    const model = spec.definition.controls.find((c) => c.id === 'model')
-    expect(model?.type).toBe('select')
-    expect(model?.default).toBe('')
+    // No global resolver injected in this context → the select is deferred (the registry re-derives it).
+    expect(spec.definition.controls.find((c) => c.id === 'model')).toBeUndefined()
   })
 
   it('preserves the authored definition object identity when no models declared', () => {
@@ -119,6 +118,50 @@ describe('defineNode model derivation (A2)', () => {
   })
 })
 
+describe('setModelSelectResolver — global injection into defineNode (E1)', () => {
+  // The resolver is module-global; always clear it so one test can't leak into another.
+  afterEach(() => setModelSelectResolver(undefined))
+
+  it('populates a plain defineNode({ models }) select once a resolver is injected', () => {
+    setModelSelectResolver((task) => ({
+      options: [{ value: '', label: `Default (${task})` }, { value: 'x/y', label: 'Y' }],
+      default: '',
+    }))
+    const spec = defineNode({ definition: def, executor: () => new Map(), models: [{ task: 'object-detection' }] })
+    const model = spec.definition.controls.find((c) => c.id === 'model')
+    expect(model?.props?.options).toEqual([
+      { value: '', label: 'Default (object-detection)' },
+      { value: 'x/y', label: 'Y' },
+    ])
+  })
+
+  it('re-deriving a deferred spec after injection populates its select (the registry re-derive path)', () => {
+    // A node whose defineNode() ran before the resolver was wired → select deferred...
+    const deferred = defineNode({ definition: def, executor: () => new Map(), models: [{ task: 'object-detection' }] })
+    expect(deferred.definition.controls.find((c) => c.id === 'model')).toBeUndefined()
+    // ...then the resolver is injected and the registry re-runs defineNode on the spec (nodeRegistry).
+    setModelSelectResolver((task) => ({
+      options: [{ value: '', label: `Default (${task})` }, { value: 'a/b', label: 'B' }],
+      default: '',
+    }))
+    const rederived = defineNode(deferred)
+    expect(rederived.definition.controls.find((c) => c.id === 'model')?.props?.options).toEqual([
+      { value: '', label: 'Default (object-detection)' },
+      { value: 'a/b', label: 'B' },
+    ])
+    // outputs not duplicated on the second derive
+    expect(rederived.definition.outputs.map((p) => p.id)).toEqual(['loading', 'progress', 'done', 'error'])
+  })
+
+  it('defers the select (adds no model control) when no resolver is injected', () => {
+    setModelSelectResolver(undefined)
+    const spec = defineNode({ definition: def, executor: () => new Map(), models: [{ task: 'object-detection' }] })
+    expect(spec.definition.controls.find((c) => c.id === 'model')).toBeUndefined()
+    // outputs are resolver-independent → still appended
+    expect(spec.definition.outputs.map((p) => p.id)).toEqual(['loading', 'progress', 'done', 'error'])
+  })
+})
+
 describe('deriveModelDefinition — injected catalog resolver', () => {
   it('populates the model select options + default from the resolver (first selectable task)', () => {
     const out = deriveModelDefinition(def, [{ task: 'text-generation' }], (task) => ({
@@ -136,11 +179,11 @@ describe('deriveModelDefinition — injected catalog resolver', () => {
     ])
   })
 
-  it('leaves options empty when no resolver is supplied (the inert defineNode path)', () => {
+  it('defers the model select (adds no control) when no resolver is supplied', () => {
     const out = deriveModelDefinition(def, [{ task: 'text-generation' }])
-    const model = out.controls.find((c) => c.id === 'model')
-    expect(model?.props?.options).toEqual([])
-    expect(model?.default).toBe('')
+    expect(out.controls.find((c) => c.id === 'model')).toBeUndefined()
+    // outputs are resolver-independent, so they are still appended
+    expect(out.outputs.map((p) => p.id)).toEqual(['loading', 'progress', 'done', 'error'])
   })
 
   it('does not consult the resolver when the model select is suppressed or already authored', () => {

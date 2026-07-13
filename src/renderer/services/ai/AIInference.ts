@@ -14,6 +14,7 @@ import { collectTransferables, type SerializedImage } from './imageTransfer'
 import { requestPersistentStorage } from './modelStorage'
 import { WorkerFacade } from '@/services/worker/WorkerFacade'
 import { deriveAiModels } from './models/transformers/derive'
+import { setModelSelectResolver } from '@/engine/defineNode'
 
 // Model load states
 export type ModelLoadState = 'idle' | 'loading' | 'ready' | 'error'
@@ -102,6 +103,17 @@ export function getModelSelectOptions(task: string): ModelSelectOption[] {
     ...def.alternateModels.map((m) => ({ value: m.id, label: `${m.name} (${m.size})` })),
   ]
 }
+
+// Inject the AI catalog into `defineNode`'s global model-select resolver. This is THE
+// seam that makes the declarative `defineNode({ models: [{ task }] })` path work for any
+// node: the engine stays catalog-agnostic (arrow points AI→engine, never the reverse) and
+// gets the populated select from here. Default `''` resolves to the task default at
+// inference time (`modelId || getDefaultModel`), so adopting the select is additive and a
+// saved flow with no `model` value behaves exactly as before. Runs at module load: the AI nodes
+// import their executor (→ this module) before their own `defineNode()`, so their selects populate
+// at glob time; and `nodeRegistry` re-derives every `models:` spec after this module loads, so any
+// other node populates too. Replaces the retired `registry/ai/modelSelect.ts` `withModelSelect` shim.
+setModelSelectResolver((task) => ({ options: getModelSelectOptions(task), default: '' }))
 
 // Progress callback type
 type ProgressCallback = (progress: number) => void

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { categoryMeta, type NodeCategory, useNodesStore } from '@/stores/nodes'
-import { categoryIcons } from '@/utils/categoryIcons'
+import { categoryMeta, useNodesStore } from '@/stores/nodes'
+import { getCategoryIcon } from '@/utils/categoryIcons'
 
 defineProps<{
-  selectedCategory: NodeCategory | null
+  selectedCategory: string | null
 }>()
 
 const emit = defineEmits<{
-  select: [category: NodeCategory | null]
+  select: [category: string | null]
 }>()
 
 const nodesStore = useNodesStore()
@@ -16,8 +16,7 @@ const nodesStore = useNodesStore()
 // Only show categories that actually have nodes — keeps empty buckets
 // (shaders, custom) out of the explorer.
 const categories = computed(() =>
-  (Object.entries(categoryMeta) as [NodeCategory, { label: string; icon: string; color: string }][])
-    .filter(([key]) => (nodesStore.byCategory.get(key)?.length ?? 0) > 0)
+  Object.entries(categoryMeta).filter(([key]) => (nodesStore.byCategory.get(key)?.length ?? 0) > 0)
 )
 </script>
 
@@ -49,7 +48,7 @@ const categories = computed(() =>
         :style="{ color: meta.color }"
       >
         <component
-          :is="categoryIcons[key]"
+          :is="getCategoryIcon(key)"
           :size="13"
         />
       </span>

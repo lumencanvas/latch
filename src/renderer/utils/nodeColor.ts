@@ -1,4 +1,4 @@
-import { categoryMeta, type NodeCategory } from '@/stores/nodes'
+import { categoryMeta } from '@/stores/nodes'
 
 /**
  * Resolve the category swatch colour for a node type. The category lookup is
@@ -14,5 +14,5 @@ export function nodeTypeColor(
   getCategory: (type: string) => string | undefined,
 ): string {
   const category = getCategory(nodeType)
-  return categoryMeta[category as NodeCategory]?.color ?? 'var(--color-neutral-400)'
+  return (category ? categoryMeta[category] : undefined)?.color ?? 'var(--color-neutral-400)'
 }

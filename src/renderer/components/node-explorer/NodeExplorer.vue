@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { Search } from 'lucide-vue-next'
-import { useNodesStore, dataTypeMeta, type NodeCategory, type DataType } from '@/stores/nodes'
+import { useNodesStore, dataTypeMeta, type DataType } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
 import { flowSnippets } from '@/data/flow-snippets'
 import { fuzzySearch } from '@/utils/fuzzySearch'
@@ -115,7 +115,7 @@ function handleNavigateTo(nodeId: string) {
   explorerStore.selectNode(nodeId)
 }
 
-function handleSelectCategory(category: NodeCategory | null) {
+function handleSelectCategory(category: string | null) {
   explorerStore.selectCategory(category)
 }
 

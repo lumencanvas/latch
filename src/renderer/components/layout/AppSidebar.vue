@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/ui'
-import { useNodesStore, categoryMeta, type NodeCategory, type NodeDefinition } from '@/stores/nodes'
+import { useNodesStore, categoryMeta, type NodeDefinition } from '@/stores/nodes'
 import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen, Plug } from 'lucide-vue-next'
-import { categoryIcons } from '@/utils/categoryIcons'
+import { getCategoryIcon } from '@/utils/categoryIcons'
 import { aiInference } from '@/services/ai/AIInference'
 import AssetBrowser from '@/components/assets/AssetBrowser.vue'
 import ConnectionSidebar from '@/components/connections/ConnectionSidebar.vue'
@@ -68,7 +68,7 @@ const sidebarStyle = computed(() => ({
 
 // Get all categories with their metadata
 const categories = computed(() => {
-  return Object.entries(categoryMeta) as [NodeCategory, typeof categoryMeta[NodeCategory]][]
+  return Object.entries(categoryMeta)
 })
 
 // Get node counts per category
@@ -113,7 +113,7 @@ const visibleCategories = computed(() => {
 // Note: Category filter dropdown is handled inline in template, keeping this for reference
 // function onCategoryFilterChange(event: Event) {
 //   const value = (event.target as HTMLSelectElement).value
-//   nodesStore.setCategoryFilter(value === 'all' ? null : value as NodeCategory)
+//   nodesStore.setCategoryFilter(value === 'all' ? null : value)
 // }
 
 // Toggle custom dropdown
@@ -122,7 +122,7 @@ function toggleDropdown() {
 }
 
 // Select category from custom dropdown
-function selectCategory(categoryId: NodeCategory | null) {
+function selectCategory(categoryId: string | null) {
   nodesStore.setCategoryFilter(categoryId)
   dropdownOpen.value = false
 }
@@ -335,7 +335,7 @@ function onSelectConnection(connectionId: string) {
                     :style="{ color: meta.color }"
                   >
                     <component
-                      :is="categoryIcons[categoryId]"
+                      :is="getCategoryIcon(categoryId)"
                       :size="12"
                     />
                   </span>

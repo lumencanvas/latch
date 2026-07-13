@@ -27,6 +27,22 @@ export type NodeCategory =
   | 'messaging'
   | 'custom'
 
+/**
+ * The built-in categories, kept as a union so `NodeDefinition.category` still
+ * offers autocomplete for them. Drop-in categories (a `registry/<cat>/category.ts`
+ * via `defineCategory`) relax the field to any validated string — see the
+ * `LiteralUnion` on `category` below, which keeps the literal suggestions while
+ * accepting an unknown-at-compile-time drop-in id.
+ */
+export type KnownNodeCategory = NodeCategory
+
+/**
+ * A `string` that still surfaces the literal members of `T` in editor
+ * autocomplete. `Record<never, never>` is the lint-safe spelling of the classic
+ * `string & {}` widening trick (`{}` trips `ban-types`).
+ */
+export type LiteralUnion<T extends string> = T | (string & Record<never, never>)
+
 export type DataType =
   | 'trigger'
   | 'number'
@@ -152,7 +168,10 @@ export interface NodeDefinition {
   id: string
   name: string
   version: string
-  category: NodeCategory
+  // Built-in categories autocomplete via `KnownNodeCategory`; a drop-in category
+  // (`registry/<cat>/category.ts`) may use any string, validated at registry
+  // assembly (DEV-warns on an unregistered id — see `allNodes.ts`).
+  category: LiteralUnion<KnownNodeCategory>
   description: string
   icon: string
   color?: string
@@ -201,7 +220,9 @@ interface NodesStoreState {
   definitions: Map<string, NodeDefinition>
   components: Map<string, Component>
   searchQuery: string
-  categoryFilter: NodeCategory | null
+  // A category id (built-in or drop-in) or null for "all" — a plain string so a
+  // drop-in category can be the active filter without a core-type edit.
+  categoryFilter: string | null
 }
 
 export const useNodesStore = defineStore('nodes', {
@@ -238,8 +259,10 @@ export const useNodesStore = defineStore('nodes', {
       return results
     },
 
-    byCategory(): Map<NodeCategory, NodeDefinition[]> {
-      const map = new Map<NodeCategory, NodeDefinition[]>()
+    // Keyed by category id (built-in or drop-in) — a plain string, since
+    // `definition.category` is now a validated string, not the closed union.
+    byCategory(): Map<string, NodeDefinition[]> {
+      const map = new Map<string, NodeDefinition[]>()
       for (const def of this.allDefinitions) {
         const list = map.get(def.category) ?? []
         list.push(def)
@@ -248,7 +271,7 @@ export const useNodesStore = defineStore('nodes', {
       return map
     },
 
-    categories(): NodeCategory[] {
+    categories(): string[] {
       return Array.from(this.byCategory.keys()).sort()
     },
 
@@ -290,7 +313,7 @@ export const useNodesStore = defineStore('nodes', {
       this.searchQuery = query
     },
 
-    setCategoryFilter(category: NodeCategory | null) {
+    setCategoryFilter(category: string | null) {
       this.categoryFilter = category
     },
 
@@ -301,8 +324,16 @@ export const useNodesStore = defineStore('nodes', {
   },
 })
 
-// Category metadata for UI
-export const categoryMeta: Record<NodeCategory, { label: string; icon: string; color: string }> = {
+// Category metadata for UI (label / icon / accent colour). `icon` is a string name
+// for built-ins (inert — they render via `utils/categoryIcons`) or a Vue component
+// for a drop-in category that wants a rendered icon (see `getCategoryIcon`).
+export type CategoryMeta = { label: string; icon: string | Component; color: string }
+
+// The built-in seed. `satisfies` keeps it EXHAUSTIVE over the known categories
+// (drop one and it's a compile error), while `categoryMeta` below is a widened,
+// mutable `Record<string, …>` so drop-in categories (`registry/<cat>/category.ts`)
+// can extend it at registry assembly (`allNodes.ts`) with no edit here.
+const BUILTIN_CATEGORY_META = {
   debug: { label: 'Debug', icon: 'bug', color: '#64748B' },
   inputs: { label: 'Inputs', icon: 'download', color: '#22C55E' },
   outputs: { label: 'Outputs', icon: 'upload', color: '#3B82F6' },
@@ -323,7 +354,13 @@ export const categoryMeta: Record<NodeCategory, { label: string; icon: string; c
   string: { label: 'String', icon: 'text', color: '#10B981' },
   messaging: { label: 'Messaging', icon: 'send', color: '#06B6D4' },
   custom: { label: 'Custom', icon: 'puzzle', color: '#6B7280' },
-}
+} satisfies Record<NodeCategory, CategoryMeta>
+
+// Widened + mutable so `registry/allNodes.ts` can merge discovered drop-in
+// categories in place (holders of this reference see the added keys). Consumers
+// index it by a runtime string, so unknown ids resolve to `undefined` and fall
+// back (`categoryMeta[cat]?.color ?? neutral`, `getCategoryIcon`).
+export const categoryMeta: Record<string, CategoryMeta> = { ...BUILTIN_CATEGORY_META }
 
 // Data type metadata
 // Per-type presentation. `color` is the primary cue; `lineStyle` (edge dash / port

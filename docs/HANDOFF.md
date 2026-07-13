@@ -6,6 +6,144 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 91) — holistic audit (SAFE TO COMMIT) + A2 scaffold (`new-node`/`new-category`)
+
+**Holistic audit of the whole uncommitted delta** (increments 1–3 + E1) via a 16-agent workflow (5 dimensions
+× adversarial verify + synthesis): **verdict SAFE TO COMMIT — 0 critical, 0 major.** The combined 241-node
+boot/cycle graph, all four architecture invariants (no stores→registry edge, eager-glob import hygiene,
+engine catalog-agnosticism, count-equality co-location gate), and the frozen `defineNode` contract are intact.
+3 confirmed minors, all folded in: (1) a stale "before the glob" comment in `defineNode.ts` I'd missed when
+fixing its siblings during E1 (corrected); (2) the drop-in-category "live wiring" test looped an empty set —
+strengthened to drive the real `applyDiscoveredCategories` against the live `categoryMeta` (+ getCategoryIcon
+resolves); (3) HANDOFF "8 AI nodes" → 7.
+
+**A2 scaffold done — hand-authoring is now a one-command task.** `scripts/new-node.mjs` + `npm run new-node` /
+`npm run new-category`:
+- `new-node <cat> <id> [--name] [--component] [--stateful]` → `registry/<cat>/<id>/node.ts` + `node.test.ts`
+  (component also emits `<Pascal>Node.vue` + `markRaw`; stateful emits a `defineNodeState`).
+- `new-node <cat> <family> --set <id…>` → one `nodes.ts` family (`defineNodes([...])`).
+- `new-category <id> [--label --icon <LucideName> --color --starter]` → `category.ts` (lucide-component icon)
+  + a starter node — a whole drop-in category in one command, zero `stores/nodes.ts` edits.
+- Templates use ONLY the public surface (`defineNode`/`defineNodes`/`defineCategory`, the `ctx.num/bool/str/
+  trig` accessors, the `tests/helpers/testNode` runner at the correct `../../../../../` depth). Fails loudly on
+  a dup id (scans the registry, mirroring the glob guard) or a non-kebab id.
+- **Verified end-to-end**: generated a node, a stateful node, a `--set` family, and a category into the
+  registry → all typecheck + pass their own `node.test.ts`; `node-import-hygiene` scanned the generated
+  `category.ts` (cycle-clean); the drop-in-category live-merge guard ran against the real `demo-cat` (glob →
+  merge → `categoryMeta` proven) — then the demo artifacts were removed (registry back to 241, no product
+  clutter). Persistent guard: `tests/unit/scripts/new-node.test.ts` pins every template's output shape
+  (import paths, brands, accessors, testNode depth) so a convention drift can't silently break the scaffold.
+
+**Gates:** typecheck clean · lint 0 err (49 warns) · `test:unit` **2333** pass + 11 todo (149 files) · build
+ok. On `phase0-file-format`; not committed. **Next: A1/A4 docs** (rewrite the STALE `docs/nodes/contributing.md`
+to the real defineNode/co-located reality incl. all authoring shapes + models/connections + testing; add a
+60-sec `docs/nodes/README.md` quickstart pointing at the scaffold), then **B** (behavior co-location) / C / D.
+
+---
+
+## 2026-07-12 (later 90) — E1: declarative `models:` fully wired (retire `withModelSelect`, migrate 7 AI nodes)
+
+**The declarative AI-model path now works for ANY node — the "half-exposed" gap is closed.** A plain
+`defineNode({ models: [{ task }] })` yields a populated `model` select + the standardized
+loading/progress/done/error outputs, with no per-node shim.
+- **`engine/defineNode.ts`** — a module-level `modelSelectResolver` + `setModelSelectResolver()`;
+  `defineNode`/`defineNodes` pass it into `deriveModelDefinition`. Stays catalog-agnostic (arrow points
+  AI→engine). `deriveModelDefinition` now **defers** the select entirely when no resolver is present
+  (instead of baking an inert empty one), so a later re-derive can populate it.
+- **`services/ai/AIInference.ts`** — calls `setModelSelectResolver((task)=>({options:getModelSelectOptions(task),
+  default:''}))` at module scope (the resolver injection; `getModelSelectOptions` unchanged).
+- **`registry/nodeRegistry.ts`** — eager side-effect `import '@/services/ai/AIInference'` + **re-derives every
+  `models:` spec after the glob** (`specsById[id] = defineNode(specsById[id])`). This is the robust
+  registry-assembly injection seam: the module body runs after ALL imports, so the resolver is guaranteed
+  set — populating the select for ANY node, not just AI ones that self-wire. Idempotent for the 7 AI nodes.
+- **7 AI nodes** (`registry/ai/{object-detection,text-generation,text-transformation,feature-extraction,
+  sentiment-analysis,image-classification,image-captioning}`) migrated: `withModelSelect(definition,TASK)` →
+  `models:[{task:TASK}]`. Task strings preserved exactly (image-captioning=`image-to-text`,
+  text-transformation=`text2text-generation`). **`registry/ai/modelSelect.ts` DELETED.**
+
+**Two wiring mechanisms, both verified:** (a) each AI node imports its executor (`@/engine/executors/ai` →
+`AIInference`) before its own `defineNode()`, so ES import order sets the resolver in time — populates AI
+selects at glob time (proven by `ai-catalog.test.ts`'s 34 assertions, imported specs directly). (b) the
+nodeRegistry post-glob re-derive covers everything else. **Adversarial review** (5-agent workflow): 0 crit/
+major; the 1 confirmed minor was a *false comment* — Vite PREPENDS the glob's node imports above the eager
+AIInference import, so "before the glob" was wrong and a hand-authored non-AI `models:` node would've gotten
+an empty select. **Fixed** by the defer-+-registry-re-derive design (comments corrected too).
+
+**Gates:** typecheck clean · lint 0 err (49 warns) · `test:unit` **2323** pass + 11 todo (148 files) · build
+ok · browser smoke count 241, object-detection model select has 2 live options (`odModelOptions`), Play→Stop
+0 errors. On `phase0-file-format`; not committed. **Next: A2 scaffold** (`new-node`/`new-category` — ships
+the first real `category.ts`, activating A5's dormant guards), then A1/A4 docs, then B (behavior co-location).
+
+---
+
+## 2026-07-12 (later 89) — A5 drop-in categories: `defineCategory` glob + `category` relaxed to validated string
+
+**Increment 3 done — the second maintainer ask ("adding a category = drop a folder") is now real.** A whole
+node category ships as a `registry/<cat>/category.ts` (`export default defineCategory({ id, label, icon, color })`)
+with **ZERO edits to `stores/nodes.ts`**. How it fits together:
+- **`engine/defineCategory.ts`** (new leaf, twin of `defineNode`) — `CategorySpec` + brand. `icon` is
+  `string | Component`: pass a lucide **component** to render an icon, a string is inert metadata (renders the
+  neutral fallback). Store-free so a `category.ts` never closes the eager-glob cycle.
+- **`registry/categoryRegistry.ts`** (new, twin of `nodeRegistry`) — eager-globs `./**/category.ts`, pure
+  exported `collectCategories()` (dup-id / invalid guards, throws at import) + `applyDiscoveredCategories()`
+  (the merge helper, built-ins win). Store-free leaf.
+- **`registry/allNodes.ts`** merges discovered categories into `categoryMeta` — a **one-way registry→stores
+  push** (mirrors `setCustomNodeTypeIds`; the deliberately-severed `stores→registry` edge stays severed).
+  DEV-warns nodes with an unregistered category AND drop-ins that reuse a built-in id (silently dropped).
+- **`stores/nodes.ts`** — `categoryMeta` is now a built-in SEED (`satisfies Record<NodeCategory,…>` keeps it
+  exhaustive) spread into a widened, mutable `Record<string, CategoryMeta>`; `NodeDefinition.category` relaxed
+  to `LiteralUnion<KnownNodeCategory>` (autocomplete kept, any string accepted); `categoryFilter`/`byCategory`/
+  `categories` relaxed to `string`. Consumers relaxed: `utils/categoryIcons` (widened + `getCategoryIcon()`
+  fallback helper, resolves a drop-in's component icon), `utils/nodeColor`, `stores/node-explorer`,
+  `CategoryNav`/`NodeExplorer`/`AppSidebar`/`BaseNode` (route icons through `getCategoryIcon`).
+
+**Guards:** `node-import-hygiene` extended to `category.ts` (+ forbids `@/registry/categoryRegistry` self-import);
+new `tests/unit/registry/drop-in-category.test.ts` (12 cases: `collectCategories` dup/invalid/known-clash,
+`applyDiscoveredCategories` add/never-override, `getCategoryIcon` drop-in component vs string-fallback, live
+wiring). **Adversarial review** (15-agent workflow): 0 critical / 0 major confirmed — the two scariest candidates
+(a `stores→registry` boot cycle; a broken custom-node validator) were REFUTED. 3 confirmed minors fixed (inert
+drop-in icon → now `string | Component`; hygiene missed `categoryRegistry`; built-in-clash now DEV-warns);
+accepted nits (empty-set live-wiring test + dormant hygiene arm — activate when the first real `category.ts`
+ships via the A2 scaffold; empty-string id left for parity with `nodeRegistry`).
+
+**Gates:** typecheck clean · lint 0 err (49 pre-existing warns) · `test:unit` **2320** pass + 11 todo (148 files)
+· build ok · browser smoke count **241**, 18 categories render, Play→Stop 0 errors. On `phase0-file-format`; not
+committed (~20 uncommitted files across increments 1–3; `main` untouched). **Next:** E1 `models:` wiring (retire
+`withModelSelect`, 7 AI nodes), then A2 scaffold (`new-node`/`new-category` — ships the first real `category.ts`,
+activating the dormant guards), A1/A4 docs, then B/C/D.
+
+---
+
+## 2026-07-12 (later 88) — new plan: effortless hand-authoring (approved) + first increment (multi-node units)
+
+**Plan approved** (`~/.claude/plans/majestic-bouncing-lollipop.md`, memory `latch-authoring-dx-plan`). After
+a full-repo audit, the north star is now: make the existing 241-node library excellent + **trivially easy to
+hand-author a node / nodeset / category**. Scope = authoring DX + polish (subflows/live-VJ/multiplayer OUT).
+Workstreams: **A** toolkit (fix the STALE `docs/nodes/contributing.md`, `new-node` scaffold, test helper) ·
+**B** FULL behavior co-location (move executor bodies out of the 6 giant files — ai 2474/visual 2150/conn
+1874/audio 1696/clasp 1603/3d 1073 LOC — into each node.ts) · **C** converge `CustomNodeLoader` onto
+`defineNode` · **D** docs reorg + README honesty (it falsely says "Phase 9 Complete") · **E** make the
+AI-model + connection subsystems declarable by ANY node (the `models:` field only half-works today — empty
+select unless you use the internal `withModelSelect` shim). Maintainer asks folded in: multi-node units +
+drop-in categories, and declarable subsystems.
+
+**Increment 1 done — A5 multi-node units (the "one unit registers many nodes", Node-RED-style):**
+`engine/defineNode.ts` gains `defineNodes([...])`; `registry/nodeRegistry.ts` globs `node.ts` **and**
+`nodes.ts` and flattens a `NodeSpec | NodeSpec[]` default via a new pure exported `collectSpecs()` (dup-id /
+missing-default / empty-family guards apply per spec). `node-import-hygiene` extended to `nodes.ts`. New
+`tests/unit/registry/multi-node-unit.test.ts` (7 cases). the 241 existing single-`node.ts` nodes untouched
+(count-equality still 241).
+
+**Increment 2 done — A3 isolated node-test helper + co-located `node.test.ts` convention:**
+`tests/helpers/testNode.ts` — `runNode(spec,{inputs,controls,…})` / `runFrames(...)` / `resetNodeState()`,
+using the engine's real `createExecutionContext` so `ctx.num/bool/str/trig` coerce faithfully (no fake).
+`vitest.config.ts` include extended to `src/renderer/registry/**/*.{test,spec}.ts` so a node can ship its
+own test next to `node.ts`; demonstrative `registry/math/smooth/node.test.ts` proves it. Gates: typecheck
+clean · lint 0 err · `test:unit` **2308** pass + 11 todo (147 files, +9) · build ok. On `phase0-file-format`;
+not committed. Next: A5 drop-in categories (`defineCategory`), E1 `models:` wiring, A2 scaffold, then B/C/D.
+
+---
+
 ## 2026-07-12 (later 87) — committed the Phase-6 completion to phase0-file-format (2 commits)
 
 The whole later-80→86 body (Phase 6 finished to 241/241 + the deep-audit fixes + the doc refresh) is now committed

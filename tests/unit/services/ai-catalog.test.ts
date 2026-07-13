@@ -152,8 +152,9 @@ describe('getModelSelectOptions', () => {
 
 describe('AI nodes — registry-populated model select (A2 follow-through)', () => {
   // Each transformers AI node whose executor routes through runModelInference gains a
-  // catalog-populated `model` select via the shared `withModelSelect` seam. `task` must
-  // match the string its executor passes to runModelInference so the default resolves right.
+  // catalog-populated `model` select from the declarative `defineNode({ models: [{ task }] })`
+  // path (the globally-injected resolver — replaces the retired `withModelSelect` shim). `task`
+  // must match the string its executor passes to runModelInference so the default resolves right.
   const CASES = [
     { node: textGenerationNode, task: 'text-generation', keep: ['prompt', 'maxTokens', 'temperature'] },
     { node: sentimentAnalysisNode, task: 'sentiment-analysis', keep: [] as string[] },

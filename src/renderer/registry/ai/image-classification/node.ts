@@ -1,6 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { withModelSelect } from '@/registry/ai/modelSelect'
 import { imageClassificationExecutor } from '@/engine/executors/ai'
 
 const definition: NodeDefinition = {
@@ -39,7 +38,7 @@ const definition: NodeDefinition = {
   },
 }
 
-// Gains a registry-populated `model` select via the shared AI-registry seam (behavior
-// preserved from the pre-co-location def); the standardized model outputs it already
-// declares dedup to no-ops.
-export default defineNode({ definition: withModelSelect(definition, 'image-classification'), executor: imageClassificationExecutor })
+// Declares its model need — `defineNode` derives the populated `model` select + the
+// standardized loading/progress/done/error outputs (deduped against those already
+// declared) from the globally-injected AI catalog resolver.
+export default defineNode({ definition, executor: imageClassificationExecutor, models: [{ task: 'image-classification' }] })

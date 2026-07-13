@@ -15,37 +15,79 @@
  * types resolve and the relative glob is correct.
  */
 
-import type { NodeSpec } from '@/engine/defineNode'
+import { defineNode, type NodeSpec } from '@/engine/defineNode'
+// Side-effect: wires `defineNode`'s global model-select resolver (AIInference calls
+// `setModelSelectResolver` at module scope). AIInference imports no store/registry, so this is
+// acyclic. NOTE: Vite PREPENDS the eager glob's node imports above this one, so this does NOT run
+// before the glob — but it guarantees the resolver is set by the time THIS module's body runs, which
+// is where the re-derivation below happens. AI nodes also self-wire (their executor import pulls
+// AIInference before their own `defineNode()`), so their selects are already populated at glob time.
+import '@/services/ai/AIInference'
 
-// Eager so the registry is ready synchronously at import; `import: 'default'`
-// pulls each file's `export default defineNode(...)`. A file with only named
-// exports yields `undefined` here and is flagged below (the default-export guard).
-const modules = import.meta.glob<NodeSpec>('./**/node.ts', { eager: true, import: 'default' })
+// Eager so the registry is ready synchronously at import. `import: 'default'` pulls each
+// file's default export: a single `defineNode(...)` from a `node.ts`, OR a `defineNodes([...])`
+// ARRAY (a one-file node family) from a `nodes.ts`. Arrays are flattened below, so "one unit
+// registers many nodes" needs no special casing downstream. A file with only named exports
+// yields `undefined` and is flagged (the default-export guard).
+const isValidSpec = (s: unknown): s is NodeSpec =>
+  !!s && typeof s === 'object' && !!(s as NodeSpec).definition && !!(s as NodeSpec).executor
 
-const specsById: Record<string, NodeSpec> = {}
-const duplicateIds: string[] = []
-const missingDefault: string[] = []
-
-// Deterministic order so any error message / iteration is stable.
-for (const path of Object.keys(modules).sort()) {
-  const spec = modules[path] as NodeSpec | undefined
-  if (!spec || typeof spec !== 'object' || !spec.definition || !spec.executor) {
-    missingDefault.push(path)
-    continue
+/**
+ * Flatten + validate the glob's module defaults into a spec-by-id map. A default may be a
+ * single `NodeSpec` (a `node.ts`) or a `NodeSpec[]` (a `nodes.ts` family) — arrays are
+ * flattened, and the dup-id / missing-default guards apply per spec. Pure + exported so the
+ * multi-node-unit guard test can exercise it with fixtures without a real registry file.
+ */
+export function collectSpecs(modules: Record<string, NodeSpec | NodeSpec[] | undefined>): {
+  specsById: Record<string, NodeSpec>
+  duplicateIds: string[]
+  missingDefault: string[]
+} {
+  const specsById: Record<string, NodeSpec> = {}
+  const duplicateIds: string[] = []
+  const missingDefault: string[] = []
+  // Deterministic order so any error message / iteration is stable.
+  for (const path of Object.keys(modules).sort()) {
+    const def = modules[path]
+    const specs = Array.isArray(def) ? def : [def]
+    // A missing default, a malformed spec, or an empty `defineNodes([])` all fail loudly.
+    if (specs.length === 0 || !specs.every(isValidSpec)) {
+      missingDefault.push(path)
+      continue
+    }
+    for (const spec of specs) {
+      const id = spec.definition.id
+      if (id in specsById) duplicateIds.push(id)
+      else specsById[id] = spec
+    }
   }
-  const id = spec.definition.id
-  if (id in specsById) duplicateIds.push(id)
-  else specsById[id] = spec
+  return { specsById, duplicateIds, missingDefault }
 }
+
+const modules = import.meta.glob<NodeSpec | NodeSpec[]>(
+  ['./**/node.ts', './**/nodes.ts'],
+  { eager: true, import: 'default' },
+)
+const { specsById, duplicateIds, missingDefault } = collectSpecs(modules)
 
 // Fail loudly at import (CI-caught) rather than silently dropping a node.
 if (missingDefault.length > 0) {
   throw new Error(
-    `[nodeRegistry] node.ts without a default defineNode() export: ${missingDefault.join(', ')}`
+    `[nodeRegistry] node.ts/nodes.ts without a valid default defineNode()/defineNodes() export: ${missingDefault.join(', ')}`
   )
 }
 if (duplicateIds.length > 0) {
-  throw new Error(`[nodeRegistry] duplicate node id(s) across node.ts files: ${duplicateIds.join(', ')}`)
+  throw new Error(`[nodeRegistry] duplicate node id(s) across node.ts/nodes.ts files: ${duplicateIds.join(', ')}`)
+}
+
+// Re-derive `models:`-bearing specs now the global model-select resolver is guaranteed present (the
+// `@/services/ai/AIInference` side-effect import above has run — this body executes after ALL imports,
+// glob-prepended or not). This is the registry-assembly injection seam: it guarantees a populated
+// `model` select for ANY node declaring `models:` — including a hand-authored non-AI node that didn't
+// self-wire via an AI executor import. Idempotent for the 7 AI nodes (their select is already
+// populated from glob-time self-wiring, so `deriveModelDefinition` leaves it untouched).
+for (const id of Object.keys(specsById)) {
+  if (specsById[id].models?.length) specsById[id] = defineNode(specsById[id])
 }
 
 /** Every co-located spec, keyed by its definition id. */

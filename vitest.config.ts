@@ -8,7 +8,12 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/unit/**/*.{test,spec}.{js,ts}'],
+    // Central suites under tests/unit, PLUS co-located node tests next to their node.ts
+    // (registry/<cat>/<id>/node.test.ts) so a hand-authored node ships with its own test.
+    include: [
+      'tests/unit/**/*.{test,spec}.{js,ts}',
+      'src/renderer/registry/**/*.{test,spec}.ts',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

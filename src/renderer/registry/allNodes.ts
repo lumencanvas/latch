@@ -7,7 +7,9 @@
  * (definitions + their co-located `.vue`), never `components.ts`, so the graph stays acyclic.
  */
 
+import { categoryMeta } from '@/stores/nodes'
 import { setCustomNodeTypeIds } from './nodeTypeIds'
+import { discoveredCategories, applyDiscoveredCategories } from './categoryRegistry'
 import { inputNodes } from './inputs'
 import { debugNodes } from './debug'
 import { mathNodes } from './math'
@@ -66,3 +68,37 @@ export const allNodes = [
 // load-time cycle once component nodes co-locate). One-way: nothing in nodeTypeIds imports back.
 // `allNodes` is the earliest registry module, so this runs before any flow node-type resolution.
 setCustomNodeTypeIds(allNodes.filter((d) => d.component).map((d) => d.id))
+
+// Merge drop-in categories (`registry/<cat>/category.ts` via `defineCategory`) into the store's
+// `categoryMeta` — a one-way registry→stores push (nothing in `stores/nodes` imports back), so
+// adding a whole category is "drop a folder" with zero core-store edits. Built-in ids win; a
+// drop-in never silently overrides a seeded category. `allNodes` is imported at boot (the palette
+// needs it) before any UI reads `categoryMeta`.
+const addedCategories = applyDiscoveredCategories(categoryMeta, discoveredCategories)
+
+if (import.meta.env.DEV) {
+  // A drop-in whose id collides with a seeded built-in is dropped by the merge (built-in wins) —
+  // its label/icon/colour are discarded. The store-free category glob can't see the seed to reject
+  // this at import, so surface it here (the one place that holds both the seed and the discoveries).
+  const clashes = Object.keys(discoveredCategories).filter((id) => !addedCategories.includes(id))
+  if (clashes.length > 0) {
+    console.warn(
+      `[registry] drop-in categor${clashes.length > 1 ? 'ies' : 'y'} reuse a built-in id and were ignored: ` +
+        `${clashes.join(', ')}. Pick a unique category id.`,
+    )
+  }
+}
+
+// DEV guard (mirrors the dup-id throw, but a warn — the id may be a legitimate drop-in whose
+// `category.ts` is simply absent): flag any node whose category isn't a registered one, so a typo
+// or a forgotten `defineCategory` surfaces instead of the node rendering with fallback chrome.
+if (import.meta.env.DEV) {
+  const registered = new Set(Object.keys(categoryMeta))
+  const unknown = [...new Set(allNodes.map((d) => d.category).filter((c) => !registered.has(c)))]
+  if (unknown.length > 0) {
+    console.warn(
+      `[registry] node(s) declare unregistered categor${unknown.length > 1 ? 'ies' : 'y'}: ${unknown.join(', ')}. ` +
+        `Add a registry/<cat>/category.ts (defineCategory) or fix the id.`,
+    )
+  }
+}

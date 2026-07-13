@@ -10,7 +10,7 @@ import {
 } from 'lucide-vue-next'
 import { categoryMeta, dataTypeMeta, type NodeDefinition, type WhenSchema, useNodesStore } from '@/stores/nodes'
 import { evaluateWhen } from '@/composables/useControlHelpers'
-import { categoryIcons, fallbackCategoryIcon } from '@/utils/categoryIcons'
+import { getCategoryIcon, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
@@ -127,7 +127,7 @@ const nodeLabel = computed(() => {
 
 const categoryIcon = computed(() => {
   if (!definition.value) return fallbackCategoryIcon
-  return categoryIcons[definition.value.category] ?? fallbackCategoryIcon
+  return getCategoryIcon(definition.value.category)
 })
 
 const categoryColor = computed(() => {

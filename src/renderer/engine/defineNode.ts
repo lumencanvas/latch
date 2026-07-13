@@ -77,13 +77,36 @@ export type ModelSelectResolver = (task: string) => {
 }
 
 /**
+ * The globally-injected model-select resolver. `defineNode`/`defineNodes` apply it
+ * to every `models:`-bearing spec, so a plain `defineNode({ models: [{ task }] })`
+ * from ANY node (built-in or hand-authored) gets a populated `model` select — no
+ * per-node shim. It's injected by the AI layer (`services/ai/AIInference.ts` calls
+ * `setModelSelectResolver` at module scope, backed by `getModelSelectOptions`),
+ * which keeps THIS engine module catalog-agnostic: it never imports the AI service,
+ * the dependency arrow points AI→engine. `undefined` until wired, so a `defineNode()`
+ * that runs before the resolver is injected simply DEFERS its select (see
+ * `deriveModelDefinition`); `nodeRegistry` then re-derives every `models:` spec after
+ * its glob — where the resolver is guaranteed set — so the select ends up populated
+ * regardless of evaluation order.
+ */
+let modelSelectResolver: ModelSelectResolver | undefined
+
+/** Inject (or clear, with `undefined`) the global model-select resolver. */
+export function setModelSelectResolver(resolver: ModelSelectResolver | undefined): void {
+  modelSelectResolver = resolver
+}
+
+/**
  * Derive the standardized model UI from a node's `models` declaration: append the
  * loading/progress/done/error outputs and (when some task is `selectable`) a
  * `model` select. Pure and idempotent — re-running it on its own output is a
- * no-op, since every append is guarded on the id already being present. When a
- * `resolveModelSelect` is supplied, the select's options + default are populated
- * from it (the first selectable task); without one the control carries an empty
- * placeholder (the inert `defineNode` path until per-node co-location).
+ * no-op, since every append is guarded on the id already being present. The select
+ * is added ONLY when a `resolveModelSelect` populates it (the first selectable
+ * task); without a resolver the select is DEFERRED — not added at all — so the
+ * registry can re-derive it with the injected global resolver at assembly
+ * (`nodeRegistry`). This is what lets a node whose `defineNode()` ran before the
+ * resolver was wired still end up with a populated select instead of an inert empty
+ * one. The outputs, being resolver-independent, are always appended.
  */
 export function deriveModelDefinition(
   def: NodeDefinition,
@@ -102,15 +125,19 @@ export function deriveModelDefinition(
   if (wantsSelect && !hasModelControl) {
     const task = models.find((m) => m.selectable !== false)?.task
     const resolved = task && resolveModelSelect ? resolveModelSelect(task) : undefined
-    const modelControl: ControlDefinition = {
-      id: 'model',
-      type: 'select',
-      label: 'Model',
-      // '' resolves to the task default at inference time; a non-empty pick overrides.
-      default: resolved?.default ?? '',
-      props: { options: resolved ? [...resolved.options] : [] },
+    // Defer the select entirely when it can't be populated yet — the registry re-derives once the
+    // global resolver is wired, so we never bake an inert empty select that a later pass would skip.
+    if (resolved) {
+      const modelControl: ControlDefinition = {
+        id: 'model',
+        type: 'select',
+        label: 'Model',
+        // '' resolves to the task default at inference time; a non-empty pick overrides.
+        default: resolved.default,
+        props: { options: [...resolved.options] },
+      }
+      controls = [...def.controls, modelControl]
     }
-    controls = [...def.controls, modelControl]
   }
 
   return { ...def, outputs, controls }
@@ -124,5 +151,19 @@ export function deriveModelDefinition(
  */
 export function defineNode(spec: NodeSpec): NodeSpec {
   if (!spec.models?.length) return spec
-  return { ...spec, definition: deriveModelDefinition(spec.definition, spec.models) }
+  return { ...spec, definition: deriveModelDefinition(spec.definition, spec.models, modelSelectResolver) }
+}
+
+/**
+ * Brand a whole FAMILY of nodes authored in one unit — a `registry/<cat>/<name>/nodes.ts`
+ * (plural) file that `export default defineNodes([...])`, or a factory that generates a
+ * parametric set (`['is-null','is-empty',…].map(makeCheck)`). Each spec flows through
+ * `defineNode` (so the `models` derivation etc. applies per node), and the returned array
+ * becomes the file's default export; the `nodeRegistry` collector flattens `NodeSpec[]`
+ * defaults, applying the same dup-id / count / pure-set guards per spec. Lets one file
+ * register many nodes instead of N near-identical folders (the Node-RED "one package,
+ * many node types" idea, co-located).
+ */
+export function defineNodes(specs: readonly NodeSpec[]): NodeSpec[] {
+  return specs.map(defineNode)
 }

@@ -18,12 +18,18 @@ import { describe, it, expect } from 'vitest'
  * stores/registry/ExecutionEngine values must be `import type`.
  */
 
-// Raw source of every co-located node.ts (relative to this test file → src/renderer/registry).
-const sources = import.meta.glob('../../../src/renderer/registry/**/node.ts', {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
+// Raw source of every co-located node.ts / nodes.ts family / category.ts (relative to this test
+// file → src/renderer/registry). `category.ts` is EAGER-globbed by `categoryRegistry` too, so it
+// shares the identical cycle footgun: a drop-in category may only value-import
+// `@/engine/defineCategory`, never a store / the registry.
+const sources = import.meta.glob(
+  [
+    '../../../src/renderer/registry/**/node.ts',
+    '../../../src/renderer/registry/**/nodes.ts',
+    '../../../src/renderer/registry/**/category.ts',
+  ],
+  { query: '?raw', import: 'default', eager: true },
+) as Record<string, string>
 
 // Source specifiers that MUST NOT be value-imported from a co-located node.ts (they pull the
 // stores/registry graph into the eager glob and close the cycle).
@@ -32,6 +38,7 @@ const FORBIDDEN_VALUE_IMPORT = [
   /^@\/registry\/components$/,
   /^@\/registry\/allNodes$/,
   /^@\/registry\/nodeRegistry$/,
+  /^@\/registry\/categoryRegistry$/, // a category.ts importing its own eager glob closes a self-cycle
   /^@\/registry$/,
   /^@\/engine\/ExecutionEngine$/, // type-only is fine (ExecutionContext/NodeExecutorFn); values close the cycle
 ]
