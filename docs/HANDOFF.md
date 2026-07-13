@@ -6,6 +6,41 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-13 (later 100) — Workstream D: docs organization + honesty pass (PLAN COMPLETE)
+
+**D done — and with it the whole authoring-DX plan (A·E·B·C-safe·D).** A 3-agent audit (inventory + README
+honesty + spec staleness) drove it. Key audit finding that reshaped the reorg: **most dated docs are still
+cross-referenced** (HANDOFF, ROADMAP, other plans, even `src/` and tests link to the AUDIT_*/MODERNIZATION/
+NODE_LIBRARY_REVIEW files) — so a mass `docs/archive/` move would break links. Chose the link-safe path:
+
+- **`docs/README.md` (NEW index)** — separates the **current governing** set (ARCHITECTURE, NODE_SPEC,
+  nodes/contributing + catalog, the current plans/specs, strategy, HANDOFF) from **historical/dated reference**
+  (the audits + older plans, kept in place). Achieves the organization goal without moving the cross-referenced
+  web. All relative links verified to resolve.
+- **`docs/archive/`** — moved only the 2 files with VERIFIED zero inbound refs: `CLASP_HANDOFF.md`,
+  `connection-manager-plan.md` (superseded by CONNECTION_HANDLE_IMPL).
+- **ARCHITECTURE.md staleness fixes** — the `engine/executors/` dir listing now describes the post-B reality
+  (index.ts + components.ts + clasp.ts + visual/ai re-export shims + standalone files; category behavior lives
+  in `registry/<cat>/shared.ts` + node.ts); the concern-separation paragraph now says each node.ts *defines* its
+  executor via defineNode (not "imports" it), with the clasp exception noted. (NODE_SPEC.md was already accurate
+  — v2.0 described the ideal B realized.)
+- **README.md honesty pass** (conservative — fixing false/overclaimed statements to accurate ones, for your
+  review): status line `Phase 9 Complete + Stability Polish` → `Active development · 241 built-in nodes · Web +
+  Desktop (Electron) · MiniMap · AI Model Manager · Debug Nodes`; **Subflows** now marked *authoring UI; runtime
+  execution being rebuilt* (they're architecturally broken per SUBFLOW_REBUILD_SPEC); **Control Panel** "Live
+  performance view" → "a panel of your flow's exposed controls and monitors" (it has no VJ/BPM/learn/perform);
+  the Phase-7 roadmap line moved subflows out of the done list into a "runtime under rebuild" note.
+
+Docs-only (no code touched) — gates unaffected; links verified. **Committed.**
+
+**PLAN COMPLETE: A ✅ · E ✅ · B ✅ (clasp exception) · C ✅ (safe slice; security items deferred) · D ✅.**
+Open items are all DEFERRED DECISIONS needing maintainer input (documented in later-99): the C security-sensitive
+trio (E4 runtime `registerModel`/`registerProtocol`, component-for-custom, deep lifecycle drain) and the
+connectivity dead-exec prune. Also optional: a fuller README voice pass (the honesty edits above are conservative
+corrections, not a rewrite).
+
+---
+
 ## 2026-07-13 (later 99) — Workstream C (safe slice): custom nodes converge on the defineNode contract
 
 **A user node now flows through the SAME `defineNode` assembly as a built-in.** Maintainer chose the safe,

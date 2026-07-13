@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <em>Status: Phase 9 Complete + Stability Polish | MiniMap with node colors | AI Model Manager | Debug Nodes</em>
+  <em>Status: Active development · 241 built-in nodes · Web + Desktop (Electron) · MiniMap · AI Model Manager · Debug Nodes</em>
 </p>
 
 <p align="center">
@@ -189,8 +189,8 @@ Download CLASP Bridge at [clasp.to](https://clasp.to/#downloads) or from the Con
 - Counter, Toggle, Sample & Hold, Value Delay utilities
 
 ### Advanced Features
-- **Subflows**: Create reusable node groups (Ctrl+G to create, Ctrl+E to edit)
-- **Control Panel**: Live performance view with exposed controls
+- **Subflows** *(authoring UI; runtime execution is being rebuilt)*: group nodes into reusable units (Ctrl+G to create, Ctrl+E to edit)
+- **Control Panel**: a panel of your flow's exposed controls and monitors
 - **Multi-flow Tabs**: Work with multiple flows simultaneously
 
 ### Platform Support
@@ -348,7 +348,7 @@ Connections are color-coded by data type:
 - [x] **Phase 4.5: UI Enhancement** - Properties panel, inline controls, shader editor modal
 - [x] **Phase 5: Connectivity** - HTTP, WebSocket, MIDI, JSON utilities
 - [x] **Phase 6: AI Integration** - Transformers.js, text/image/speech models
-- [x] **Phase 7: Advanced Features** - Function nodes, subflows, control panel, multi-flow tabs
+- [x] **Phase 7: Advanced Features** - Function nodes, control panel, multi-flow tabs (subflows: authoring UI done, runtime under rebuild)
 - [x] **Phase 8: Custom Nodes** - Drop-in custom node system
 - [x] **Phase 9: 3D System** - Three.js integration, primitives, materials, lighting, GLTF
 - [ ] Phase 10: Polish & Export - Flow export, standalone apps

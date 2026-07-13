@@ -39,7 +39,10 @@ src/renderer/
 │   ├── nodeState.ts       # defineNodeState / defineLifecycle (self-registering cleanup)
 │   ├── trigger.ts         # canonical TRIGGER value + rising-edge helper
 │   ├── connection.ts
-│   └── executors/         # per-category executor modules (service-backed behavior) + index.ts barrel
+│   └── executors/         # index.ts (barrel + builtin assembly), components.ts (nodeTypes), clasp.ts
+│   │                      # (store-coupled shared module), visual.ts/ai.ts (re-export shims), + standalone
+│   │                      # files (websocket/mqtt/http/subflow/opencv…). Category behavior now lives in
+│   │                      # registry/<cat>/shared.ts + each node.ts (Workstream B).
 ├── services/            # audio · visual · ai · connections · clasp · ble · emulation · messaging
 │   │                      # security · input · assets · worker · database.ts · fileFormat.ts
 ├── stores/              # Pinia: flows · nodes · runtime · ui · history · connections · assets · node-explorer
@@ -55,9 +58,11 @@ keeps the dependency graph acyclic and HMR fan-out bounded. The one place this t
 the eager glob + Vue components — handled by the `nodeTypeIds` leaf (below) and enforced by the
 `node-import-hygiene` guard test.
 
-Concern separation: **definition** (`registry/`) is deliberately co-located with **behavior** (in
-`node.ts`, which imports its executor) — locality of behavior for node authoring — while the
-**engine** that runs them stays a separate, injected layer.
+Concern separation: **definition** (`registry/`) is deliberately co-located with **behavior** — since
+Workstream B, each `node.ts` *defines* its executor inline via `defineNode(...)`, with any state/helpers
+shared across a category in `registry/<cat>/shared.ts` (locality of behavior for node authoring) — while the
+**engine** that runs them stays a separate, injected layer. (The `clasp` category is the one documented
+exception: its store-coupled executors stay in `engine/executors/clasp.ts` and its node.ts lazy-import them.)
 
 ---
 
