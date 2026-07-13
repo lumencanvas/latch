@@ -6,6 +6,55 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-13 (later 99) — Workstream C (safe slice): custom nodes converge on the defineNode contract
+
+**A user node now flows through the SAME `defineNode` assembly as a built-in.** Maintainer chose the safe,
+non-security-boundary slice. What landed:
+- **`validator.ts`** — new `validateSpecExtras(def) → { pure?, deferred?, models? }` (+ `NodeSpecExtras`,
+  exported via `index.ts`). Validates the optional NodeSpec-level fields a custom node may declare next to its
+  definition. `validateDefinition` is UNCHANGED; every existing security check stands (`component` stripped,
+  trust never author-read, custom `ui` Tier-A only, prototype-pollution guards). `models` is a task-string +
+  boolean — can't smuggle code.
+- **`CustomNodeLoader.ts`** — both load paths (`loadNode` Electron→trust `local`, `loadFromCode` web→`community`)
+  route through one `registerCustomSpec()` helper that calls `defineNode({definition, executor, ...extras})`,
+  stamps trust by ORIGIN on the derived definition, and registers via `nodesStore.register` +
+  `engine.registerExecutor(id, executor, { pure, deferred })`. So a custom node declaring `models:[{task}]` gets
+  the populated model select + standardized loading/progress/done/error outputs for free (the E1 subsystem now
+  reaches user nodes' UI). Model INFERENCE still runs through the executor (a follow-up could expose the AI
+  service to the sandbox).
+- **`ExecutionEngine.ts`** — `registerExecutor` gained an optional `{ pure?, deferred? }`; two NEW mutable sets
+  `dynamicPureNodeTypes`/`dynamicDeferredNodeTypes` (kept separate from the static `PURE_NODE_TYPES` /
+  `deferredNodeTypes` so `setDeferredNodeTypes` can't wipe them) are OR'd into the pure + isDeferred checks;
+  `unregisterExecutor` cleans both (no stale-id leak on reload/unload). Backward-compatible for the built-in
+  caller (2-arg). Built-in nodes unaffected.
+- **Fixture:** `tests/unit/services/customNodes/loader-convergence.test.ts` (6 tests) — `validateSpecExtras`
+  valid/malformed cases; a `models` custom node registers with derived outputs + `community` trust; a plain one
+  is unchanged; and a spy test proving `pure`/`deferred` reach `registerExecutor`.
+
+**Gates:** typecheck clean · lint 0 err · `test:unit` **2339** + 11 todo (150 files) · build ok · browser smoke
+(241 nodes, Play→Stop 0 real errors). **Adversarial review (4-agent): SHIP-with-nits** — security-boundary +
+engine-correctness CLEAN; the 2 nits (a coverage gap for the pure/deferred wiring + a stale-`definition` log line)
+were both FIXED.
+
+**DEFERRED — security-sensitive C items (need maintainer sign-off; NOT implemented):**
+1. **E4 `registerModel`/`registerProtocol` runtime APIs** — let a distributed user package register a model/
+   protocol at runtime (the build-time `defineModel`/`defineProtocol` globs can't). Design: add
+   `registerModel(spec)`/`registerProtocol(spec)` to `services/ai/modelRegistry.ts` / `services/connections/
+   protocolRegistry.ts` that mutate `specsById` + re-run the resolver. RISKS: makes the eager-glob O(1) catalogs
+   mutable; a community-tier package declaring `connections:[{protocol:'mqtt'}]` would need the host's broker
+   credentials → the capability gate must decide. Recommend a design pass + explicit trust rules first.
+2. **`component` for custom nodes** — currently blocked by the validator (a custom node can't ship a code
+   component). Enabling is a trust-boundary change. RECOMMEND: keep blocked.
+3. **Deeper lifecycle auto-drain** — custom executors are sandboxed code strings that can't self-register
+   `defineNodeState`, so they don't get per-node auto-cleanup like built-ins. The engine already unregisters the
+   executor + cleans the dynamic sets on unload; a fuller drain would need an engine-side per-custom-node state
+   registry. Subtle; separate task.
+
+**State: committed. Plan: A ✅ · E ✅ · B ✅ (clasp exception) · C ~ (safe slice ✅; security items deferred) ·
+D ⬜.** Next: D (docs reorg + README honesty) is the clean remaining low-risk workstream.
+
+---
+
 ## 2026-07-12 (later 98) — Workstream B COMPLETE: 5/6 giants co-located; clasp is the documented exception
 
 **Workstream B (full behavior co-location) is done.** Five of the six giant executor files were dissolved —

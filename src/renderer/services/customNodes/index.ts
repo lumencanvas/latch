@@ -6,7 +6,9 @@ export {
 
 export {
   validateDefinition,
+  validateSpecExtras,
   ValidationError,
+  type NodeSpecExtras,
 } from './validator'
 
 export {

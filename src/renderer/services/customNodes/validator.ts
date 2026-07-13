@@ -4,6 +4,7 @@ import type {
 } from '@/stores/nodes'
 import type { NodeConnectionRequirement } from '@/services/connections/types'
 import type { NodeRequirement } from '@/utils/platform'
+import type { ModelRequirement } from '@/services/ai/defineModel'
 
 // Valid values for validation
 const VALID_REQUIREMENTS: NodeRequirement[] = ['serial', 'midi', 'bluetooth', 'webgpu', 'camera']
@@ -439,4 +440,51 @@ export function validateDefinition(definition: unknown): NodeDefinition {
   }
 
   return result
+}
+
+/** The `defineNode`-level fields a custom node may declare alongside its `NodeDefinition`. */
+export interface NodeSpecExtras {
+  pure?: boolean
+  deferred?: boolean
+  models?: ModelRequirement[]
+}
+
+/**
+ * Validate the optional `defineNode` NodeSpec-level fields a custom node may declare next to its
+ * definition — so a user node flows through the SAME `defineNode` assembly as a built-in and can
+ * tap the declarative `models:` subsystem (a populated model select + standardized loading/progress/
+ * done/error outputs) and the `pure`/`deferred` execution hints.
+ *
+ * Security-neutral by construction: these fields drive derivation/optimization only. It does NOT
+ * touch the trust boundary — `component` is still never accepted (only `validateDefinition` builds the
+ * definition, and it strips it), the trust tier is still origin-assigned, and a custom `ui` is still
+ * Tier-A-only. `models` cannot name a `component` or code; it is a task string plus a boolean.
+ */
+export function validateSpecExtras(definition: unknown): NodeSpecExtras {
+  if (typeof definition !== 'object' || definition === null) return {}
+  const def = definition as Record<string, unknown>
+  const out: NodeSpecExtras = {}
+
+  if (def.pure !== undefined) out.pure = Boolean(def.pure)
+  if (def.deferred !== undefined) out.deferred = Boolean(def.deferred)
+
+  if (def.models !== undefined) {
+    const raw = validateArray<unknown>(def.models, 'models')
+    out.models = raw.map((m, i): ModelRequirement => {
+      if (typeof m !== 'object' || m === null) {
+        throw new ValidationError(`models[${i}] must be an object`, `models[${i}]`, m)
+      }
+      const entry = m as Record<string, unknown>
+      const req: ModelRequirement = { task: validateString(entry.task, `models[${i}].task`) }
+      if (entry.selectable !== undefined) {
+        if (typeof entry.selectable !== 'boolean') {
+          throw new ValidationError(`models[${i}].selectable must be a boolean`, `models[${i}].selectable`, entry.selectable)
+        }
+        req.selectable = entry.selectable
+      }
+      return req
+    })
+  }
+
+  return out
 }

@@ -225,6 +225,11 @@ export class ExecutionEngine {
    * default (no behavior change until a type is opted in).
    */
   private deferredNodeTypes: Set<string> = new Set()
+  /** Pure/deferred opt-ins for DYNAMICALLY-registered node types (custom/user nodes), kept
+   * separate from the built-in `PURE_NODE_TYPES` / `deferredNodeTypes` so `setDeferredNodeTypes`
+   * can't wipe them. Populated via `registerExecutor(type, exec, { pure, deferred })`. */
+  private dynamicPureNodeTypes: Set<string> = new Set()
+  private dynamicDeferredNodeTypes: Set<string> = new Set()
   /** Deferred node ids with an async op currently in flight (prevents request storms). */
   private inFlightAsync: Set<string> = new Set()
   /** Deferred node ids whose result landed out-of-band, for dirty-mode propagation. */
@@ -264,10 +269,17 @@ export class ExecutionEngine {
   private loopToken: number = 0
 
   /**
-   * Register a node executor
+   * Register a node executor. `opts.pure`/`opts.deferred` let a DYNAMICALLY-registered node type
+   * (a custom/user node loaded at runtime) opt into the same execution hints a built-in gets from
+   * its `defineNode` spec — `pure` → skippable in dirty mode, `deferred` → fire-and-latch async.
+   * Built-in nodes get these from `PURE_NODE_TYPES` / `deferredNodeTypes`; this is the runtime path.
    */
-  registerExecutor(nodeType: string, executor: NodeExecutorFn): void {
+  registerExecutor(nodeType: string, executor: NodeExecutorFn, opts?: { pure?: boolean; deferred?: boolean }): void {
     this.executors.set(nodeType, executor)
+    if (opts?.pure) this.dynamicPureNodeTypes.add(nodeType)
+    else this.dynamicPureNodeTypes.delete(nodeType)
+    if (opts?.deferred) this.dynamicDeferredNodeTypes.add(nodeType)
+    else this.dynamicDeferredNodeTypes.delete(nodeType)
   }
 
   /**
@@ -275,6 +287,8 @@ export class ExecutionEngine {
    */
   unregisterExecutor(nodeType: string): void {
     this.executors.delete(nodeType)
+    this.dynamicPureNodeTypes.delete(nodeType)
+    this.dynamicDeferredNodeTypes.delete(nodeType)
   }
 
   /**
@@ -493,7 +507,7 @@ export class ExecutionEngine {
     )
 
     try {
-      const isDeferred = this.deferredNodeTypes.has(nodeType)
+      const isDeferred = this.deferredNodeTypes.has(nodeType) || this.dynamicDeferredNodeTypes.has(nodeType)
 
       // Deferred (fire-and-latch) path for long-latency async node types: never
       // block the frame and never re-fire while an op is in flight (no request
@@ -681,7 +695,7 @@ export class ExecutionEngine {
       if (!node) continue
 
       const nodeType = node.data?.nodeType as string
-      const pure = PURE_NODE_TYPES.has(nodeType)
+      const pure = PURE_NODE_TYPES.has(nodeType) || this.dynamicPureNodeTypes.has(nodeType)
 
       let curControls: Map<string, unknown> | null = null
       let mustRun = true

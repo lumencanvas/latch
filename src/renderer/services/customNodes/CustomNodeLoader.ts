@@ -1,7 +1,34 @@
 import { useNodesStore, type NodeDefinition } from '@/stores/nodes'
 import { getExecutionEngine, type NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { validateDefinition, ValidationError } from './validator'
+import { defineNode } from '@/engine/defineNode'
+import { validateDefinition, validateSpecExtras, ValidationError, type NodeSpecExtras } from './validator'
 import { compileExecutor, CompilationError } from './compiler'
+
+/**
+ * Assemble a validated custom-node definition + compiled executor into the SAME `defineNode`
+ * NodeSpec a built-in uses, stamp the trust tier by ORIGIN, and register it (store + engine).
+ * Routing through `defineNode` is what lets a user node tap the declarative `models:` subsystem (a
+ * populated select + standardized loading/progress/done/error outputs) and the `pure`/`deferred`
+ * execution hints — one contract for built-in and user nodes. Returns the (possibly model-derived)
+ * definition + executor for the loaded-package record.
+ *
+ * `trust` is assigned HERE by origin (never read from author input); the validator already stripped
+ * any author-supplied `trust`/`component`. Model inference itself still runs through the executor,
+ * so a custom node that declares `models` gets the UI for free but wires its own inference.
+ */
+function registerCustomSpec(
+  definition: NodeDefinition,
+  executor: NodeExecutorFn,
+  extras: NodeSpecExtras,
+  trust: 'local' | 'community',
+): { definition: NodeDefinition; executor: NodeExecutorFn } {
+  const spec = defineNode({ definition, executor, ...extras })
+  const finalDef = spec.definition
+  finalDef.trust = trust
+  useNodesStore().register(finalDef)
+  getExecutionEngine().registerExecutor(finalDef.id, spec.executor, { pure: spec.pure, deferred: spec.deferred })
+  return { definition: finalDef, executor: spec.executor }
+}
 
 export interface CustomNodePackage {
   packageName: string
@@ -108,10 +135,12 @@ class CustomNodeLoaderService {
       return null
     }
 
-    // Validate definition
+    // Validate definition + the optional defineNode-level fields (pure/deferred/models)
     let definition: NodeDefinition
+    let extras: NodeSpecExtras
     try {
       definition = validateDefinition(defResult.definition)
+      extras = validateSpecExtras(defResult.definition)
     } catch (error) {
       const message = error instanceof ValidationError ? error.message : String(error)
       this.recordError(packageName, message, 'validation')
@@ -140,26 +169,21 @@ class CustomNodeLoaderService {
       this.unloadNode(definition.id)
     }
 
-    // Register with stores. Stamp the trust tier by ORIGIN (SECURITY_MODEL step 3):
-    // file-dropped custom nodes are user-authored-local (trusted, not gated). Assigned
-    // here — never read from the author's definition.json (the validator strips it).
-    definition.trust = 'local'
-    const nodesStore = useNodesStore()
-    nodesStore.register(definition)
-
-    const engine = getExecutionEngine()
-    engine.registerExecutor(definition.id, executor)
+    // Assemble the defineNode NodeSpec + register. Trust tier is stamped by ORIGIN
+    // (SECURITY_MODEL step 3): file-dropped custom nodes are user-authored-local (trusted, not
+    // gated) — never read from the author's definition.json (the validator strips it).
+    const registered = registerCustomSpec(definition, executor, extras, 'local')
 
     // Store loaded package
     const pkg: CustomNodePackage = {
       packageName,
-      definition,
-      executor,
+      definition: registered.definition,
+      executor: registered.executor,
       loadedAt: Date.now(),
     }
-    this.loadedNodes.set(definition.id, pkg)
+    this.loadedNodes.set(registered.definition.id, pkg)
 
-    console.log(`CustomNodeLoader: Loaded "${definition.name}" (${definition.id})`)
+    console.log(`CustomNodeLoader: Loaded "${registered.definition.name}" (${registered.definition.id})`)
     return pkg
   }
 
@@ -326,8 +350,9 @@ class CustomNodeLoaderService {
       throw new ValidationError('Invalid JSON in definition')
     }
 
-    // Validate definition
+    // Validate definition + the optional defineNode-level fields (pure/deferred/models)
     const definition = validateDefinition(defObj)
+    const extras = validateSpecExtras(defObj)
 
     // Compile executor
     const executor = compileExecutor(executorCode, definition.id)
@@ -337,24 +362,19 @@ class CustomNodeLoaderService {
       this.unloadNode(definition.id)
     }
 
-    // Register. Code loaded from an imported string is community-tier (SECURITY_MODEL
-    // step 3) — code you did NOT write, so its capability access is gated. Assigned by
-    // origin here, never trusted from the author's definition.json.
-    definition.trust = 'community'
-    const nodesStore = useNodesStore()
-    nodesStore.register(definition)
-
-    const engine = getExecutionEngine()
-    engine.registerExecutor(definition.id, executor)
+    // Assemble + register. Code loaded from an imported string is community-tier
+    // (SECURITY_MODEL step 3) — code you did NOT write, so its capability access is gated.
+    // Assigned by origin here, never trusted from the author's definition.json.
+    const registered = registerCustomSpec(definition, executor, extras, 'community')
 
     // Store
     const pkg: CustomNodePackage = {
-      packageName: `web:${definition.id}`,
-      definition,
-      executor,
+      packageName: `web:${registered.definition.id}`,
+      definition: registered.definition,
+      executor: registered.executor,
       loadedAt: Date.now(),
     }
-    this.loadedNodes.set(definition.id, pkg)
+    this.loadedNodes.set(registered.definition.id, pkg)
 
     return pkg
   }
