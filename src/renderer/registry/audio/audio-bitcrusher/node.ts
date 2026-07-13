@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { bitcrusherExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { getOrCreateNode, connectEffectInput } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-bitcrusher',
@@ -31,4 +33,27 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: bitcrusherExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const bits = (ctx.inputs.get('bits') as number) ?? (ctx.controls.get('bits') as number) ?? 4
+  const wet = (ctx.controls.get('wet') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+  if (!audio) {
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  const crusher = getOrCreateNode(
+    ctx.nodeId,
+    () => new Tone.BitCrusher({ bits })
+  ) as Tone.BitCrusher
+  crusher.bits.value = bits
+  crusher.wet.value = wet
+  connectEffectInput(ctx.nodeId, audio, crusher)
+
+  outputs.set('audio', crusher)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

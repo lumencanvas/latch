@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { gainExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { audioNodes, getOrCreateNode } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'gain',
@@ -30,4 +32,37 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: gainExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const gain = (ctx.inputs.get('gain') as number) ?? (ctx.controls.get('gain') as number) ?? 1
+
+  if (!audio) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  // Get or create gain node
+  const gainNode = getOrCreateNode(ctx.nodeId, () => {
+    return new Tone.Gain(gain)
+  }) as Tone.Gain
+
+  // Update gain
+  gainNode.gain.value = gain
+
+  // Connect input
+  const prevInput = audioNodes.get(`${ctx.nodeId}_input`)
+  if (prevInput !== audio) {
+    if (prevInput) {
+      prevInput.disconnect(gainNode)
+    }
+    audio.connect(gainNode)
+    audioNodes.set(`${ctx.nodeId}_input`, audio)
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', gainNode)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

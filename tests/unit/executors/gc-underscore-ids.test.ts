@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { audioNodeBaseId } from '@/engine/executors/audio'
+import { audioNodeBaseId } from '@/registry/audio/shared'
 import { shaderCacheKeyOwned } from '@/engine/executors/visual'
 
 /**

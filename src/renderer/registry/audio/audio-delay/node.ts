@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { delayExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { audioNodes, getOrCreateNode } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-delay',
@@ -32,4 +34,45 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: delayExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const delayTime = (ctx.inputs.get('time') as number) ?? (ctx.controls.get('time') as number) ?? 0.25
+  const feedback = (ctx.controls.get('feedback') as number) ?? 0.5
+  const wet = (ctx.controls.get('wet') as number) ?? 0.5
+
+  if (!audio) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  // Get or create delay
+  const delay = getOrCreateNode(ctx.nodeId, () => {
+    return new Tone.FeedbackDelay({
+      delayTime,
+      feedback,
+      wet,
+    })
+  }) as Tone.FeedbackDelay
+
+  // Update parameters
+  delay.delayTime.value = delayTime
+  delay.feedback.value = feedback
+  delay.wet.value = wet
+
+  // Connect input
+  const prevInput = audioNodes.get(`${ctx.nodeId}_input`)
+  if (prevInput !== audio) {
+    if (prevInput) {
+      prevInput.disconnect(delay)
+    }
+    audio.connect(delay)
+    audioNodes.set(`${ctx.nodeId}_input`, audio)
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', delay)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

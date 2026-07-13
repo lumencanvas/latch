@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { wavetableExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { wavetableState } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'wavetable',
@@ -50,4 +52,87 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: wavetableExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const frequencyInput = ctx.inputs.get('frequency') as number | undefined
+  const frequency = frequencyInput ?? (ctx.controls.get('frequency') as number) ?? 440
+  const volume = (ctx.controls.get('volume') as number) ?? 0.5
+  const preset = (ctx.controls.get('preset') as string) ?? 'sine'
+  const waveform = (ctx.controls.get('waveform') as number[]) ?? null
+
+  // Initialize or get state
+  let state = wavetableState.get(ctx.nodeId)
+  if (!state) {
+    const oscillator = new Tone.Oscillator({
+      frequency,
+      type: preset as OscillatorType,
+      volume: Tone.gainToDb(volume),
+    })
+    oscillator.start()
+
+    state = {
+      oscillator,
+      periodicWave: null,
+      lastPreset: preset,
+      lastWaveform: null,
+    }
+    wavetableState.set(ctx.nodeId, state)
+  }
+
+  // Update frequency and volume
+  state.oscillator.frequency.value = frequency
+  state.oscillator.volume.value = Tone.gainToDb(volume)
+
+  // Handle preset change or custom waveform
+  if (preset !== 'custom') {
+    if (state.lastPreset !== preset) {
+      state.oscillator.type = preset as OscillatorType
+      state.lastPreset = preset
+      state.lastWaveform = null
+    }
+  } else if (waveform && waveform.length > 0) {
+    // Custom waveform - convert samples to periodic wave
+    const waveformChanged = !state.lastWaveform ||
+      state.lastWaveform.length !== waveform.length ||
+      state.lastWaveform.some((v, i) => Math.abs(v - waveform[i]) > 0.001)
+
+    if (waveformChanged) {
+      // Convert time-domain samples to frequency-domain via simple DFT
+      const n = waveform.length
+      const real = new Float32Array(n / 2 + 1)
+      const imag = new Float32Array(n / 2 + 1)
+
+      // Simple DFT for harmonics
+      for (let k = 0; k <= n / 2; k++) {
+        let sumReal = 0
+        let sumImag = 0
+        for (let t = 0; t < n; t++) {
+          const angle = (2 * Math.PI * k * t) / n
+          sumReal += waveform[t] * Math.cos(angle)
+          sumImag -= waveform[t] * Math.sin(angle)
+        }
+        real[k] = sumReal / n
+        imag[k] = sumImag / n
+      }
+
+      // Create periodic wave
+      const audioContext = Tone.getContext().rawContext as AudioContext
+      const periodicWave = audioContext.createPeriodicWave(real, imag)
+      state.periodicWave = periodicWave
+
+      // Apply to oscillator
+      const rawOsc = (state.oscillator as unknown as { _oscillator?: OscillatorNode })._oscillator
+      if (rawOsc) {
+        rawOsc.setPeriodicWave(periodicWave)
+      }
+
+      state.lastWaveform = [...waveform]
+      state.lastPreset = 'custom'
+    }
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', state.oscillator)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

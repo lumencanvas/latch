@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { parametricEqExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { parametricEqState } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'parametric-eq',
@@ -49,4 +51,70 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: parametricEqExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+
+  // Get band parameters
+  const freq1 = (ctx.controls.get('freq1') as number) ?? 200
+  const gain1 = (ctx.controls.get('gain1') as number) ?? 0
+  const q1 = (ctx.controls.get('q1') as number) ?? 1
+
+  const freq2 = (ctx.controls.get('freq2') as number) ?? 1000
+  const gain2 = (ctx.controls.get('gain2') as number) ?? 0
+  const q2 = (ctx.controls.get('q2') as number) ?? 1
+
+  const freq3 = (ctx.controls.get('freq3') as number) ?? 5000
+  const gain3 = (ctx.controls.get('gain3') as number) ?? 0
+  const q3 = (ctx.controls.get('q3') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+
+  if (!audio) {
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  // Initialize or get state
+  let state = parametricEqState.get(ctx.nodeId)
+  if (!state) {
+    state = {
+      band1: new Tone.Filter({ type: 'peaking', frequency: freq1, Q: q1, gain: gain1 }),
+      band2: new Tone.Filter({ type: 'peaking', frequency: freq2, Q: q2, gain: gain2 }),
+      band3: new Tone.Filter({ type: 'peaking', frequency: freq3, Q: q3, gain: gain3 }),
+      prevInput: null,
+    }
+    // Chain filters together
+    state.band1.connect(state.band2)
+    state.band2.connect(state.band3)
+    parametricEqState.set(ctx.nodeId, state)
+  }
+
+  // Update filter parameters
+  state.band1.frequency.value = freq1
+  state.band1.Q.value = q1
+  state.band1.gain.value = gain1
+
+  state.band2.frequency.value = freq2
+  state.band2.Q.value = q2
+  state.band2.gain.value = gain2
+
+  state.band3.frequency.value = freq3
+  state.band3.Q.value = q3
+  state.band3.gain.value = gain3
+
+  // Connect input to first filter
+  if (state.prevInput !== audio) {
+    if (state.prevInput) {
+      try {
+        state.prevInput.disconnect(state.band1)
+      } catch { /* ignore */ }
+    }
+    audio.connect(state.band1)
+    state.prevInput = audio
+  }
+
+  outputs.set('audio', state.band3)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

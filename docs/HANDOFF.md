@@ -6,6 +6,44 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-12 (later 94) — Workstream B: `audio` behavior co-location (2nd category)
+
+**`audio` done, verified, uncommitted.** Moved each audio executor BODY out of the 1696-line
+`engine/executors/audio.ts` (DELETED) inline into its `registry/audio/<id>/node.ts`; shared infra → new
+`registry/audio/shared.ts`. Harder than `3d` (a **classification-based** generator, since the shared Maps/
+helpers/dispose fns are interleaved *between* executors, not in a top block).
+
+**shared.ts holds (verbatim):** the Tone backbone `audioNodes` + 7 per-node state Maps (`synthState`, `beatState`,
+`playerState`, `svfState`, `pitchState`, `parametricEqState`, `wavetableState`); helpers `getOrCreateNode` /
+`connectEffectInput` / `audioNodeBaseId`; the `SynthState`/`SynthVoice` interfaces; **`envelopeExecutor` (SHARED
+— used by both `envelope` and `envelope-visual`)**; and the whole gc/dispose lifecycle (`disposeAudioNode`,
+`disposeAllAudioNodes` with its exact 8-map teardown SEQUENCE, `gcAudioState`, the 7 per-state dispose fns,
+`defineLifecycle({label:'audio'})`). Only node-consumed symbols are `export`ed; the ExecutionEngine relative
+import was absolutized + the header reworded; `audioManager` import auto-dropped from shared (unused there).
+
+**Special cases handled:** `envelope/node.ts` keeps `executor: envelopeExecutor` but repoints the import to
+`../shared` (not inlined — shared with envelope-visual); `envelope-visual` inlines its body which imports
+`envelopeExecutor` from `../shared`; **`audio-input` lives under `registry/inputs/audio-input`** (the mapper
+missed it — it imports `audioInputExecutor`), so it imports shared from `../../audio/shared` (cross-folder) and
+keeps its `async`; `oscillator`/`pitch-detect`/`synth` inlined their node-local helpers (`MIN`/`MAX_OSCILLATOR_
+VOLUME`; `noteNames`+`autoCorrelate`; `createSynthForInstrument`) byte-faithfully. Interfaces imported as `import
+type` (verbatimModuleSyntax), Maps/fns as value imports. **Test repoint:** `tests/unit/executors/
+gc-underscore-ids.test.ts` imported `audioNodeBaseId` from `@/engine/executors/audio` → repointed to
+`@/registry/audio/shared` (the nanoid-`_`-split regression guard; still green).
+
+**Gates (all green):** byte-faithful (20/20 bodies + 3 nodes' helpers char-identical) · typecheck clean · lint 0
+err · `test:unit` **2333** + 11 todo (149 files, unchanged) · build ok · browser smoke (241 defs, 16 3d + 19
+audio register ⇒ shared.ts loaded at boot no cycle, Play→Stop 0 real errors). **Adversarial review (5-agent):
+SHIP** — byte-faithfulness, the `disposeAllAudioNodes` 8-map sequence + `gcAudioState`, import type/value split +
+cross-folder path + envelope/audio-input specials, and lifecycle-at-boot all clean; only nit was a cosmetic
+blank line between the two oscillator consts (FIXED to match original). Generator: `scratchpad/migrate-audio.mjs`.
+
+**State: `audio` uncommitted on `phase0-file-format` (19 audio node.ts + audio-input + new audio/shared.ts +
+deleted audio.ts + test repoint + this HANDOFF); `3d` committed at `be7f0c8`. Remaining B order: visual → ai →
+connectivity → clasp.** Awaiting maintainer commit go.
+
+---
+
 ## 2026-07-12 (later 93) — Workstream B begins: `3d` behavior co-location (executor bodies → node.ts)
 
 **Workstream B (full behavior co-location) started — first category `3d` done, verified, uncommitted.** Moved

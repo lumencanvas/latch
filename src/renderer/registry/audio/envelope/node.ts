@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { envelopeExecutor } from '@/engine/executors/audio'
+import { envelopeExecutor } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'envelope',

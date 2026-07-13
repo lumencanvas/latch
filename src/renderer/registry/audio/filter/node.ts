@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { filterExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { audioNodes, getOrCreateNode } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'filter',
@@ -32,4 +34,47 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: filterExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const frequency = (ctx.inputs.get('frequency') as number) ?? (ctx.controls.get('frequency') as number) ?? 1000
+  const Q = (ctx.controls.get('Q') as number) ?? 1
+  const type = (ctx.controls.get('type') as BiquadFilterType) ?? 'lowpass'
+
+  if (!audio) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  // Get or create filter
+  const filter = getOrCreateNode(ctx.nodeId, () => {
+    return new Tone.Filter({
+      frequency,
+      type,
+      Q,
+    })
+  }) as Tone.Filter
+
+  // Update parameters
+  filter.frequency.value = frequency
+  filter.Q.value = Q
+  if (filter.type !== type) {
+    filter.type = type
+  }
+
+  // Connect input
+  const prevInput = audioNodes.get(`${ctx.nodeId}_input`)
+  if (prevInput !== audio) {
+    if (prevInput) {
+      prevInput.disconnect(filter)
+    }
+    audio.connect(filter)
+    audioNodes.set(`${ctx.nodeId}_input`, audio)
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', filter)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

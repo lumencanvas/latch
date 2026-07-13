@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { audioInputExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { audioManager } from '@/services/audio/AudioManager'
+import { getOrCreateNode } from '../../audio/shared'
 
 const definition: NodeDefinition = {
   id: 'audio-input',
@@ -40,4 +43,51 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: audioInputExecutor })
+const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
+  const enabled = (ctx.controls.get('enabled') as boolean) ?? true
+
+  if (!enabled) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('audio', null)
+    outputs.set('level', -Infinity)
+    return outputs
+  }
+
+  // Ensure microphone is available
+  if (!audioManager.hasMicrophone) {
+    try {
+      await audioManager.requestMicrophoneAccess()
+    } catch {
+      const outputs = new Map<string, unknown>()
+      outputs.set('audio', null)
+      outputs.set('level', -Infinity)
+      outputs.set('_error', 'Microphone access denied')
+      return outputs
+    }
+  }
+
+  const mic = audioManager.microphoneSource
+  if (!mic) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('audio', null)
+    outputs.set('level', -Infinity)
+    return outputs
+  }
+
+  // Get or create meter for this node
+  const meter = getOrCreateNode(`${ctx.nodeId}_meter`, () => {
+    const m = new Tone.Meter()
+    mic.connect(m)
+    return m
+  })
+
+  const level = meter.getValue()
+  const normalizedLevel = typeof level === 'number' ? level : level[0]
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', mic)
+  outputs.set('level', normalizedLevel)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

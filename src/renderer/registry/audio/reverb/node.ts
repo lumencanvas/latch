@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { reverbExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { audioNodes, getOrCreateNode } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'reverb',
@@ -33,4 +35,45 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: reverbExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const decay = (ctx.controls.get('decay') as number) ?? 1.5
+  const wet = (ctx.controls.get('wet') as number) ?? 0.5
+  const preDelay = (ctx.controls.get('preDelay') as number) ?? 0.01
+
+  if (!audio) {
+    const outputs = new Map<string, unknown>()
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  // Get or create reverb
+  const reverb = getOrCreateNode(ctx.nodeId, () => {
+    return new Tone.Reverb({
+      decay,
+      wet,
+      preDelay,
+    })
+  }) as Tone.Reverb
+
+  // Update parameters
+  reverb.decay = decay
+  reverb.wet.value = wet
+  reverb.preDelay = preDelay
+
+  // Connect input
+  const prevInput = audioNodes.get(`${ctx.nodeId}_input`)
+  if (prevInput !== audio) {
+    if (prevInput) {
+      prevInput.disconnect(reverb)
+    }
+    audio.connect(reverb)
+    audioNodes.set(`${ctx.nodeId}_input`, audio)
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('audio', reverb)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

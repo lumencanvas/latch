@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { distortionExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { getOrCreateNode, connectEffectInput } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-distortion',
@@ -31,4 +33,27 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: distortionExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const amount = (ctx.inputs.get('amount') as number) ?? (ctx.controls.get('amount') as number) ?? 0.4
+  const wet = (ctx.controls.get('wet') as number) ?? 1
+
+  const outputs = new Map<string, unknown>()
+  if (!audio) {
+    outputs.set('audio', null)
+    return outputs
+  }
+
+  const dist = getOrCreateNode(
+    ctx.nodeId,
+    () => new Tone.Distortion({ distortion: amount, wet })
+  ) as Tone.Distortion
+  dist.distortion = amount
+  dist.wet.value = wet
+  connectEffectInput(ctx.nodeId, audio, dist)
+
+  outputs.set('audio', dist)
+  return outputs
+}
+
+export default defineNode({ definition, executor })

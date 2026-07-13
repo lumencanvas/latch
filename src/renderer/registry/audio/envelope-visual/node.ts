@@ -1,6 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { envelopeVisualExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { envelopeExecutor } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'envelope-visual',
@@ -43,4 +44,9 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: envelopeVisualExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  // Uses the same logic as envelopeExecutor
+  return envelopeExecutor(ctx)
+}
+
+export default defineNode({ definition, executor })

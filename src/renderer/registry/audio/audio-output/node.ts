@@ -1,6 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { audioOutputExecutor } from '@/engine/executors/audio'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import * as Tone from 'tone'
+import { audioManager } from '@/services/audio/AudioManager'
+import { audioNodes, getOrCreateNode } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-output',
@@ -27,4 +30,37 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: audioOutputExecutor })
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
+  const volume = (ctx.controls.get('volume') as number) ?? 0 // dB
+  const mute = (ctx.controls.get('mute') as boolean) ?? false
+
+  // Get or create gain for this output
+  const gain = getOrCreateNode(`${ctx.nodeId}_gain`, () => {
+    const g = new Tone.Gain(1)
+    g.connect(audioManager.getMasterOutput())
+    return g
+  })
+
+  // Update volume
+  gain.gain.value = mute ? 0 : Tone.dbToGain(volume)
+
+  // Connect input to gain if available
+  if (audio && 'connect' in audio) {
+    // Check if already connected
+    const prevInput = audioNodes.get(`${ctx.nodeId}_input`)
+    if (prevInput !== audio) {
+      if (prevInput) {
+        prevInput.disconnect(gain)
+      }
+      audio.connect(gain)
+      audioNodes.set(`${ctx.nodeId}_input`, audio)
+    }
+  }
+
+  const outputs = new Map<string, unknown>()
+  outputs.set('_connected', audio !== null)
+  return outputs
+}
+
+export default defineNode({ definition, executor })
