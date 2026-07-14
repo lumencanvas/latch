@@ -95,4 +95,34 @@ describe('welchPsd + bandPower', () => {
     expect(() => welchPsd(sine(10, fs, 640), { sampleRate: fs, segment: 100 })).toThrow(/power of two/)
     expect(() => welchPsd(sine(10, fs, 100), { sampleRate: fs })).toThrow(/too short/)
   })
+
+  it('removes DC so a large electrode offset does not swamp the low bands', () => {
+    const tone = sine(10, fs, 640, 50)
+    const offset = new Float32Array(640)
+    for (let i = 0; i < 640; i++) offset[i] = tone[i] + 1000 // +1000 µV DC (real electrodes sit far from 0)
+    const clean = welchPsd(tone, { sampleRate: fs })
+    const withDc = welchPsd(offset, { sampleRate: fs })
+    // Alpha (10 Hz) power essentially unchanged, and delta is not swamped by the offset.
+    expect(bandPower(withDc, fs, 8, 13)).toBeCloseTo(bandPower(clean, fs, 8, 13), 2)
+    expect(bandPower(withDc, fs, 1, 4)).toBeCloseTo(bandPower(clean, fs, 1, 4), 2)
+    expect(bandPower(withDc, fs, 1, 4)).toBeLessThan(bandPower(withDc, fs, 8, 13))
+  })
+
+  it('analyzes the MOST RECENT samples of an over-long (streaming) buffer', () => {
+    const need = 640
+    const tone = sine(10, fs, need, 50)
+    // Buffer = [ half A | half B ], each `need` long and non-overlapping. The tail
+    // analyzed is exactly half B.
+    // Tone in the FRESH tail (half B), silence before → alpha dominates.
+    const tail = new Float32Array(need * 2)
+    for (let i = 0; i < need; i++) tail[need + i] = tone[i]
+    const psdTail = welchPsd(tail, { sampleRate: fs })
+    expect(bandPower(psdTail, fs, 8, 13)).toBeGreaterThan(bandPower(psdTail, fs, 1, 4) * 5)
+
+    // Tone only in the STALE prefix (half A, entirely outside the tail) → ~silent.
+    const stale = new Float32Array(need * 2)
+    for (let i = 0; i < need; i++) stale[i] = tone[i]
+    const psdStale = welchPsd(stale, { sampleRate: fs })
+    expect(bandPower(psdStale, fs, 8, 13)).toBeLessThan(bandPower(psdTail, fs, 8, 13) / 100)
+  })
 })

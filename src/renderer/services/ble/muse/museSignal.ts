@@ -67,6 +67,10 @@ export function decodeEegPacket(payload: ArrayLike<number>): number[] {
  * followed by the 18-byte 12-bit payload. Returns the counter + decoded µV samples.
  */
 export function parseEegNotification(view: DataView): { counter: number; samples: number[] } {
+  // A valid EEG notification is 20 bytes (2-byte counter + 18-byte payload). Guard a
+  // truncated/malformed packet — return no samples so the caller skips it, rather than
+  // throwing a RangeError from the out-of-range Uint8Array view.
+  if (view.byteLength < 20) return { counter: view.byteLength >= 2 ? view.getUint16(0) : 0, samples: [] }
   const counter = view.getUint16(0)
   const payload = new Uint8Array(view.buffer, view.byteOffset + 2, 18)
   return { counter, samples: decodeEegPacket(payload) }

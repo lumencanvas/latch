@@ -19,7 +19,7 @@ const EXPECTED_CUSTOM_TYPES = [
   'dispatch', 'emulator', 'equalizer', 'function', 'gamepad-visual', 'graph',
   'keyboard', 'knob', 'main-output', 'mediapipe-audio', 'mediapipe-face',
   'mediapipe-gesture', 'mediapipe-hand', 'mediapipe-object', 'mediapipe-pose',
-  'mediapipe-segmentation', 'monitor', 'oscilloscope', 'step-sequencer',
+  'mediapipe-segmentation', 'monitor', 'muse-eeg', 'oscilloscope', 'step-sequencer',
   'synth', 'textbox', 'trigger',
 ].sort()
 
@@ -36,6 +36,7 @@ const EXPECTED_COMPONENT_NAME: Record<string, string> = {
   'mediapipe-face': 'MediaPipeFaceNode', 'mediapipe-pose': 'MediaPipePoseNode',
   'mediapipe-object': 'MediaPipeObjectNode', 'mediapipe-segmentation': 'MediaPipeSegmentationNode',
   'mediapipe-gesture': 'MediaPipeGestureNode', 'mediapipe-audio': 'MediaPipeAudioNode',
+  'muse-eeg': 'MuseHeadMap',
 }
 
 describe('custom-node component registry derives from definition.component', () => {

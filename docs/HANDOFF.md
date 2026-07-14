@@ -6,6 +6,96 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-14 (later 107) — C1: Muse EEG node + head-map NodeView (audit-first)
+
+Built the `muse-eeg` device node — the flagship recognized BLE device (Thread C). **Audit-first** (the maintainer's
+ask): a 3-lens adversarial audit of the C1 foundation ran BEFORE building and found **14 real bugs** across the
+just-shipped B2, the pre-existing `BleAdapter`, and the committed Muse DSP — all fixed, then C1 built on the repaired
+base, then a second adversarial review of the new C1 code found **16 more**, all fixed. Two review passes, 30 confirmed
+findings resolved.
+
+**Foundation fixes (pre-build audit, 14):**
+- **DSP (`utils/fft.ts`, committed later-104):** `welchPsd` now **DC-removes each segment** (a real electrode's offset
+  was leaking through the Hann window and swamping delta) and **tail-aligns** (analyzes the most-recent `need` samples
+  of a streaming ring, not a stale prefix). +2 regression tests pinning both.
+- **`BleAdapter` (pre-existing):** the **blocker** — `handleBleDisconnect` dropped notification handlers without
+  `removeEventListener` (5+ Muse chars → real leak/duplicate-emit); `dispose()` left the **physical GATT link
+  connected** (super's fire-and-forget disconnect raced the sync `server=null`) → now disconnects synchronously.
+- **B2 regressions (mine):** scanner emitted a **stale bound device** on retarget/revoke (now authoritative resolve);
+  the bind **throttle wasn't keyed to the device id**; `ble-device` `autoConnect` **re-drove connect() every frame**
+  (now edge/`canConnect()`-guarded); the generic pair **narrowed `ble-device` to one service** (dropped, so it lists
+  all); drop coords now cascade.
+
+**C1 build:**
+- **`MuseAdapter`** (extends `BleAdapter`) — gesture-free connect via `getDeviceById`, multi-characteristic subscribe of
+  the 5 EEG + telemetry chars under `0xfe8d`, `halt→preset→status→resume` start-sequence with correct `[len][ascii][\n]`
+  framing, per-channel ring buffers → `bandPowers`, blink (frontal)/clench (temporal) detectors, contact + battery,
+  throttled snapshot. Node-owned adapter + `defineLifecycle` cleanup — consistent with the sibling `ble-device`/
+  `ble-characteristic` nodes (BLE is point-to-point; `ctx.connection` is for shared network brokers).
+- **`muse-eeg` node** — 15 outputs (4 raw channels, δ/θ/α/β/γ, focus/calm, blink/clench triggers, contact, battery),
+  throttled+`canConnect`-guarded gesture-free connect (retries a failed/dropped link, never storms), adapter rebuild on
+  device/preset change.
+- **`MuseHeadMap.vue`** — the live head visual: front-facing head + **TP9/AF7/AF8/TP10 dots with contact-quality
+  halos** (red→amber→green), five band bars, blink/clench flashes, battery/status; rAF gated on `isRunning`. Full
+  custom Vue Flow node; 15 output handles `v-for`'d from the definition. **Browser + screenshot verified.**
+
+**C1 review fixes (16):** clench baseline was **shared across both temporal channels** (→ per-channel) and **false-fired
+during the ~1 s envelope warm-up** (→ gated); a **failed initial connect wedged** the node (→ throttled retry); an
+**unexpected GATT drop left the adapter stuck `connected`** (→ `handleBleDisconnect` drives the ERROR transition);
+disposal-during-connect race (→ `_disposed` guards); silent-streaming and swallowed-discovery failures now surface;
+handle overflow/aria-labels/`:deep`/status colors/NaN-bar guards.
+
+**17 new tests** (DSP DC+tail regressions, Muse command framing / telemetry / contact heuristic). **Gates green:**
+typecheck · lint 0 err (49 pre-existing any-warns) · `test:unit` **2407** pass + 11 todo (158 files) · build ok.
+**Browser smoke:** 242 defs, muse head-map + 15 ports render, Play→Stop 0 real errors. **State: UNCOMMITTED** on
+`phase0-file-format` (PR still held). **Next:** C2 (thermal-printer) or D0 (bellows spike). Maintainer to **live-test
+the Muse on hardware** (the GATT start-sequence + telemetry battery scaling are best-known-protocol, not device-verified).
+
+---
+
+## 2026-07-14 (later 106) — B2: "Add Bluetooth Device" scan/select UI + one-pairing handoff
+
+Built the B2 slice of the BLE device-recognition thread (`docs/plans/BLE_DEVICE_MANAGER_2026-07-13.md` §4) — the
+connect **entry point** that unblocks all device nodes. A header **"Add Bluetooth Device"** panel wraps the native
+chooser: a known-device grid from `deviceProfiles` + a "scan all" path → `requestDevice` **inside the click gesture** →
+`recognizeDevice` (by name) → a recognition card → drops a pre-configured, pre-bound node scaffold. Feature-detects Web
+Bluetooth (clear Safari/Firefox message).
+
+**Design refinement (endorsed goal, cleaner mechanism).** The maintainer chose "one pairing end-to-end, no 2nd chooser."
+The generic `ble-*` nodes flow a **live `BluetoothDevice` over ports** (not a `connectionId`), so rather than a literal
+ConnectionManager/`connectionId` path — which would spawn a **second adapter fighting the same GATT server** — the
+handoff is: the panel grants the device via `requestDevice`, and `ble-scanner` **re-resolves that exact device
+gesture-free via `navigator.bluetooth.getDevices()` by id** (§0.7). This also **fixed a latent double-chooser**: the
+existing `ble-device`/`ble-characteristic` never injected the device they received on the port, so `doConnect` hit
+`!this.device` and popped *another* chooser — now they `setDevice()` the port device.
+
+- **`BleAdapter`** — `static getDeviceById(id)` (gesture-free `getDevices()` reconnect) + `setDevice(device)` (inject a
+  granted device, rewires the `gattserverdisconnected` listener; idempotent). `doConnect` unchanged (its `!this.device`
+  guard already skips the chooser once injected).
+- **`ble-scanner`** — new optional `deviceId` control; when set, resolves the granted device via `getDeviceById()` from
+  the run loop (throttled 2s; `awaiting-pairing` when not yet granted) — **rAF-safe, never `requestDevice` off a gesture**
+  (§0.1). Manual Scan trigger left as-is with a gesture-required note.
+- **`services/ble/bluetoothScan.ts`** (pure) — `scanAllOptionalServices()` union, `recognizeByName()`,
+  `buildDeviceNodeChain()`. **9 unit tests.**
+- **`BluetoothDeviceManagerModal.vue`** + ui-store flag + App mount + header `Bluetooth` button. Tokens all defined;
+  `useDialogA11y` + per-phase refocus.
+
+**Adversarial review (3 dimensions → verify): 5 confirmed, all addressed.** The **major**: dropping BOTH `ble-device`
+*and* `ble-characteristic` over one physical GATT link let one node's disconnect/gc tear down the other (+ double
+reconnect timers). **Fix:** the generic scaffold now stops at **`ble-scanner → ble-device`** (single GATT consumer,
+`autoConnect`) — the device node enumerates services/characteristics so the user wires their own characteristic nodes;
+this also killed the "non-functional char node" (no char UUID in a profile) and the crossing-wire layout nit. Minor:
+per-phase focus re-land (a11y); honest copy (service pre-filled, characteristic is a manual step); pre-existing
+`requestDevice`-off-gesture in the Scan-trigger/legacy-`ble` paths documented (not a B2 regression).
+
+**Gates green:** typecheck · lint 0 err (49 pre-existing any-warns) · `test:unit` **2397** pass + 11 todo (157 files) ·
+build ok. **Browser smoke:** 241 defs, modal renders (8 cards + scan-all), Escape closes, Play→Stop **0 real errors**.
+**State: UNCOMMITTED** on `phase0-file-format` (PR still held). **Next:** C1 (`MuseAdapter` + `muse-eeg` node — reuses
+the DSP + this `deviceId` handoff via a vendor node) or C2 (printer). When a vendor node exists, the panel auto-drops it
+pre-bound instead of the generic pair.
+
+---
+
 ## 2026-07-13 (later 105) — UX / experience / persona audit + first fix sweep
 
 Deep audit of the **running product** (live Playwright + system-Chrome screenshots across 7 states, visually inspected)

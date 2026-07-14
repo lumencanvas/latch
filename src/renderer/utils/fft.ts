@@ -57,7 +57,7 @@ export function isPowerOfTwo(n: number): boolean {
   return n > 0 && (n & (n - 1)) === 0
 }
 
-/** Periodic-ish Hann window of length `n` (`0.5 − 0.5·cos(2πi/(n−1))`). */
+/** Symmetric Hann window of length `n` (`0.5 − 0.5·cos(2πi/(n−1))`; endpoints exactly 0). */
 export function hannWindow(n: number): Float32Array {
   const w = new Float32Array(n)
   for (let i = 0; i < n; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1))
@@ -77,7 +77,13 @@ export interface WelchOptions {
 /**
  * One-sided power spectral density via Welch's method (Hann-windowed, overlapped,
  * averaged). Returns `segment/2 + 1` bins; bin `k` is frequency `k·sampleRate/segment`.
- * The signal must be at least `segment + (segments−1)·hop` samples long.
+ * The signal must be at least `segment + (segments−1)·hop` samples long; when it is
+ * LONGER (a streaming ring buffer), the MOST RECENT `need` samples are analyzed so the
+ * spectrum tracks fresh data instead of a stale prefix.
+ *
+ * Each segment is DC-removed (segment mean subtracted before windowing): a real signal
+ * with a large offset/slow drift — e.g. an EEG electrode nowhere near mid-scale —
+ * otherwise leaks through the Hann window into the lowest bins and swamps the low bands.
  */
 export function welchPsd(signal: ArrayLike<number>, opts: WelchOptions): Float32Array {
   const { sampleRate } = opts
@@ -89,6 +95,8 @@ export function welchPsd(signal: ArrayLike<number>, opts: WelchOptions): Float32
   if (signal.length < need) {
     throw new Error(`welchPsd: signal too short (${signal.length} < required ${need})`)
   }
+  // Tail-align: analyze the most-recent `need` samples of a longer (streaming) buffer.
+  const base = signal.length - need
 
   const hann = hannWindow(segment)
   let winpow = 0
@@ -100,9 +108,13 @@ export function welchPsd(signal: ArrayLike<number>, opts: WelchOptions): Float32
   const im = new Float32Array(segment)
 
   for (let s = 0; s < segments; s++) {
-    const off = s * hop
+    const off = base + s * hop
+    // Per-segment DC removal (see doc): subtract the mean before windowing.
+    let mean = 0
+    for (let i = 0; i < segment; i++) mean += signal[off + i]
+    mean /= segment
     for (let i = 0; i < segment; i++) {
-      re[i] = signal[off + i] * hann[i]
+      re[i] = (signal[off + i] - mean) * hann[i]
       im[i] = 0
     }
     fft(re, im)
