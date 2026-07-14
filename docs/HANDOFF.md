@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-13 (later 104) — Muse EEG signal-processing core (C1 foundation) shipped
+
+Continued the device work with the most valuable *headless-verifiable* slice of C1: the pure Muse DSP, ported from
+the maintainer's reference Muse app and fixture-tested, so it lands before the hardware-gated adapter/UI.
+
+- **`utils/fft.ts`** — the net-new FFT the audit said was missing (§0.8): radix-2 FFT, Hann window, Welch PSD (one-sided,
+  Hann-windowed, overlap-averaged), half-open band-power integration. Reusable beyond Muse (analyses an arbitrary
+  `Float32Array` off the audio clock — `Tone.FFT`/Meyda can't).
+- **`utils/biquad.ts`** — RBJ-cookbook biquads (low/high/band-pass, Transposed DF2).
+- **`services/ble/muse/museSignal.ts`** — 12-bit EEG unpack + µV scaling (`0.48828125·(raw−0x800)`), notification
+  parse, δ/θ/α/β/γ band powers + relative powers + focus/relaxation/engagement ratios, streaming `BlinkDetector`
+  (1–10 Hz) + `ClenchDetector` (20–45 Hz EMG, `.energy` mean-square + `.rms`).
+- **26 tests**, incl. a Parseval energy check and a **PSD calibration** test pinning the absolute normalization (a
+  50 µV tone integrates to its variance 50²/2 = 1250 — verified exact via an independent node reimplementation).
+- **3-lens adversarial verification: no bugs** (FFT, Welch normalization, RBJ high-pass coefficients I completed from
+  a truncated reference, decode, bands all confirmed). Nits fixed: known-value 18-byte decode vector (was vacuous),
+  the calibration test (all prior spectral tests were relative-only), and `ClenchDetector.rms` (the reference
+  thresholds RMS not mean-square). Commit `1ed75cd`.
+
+**Gates green:** typecheck · lint 0 err · `test:unit` **2384** pass + 11 todo (155 files). **State: COMMITTED**
+(PR still held). Next: the C1 adapter (`MuseAdapter` extending `BleAdapter` + the multi-service refactor) wires this
+DSP to live notifications; then the `muse-eeg` node + head-map view. Or B2 (scan UI) / C2 (printer) / D0 (bellows).
+
+---
+
 ## 2026-07-13 (later 103) — BLE device-manager + bellowsjs designs; BLE recognition core (B1) shipped
 
 Continued from later-102 (Thread A audit). Designed the next feature threads, and shipped the first slice.

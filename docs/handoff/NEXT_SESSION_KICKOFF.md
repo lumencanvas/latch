@@ -1,7 +1,7 @@
 # Next-session kickoff — BLE device manager (B2/C) + bellowsjs (D)
 
 Copy the block below as your first message to a fresh Claude Code session.
-(Last updated 2026-07-13 — branch `phase0-file-format`, committed through `95b9ef0`; only
+(Last updated 2026-07-13 — branch `phase0-file-format`, committed through the later-104 Muse DSP core; only
 `docs/handoff/NEXT_SESSION_KICKOFF.md` is uncommitted between sessions. Verify with `git status` + `git log --oneline -8`.)
 
 ---
@@ -13,7 +13,7 @@ branch is **deploy-ready and audited** (later-102: 0 regressions, browser smoke 
 bellowsjs designs are done** with the **recognition core (B1) shipped** (later-103). `main` untouched; PR held.
 
 Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-existing `any`-warns) · `npm run test:unit`
-**2357 pass + 11 todo** (152 files) · `npm run build` ok · browser smoke 241 nodes, Play→Stop 0 real errors.
+**2384 pass + 11 todo** (155 files) · `npm run build` ok · browser smoke 241 nodes, Play→Stop 0 real errors.
 
 ## STEP 1 — Read + recall
 1. `CLAUDE.md` — rules: **NO AI attribution in git EVER**; **commit/push only when explicitly asked**; stay on
@@ -42,13 +42,16 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
   guards to a no-op `awaiting-pairing`. Respect the allow-list-bounded service discovery (§0.2) and undefined
   `BluetoothDevice.name` (§0.3). Entry point: node-explorer connectivity button + Connection Manager.
 
-### C1 — Muse 2 node (`muse-eeg`)
-- `MuseAdapter` extending **`BleAdapter`** (not `BaseAdapter`; §0.6) — needs a **multi-service refactor** of
+### C1 — Muse 2 node (`muse-eeg`)  ← DSP foundation DONE (later-104)
+- **Done:** the pure DSP is shipped — `utils/fft.ts` (FFT/Welch PSD/band-power), `utils/biquad.ts` (RBJ), and
+  `services/ble/muse/museSignal.ts` (12-bit decode, δ/θ/α/β/γ band powers, ratios, `BlinkDetector`/`ClenchDetector`),
+  all fixture-tested + adversarially verified. **Reuse these — don't re-derive.**
+- **Next:** `MuseAdapter` extending **`BleAdapter`** (not `BaseAdapter`; §0.6) — needs a **multi-service refactor** of
   `BleAdapter.doConnect` (Muse has 5 EEG chars + control/telemetry, all under `0xfe8d`, chars
-  `273e{XXXX}-4c4d-454d-96be-f03bac821358`). Decode: 256 Hz, 12 samp/pkt, 12-bit packed, 0.48828125 µV/LSB; control
-  start-sequence halt→preset(p50)→status→resume. **Add a net-new pure-JS FFT + band-power util (§0.8 — none exists).**
-  Node outputs: raw channels + δ/θ/α/β/γ + blink/clench + focus/contact/battery; head-map NodeView (core component).
-  Typed `MuseHandle` via `ctx.connection`; register cleanup (leak-prone — see the audio category's `defineLifecycle`).
+  `273e{XXXX}-4c4d-454d-96be-f03bac821358`); control start-sequence halt→preset(p50)→status→resume; feed each EEG
+  notification through `parseEegNotification` + a per-channel ring buffer → `bandPowers`. Then the `muse-eeg` node
+  (raw channels + δ/θ/α/β/γ + blink/clench + focus/contact/battery), head-map NodeView (core component), typed
+  `MuseHandle` via `ctx.connection`; register cleanup (leak-prone — see the audio category's `defineLifecycle`).
 
 ### C2 — thermal-printer node (`thermal-printer`)
 - `EscPosPrinterAdapter` + `PrinterHandle`; ESC/POS `GS v 0` raster (384 px = 48 bytes/row, MSB-first), chunked paced
