@@ -6,6 +6,41 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-13 (later 105) — UX / experience / persona audit + first fix sweep
+
+Deep audit of the **running product** (live Playwright + system-Chrome screenshots across 7 states, visually inspected)
+via a 5-lens workflow (UI/UX · visual · onboarding · persona · a11y) grounded in `strategy/04`+`06`, then code-verified.
+Report: **`docs/UX_EXPERIENCE_AUDIT_2026-07-13.md`** (18 prioritized findings, 10 quick wins, 7 strengths).
+
+**Verdict:** strong bones, poor routing of its own value — great capabilities (template onboarding, per-node Info,
+`useCanvasKeyboard` a11y engine, AI model manager, Control Panel) are undiscoverable or unreachable, while first-run
+drops into a dense 19-node showcase and the header clips off-screen on mobile. Plus the documented **silent-token bug
+class** app-wide.
+
+**Fixes shipped this sweep** (each code-verified + browser-verified; adversarially reviewed → ship, review nits fixed):
+- **Silent design tokens (top quick win):** added all 24 used-but-undefined tokens — `--radius-xs` (58×),
+  error/success/warning **scale ramps**, `--color-neutral-850`, `--shadow-xl`, `--space-0-5/1-5` (light + dark) — and a
+  **CI guard** `tests/unit/styles/tokens-defined.test.ts` that fails on any undefined no-fallback `var(--token)`
+  (runtime-set props allow-listed). Kills the class permanently.
+- **A11y:** 12 header icon-buttons got `aria-label`s (Play conveys the disabled reason to SR); swapped the misleading
+  graduation-cap → `Boxes` for Node Explorer (trigger **and** modal).
+- **Onboarding/feedback:** empty-state hint `#8C8C8C→#4A4A4A` (2.7:1 → ~7:1, clears AA); **Play disabled on an empty
+  graph** ("Add nodes to run") so it can't report "RUNNING · 60 fps" with nothing running; **minimap hidden at 0 nodes**
+  (no more orphaned white box); Properties panel lands on **Info** on a user's first-ever node inspection.
+- **Docs honesty (`strategy/04`+`06`):** onboarding templates, the keyboard/ARIA engine, and AI lifecycle ports were
+  UNDER-claimed — upgraded. The review caught that a first AI-ports edit **over**-claimed (coverage is uneven: ~8/23
+  nodes expose all four; llm only `done`) → re-qualified honestly.
+
+**Deferred as maintainer decisions (not bugs):** first-run routing (#1 — the sample-flow-on-first-visit is a deliberate
+feature) and KeyboardNode device-skin colors (#12 — theme-aware tokens would flip the skin). **UX backlog (next):**
+responsive header (#2), a `?` help/shortcuts surface (#4), `window.prompt`→modal (#18), audio modulation input ports
+(#6), better template thumbnails (#15); and the L features — fullscreen/perform mode (#5), MIDI-learn + global transport
+(#7), DMX/Art-Net (#14), kiosk/durability (#16) — need design + sign-off (honor DON'T-OVERCLAIM: no "runs for months").
+
+**Gates green:** typecheck · lint 0 err · `test:unit` (+ the new token guard) · build. **State: COMMITTED** (PR held).
+
+---
+
 ## 2026-07-13 (later 104) — Muse EEG signal-processing core (C1 foundation) shipped
 
 Continued the device work with the most valuable *headless-verifiable* slice of C1: the pure Muse DSP, ported from

@@ -191,17 +191,24 @@ change (no positional noise) → review in a PR → (future) co-edit live with c
 
 | Persona | Structurally strong today | Biggest current gap |
 |---|---|---|
-| Beginner | web, free, live preview | onboarding/templates, blank-canvas |
-| Student/Educator | free, cross-OS, durable (if format kept open) | example library; export polish |
+| Beginner | web, free, live preview; **template-picker onboarding (empty-state) ✅** | **true first-run drops into the demo flow; no in-app help/shortcuts/tour** |
+| Student/Educator | free, cross-OS, durable (if format kept open); **per-node Info on all 241 nodes** | example library; export polish; surface the Info content |
 | VJ | audio-reactive nodes, web | **no transport/BPM, no MIDI-learn, no perform mode** |
 | Installation | web kiosk potential | **long-uptime hardening, kiosk/restart, determinism** |
 | Creative coder | code/Monaco, shaders | code↔node ergonomics, shader hot-uniforms |
 | Musician | Tone.js, visual editors | **audio params lack modulation inputs** |
 | Hardware/IoT | connectivity breadth, desktop | **DMX/Art-Net; capability-scoped safety** |
 | Designer | free, local, embed | embed polish, motion templates |
-| ML tinkerer | in-browser ML stack | **AI error/progress outputs; model registry** |
+| ML tinkerer | in-browser ML stack; AI lifecycle output ports on the transformer nodes (loading/progress/done/error, ~8/23 nodes); model manager (sizes/licenses) | **uneven port coverage** (llm exposes only `done`; mediapipe/detection mostly `loading`; tts/retrieve/memory none); model-download UX; runtime model registry |
 | Extender | moving to one-folder authoring | **declarative-UI ceiling, API stability, CLI, testing** |
-| A11y user | (nothing yet) | **keyboard wiring, non-color cues, ARIA — wide open** |
+| A11y user | **keyboard wiring engine (rove/select/move/wire), `role=application` + aria-live, non-color port cues — BUILT** | **undiscoverable (no shortcuts surface), some sub-AA contrast, mobile reachability** |
 | Team | JSON graphs | **diff-friendly format (positions separated), multiplayer** |
 
 The gaps column *is* the prioritized work — carried into `05`.
+
+> **2026-07-13 update (verified against the running product + code):** three rows the earlier snapshot listed as
+> wide-open have shipped and are now *discoverability/polish* problems, not *absence*: **onboarding templates**
+> (empty-canvas picker) and the **keyboard/ARIA accessibility engine** (`useCanvasKeyboard.ts`, `role=application`,
+> `getSemanticLabel`) — don't under-claim these. **AI lifecycle ports** also shipped but coverage is *uneven* (~8/23
+> nodes expose all four; several expose only `loading` or `done`) — surface it honestly, don't over-claim uniform
+> coverage. See `docs/UX_EXPERIENCE_AUDIT_2026-07-13.md`.

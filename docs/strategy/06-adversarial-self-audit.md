@@ -161,9 +161,9 @@ EXTENSIBILITY doc):
 | Cross-platform | ✅ web+Electron | maintain | small |
 | Durable open format | ⚠️ JSON but not spec'd/diff-optimized/validated | the centerpiece | **large** |
 | Extensibility DX | ⚠️ monolithic, leak-prone | `defineNode` ecosystem | large (planned) |
-| Onboarding | ⚠️ blank canvas | templates + suggestions | medium |
-| Debugging/observability | ⚠️ errors hidden, no on-wire | freeze+inspect | medium |
-| Accessibility | ❌ ~none | the differentiator | **large (open field)** |
+| Onboarding | ✅ template-picker + wire-drop suggestions shipped | route first-run to it; add help/shortcuts | small–medium |
+| Debugging/observability | ⚠️ on-wire values shipped; errors still under-surfaced | freeze+inspect | medium |
+| Accessibility | ⚠️ keyboard/ARIA wiring engine BUILT but undiscoverable + sub-AA spots | surface it + contrast/mobile pass | medium (was open field) |
 | Live/VJ | ❌ no transport/learn/perform | the layer | large |
 | Installation/kiosk | ❌ none + uptime unproven | first-class | large |
 | Subflows/reuse | ❌ inert | true references | large (planned) |
