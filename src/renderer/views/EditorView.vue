@@ -383,7 +383,7 @@ watch(
 // A handful of beginner-friendly starter flows offered on the empty canvas so a
 // blank document is an actionable starting point, not a dead end. Curated by id
 // with a fallback to the first few snippets if any id is renamed.
-const STARTER_TEMPLATE_IDS = ['audio-reactive-visuals', 'keyboard-synth', 'color-cycling', 'value-threshold']
+const STARTER_TEMPLATE_IDS = ['webcam-kaleidoscope', 'hand-tracking', 'keyboard-synth', 'audio-reactive']
 const starterTemplates = computed(() => {
   const picked = STARTER_TEMPLATE_IDS
     .map(id => flowSnippets.find(s => s.id === id))
@@ -412,6 +412,24 @@ function insertStarterTemplate(snippetId: string) {
     fitView({ padding: 0.2 })
     stop.off()
   })
+}
+
+// Open the full "Starter Flow" showcase (the same flow first-time visitors get) as a NEW tab —
+// 3D scene, keyboard→synth→analysis, and MediaPipe hand/face tracking. Non-destructive: imported
+// with replace:false so any other open flows are untouched; the file's activeFlowId switches to it.
+async function openStarterFlow() {
+  try {
+    const response = await fetch('./sample-flow.json')
+    if (!response.ok) return
+    const result = flowsStore.importFlows(await response.text(), { replace: false })
+    if (!result.success) return
+    const stop = vueFlow.onNodesInitialized(() => {
+      fitView({ padding: 0.2 })
+      stop.off()
+    })
+  } catch (error) {
+    console.warn('[Editor] Failed to open Starter Flow:', error)
+  }
 }
 
 // Sync zoom with UI store
@@ -982,12 +1000,20 @@ onUnmounted(() => {
           <span class="starter-desc">{{ template.description }}</span>
         </button>
       </div>
-      <button
-        class="browse-library"
-        @click="uiStore.openNodeExplorer()"
-      >
-        Browse the node library
-      </button>
+      <div class="empty-actions">
+        <button
+          class="open-starter-flow"
+          @click="openStarterFlow()"
+        >
+          ✨ Open the full Starter Flow — 3D · synth · MediaPipe
+        </button>
+        <button
+          class="browse-library"
+          @click="uiStore.openNodeExplorer()"
+        >
+          Browse the node library
+        </button>
+      </div>
     </div>
 
     <!-- Connection error toast -->
@@ -1210,6 +1236,30 @@ onUnmounted(() => {
 
 .browse-library:hover {
   color: var(--color-primary-700);
+}
+
+.empty-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.open-starter-flow {
+  padding: 8px 16px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-primary-600);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.open-starter-flow:hover {
+  background: var(--color-primary-700);
 }
 
 .connection-error {
