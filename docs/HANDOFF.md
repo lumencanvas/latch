@@ -6,6 +6,47 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-13 (later 103) — BLE device-manager + bellowsjs designs; BLE recognition core (B1) shipped
+
+Continued from later-102 (Thread A audit). Designed the next feature threads, and shipped the first slice.
+
+- **Thread B/C design — `docs/plans/BLE_DEVICE_MANAGER_2026-07-13.md`** (committed). A device-recognition connection
+  manager: a `defineDeviceProfile` glob registry that extends the *currently unused* `BleProfileRegistry.detectDeviceType`
+  into device-level recognition (by service UUID / name prefix / manufacturer id), a scan/select UX with a recognition
+  card + generic fallback, and two device nodes — `muse-eeg` (Muse 2 EEG: raw channels + δ/θ/α/β/γ bands + blink/clench
+  + focus/contact) and `thermal-printer` (ESC/POS raster + live dithered print preview) — with device I/O through
+  `ctx.connection` (dedicated `MuseAdapter`/`EscPosPrinterAdapter` + typed handles), not ad-hoc globals. **3-critic
+  adversarial review: sound-with-fixes**; corrections folded into §0, incl. one blocker: **BLE connect is gesture-only,
+  never run-driven** (the rAF `resolveConnectionHandle` auto-connect would throw `NotAllowedError`) → scan panel is the
+  sole connect entry; vendor handles' per-frame auto-connect guards to a no-op `awaiting-pairing`. Other corrections:
+  `getPrimaryServices()` is allow-list bounded (can't discover an undeclared service); `BluetoothDevice.name` is often
+  undefined; scan-all stays on generic nodes; extend `BleAdapter` not `BaseAdapter`; **no reusable FFT exists — Muse
+  band-power needs net-new pure-JS DSP**.
+- **Thread D design — `docs/plans/BELLOWSJS_EVALUATION_2026-07-13.md`** (committed). The audio audit is decisive: LATCH
+  uses Tone.js as a **free Web-Audio node graph** (arbitrary wiring + per-frame `.value` modulation, no scheduler),
+  whereas bellowsjs is a **closed AudioWorklet kernel driven by sample-accurate scheduling** with no free graph out —
+  different problems. **Recommendation (endorsed): keep Tone.js, add bellowsjs alongside.** *The maintainer authored
+  bellowsjs* and wants it richly/flexibly integrated (memory `bellows-latch-intent`), so the design is a **layered**
+  surface — casual preset instruments → structured engine/params/fx/theory/generative nodes → a power-user
+  `bellows-script` escape hatch — sharing LATCH's `AudioContext` via `boot({context})`. One open spike: routing bellows'
+  output into LATCH's master graph (0.1.5 doesn't clearly expose its output node). Reference persisted at
+  `docs/reference/bellowsjs-0.1.5-llm-reference.md`.
+- **Shipped: B1 — BLE recognition core** (commit `95b9ef0`). `services/ble/defineDeviceProfile.ts` (manifest + pure UUID
+  canonicalizer + name-optional scorer), `services/ble/deviceProfileRegistry.ts` (Vite glob over
+  `deviceProfiles/<id>/profile.ts` merged with SIG profiles derived from `BleProfileRegistry` — no duplication;
+  `recognizeDevice()` ranked; fails loudly on malformed / cross-set-id-collision), and vendor profiles `muse` +
+  `escpos-printer` (the printer deliberately does NOT recognize on the generic NUS service alone). **20 unit tests.**
+  Adversarial review **SHIP-with-nits** — all four nits fixed (numeric-UUID range guard, glob-guard tightened to
+  require `request`/non-empty `suggests`, cross-set id-collision guard, dash-less-UUID assumption documented).
+- **Gates green throughout:** typecheck clean · lint 0 err · `test:unit` **2357** pass + 11 todo (152 files).
+
+**State: COMMITTED** on `phase0-file-format` (PR still held). Green-lit **B1 done**. **Next (await direction / sign-off
+between phases):** B2 (scan/select UI — the gesture-driven connect flow), C1 (`MuseAdapter` + `muse-eeg` node + the new
+FFT/DSP + `BleAdapter` multi-service refactor), C2 (printer), or D0 (bellows spike — boot on LATCH's AudioContext, prove
+one voice routes into the master graph + blob worklet loads under COEP).
+
+---
+
 ## 2026-07-13 (later 102) — Deploy-readiness DEEP audit + branch regression hunt (Thread A — GREEN)
 
 Established a clean green baseline for `phase0-file-format` before the next feature threads (BLE device
