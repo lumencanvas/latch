@@ -6,6 +6,89 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-13 (later 102) — Deploy-readiness DEEP audit + branch regression hunt (Thread A — GREEN)
+
+Established a clean green baseline for `phase0-file-format` before the next feature threads (BLE device
+recognition, device nodes, bellowsjs). **No regressions found; the branch is deploy-ready.**
+
+- **Gates:** typecheck clean · lint 0 err (49 pre-existing any-warns) · `test:unit` **2339** pass + 11 todo
+  (150 files) · `build:web` ok (32s; the 500 kB chunk warning is the pre-existing ML-bundle size, expected).
+- **Deploy config verified:** `netlify.toml` (COOP `same-origin` + COEP `credentialless` → SharedArrayBuffer for
+  transformers.js/onnxruntime/MediaPipe; SPA redirect; `build:web`→`dist/web`) matches `vite.config.ts`
+  (same dev+preview headers, `outDir dist/web`) and `index.html` (the `coi-serviceworker` shim for header-less
+  hosts). `dist/web` build contains the shim + `sample-flow.json`; asset paths are absolute (`/assets/…`) —
+  correct for Netlify root serving (the documented reason GH Pages can't host LATCH).
+- **Regression hunt (5-lens adversarial workflow + re-run):** **0 confirmed regressions.** The branch turned out
+  to be bigger than framed — it **inverted the whole lifecycle system**: the engine no longer hand-wires ~23
+  categories' dispose/gc imports; each self-registers via `defineLifecycle`/`defineNodeState` and the generic
+  loop drains gc/disposeAll/onStart/endFrame at the same frame/start/stop points `main` used. All 23 categories
+  accounted for; asymmetric teardowns (ai/opencv marker Sets, audio's 8-map Tone dispose sequence, messaging
+  channel-keyed receive) preserved; subflow correctly still hand-wired. Nanoid `split('_')` re-scan clean — this
+  branch actually *fixes* a `key.split('_')[0]` hazard still in `main:executors/audio.ts`. Workstream B behavior
+  preservation confirmed **byte-faithful** across ~18 sampled high-risk nodes + all sampled state/gc/dispose paths
+  (3d/audio/visual/ai/connectivity); `visual.ts`/`ai.ts` are pure re-export shims; `clasp.ts` the standalone
+  exception. Engine dynamic pure/deferred sets (Workstream C): OR-wiring correct in both gates,
+  `setDeferredNodeTypes` doesn't clobber the dynamic set, `unregisterExecutor` cleans both. 241 unique node ids,
+  no double-registration.
+- **Browser smoke (Playwright + system Chrome vs `npm run dev`):** **PASS** — boots clean, **241** node
+  definitions at runtime (read via the Vue app instance), Play→Stop, **0 real console errors** (285 raw, all
+  webcam-permission noise in headless).
+- **Latent nits (documented, NON-blocking — none are regressions):**
+  1. Cross-category `disposeAll`/`gc` order is now implicit (import/glob order) rather than main's explicit
+     sequence — latent fragility if a future category needs ordered teardown.
+  2. `registry/<cat>/shared.ts` lifecycle registration relies on a co-located `node.ts` existing to pull it into
+     the eager `./**/node.ts` glob — a category emptied of nodes would silently lose its cleanup.
+  3. **FIXED (this session).** `ctx.num/bool/str` `read()` used `!== undefined`, but the doc + EXTENSIBILITY §5.2
+     promise `??` semantics — a connected input emitting `null` masked the control → fallback. Aligned `read` to
+     `input ?? control` so a null-emitting upstream can't mask the control; regression test added in
+     `tests/unit/engine/executionContext.test.ts`. Zero blast radius today (no registry node uses the helpers yet),
+     so fixed before the `new-node` scaffold spreads the wrong semantics.
+  4. **FIXED (this session).** `constant` was in the static `PURE_NODE_TYPES` but its `node.ts` omitted
+     `pure: true`, so the derived `COLOCATED_PURE_NODE_TYPES` diverged by one. Added `pure: true` (constant is a
+     stateless fixed-value source) and a parity guard `tests/unit/registry/pure-set-parity.test.ts` asserting the
+     derived set equals the authoritative one — the divergence can't silently reopen when the engine switches to
+     the derived set.
+  5. `CustomNodeLoader` has no reserved/built-in id guard — a custom node whose id equals a built-in overwrites
+     both the store def and the engine executor. **Pre-existing, not a co-location regression;** belongs with the
+     deferred Workstream-C security items (later-99).
+- **Also:** persisted the maintainer-supplied **bellowsjs 0.1.5** LLM reference to
+  `docs/reference/bellowsjs-0.1.5-llm-reference.md` (Thread D source material).
+
+**State: COMMITTED** (maintainer chose commit-only; **PR held** for later). Landed as three logical commits on
+`phase0-file-format`: (1) the later-101 starter-flow fixes, (2) the two audit nit-fixes above (#3 `??` coercion +
+#4 `constant` purity, each with a test), (3) these audit docs + the bellowsjs reference. Gates re-verified green
+after the fixes (typecheck · full `test:unit` · lint). Remaining nits **#1/#2** (implicit teardown order / glob
+dependency — latent architecture fragility) and **#5** (`CustomNodeLoader` reserved-id guard — pre-existing,
+security-adjacent) are documented for a follow-up; #5 belongs with the deferred Workstream-C security items
+(later-99). Next threads (design-first, sign-off gated): **B** BLE device-recognition manager, **C** Muse 2 +
+thermal-printer device nodes (fold into B), **D** bellowsjs nodes + Tone.js-replacement evaluation.
+
+---
+
+## 2026-07-13 (later 101) — Fix the starter flows + surface the full Starter Flow (UNCOMMITTED)
+
+Maintainer testing the live app flagged the empty-canvas starter flows as broken/nonsensical. Confirmed +
+fixed in `src/renderer/data/flow-snippets.ts` (+ `EditorView.vue`):
+- **Real bugs:** `color-cycling` dead-ended at `map-range` (no color node / no output); `audio-reactive-visuals`
+  wired `audio-input.audio → shader.audio` but **`shader` has no `audio` input** (takes `iChannel0–3` textures)
+  and was missing the `beat-detect` its description promised; `data-logger` had ZERO edges.
+- **Rewrote all snippets to complete, working mini-flows** with **verified ports** (parsed each node's real
+  inputs/outputs; a validator confirmed every edge hits a real port — no repeat of the `shader.audio` class of
+  bug). New set (8): Webcam Kaleidoscope, **Hand Tracking (MediaPipe — new)**, Keyboard→Synth (added the missing
+  `noteOn→trigger`), Audio Reactive (mic→oscilloscope + beat→BPM monitor), Animated Shader, LFO Waveform, Value
+  Threshold, MIDI Note Filter. Empty-canvas featured four → webcam-kaleidoscope / hand-tracking / keyboard-synth /
+  audio-reactive (diverse + working + MediaPipe).
+- **"Open the full Starter Flow" button** in the empty state — loads the 19-node showcase (`public/sample-flow.json`,
+  the flow first-time visitors auto-get: 3D + synth chain + MediaPipe hand/face) as a NEW tab, non-destructively
+  (`importFlows(replace:false)`, NOT the wipe-all `replace:true`). Answers "the starter flow the live one has
+  should be in the list" — returning visitors couldn't reach it (first-visit localStorage gate).
+
+Gates: typecheck clean; CSS tokens verified defined; ports validated (independently re-confirmed in the later-102
+regression hunt — every snippet edge hits a real port). **Committed** on `phase0-file-format` (later-102 session).
+Files: `data/flow-snippets.ts`, `views/EditorView.vue`.
+
+---
+
 ## 2026-07-13 (later 100) — Workstream D: docs organization + honesty pass (PLAN COMPLETE)
 
 **D done — and with it the whole authoring-DX plan (A·E·B·C-safe·D).** A 3-agent audit (inventory + README
