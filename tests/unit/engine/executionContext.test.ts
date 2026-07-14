@@ -35,6 +35,16 @@ describe('createExecutionContext typed accessors', () => {
       expect(ctx({ x: 1 }, { x: 2 }).num('x', 3)).toBe(1)
       expect(ctx({}, { x: 2 }).num('x', 3)).toBe(2)
     })
+
+    it('treats a null input as absent, falling through to the control (?? semantics)', () => {
+      // A connected input emitting `null` must not mask the control (EXTENSIBILITY §5.2).
+      expect(ctx({ x: null }, { x: 2 }).num('x', 3)).toBe(2)
+      expect(ctx({ x: null }, { x: 'hi' }).str('x', 'd')).toBe('hi')
+      expect(ctx({ x: null }, { x: true }).bool('x', false)).toBe(true)
+      // No control either → the supplied fallback, not a coerced null.
+      expect(ctx({ x: null }).num('x', 9)).toBe(9)
+      expect(ctx({ x: null }).bool('x', true)).toBe(true)
+    })
   })
 
   describe('bool', () => {

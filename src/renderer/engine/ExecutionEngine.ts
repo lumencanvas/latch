@@ -124,10 +124,10 @@ export function createExecutionContext(
   // `cap` is CLOSED OVER, never placed on the returned ctx — so an executor (esp. an
   // untrusted community one) can't reach or mutate its own trust tier to spoof `core`
   // and bypass the capability gate (SECURITY_MODEL step 2; audit finding).
-  const read = (id: string): unknown => {
-    const fromInput = data.inputs.get(id)
-    return fromInput !== undefined ? fromInput : data.controls.get(id)
-  }
+  // `input ?? control`: a connected input falls through to the control not only when
+  // absent (undefined) but also when it emits `null`, matching the documented accessor
+  // semantics (EXTENSIBILITY §5.2) so a null-emitting upstream can't mask the control.
+  const read = (id: string): unknown => data.inputs.get(id) ?? data.controls.get(id)
   return {
     ...data,
     num(id, fallback = 0) {

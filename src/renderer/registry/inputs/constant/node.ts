@@ -26,4 +26,6 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: constantExecutor })
+// `constant` outputs a fixed control value with no state — pure. Declaring it here keeps
+// the derived COLOCATED_PURE_NODE_TYPES in parity with the authoritative PURE_NODE_TYPES.
+export default defineNode({ definition, executor: constantExecutor, pure: true })
