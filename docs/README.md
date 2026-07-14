@@ -35,6 +35,8 @@ other; this index tells you which to actually read.
 - [plans/SECURITY_MODEL_2026-06-28.md](plans/SECURITY_MODEL_2026-06-28.md) + [SECURITY_MODEL_IMPL_2026-07-01.md](plans/SECURITY_MODEL_IMPL_2026-07-01.md) — the custom-node trust model.
 - [plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md](plans/DECLARATIVE_UI_NODEVIEW_DESIGN_2026-07-01.md) — the `ui` schema / NodeView design.
 - [plans/MODEL_REGISTRY_IMPL_2026-06-30.md](plans/MODEL_REGISTRY_IMPL_2026-06-30.md) · [CONNECTION_HANDLE_IMPL_2026-06-29.md](plans/CONNECTION_HANDLE_IMPL_2026-06-29.md) — the model/connection subsystems.
+- [plans/BLE_DEVICE_MANAGER_2026-07-13.md](plans/BLE_DEVICE_MANAGER_2026-07-13.md) — **design (in progress)**: BLE device-recognition manager + Muse 2 / thermal-printer device nodes (Threads B/C; B1 green-lit).
+- [plans/BELLOWSJS_EVALUATION_2026-07-13.md](plans/BELLOWSJS_EVALUATION_2026-07-13.md) — **design (in progress)**: first-party bellowsjs integration (add alongside Tone.js, layered/flexible surface; Thread D).
 - [plans/SUBFLOW_REBUILD_SPEC_2026-06-28.md](plans/SUBFLOW_REBUILD_SPEC_2026-06-28.md) — the subflow runtime rebuild (subflows' authoring UI exists; runtime is being rebuilt).
 - [plans/MODERNIZATION_PLAN_2026.md](plans/MODERNIZATION_PLAN_2026.md) — the phased modernization effort.
 - [NODE_LIBRARY_REVIEW_2026-06-18.md](NODE_LIBRARY_REVIEW_2026-06-18.md) — the active node backlog.
