@@ -166,7 +166,7 @@ thermal-printer device nodes (fold into B), **D** bellowsjs nodes + Tone.js-repl
 
 ---
 
-## 2026-07-13 (later 101) — Fix the starter flows + surface the full Starter Flow (UNCOMMITTED)
+## 2026-07-13 (later 101) — Fix the starter flows + surface the full Starter Flow (committed in later-102, b28adcb)
 
 Maintainer testing the live app flagged the empty-canvas starter flows as broken/nonsensical. Confirmed +
 fixed in `src/renderer/data/flow-snippets.ts` (+ `EditorView.vue`):
