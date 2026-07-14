@@ -188,6 +188,45 @@ export class BleAdapter extends BaseAdapter {
     return []
   }
 
+  /**
+   * Resolve a previously-granted device by its stable id WITHOUT a user gesture,
+   * via `getDevices()`. Returns `null` when Web Bluetooth / `getDevices()` is
+   * unavailable or the permission isn't held.
+   *
+   * This is the gesture-free reconnection path: the scan panel (a user gesture)
+   * grants a device, and a `ble-scanner` node later re-resolves that exact device
+   * by id from the render loop with no second chooser. `gatt.connect()` on the
+   * returned device needs no gesture, so the whole run-driven reconnect is legal.
+   */
+  static async getDeviceById(id: string): Promise<BluetoothDevice | null> {
+    if (!id) return null
+    const devices = await BleAdapter.getPairedDevices()
+    return devices.find((d) => d.id === id) ?? null
+  }
+
+  /**
+   * Inject a pre-selected/granted `BluetoothDevice` (from the scan panel or a
+   * `ble-scanner` node's `device` output) so {@link doConnect} reuses it instead
+   * of popping the native chooser again. Idempotent for the same device; swapping
+   * devices rewires the `gattserverdisconnected` listener so the closure (which
+   * retains `this`) can't leak or fire for a stale device.
+   */
+  setDevice(device: BluetoothDevice | null): void {
+    if (device === this.device) return
+
+    if (this.device && this.boundDisconnectHandler) {
+      this.device.removeEventListener('gattserverdisconnected', this.boundDisconnectHandler)
+      this.boundDisconnectHandler = null
+    }
+
+    this.device = device
+
+    if (device) {
+      this.boundDisconnectHandler = () => this.handleBleDisconnect()
+      device.addEventListener('gattserverdisconnected', this.boundDisconnectHandler)
+    }
+  }
+
   // =========================================================================
   // Connection
   // =========================================================================
@@ -278,13 +317,21 @@ export class BleAdapter extends BaseAdapter {
   }
 
   private handleBleDisconnect(): void {
+    // Remove the characteristicvaluechanged listeners BEFORE dropping the maps — each
+    // handler closure retains `this`, so merely clearing the map (not removing the
+    // listener) leaks them and stacks duplicate handlers across reconnects. Muse
+    // subscribes 5+ characteristics, so this leak compounds fast.
+    this.detachNotificationListeners()
     this.server = null
     this.characteristics.clear()
     this.services.clear()
     this.notificationHandlers.clear()
 
     if (!this._disposed) {
-      this.handleUnexpectedDisconnect()
+      // Pass an error so the state machine takes the valid ERROR transition: a bare
+      // DISCONNECTED is NOT a legal transition out of 'connected', so without this the
+      // adapter would stay stuck reporting 'connected' with a dead link (never reconnects).
+      this.handleUnexpectedDisconnect('BLE GATT server disconnected')
     }
   }
 
@@ -342,6 +389,10 @@ export class BleAdapter extends BaseAdapter {
       }
     } catch (error) {
       console.error('[BLE] Service discovery error:', error)
+      // When a specific service was required, a discovery failure must propagate: otherwise
+      // doConnect resolves "connected" with an empty characteristics map, and the real cause
+      // surfaces later as a misleading "Characteristic <uuid> not found".
+      if (this.bleConfig.serviceUUID) throw error
     }
 
     return serviceInfos
@@ -595,6 +646,18 @@ export class BleAdapter extends BaseAdapter {
 
     // Detach notification listeners before dropping the characteristic refs.
     this.detachNotificationListeners()
+
+    // Drop the physical GATT link SYNCHRONOUSLY. super.dispose() fires a fire-and-forget
+    // disconnect(), but we null `this.server` right after it returns — so the async
+    // doDisconnect body would find `server` already null and never disconnect the radio,
+    // leaving the device connected until page reload. gatt.disconnect() is synchronous,
+    // and the disconnect listener was already removed above so this won't re-enter
+    // handleBleDisconnect.
+    try {
+      if (this.server?.connected) this.server.disconnect()
+    } catch {
+      // Device already gone.
+    }
 
     super.dispose()
     this.device = null

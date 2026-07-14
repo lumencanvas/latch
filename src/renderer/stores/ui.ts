@@ -146,6 +146,9 @@ interface UIState {
   // Node explorer modal
   nodeExplorerOpen: boolean
 
+  // Add Bluetooth Device modal
+  bluetoothDeviceManagerOpen: boolean
+
   // Canvas state
   zoom: number
   pan: { x: number; y: number }
@@ -219,6 +222,9 @@ export const useUIStore = defineStore('ui', {
 
     // Node explorer modal
     nodeExplorerOpen: false,
+
+    // Add Bluetooth Device modal
+    bluetoothDeviceManagerOpen: false,
 
     // Canvas
     zoom: 1,
@@ -354,6 +360,15 @@ export const useUIStore = defineStore('ui', {
 
     closeNodeExplorer() {
       this.nodeExplorerOpen = false
+    },
+
+    // Add Bluetooth Device modal
+    openBluetoothDeviceManager() {
+      this.bluetoothDeviceManagerOpen = true
+    },
+
+    closeBluetoothDeviceManager() {
+      this.bluetoothDeviceManagerOpen = false
     },
 
     setZoom(zoom: number) {

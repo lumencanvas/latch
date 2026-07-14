@@ -157,6 +157,10 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       maxReconnectAttempts: 5,
     })
 
+    // Reuse the device handed in on the port (from ble-scanner) instead of
+    // popping the native chooser again on connect.
+    adapter.setDevice(deviceInput)
+
     bleAdapters.set(adapterKey, adapter)
 
     // Connect if device is already connected

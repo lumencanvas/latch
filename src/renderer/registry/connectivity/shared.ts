@@ -536,6 +536,10 @@ export const bleScannerState = new Map<string, {
   scanning: boolean
   status: string
   error: string | null
+  /** Last `getDevices()` attempt (ms) when resolving a bound `deviceId`; throttles the per-frame retry. */
+  lastBindAttempt?: number
+  /** The `deviceId` the throttle is keyed to — a change resets the throttle so a rebind resolves at once. */
+  boundAttemptId?: string
 }>()
 export const bleDeviceState = new Map<string, {
   adapter: BleAdapter | null
@@ -543,6 +547,8 @@ export const bleDeviceState = new Map<string, {
   connected: boolean
   status: string
   error: string | null
+  /** autoConnect is edge-triggered: fires the initial connect once, then the adapter owns retries. */
+  autoConnectFired?: boolean
 }>()
 export const bleCharacteristicState = new Map<string, {
   subscribed: boolean

@@ -59,6 +59,13 @@ const definition: NodeDefinition = {
       default: '',
       props: { placeholder: 'Optional device name prefix' },
     },
+    {
+      id: 'deviceId',
+      type: 'text',
+      label: 'Bound Device ID',
+      default: '',
+      props: { placeholder: 'Auto-filled by "Add Bluetooth Device"' },
+    },
   ],
   tags: ['ble', 'bluetooth', 'scanner', 'scan', 'discover', 'devices'],
   info: {
@@ -67,6 +74,7 @@ const definition: NodeDefinition = {
       'Use a service filter to narrow results to relevant devices and speed up discovery.',
       'Set a name prefix filter when multiple devices of the same type are nearby.',
       'Trigger a new scan whenever you need to refresh the list of available devices.',
+      'The Scan trigger must come from a user action (e.g. a Button click) — Web Bluetooth blocks automated scans. For a pre-bound device, use the header\'s "Add Bluetooth Device" panel instead.',
     ],
     pairsWith: ['ble-device', 'ble-characteristic', 'trigger', 'console'],
   },
@@ -77,6 +85,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const serviceFilter = (ctx.controls.get('serviceFilter') as string) ?? 'any'
   const customServiceUUID = (ctx.controls.get('customServiceUUID') as string) ?? ''
   const nameFilter = (ctx.controls.get('nameFilter') as string) ?? ''
+  const boundDeviceId = (ctx.controls.get('deviceId') as string) ?? ''
 
   const outputs = new Map<string, unknown>()
 
@@ -98,7 +107,46 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Handle scan trigger
+  // Gesture-free bind: reconnect to a device the "Add Bluetooth Device" panel
+  // already granted, resolved by id via getDevices() — no second chooser. Legal
+  // from the render loop (getDevices/gatt.connect need no user gesture, unlike
+  // requestDevice). The resolve is AUTHORITATIVE: state.device tracks the actual
+  // grant, so it drops when the grant is revoked or the bound id is retargeted.
+  if (boundDeviceId) {
+    // Retarget: a changed bound id resets the throttle (so it resolves at once) and
+    // drops the previous device (so outputs never emit the stale device for ~2s).
+    if (state.boundAttemptId !== boundDeviceId) {
+      state.boundAttemptId = boundDeviceId
+      state.lastBindAttempt = 0
+      state.device = null
+    }
+    const now = Date.now()
+    // Re-verify on the throttle even when already bound, so a revoked grant is noticed.
+    if (!state.scanning && now - (state.lastBindAttempt ?? 0) >= 2000) {
+      state.lastBindAttempt = now
+      try {
+        const bound = await BleAdapter.getDeviceById(boundDeviceId)
+        // Reassign only on an actual change (present↔revoked) to avoid churning a same-id
+        // device object downstream every tick.
+        if ((bound?.id ?? null) !== (state.device?.id ?? null)) state.device = bound
+        state.status = bound ? 'selected' : 'awaiting-pairing'
+        state.error = null
+      } catch {
+        state.device = null
+        state.status = 'awaiting-pairing'
+      }
+    }
+  } else if (state.boundAttemptId) {
+    // deviceId cleared by the user — release the bind so the manual Scan path owns state.device.
+    state.boundAttemptId = undefined
+  }
+
+  // Handle scan trigger. NOTE: this path calls requestDevice (via scanDevices), which
+  // Web Bluetooth only allows under transient activation — so the Scan trigger must be
+  // driven by a live user gesture (a Button node click; activation lasts ~5s, covering
+  // the next frame). A timer/autoplay-driven trigger with no recent click throws
+  // NotAllowedError (caught below as an error). The bound-device path above is the
+  // gesture-free route — prefer "Add Bluetooth Device" for a pre-bound device.
   const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
 
   if (hasTrigger && !state.scanning) {

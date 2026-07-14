@@ -110,8 +110,15 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       maxReconnectAttempts: 5,
     })
 
+    // Reuse the device handed in on the port (from ble-scanner) instead of
+    // popping the native chooser again on connect.
+    adapter.setDevice(deviceInput)
+
     bleAdapters.set(ctx.nodeId, adapter)
     state.adapter = adapter
+    // Fresh adapter for a new device: reset the edge-trigger + connection flags.
+    state.autoConnectFired = false
+    state.connected = false
 
     // Set up status listener
     adapter.onStatusChange((statusInfo) => {
@@ -140,19 +147,25 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       } catch (error) {
         state.error = error instanceof Error ? error.message : 'Disconnect failed'
       }
-    } else if ((hasConnectTrigger || (autoConnect && !state.connected)) && !state.connected) {
-      state.status = 'connecting'
+    } else if (hasConnectTrigger || (autoConnect && !state.autoConnectFired)) {
+      // autoConnect is EDGE-triggered (fires once); the adapter's own autoReconnect owns
+      // retries. Guard on canConnect() so we never re-drive connect() from the per-frame
+      // loop while the adapter is connecting/reconnecting/error-parked (which would either
+      // throw 'Cannot connect from state: …' every frame or hammer a dead device).
+      if (autoConnect) state.autoConnectFired = true
+      if (adapter.canConnect()) {
+        state.status = 'connecting'
+        try {
+          await adapter.connect()
+          state.connected = true
+          state.status = 'connected'
 
-      try {
-        await adapter.connect()
-        state.connected = true
-        state.status = 'connected'
-
-        // Enumerate services
-        state.services = await adapter.getServices()
-      } catch (error) {
-        state.error = error instanceof Error ? error.message : 'Connection failed'
-        state.status = 'error'
+          // Enumerate services
+          state.services = await adapter.getServices()
+        } catch (error) {
+          state.error = error instanceof Error ? error.message : 'Connection failed'
+          state.status = 'error'
+        }
       }
     }
   }

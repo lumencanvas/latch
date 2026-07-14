@@ -22,6 +22,7 @@ import {
   Code2,
   Brain,
   Plug,
+  Bluetooth,
   Github,
   Undo2,
   Redo2,
@@ -310,6 +311,15 @@ const isMacElectron = computed(() => {
         @click="openConnectionManager"
       >
         <Plug />
+      </button>
+
+      <button
+        class="btn btn-icon btn-ghost"
+        title="Add Bluetooth Device"
+        aria-label="Add Bluetooth Device"
+        @click="uiStore.openBluetoothDeviceManager()"
+      >
+        <Bluetooth />
       </button>
 
       <span class="header-divider" />
