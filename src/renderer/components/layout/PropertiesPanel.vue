@@ -28,10 +28,23 @@ const { recordParamEdit } = useFlowHistory()
 type PanelTab = 'properties' | 'info' | 'debug'
 const activeTab = ref<PanelTab>('properties')
 
-// Switch to properties when a node is inspected
+// Switch to properties when a node is inspected — but on a user's FIRST-EVER inspection,
+// land on the Info tab so the per-node teaching content (overview/tips/pairsWith) is
+// discovered at least once; afterwards default to Properties as before.
+const INFO_TAB_SEEN_KEY = 'latch_info_tab_seen'
 watch(() => uiStore.inspectedNode, (nodeId) => {
   if (nodeId) {
-    activeTab.value = 'properties'
+    // Show Info ONLY when we successfully record the "seen" flag — so if setItem throws
+    // (e.g. Safari private mode) we default to Properties rather than re-forcing Info on
+    // every click (the flag would never persist).
+    let showInfo = false
+    try {
+      if (!localStorage.getItem(INFO_TAB_SEEN_KEY)) {
+        localStorage.setItem(INFO_TAB_SEEN_KEY, 'true')
+        showInfo = true
+      }
+    } catch { showInfo = false }
+    activeTab.value = showInfo ? 'info' : 'properties'
   }
   if (!nodeId && searchSetByInfoTab.value) {
     nodesStore.setSearchQuery('')

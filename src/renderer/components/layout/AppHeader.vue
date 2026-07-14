@@ -13,7 +13,7 @@ import {
   Save,
   Download,
   Upload,
-  GraduationCap,
+  Boxes,
   PanelLeftClose,
   PanelLeft,
   PanelRightClose,
@@ -88,6 +88,9 @@ const executionControls = inject<{
 const flowName = computed(() => flowsStore.activeFlow?.name ?? 'No Flow')
 const isDirty = computed(() => flowsStore.hasUnsavedChanges)
 const isRunning = computed(() => runtimeStore.isRunning)
+// Nothing to run on an empty graph — guard Play so it can't report "RUNNING · 60 fps"
+// with zero nodes executing.
+const canRun = computed(() => flowsStore.activeNodes.length > 0)
 
 function toggleSidebar() {
   uiStore.toggleSidebar()
@@ -163,6 +166,7 @@ const isMacElectron = computed(() => {
       <button
         class="btn btn-icon btn-ghost header-sidebar-toggle"
         :title="uiStore.sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
+        :aria-label="uiStore.sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
         @click="toggleSidebar"
       >
         <PanelLeftClose v-if="uiStore.sidebarOpen" />
@@ -195,6 +199,7 @@ const isMacElectron = computed(() => {
           class="btn btn-icon btn-ghost"
           :disabled="!canUndo"
           :title="undoDescription ? `Undo: ${undoDescription}` : 'Undo (Ctrl+Z)'"
+          aria-label="Undo"
           @click="undo"
         >
           <Undo2 />
@@ -203,6 +208,7 @@ const isMacElectron = computed(() => {
           class="btn btn-icon btn-ghost"
           :disabled="!canRedo"
           :title="redoDescription ? `Redo: ${redoDescription}` : 'Redo (Ctrl+Shift+Z)'"
+          aria-label="Redo"
           @click="redo"
         >
           <Redo2 />
@@ -215,7 +221,9 @@ const isMacElectron = computed(() => {
         <button
           class="btn btn-icon"
           :class="isRunning ? 'btn-primary' : 'btn-secondary'"
-          :title="isRunning ? 'Pause' : 'Play'"
+          :disabled="!isRunning && !canRun"
+          :title="isRunning ? 'Pause' : canRun ? 'Play' : 'Add nodes to run'"
+          :aria-label="isRunning ? 'Pause' : canRun ? 'Play' : 'Play (add nodes to run)'"
           @click="togglePlayback"
         >
           <Pause v-if="isRunning" />
@@ -226,6 +234,7 @@ const isMacElectron = computed(() => {
           class="btn btn-icon btn-secondary"
           :disabled="runtimeStore.isStopped"
           title="Stop"
+          aria-label="Stop"
           @click="stop"
         >
           <Square />
@@ -261,6 +270,7 @@ const isMacElectron = computed(() => {
         v-if="isEditorView"
         class="btn btn-icon btn-ghost header-panel-toggle"
         :title="uiStore.propertiesPanelOpen ? 'Hide properties' : 'Show properties'"
+        :aria-label="uiStore.propertiesPanelOpen ? 'Hide properties' : 'Show properties'"
         @click="togglePropertiesPanel"
       >
         <PanelRightClose v-if="uiStore.propertiesPanelOpen" />
@@ -286,6 +296,7 @@ const isMacElectron = computed(() => {
         v-else
         class="btn btn-icon ai-btn-loaded"
         title="AI Model Manager"
+        aria-label="AI Model Manager"
         @click="openAIModelManager"
       >
         <Brain />
@@ -295,6 +306,7 @@ const isMacElectron = computed(() => {
         class="btn btn-icon btn-ghost connections-btn"
         :class="{ 'has-connections': connectionsStore.connections.length > 0 }"
         title="Connection Manager"
+        aria-label="Connection Manager"
         @click="openConnectionManager"
       >
         <Plug />
@@ -305,6 +317,7 @@ const isMacElectron = computed(() => {
       <button
         class="btn btn-icon btn-ghost"
         title="Save Project"
+        aria-label="Save Project"
         @click="saveProject"
       >
         <Save />
@@ -312,6 +325,7 @@ const isMacElectron = computed(() => {
       <button
         class="btn btn-icon btn-ghost"
         title="Export Project"
+        aria-label="Export Project"
         @click="exportProject"
       >
         <Download />
@@ -319,6 +333,7 @@ const isMacElectron = computed(() => {
       <button
         class="btn btn-icon btn-ghost"
         title="Import Project"
+        aria-label="Import Project"
         @click="importProject"
       >
         <Upload />
@@ -326,14 +341,16 @@ const isMacElectron = computed(() => {
       <button
         class="btn btn-icon btn-ghost"
         title="Node Explorer"
+        aria-label="Node Explorer"
         @click="uiStore.openNodeExplorer()"
       >
-        <GraduationCap />
+        <Boxes />
       </button>
 
       <button
         class="btn btn-icon btn-ghost github-btn"
         title="View on GitHub"
+        aria-label="View on GitHub"
         @click="openGitHub"
       >
         <Github :size="16" />

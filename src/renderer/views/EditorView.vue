@@ -953,7 +953,7 @@ onUnmounted(() => {
       </Controls>
 
       <MiniMap
-        v-if="uiStore.showMinimap"
+        v-if="uiStore.showMinimap && flowsStore.activeNodes.length > 0"
         position="bottom-right"
         :style="{ marginBottom: '50px' }"
         :pannable="true"
@@ -1175,6 +1175,9 @@ onUnmounted(() => {
 .empty-hint {
   margin: 0;
   font-size: var(--font-size-sm);
+  /* neutral-600 (not the inherited neutral-400) so the first line a new user reads clears
+     the WCAG AA 4.5:1 contrast floor on the light canvas. */
+  color: var(--color-neutral-600);
 }
 
 .starter-templates {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { X, GraduationCap } from 'lucide-vue-next'
+import { X, Boxes } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
@@ -72,7 +72,7 @@ function handleInsertSnippet(snippetId: string) {
           <!-- Header -->
           <div class="modal-header">
             <div class="modal-title-group">
-              <GraduationCap :size="18" />
+              <Boxes :size="18" />
               <h2
                 id="node-explorer-modal-title"
                 class="modal-title"
