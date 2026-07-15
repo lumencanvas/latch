@@ -10,9 +10,11 @@
  * registry the engine can drain generically, so a stateful node touches only its
  * own module and the leak class becomes structurally impossible.
  *
- * This module is additive: it is not yet wired into the engine. See
- * EXTENSIBILITY_ARCHITECTURE §4 and ROADMAP Phase 1 for the migration that makes
- * the generic lifecycle loops authoritative.
+ * LIVE: the generic lifecycle loop is wired and authoritative — `ExecutionEngine`
+ * registers every `defineNodeState`/`defineLifecycle` hook (`collectedLifecycles()`)
+ * and drains their `gc(validNodeIds)` / `disposeAll()` on GC / stop. So a node's
+ * cleanup registered here runs for real (it is NOT dead code). See
+ * EXTENSIBILITY_ARCHITECTURE §4.
  */
 
 /** A per-node state map with disposal built in. */

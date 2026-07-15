@@ -1,8 +1,8 @@
 # Next-session kickoff — device features (BLE/Muse/printer/bellows) + UX backlog
 
 Copy the block below as your first message to a fresh Claude Code session.
-(Last updated 2026-07-14 — branch `phase0-file-format`, all pushed to origin; B2/C1 committed (`b06a30d`, `c0eddd9`),
-C2 committing this close; PR → `main` HELD. Verify with `git status` + `git log --oneline -12`.)
+(Last updated 2026-07-14 — branch `phase0-file-format`, all committed + pushed to origin (B2 `b06a30d`, C1 `c0eddd9`,
+C2 `9221eed`, + device-thread audit fixes); PR → `main` HELD. Verify with `git status` + `git log --oneline -12`.)
 
 ---
 
@@ -18,7 +18,7 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
 ## STEP 1 — Read + recall
 1. `CLAUDE.md` — rules: **NO AI attribution in git EVER**; **commit/push only when explicitly asked**; stay on
    `phase0-file-format`; each step ends green; **never assume — read the real code**; honor `strategy/05` DON'T-OVERCLAIM.
-2. `docs/HANDOFF.md` TOP entries **later-108 → 105**. Then the governing doc(s) for the track you pick:
+2. `docs/HANDOFF.md` TOP entries **later-109 → 105**. Then the governing doc(s) for the track you pick:
    - Devices: `docs/plans/BLE_DEVICE_MANAGER_2026-07-13.md` (esp. **§0 review corrections**) +
      `docs/plans/BELLOWSJS_EVALUATION_2026-07-13.md`; bellows API `docs/reference/bellowsjs-0.1.5-llm-reference.md`.
    - UX: `docs/UX_EXPERIENCE_AUDIT_2026-07-13.md` (18 ranked findings; first sweep already shipped).
@@ -91,8 +91,14 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
   KeyboardNode device-skin colors (#12 — theme tokens would flip the skin).
 
 ### Overarching
-- **PR `phase0-file-format` → `main` is HELD** — B2/C1/C2 committed + pushed to origin (all audited + green). Offer to
-  open the PR when the maintainer's ready.
+- **PR `phase0-file-format` → `main` is HELD** — B2/C1/C2 + a device-thread branch audit (later-109) committed + pushed
+  to origin (all audited + green). Offer to open the PR when the maintainer's ready.
+- **Known-open (deferred from the later-109 audit, MINOR, not blockers):** (a) two device nodes bound to the SAME
+  physical device share one GATT link → disposing one tears down the other (needs a per-`deviceId` GATT refcount in
+  `BleAdapter`); (b) `requires:['bluetooth']` is disclosure-only (no runtime hardware gate — pre-existing/by-design);
+  (c) a shared flow-file `deviceId` could gesture-free reconnect (low-risk: ids are per-origin-random).
+- **Hardware test debt:** the three device nodes' protocols (Muse GATT start-seq + telemetry battery; ESC/POS raster +
+  transports/pacing) are reference-derived + unit-tested but **NOT device-verified** — the maintainer must live-test.
 
 ## HOW TO WORK
 - Each step ends green (typecheck/lint/test:unit/build); **browser-smoke any runtime/registry change** (Playwright +

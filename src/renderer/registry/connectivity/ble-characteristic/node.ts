@@ -174,13 +174,22 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     }
   }
 
-  // Ensure connected
+  // Ensure connected. A dropped GATT link invalidates the subscription, so re-arm it so
+  // notifications resubscribe after the adapter's auto-reconnect (else they go silent).
   if (!adapter.isConnected()) {
-    try {
-      await adapter.connect()
-      await adapter.discoverServices()
-    } catch (error) {
-      state.error = error instanceof Error ? error.message : 'Connection failed'
+    state.subscribed = false
+    // Guard on canConnect() so we don't re-drive connect() every frame while the adapter is
+    // already connecting/reconnecting (BaseAdapter.connect() throws 'Cannot connect from
+    // state: reconnecting', which would otherwise overwrite the error output each frame).
+    if (adapter.canConnect()) {
+      try {
+        await adapter.connect()
+        await adapter.discoverServices()
+      } catch (error) {
+        state.error = error instanceof Error ? error.message : 'Connection failed'
+      }
+    }
+    if (!adapter.isConnected()) {
       outputs.set('value', state.value)
       outputs.set('rawValue', state.rawValue)
       outputs.set('text', state.text)

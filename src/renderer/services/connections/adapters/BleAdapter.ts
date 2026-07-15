@@ -99,6 +99,13 @@ export const BLE_STANDARD_CHARACTERISTICS = {
 // ============================================================================
 
 export class BleAdapter extends BaseAdapter {
+  /**
+   * Devices granted this session, kept as a fallback for {@link getDeviceById} so the
+   * gesture-free handoff doesn't depend SOLELY on `getDevices()` (flag-gated / absent on
+   * some Chromium builds). Populated by {@link scanDevices} when a chooser grants a device.
+   */
+  private static grantedDevices = new Map<string, BluetoothDevice>()
+
   private device: BluetoothDevice | null = null
   private server: BluetoothRemoteGATTServer | null = null
   private services: Map<string, BluetoothRemoteGATTService> = new Map()
@@ -135,28 +142,18 @@ export class BleAdapter extends BaseAdapter {
     const bluetooth = (navigator as Navigator & { bluetooth: Bluetooth }).bluetooth
 
     try {
-      // acceptAllDevices and filters are mutually exclusive
-      if (options?.acceptAllDevices) {
-        return await bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: options.optionalServices || [],
-        })
-      }
-
-      // Use filters if provided, otherwise use empty filters (will show device picker)
+      let device: BluetoothDevice | null
+      // acceptAllDevices and filters are mutually exclusive.
       const filters = options?.filters && options.filters.length > 0 ? options.filters : undefined
-      if (filters) {
-        return await bluetooth.requestDevice({
-          filters,
-          optionalServices: options?.optionalServices || [],
-        })
+      if (options?.acceptAllDevices || !filters) {
+        device = await bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: options?.optionalServices || [] })
+      } else {
+        device = await bluetooth.requestDevice({ filters, optionalServices: options?.optionalServices || [] })
       }
-
-      // Fallback: accept all devices
-      return await bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: options?.optionalServices || [],
-      })
+      // Retain the granted device so getDeviceById can reconnect even where getDevices()
+      // is unavailable (the sole-dependency handoff would otherwise silently fail).
+      if (device) BleAdapter.grantedDevices.set(device.id, device)
+      return device
     } catch (error) {
       if ((error as Error).name === 'NotFoundError') {
         // User cancelled the picker
@@ -200,8 +197,14 @@ export class BleAdapter extends BaseAdapter {
    */
   static async getDeviceById(id: string): Promise<BluetoothDevice | null> {
     if (!id) return null
+    // Prefer a device granted this session (works even without getDevices()); fall back to
+    // getDevices() for a cross-reload grant.
+    const cached = BleAdapter.grantedDevices.get(id)
+    if (cached) return cached
     const devices = await BleAdapter.getPairedDevices()
-    return devices.find((d) => d.id === id) ?? null
+    const found = devices.find((d) => d.id === id) ?? null
+    if (found) BleAdapter.grantedDevices.set(id, found)
+    return found
   }
 
   /**
@@ -273,6 +276,15 @@ export class BleAdapter extends BaseAdapter {
 
     this.server = await this.device.gatt.connect()
 
+    // The adapter may have been disposed DURING the awaited gatt.connect() (node deleted /
+    // device changed mid-connect). dispose() already ran its synchronous server.disconnect()
+    // on a then-null server, so the link we just opened would leak — drop it now.
+    if (this._disposed) {
+      try { this.server?.disconnect() } catch { /* already gone */ }
+      this.server = null
+      return
+    }
+
     // Enumerate services if we have a service UUID
     if (this.bleConfig.serviceUUID) {
       await this.discoverServices()
@@ -317,6 +329,14 @@ export class BleAdapter extends BaseAdapter {
   }
 
   private handleBleDisconnect(): void {
+    // Only act on an UNEXPECTED drop (from the connected state). An intentional
+    // disconnect already tore everything down and moved the machine off 'connected';
+    // the browser still fires gattserverdisconnected asynchronously afterwards, and
+    // driving handleUnexpectedDisconnect from 'disconnected' logs a spurious
+    // invalid-transition warning. (Reconnect detection is preserved: a real drop leaves
+    // status === 'connected' when the event fires.)
+    if (this.status !== 'connected') return
+
     // Remove the characteristicvaluechanged listeners BEFORE dropping the maps — each
     // handler closure retains `this`, so merely clearing the map (not removing the
     // listener) leaks them and stacks duplicate handlers across reconnects. Muse

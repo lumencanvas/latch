@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-14 (later 109) — Device-thread branch audit (B2+C1+C2 holistic)
+
+Ran a 3-lens audit (regressions to shared code / integration + lifecycle / deploy-readiness + security + bundle) over
+the whole device thread now that it touches shared surface (`BleAdapter`, `fft.ts`, `museSignal`, the connectivity
+lifecycle). **16 findings; 6 actionable fixed, the rest were no-fix verifications or accepted/documented gaps.**
+Verdict: **deploy-ready, no regressions** — the branch builds clean for Netlify (COOP/COEP unchanged, 243 defs), the
+`import * as THREE` in the printer node doesn't double-bundle, and the BLE nodes feature-detect + degrade on
+non-Chromium. My earlier reconnect fix was confirmed a genuine improvement (a dropped BLE link now actually reconnects)
+— but it **exposed two latent `ble-characteristic` bugs** that main never hit (because main stayed wrongly 'connected').
+
+**Fixed:**
+- **[major] Mid-connect disposal leaked the GATT link** — `BleAdapter.doConnect` now rechecks `_disposed` after the
+  awaited `gatt.connect()` and drops the link if the adapter was disposed mid-connect.
+- **`ble-characteristic`** — added the `canConnect()` guard `ble-device` already had (was spamming `connect()` every
+  frame during the now-working reconnect, flickering the error output), and it now **re-arms `subscribed`** on a drop
+  so notifications resubscribe after auto-reconnect (was going silent after the first reconnect).
+- **Spurious `Invalid transition` warning** on a clean disconnect — `handleBleDisconnect` bails unless status is
+  `connected` (the async `gattserverdisconnected` fires after an intentional disconnect).
+- **Handoff robustness** — `BleAdapter` retains the panel-granted `BluetoothDevice` in a session map so `getDeviceById`
+  no longer depends SOLELY on `getDevices()` (flag-gated on some Chromium builds).
+- **Stale `nodeState.ts` comment** claiming the lifecycle loop isn't wired (it IS — `ExecutionEngine` drains it; the
+  muse/printer cleanup is live, not dead code).
+
+**Accepted / deferred (documented, not blockers):**
+- **[minor] Two nodes bound to the SAME physical device** share one GATT link → disposing one tears down the other
+  (edge case: two `muse-eeg` on one headband). A per-`deviceId` GATT refcount is the proper fix; deferred.
+- **[minor] `requires:['bluetooth']` is disclosure-only** (no runtime hardware gate) — pre-existing, by design; the
+  device nodes are core-trust and don't widen the threat model (a community node still hits the capability gate).
+- **[minor] A shared flow-file `deviceId` could gesture-free reconnect** — low-risk in practice (`BluetoothDevice.id`
+  is per-origin-random, non-portable across users; the granted-device cache narrows it toward session grants).
+
+**Gates green:** typecheck · lint 0 err · `test:unit` **2418** pass + 11 todo · build ok. **Browser smoke:** 243 defs,
+Play→Stop 0 real errors. **State: COMMITTED + pushed** on `phase0-file-format` (PR still held).
+
+---
+
 ## 2026-07-14 (later 108) — C2: thermal-printer node + live dithered print-preview
 
 Built `thermal-printer` — the second flagship recognized BLE device (Thread C). Prints an image, a live texture
