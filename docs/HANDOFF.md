@@ -6,6 +6,38 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-14 (later 108) — C2: thermal-printer node + live dithered print-preview
+
+Built `thermal-printer` — the second flagship recognized BLE device (Thread C). Prints an image, a live texture
+(shader/webcam/render), or word-wrapped text to a BLE ESC/POS printer, with a preview that IS the 1-bit output.
+
+- **`services/ble/escpos/escpos.ts`** (pure, DOM-free) — grayscale→1-bit dithering (Floyd–Steinberg / Atkinson /
+  ordered-Bayer / threshold, alpha-over-white), MSB-first raster packing, and the `GS v 0` command + `ESC @` / `ESC d n`.
+  Verified byte-for-byte against the maintainer's reference app (`~/Downloads/tack`). **10 unit tests.**
+- **`EscPosPrinterAdapter`** (extends `BleAdapter`) — gesture-free connect, transport auto-resolution (Phomemo `FF02`
+  vs. Nordic-UART `6e400002` from the discovered write chars), and **chunked (100 B) / paced (28 ms)** writes so the
+  printer's small buffer doesn't drop bytes; concurrent-print + feed-mid-print + disposal guards.
+- **`thermal-printer` node** — inputs image/text/print/feed, controls transport/width/dither/threshold/text-size/feed,
+  throttled gesture-free connect, GPU-readback source compose throttled to 10 fps, `defineLifecycle` cleanup.
+- **`PrintPreview.vue`** — a full custom Vue Flow node: a live dithered preview canvas (exact print output) + a Print
+  button + input/output handles. Browser + screenshot verified.
+
+**Adversarial review (3 lenses → verify): 16 confirmed, 15 fixed (1 verified-sound).** Majors: `feed()` mid-print
+corrupted the raster stream (→ guarded); Print/Feed were **level-triggered** so a held-high trigger re-printed every
+frame (→ rising-edge); render-target/video **textures printed blank** (→ `sourceDims` handles video + defaults GPU
+textures); the preview **status badge was stuck on 'idle'** (wrong metric key); and `BleAdapter.discoverServices` on
+the printer's all-services path **swallowed GATT errors** into a false "no write characteristic" (→ per-service
+resilience + top-level propagation, benefiting every BLE node). Minors: adapter-identity guard on the print catch,
+print-request not dropped when connecting, compose-throttle bypass, preview re-dither dirty-check + repaint-on-stop +
+height guard, `band=0` infinite-loop clamp.
+
+**Gates green:** typecheck · lint 0 err (49 pre-existing any-warns) · `test:unit` **2418** pass + 11 todo (159 files) ·
+build ok. **Browser smoke:** 243 defs, printer preview + 9 ports render, Play→Stop 0 real errors. **State: COMMITTED**
+on `phase0-file-format` (PR still held). ⚠️ **Maintainer HW test** for the actual print path (transports/pacing are
+reference-derived, not device-verified). **Next:** D0 (bellows spike) or Track 2 UX.
+
+---
+
 ## 2026-07-14 (later 107) — C1: Muse EEG node + head-map NodeView (audit-first)
 
 Built the `muse-eeg` device node — the flagship recognized BLE device (Thread C). **Audit-first** (the maintainer's

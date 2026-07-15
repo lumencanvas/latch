@@ -1,24 +1,24 @@
 # Next-session kickoff — device features (BLE/Muse/printer/bellows) + UX backlog
 
 Copy the block below as your first message to a fresh Claude Code session.
-(Last updated 2026-07-14 — branch `phase0-file-format`, **ahead 25 committed + B2 (later-106) & C1 Muse (later-107)
-UNCOMMITTED** in the working tree; PR → `main` HELD. Verify with `git status` + `git log --oneline -12`.)
+(Last updated 2026-07-14 — branch `phase0-file-format`, all pushed to origin; B2/C1 committed (`b06a30d`, `c0eddd9`),
+C2 committing this close; PR → `main` HELD. Verify with `git status` + `git log --oneline -12`.)
 
 ---
 
 ultracode ultrathink You're continuing **LATCH** — a free/open (MIT), web+desktop, node-based creative-coding tool
-("Live Art Tool for Creative Humans"; Vue 3 + TS + Vite, Electron Forge; **242 nodes**) at
+("Live Art Tool for Creative Humans"; Vue 3 + TS + Vite, Electron Forge; **243 nodes**) at
 `/Users/obsidian/Projects/lumencanvas/latch`, branch `phase0-file-format`. The authoring-DX plan is COMPLETE and the
 branch is **deploy-ready + audited** (0 regressions, browser smoke green). Two device threads are shipped-in-part, and a
 UX audit produced a ranked backlog. `main` untouched; **PR held** pending the maintainer's word.
 
 Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-existing `any`-warns) · `npm run test:unit`
-**2407 pass + 11 todo** · `npm run build` ok · browser smoke 242 nodes, Play→Stop 0 real errors.
+**2418 pass + 11 todo** · `npm run build` ok · browser smoke 243 nodes, Play→Stop 0 real errors.
 
 ## STEP 1 — Read + recall
 1. `CLAUDE.md` — rules: **NO AI attribution in git EVER**; **commit/push only when explicitly asked**; stay on
    `phase0-file-format`; each step ends green; **never assume — read the real code**; honor `strategy/05` DON'T-OVERCLAIM.
-2. `docs/HANDOFF.md` TOP entries **later-107 → 104**. Then the governing doc(s) for the track you pick:
+2. `docs/HANDOFF.md` TOP entries **later-108 → 105**. Then the governing doc(s) for the track you pick:
    - Devices: `docs/plans/BLE_DEVICE_MANAGER_2026-07-13.md` (esp. **§0 review corrections**) +
      `docs/plans/BELLOWSJS_EVALUATION_2026-07-13.md`; bellows API `docs/reference/bellowsjs-0.1.5-llm-reference.md`.
    - UX: `docs/UX_EXPERIENCE_AUDIT_2026-07-13.md` (18 ranked findings; first sweep already shipped).
@@ -35,12 +35,12 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
 - **UX audit + first fix sweep** (later-105) — silent-token bug class killed (+ CI guard
   `tests/unit/styles/tokens-defined.test.ts`), header a11y labels, onboarding polish (empty-state contrast, Play guard,
   minimap-hidden-at-0, Info-tab-on-first-inspection).
-- **B2 "Add Bluetooth Device" scan panel** (later-106, **UNCOMMITTED**) — header panel: known-device grid +
+- **B2 "Add Bluetooth Device" scan panel** (later-106, committed `b06a30d`) — header panel: known-device grid +
   scan-all → `requestDevice` in gesture → `recognizeDevice` by name → recognition card → drops a pre-bound scaffold.
   **One-pairing handoff via `deviceId`/`getDevices()`, NOT `connectionId`** (`BleAdapter.getDeviceById`/`setDevice`;
   `ble-scanner` `deviceId` control) — see memory `ble-device-manager-plan`. Generic fallback = `ble-scanner → ble-device`
   (single GATT consumer). Review-fixed the dual-adapter-over-one-GATT major. `bluetoothScan.ts` + 9 tests.
-- **C1 Muse node** (later-107, **UNCOMMITTED**) — `muse-eeg` node + `MuseAdapter` (extends `BleAdapter`) +
+- **C1 Muse node** (later-107, committed `c0eddd9`) — `muse-eeg` node + `MuseAdapter` (extends `BleAdapter`) +
   `MuseHeadMap.vue` (head with TP9/AF7/AF8/TP10 dots + contact halos + δθαβγ bars). **Node-owned adapter** (module Map +
   `defineLifecycle`), NOT `ctx.connection` — consistent with `ble-device`/`ble-characteristic`. **Audit-first found 14
   foundation bugs** (DSP DC-removal + welchPsd tail-align in `utils/fft.ts`; BleAdapter listener-leak-on-disconnect
@@ -48,6 +48,12 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
   **C1 review fixed 16 more** (clench per-channel-baseline + warm-up gating; failed-connect wedge; stuck-`connected`-on-
   drop; disposal race). **17 new tests.** ⚠️ **Needs maintainer HW live-test** (start-sequence + telemetry battery
   scaling are best-known-protocol; no captured Muse reference exists in-repo).
+- **C2 thermal-printer** (later-108, committing this close) — `thermal-printer` node + `EscPosPrinterAdapter` +
+  `PrintPreview.vue` (live dithered preview = the print) + pure `services/ble/escpos/escpos.ts` (dither + `GS v 0`,
+  byte-verified vs `~/Downloads/tack`). Transports Phomemo `FF02`/Nordic-UART `6e400002` auto-resolved; chunked 100 B /
+  paced 28 ms. Review fixed 16 (feed-mid-print corruption, level→rising-edge triggers, blank textures, preview status
+  key, and `discoverServices` GATT-error swallowing → per-service resilience for ALL BLE nodes). **11 tests.** HW test
+  pending. `import * as THREE` + `getThreeShaderRenderer().renderToCanvas` for texture inputs (webcam/shader printing).
 
 ## THE WORK — pick a track (each substantive step: adversarial-review workflow + gates + browser-smoke runtime changes)
 
@@ -63,9 +69,10 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
   from the known Muse protocol but not device-verified; blink/clench thresholds may want tuning against a real headband.
   The `defineProtocol('muse')`/`ctx.connection` route was deliberately NOT taken (node-owned adapter matches the sibling
   BLE nodes; revisit only if multiple nodes must share one Muse).
-- **C2 — `thermal-printer`.** `EscPosPrinterAdapter` + `PrinterHandle`; ESC/POS `GS v 0` raster (384px = 48-byte rows,
-  MSB-first), chunked paced writes; NUS (`6e400001`/write `6e400002`) + Phomemo (`FF00`/`FF02`) transports v1; inputs
-  text/image/print/feed; a live dithered print-preview NodeView. Reference: `~/Downloads/tack (15).html`.
+- **C2 — `thermal-printer`. ✅ DONE (later-108).** See WHAT'S DONE. Node-owned `EscPosPrinterAdapter` (not a
+  `PrinterHandle`/`ctx.connection` — matches the sibling BLE nodes), NUS + Phomemo transports, dithered print-preview.
+  **Only remaining: the maintainer's on-hardware print test** (raster/transports/pacing are reference-derived, not
+  device-verified). Later transport variants (ORGBRO `FFF0`, HM-10 `FFE0`, cat `AE30` LSB-first) are follow-on profiles.
 - **D0→D — bellowsjs (add alongside Tone; do NOT replace).** D0 spike: `npm i bellowsjs`; `Bellows.boot({ context })`
   on `AudioManager`'s AudioContext (reuse the Play gesture); prove one `va`/`pluck` voice sounds + **routes into LATCH's
   master graph** (open Q — 0.1.5 doesn't clearly expose its output node; else parallel-to-destination / MediaStream tap)
@@ -84,12 +91,12 @@ Baseline (verify): `npm run typecheck` clean · `npm run lint` 0 err (49 pre-exi
   KeyboardNode device-skin colors (#12 — theme tokens would flip the skin).
 
 ### Overarching
-- **PR `phase0-file-format` → `main` is HELD** (25 committed + the uncommitted B2 (later-106) & C1 Muse (later-107)
-  working-tree changes, all audited + green). Offer to commit B2+C1 and/or open the PR when the maintainer's ready.
+- **PR `phase0-file-format` → `main` is HELD** — B2/C1/C2 committed + pushed to origin (all audited + green). Offer to
+  open the PR when the maintainer's ready.
 
 ## HOW TO WORK
 - Each step ends green (typecheck/lint/test:unit/build); **browser-smoke any runtime/registry change** (Playwright +
-  system Chrome vs `npm run dev` :5173 — reach the nodes store via `#app.__vue_app__`, `definitions.size===242`,
+  system Chrome vs `npm run dev` :5173 — reach the nodes store via `#app.__vue_app__`, `definitions.size===243`,
   Play→Stop, filter webcam/MediaPipe/wasm noise; recipe in `latch-smoke-test-harness`). For substantive work run an
   **adversarial-review workflow** and verify findings before declaring done.
 - New nodes = co-located `defineNode` (`registry/<cat>/<id>/node.ts`; `npm run new-node`); device I/O via

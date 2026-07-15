@@ -20,7 +20,7 @@ const EXPECTED_CUSTOM_TYPES = [
   'keyboard', 'knob', 'main-output', 'mediapipe-audio', 'mediapipe-face',
   'mediapipe-gesture', 'mediapipe-hand', 'mediapipe-object', 'mediapipe-pose',
   'mediapipe-segmentation', 'monitor', 'muse-eeg', 'oscilloscope', 'step-sequencer',
-  'synth', 'textbox', 'trigger',
+  'synth', 'textbox', 'thermal-printer', 'trigger',
 ].sort()
 
 const MIGRATED_TO_UI = ['envelope-visual', 'parametric-eq', 'wavetable', 'xy-pad']
@@ -37,6 +37,7 @@ const EXPECTED_COMPONENT_NAME: Record<string, string> = {
   'mediapipe-object': 'MediaPipeObjectNode', 'mediapipe-segmentation': 'MediaPipeSegmentationNode',
   'mediapipe-gesture': 'MediaPipeGestureNode', 'mediapipe-audio': 'MediaPipeAudioNode',
   'muse-eeg': 'MuseHeadMap',
+  'thermal-printer': 'PrintPreview',
 }
 
 describe('custom-node component registry derives from definition.component', () => {

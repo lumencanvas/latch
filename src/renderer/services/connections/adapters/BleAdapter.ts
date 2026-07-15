@@ -346,53 +346,53 @@ export class BleAdapter extends BaseAdapter {
 
     const serviceInfos: BleServiceInfo[] = []
 
-    try {
-      let services: BluetoothRemoteGATTService[]
+    // A top-level enumeration failure (getPrimaryService[s] rejecting) always propagates: it's
+    // the real GATT error, and swallowing it lets doConnect resolve "connected" with an empty
+    // characteristics map — which then surfaces downstream as a misleading "Characteristic
+    // <uuid> not found" (or, for the all-services printer path, a false "no write characteristic").
+    let services: BluetoothRemoteGATTService[]
+    if (this.bleConfig.serviceUUID) {
+      services = [await this.server.getPrimaryService(this.bleConfig.serviceUUID)]
+    } else {
+      services = await this.server.getPrimaryServices()
+    }
 
-      if (this.bleConfig.serviceUUID) {
-        // Get specific service
-        const service = await this.server.getPrimaryService(this.bleConfig.serviceUUID)
-        services = [service]
-      } else {
-        // Get all services
-        services = await this.server.getPrimaryServices()
+    for (const service of services) {
+      this.services.set(service.uuid, service)
+
+      // Per-service resilience: one restricted/unreadable service must not abort enumeration
+      // of the rest (the wanted write/notify char may live in a later service).
+      let characteristics: BluetoothRemoteGATTCharacteristic[]
+      try {
+        characteristics = await service.getCharacteristics()
+      } catch (error) {
+        console.warn('[BLE] getCharacteristics failed for', service.uuid, error)
+        continue
       }
+      const charInfos: BleCharacteristicInfo[] = []
 
-      for (const service of services) {
-        this.services.set(service.uuid, service)
+      for (const char of characteristics) {
+        this.characteristics.set(char.uuid, char)
 
-        const characteristics = await service.getCharacteristics()
-        const charInfos: BleCharacteristicInfo[] = []
-
-        for (const char of characteristics) {
-          this.characteristics.set(char.uuid, char)
-
-          charInfos.push({
-            uuid: char.uuid,
-            properties: {
-              read: char.properties.read,
-              write: char.properties.write,
-              writeWithoutResponse: char.properties.writeWithoutResponse,
-              notify: char.properties.notify,
-              indicate: char.properties.indicate,
-              broadcast: char.properties.broadcast,
-              authenticatedSignedWrites: char.properties.authenticatedSignedWrites,
-            },
-          })
-        }
-
-        serviceInfos.push({
-          uuid: service.uuid,
-          isPrimary: service.isPrimary,
-          characteristics: charInfos,
+        charInfos.push({
+          uuid: char.uuid,
+          properties: {
+            read: char.properties.read,
+            write: char.properties.write,
+            writeWithoutResponse: char.properties.writeWithoutResponse,
+            notify: char.properties.notify,
+            indicate: char.properties.indicate,
+            broadcast: char.properties.broadcast,
+            authenticatedSignedWrites: char.properties.authenticatedSignedWrites,
+          },
         })
       }
-    } catch (error) {
-      console.error('[BLE] Service discovery error:', error)
-      // When a specific service was required, a discovery failure must propagate: otherwise
-      // doConnect resolves "connected" with an empty characteristics map, and the real cause
-      // surfaces later as a misleading "Characteristic <uuid> not found".
-      if (this.bleConfig.serviceUUID) throw error
+
+      serviceInfos.push({
+        uuid: service.uuid,
+        isPrimary: service.isPrimary,
+        characteristics: charInfos,
+      })
     }
 
     return serviceInfos
