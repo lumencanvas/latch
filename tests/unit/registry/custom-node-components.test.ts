@@ -16,11 +16,12 @@ import { allNodes } from '@/registry/allNodes'
 
 // The frozen historical set (was the hand-maintained `nodeTypes` map keys, minus default/custom).
 const EXPECTED_CUSTOM_TYPES = [
+  'ble-characteristic',
   'dispatch', 'emulator', 'equalizer', 'function', 'gamepad-visual', 'graph',
   'keyboard', 'knob', 'main-output', 'mediapipe-audio', 'mediapipe-face',
   'mediapipe-gesture', 'mediapipe-hand', 'mediapipe-object', 'mediapipe-pose',
-  'mediapipe-segmentation', 'monitor', 'muse-eeg', 'oscilloscope', 'step-sequencer',
-  'synth', 'textbox', 'thermal-printer', 'trigger',
+  'mediapipe-segmentation', 'monitor', 'muse-eeg', 'neosensory-buzz', 'oscilloscope',
+  'step-sequencer', 'synth', 'textbox', 'thermal-printer', 'trigger',
 ].sort()
 
 const MIGRATED_TO_UI = ['envelope-visual', 'parametric-eq', 'wavetable', 'xy-pad']
@@ -38,6 +39,8 @@ const EXPECTED_COMPONENT_NAME: Record<string, string> = {
   'mediapipe-gesture': 'MediaPipeGestureNode', 'mediapipe-audio': 'MediaPipeAudioNode',
   'muse-eeg': 'MuseHeadMap',
   'thermal-printer': 'PrintPreview',
+  'neosensory-buzz': 'BuzzPanel',
+  'ble-characteristic': 'BleCharacteristicPanel',
 }
 
 describe('custom-node component registry derives from definition.component', () => {

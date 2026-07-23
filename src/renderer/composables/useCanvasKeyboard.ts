@@ -89,7 +89,15 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
       return
     }
     const curIndex = list.findIndex(n => n.id === uiStore.canvasCursor)
-    const nextIndex = (Math.max(0, curIndex) + delta + list.length) % list.length
+    // First arrow with no active cursor (we no longer seed it on focus): land ON the starting
+    // node — the selected one, else the first — rather than stepping past it.
+    let nextIndex: number
+    if (curIndex === -1) {
+      const selIndex = list.findIndex(n => n.id === uiStore.selectedNodes[0])
+      nextIndex = selIndex >= 0 ? selIndex : 0
+    } else {
+      nextIndex = (curIndex + delta + list.length) % list.length
+    }
     const next = list[nextIndex]
     uiStore.setCanvasCursor(next.id)
     panCursorIntoView(next)
@@ -191,9 +199,11 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
   function onCanvasFocus() {
     onFocus()
     const list = sortedNodes()
-    if (!uiStore.canvasCursor && list.length) {
-      uiStore.setCanvasCursor(uiStore.selectedNodes[0] ?? list[0].id)
-    }
+    // Do NOT seed the roved cursor here: the canvas gains focus on a plain MOUSE click, and
+    // seeding a cursor would paint the dashed keyboard-nav ring on a node the user never
+    // keyboard-navigated to (looks like a phantom selection). The cursor is now set lazily on the
+    // first arrow-key nav (moveCursor), so the ring only appears when the user actually roves —
+    // focus-visible semantics for a canvas that can't use :focus-visible.
     canvasAnnounce.value = list.length
       ? `Node canvas, ${list.length} node${list.length > 1 ? 's' : ''}. Arrow keys to browse, Enter to select.`
       : 'Node canvas, empty. Add a node from the palette.'
@@ -202,6 +212,9 @@ export function useCanvasKeyboard(deps: CanvasKeyboardDeps) {
   function onCanvasBlur() {
     flushMoveBatch()
     if (wire.value) cancelWire(false)
+    // Drop the roved cursor so it can't re-appear as a phantom ring when the canvas is re-focused
+    // by a later mouse click. Keyboard users simply start roving from the top on the next visit.
+    uiStore.setCanvasCursor(null)
     onBlur()
   }
 

@@ -6,6 +6,7 @@ import {
   vendorDeviceProfileIds,
   recognizeDevice,
   recognizeBest,
+  profileForNodeType,
 } from '@/services/ble/deviceProfileRegistry'
 
 describe('normalizeUuid', () => {
@@ -141,5 +142,51 @@ describe('recognizeDevice', () => {
     expect(ranked[0].profile.id).toBe('muse')
     // Same input twice → identical ordering.
     expect(recognizeDevice({ services: ['180d'] })).toEqual(recognizeDevice({ services: ['180d'] }))
+  })
+})
+
+/**
+ * Regression: SIG-derived profiles passed the bare 4-hex `shortUuid` STRING (e.g.
+ * '180d') into requestDevice() filters — which only accepts a full-UUID string or a
+ * numeric alias, so "Scan all devices" and every standard-service card threw. The
+ * request must carry full 128-bit UUIDs.
+ */
+describe('SIG device profiles produce requestDevice-legal UUIDs', () => {
+  const isFullUuid = (u: unknown): boolean =>
+    typeof u === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(u)
+
+  it('emit full 128-bit UUIDs in request filters/optionalServices, never bare short strings', () => {
+    const sig = deviceProfiles.filter((p) => p.id.startsWith('sig-'))
+    expect(sig.length).toBeGreaterThan(0)
+    for (const p of sig) {
+      for (const f of p.request.filters ?? []) {
+        for (const s of f.services ?? []) expect(isFullUuid(s)).toBe(true)
+      }
+      for (const s of p.request.optionalServices ?? []) expect(isFullUuid(s)).toBe(true)
+    }
+  })
+})
+
+/**
+ * "Pair from a node" resolves a node's type to the device profile that suggests it, so the
+ * Bluetooth panel can pre-focus the matching card. Driven off each profile's own `suggests`,
+ * so a drop-in vendor profile wires this up without touching the resolver.
+ */
+describe('profileForNodeType', () => {
+  it('maps a suggested vendor node type back to its profile', () => {
+    expect(profileForNodeType('muse-eeg')?.id).toBe('muse')
+    expect(profileForNodeType('thermal-printer')?.id).toBe('escpos-printer')
+  })
+
+  it('returns null for a node type no profile suggests', () => {
+    expect(profileForNodeType('oscilloscope')).toBeNull()
+    expect(profileForNodeType('')).toBeNull()
+  })
+
+  it('every vendor profile round-trips through its primary suggested node type', () => {
+    for (const p of deviceProfiles.filter((d) => !d.id.startsWith('sig-'))) {
+      const primary = p.suggests.find((s) => s.primary) ?? p.suggests[0]
+      expect(profileForNodeType(primary.nodeType)).not.toBeNull()
+    }
   })
 })

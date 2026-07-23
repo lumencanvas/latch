@@ -16,6 +16,7 @@ import AIModelManagerModal from './components/modals/AIModelManagerModal.vue'
 import ConnectionManagerModal from './components/connections/ConnectionManagerModal.vue'
 import NodeExplorerModal from './components/modals/NodeExplorerModal.vue'
 import BluetoothDeviceManagerModal from './components/modals/BluetoothDeviceManagerModal.vue'
+import HelpModal from './components/modals/HelpModal.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
 import NotificationToasts from './components/layout/NotificationToasts.vue'
 import { usePersistence } from './composables/usePersistence'
@@ -193,6 +194,7 @@ onUnmounted(() => {
       <ConnectionManagerModal />
       <NodeExplorerModal />
       <BluetoothDeviceManagerModal />
+      <HelpModal />
     </template>
   </div>
 </template>

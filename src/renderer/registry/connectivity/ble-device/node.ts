@@ -9,7 +9,7 @@ const definition: NodeDefinition = {
   id: 'ble-device',
   name: 'BLE Device',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'devices',
   description: 'Connect to a Bluetooth LE device and enumerate its services',
   icon: 'bluetooth-connected',
   platforms: ['web', 'electron'],

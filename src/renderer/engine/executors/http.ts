@@ -10,6 +10,7 @@
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState } from '../nodeState'
+import { isHigh } from '../trigger'
 import type { HttpHandle } from '@/services/connections/ConnectionHandle'
 
 // Cache for HTTP request state. Compound `nodeId:…` keys (node ids never contain
@@ -49,15 +50,17 @@ export const httpExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const method = (ctx.controls.get('method') as string) ?? 'GET'
   const headers = (ctx.inputs.get('headers') as Record<string, string>) ?? {}
   const body = ctx.inputs.get('body')
-  const trigger = ctx.inputs.get('trigger') as boolean | undefined
+  const trigger = ctx.inputs.get('trigger')
   const timeout = (ctx.controls.get('timeout') as number) ?? 30000
 
   const outputs = new Map<string, unknown>()
 
   // Fire on the RISING edge of `trigger` only, and never while a request for this
   // node is already in flight (the `:loading` flag). Without this, holding `trigger`
-  // true fired a fresh fetch every frame and the responses interleaved.
-  const isTriggered = trigger === true
+  // high fired a fresh fetch every frame and the responses interleaved.
+  // Use the shared isHigh() so a numeric trigger (the canonical TRIGGER=1 that Button/
+  // Interval/Trigger/Toggle emit) fires it — a strict `=== true` never matched `1`.
+  const isTriggered = isHigh(trigger)
   const lastTrigger = getCached<boolean>(`${ctx.nodeId}:lastTrigger`, false)
   setCached(`${ctx.nodeId}:lastTrigger`, isTriggered)
   const inFlight = getCached<boolean>(`${ctx.nodeId}:loading`, false)

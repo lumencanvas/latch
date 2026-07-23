@@ -6,7 +6,7 @@ const definition: NodeDefinition = {
   id: 'cv-canny',
   name: 'CV Canny Edges',
   version: '1.0.0',
-  category: 'visual',
+  category: 'opencv',
   description: 'Detect edges with the OpenCV.js Canny detector',
   icon: 'activity',
   platforms: ['web', 'electron'],

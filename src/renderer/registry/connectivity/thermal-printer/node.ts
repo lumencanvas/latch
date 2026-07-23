@@ -118,7 +118,7 @@ const definition: NodeDefinition = {
   id: 'thermal-printer',
   name: 'Thermal Printer',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'devices',
   description: 'Print images, textures, or text to a BLE ESC/POS thermal printer, with a live dithered preview',
   icon: 'printer',
   platforms: ['web', 'electron'],
@@ -138,7 +138,7 @@ const definition: NodeDefinition = {
     { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
-    { id: 'deviceId', type: 'text', label: 'Device ID', default: '', props: { placeholder: 'Set by "Add Bluetooth Device"' } },
+    { id: 'deviceId', type: 'ble-pair', label: 'Device ID', default: '', props: { placeholder: 'Set by "Add Bluetooth Device"' } },
     { id: 'transport', type: 'select', label: 'Transport', default: 'auto', props: { options: [
       { label: 'Auto (Phomemo / Nordic UART)', value: 'auto' },
       { label: 'Phomemo (FF00)', value: 'phomemo' },
@@ -162,7 +162,7 @@ const definition: NodeDefinition = {
   info: {
     overview: 'Prints an image, a live texture (shader/webcam/render), or text to a BLE ESC/POS thermal printer (Phomemo M02/T02, ORGBRO X3, and Nordic-UART printers). The preview shows the exact 1-bit dithered output; trigger Print to send it.',
     tips: [
-      'Pair the printer with the "Add Bluetooth Device" panel — it drops this node already bound.',
+      'Click "Pair device…" on this node to bind a printer, or use the "Add Bluetooth Device" panel to drop a pre-bound node.',
       'Wire a shader or webcam texture into Image to print live visuals; try the Atkinson dither for photos.',
       'The preview IS the print — what you see dithered is exactly what the printer lays down.',
     ],
@@ -217,15 +217,26 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     state.source = composeSource(image, text, width, fontSize)
   }
 
+  // Web Bluetooth is Chromium-only — feature-detect so the node reports "unsupported"
+  // with guidance instead of a confusing adapter connect error on Safari/Firefox.
+  if (!('bluetooth' in navigator)) {
+    state.status = 'unsupported'
+    state.error = 'Web Bluetooth needs Chrome/Edge or the desktop app'
+    return emit(state, false, false, false)
+  }
+
   if (!deviceId) {
-    if (state.adapter) { disposePrinter(ctx.nodeId); state = { adapter: null, deviceId: '', transport, lastConnectAt: 0, lastComposeAt: state.lastComposeAt, source: state.source, width, dither, threshold, printRequested: false, lastPrintHigh: false, lastFeedHigh: false, status: 'no device', error: 'Pair a printer via "Add Bluetooth Device"' }; printerState.set(ctx.nodeId, state) }
-    else { state.status = 'no device'; state.error = 'Pair a printer via "Add Bluetooth Device"' }
+    if (state.adapter) { disposePrinter(ctx.nodeId); state = { adapter: null, deviceId: '', transport, lastConnectAt: 0, lastComposeAt: state.lastComposeAt, source: state.source, width, dither, threshold, printRequested: false, lastPrintHigh: false, lastFeedHigh: false, status: 'no device', error: 'No device — click "Pair device…" to connect a printer' }; printerState.set(ctx.nodeId, state) }
+    else { state.status = 'no device'; state.error = 'No device — click "Pair device…" to connect a printer' }
     return emit(state, false, false, false)
   }
 
   if (!state.adapter || state.deviceId !== deviceId || state.transport !== transport) {
     if (state.adapter) state.adapter.dispose()
-    state.adapter = new EscPosPrinterAdapter(ctx.nodeId, { id: ctx.nodeId, name: 'Thermal Printer', protocol: 'ble', deviceId, transport, autoConnect: false, autoReconnect: true, reconnectDelay: 2000, maxReconnectAttempts: 0 })
+    // autoReconnect:false — the executor's canConnect()-throttled loop below owns
+    // reconnection; adapter autoReconnect would trap drops in 'reconnecting' and
+    // starve the executor retry (see muse-eeg for the rationale).
+    state.adapter = new EscPosPrinterAdapter(ctx.nodeId, { id: ctx.nodeId, name: 'Thermal Printer', protocol: 'ble', deviceId, transport, autoConnect: false, autoReconnect: false, reconnectDelay: 2000, maxReconnectAttempts: 0 })
     state.deviceId = deviceId
     state.transport = transport
     state.lastConnectAt = 0

@@ -16,11 +16,13 @@ export type NodeCategory =
   | 'video'
   | 'visual'
   | 'shaders'
+  | 'opencv'
   | 'data'
   | 'ai'
   | 'code'
   | '3d'
   | 'connectivity'
+  | 'devices'
   | 'clasp'
   | 'subflows'
   | 'string'
@@ -241,8 +243,10 @@ export const useNodesStore = defineStore('nodes', {
     filteredDefinitions(): NodeDefinition[] {
       let results = this.allDefinitions
 
-      // Filter by category
-      if (this.categoryFilter) {
+      // Filter by category — but ONLY while browsing. A search spans every category:
+      // scoping it to categoryFilter hides matching nodes elsewhere (e.g. searching
+      // "eeg" while the audio category is selected hid the connectivity "Muse EEG").
+      if (this.categoryFilter && !this.searchQuery.trim()) {
         results = results.filter((d) => d.category === this.categoryFilter)
       }
 
@@ -344,11 +348,13 @@ const BUILTIN_CATEGORY_META = {
   video: { label: 'Video', icon: 'video', color: '#3B82F6' },
   visual: { label: 'Visual', icon: 'image', color: '#EC4899' },
   shaders: { label: 'Shaders', icon: 'code', color: '#EC4899' },
+  opencv: { label: 'OpenCV', icon: 'scan-eye', color: '#D946EF' },
   data: { label: 'Data', icon: 'database', color: '#6B7280' },
   ai: { label: 'AI (Local)', icon: 'brain', color: '#A855F7' },
   code: { label: 'Code', icon: 'terminal', color: '#F59E0B' },
   '3d': { label: '3D', icon: 'box', color: '#0EA5E9' },
   connectivity: { label: 'Connectivity', icon: 'plug', color: '#2AAB8A' },
+  devices: { label: 'Devices', icon: 'usb', color: '#0891B2' },
   clasp: { label: 'CLASP', icon: 'radio', color: '#6366F1' },
   subflows: { label: 'Subflows', icon: 'layers', color: '#84CC16' },
   string: { label: 'String', icon: 'text', color: '#10B981' },

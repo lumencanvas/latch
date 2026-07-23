@@ -6,7 +6,7 @@ const definition: NodeDefinition = {
   id: 'cv-grayscale',
   name: 'CV Grayscale',
   version: '1.0.0',
-  category: 'visual',
+  category: 'opencv',
   description: 'Convert a feed to grayscale with OpenCV.js',
   icon: 'contrast',
   platforms: ['web', 'electron'],

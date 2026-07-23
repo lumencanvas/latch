@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { Handle, Position, type NodeProps } from '@vue-flow/core'
+import { type NodeProps } from '@vue-flow/core'
+import NodePorts from '@/components/nodes/NodePorts.vue'
 import { Printer, Play } from 'lucide-vue-next'
 import { useRuntimeStore } from '@/stores/runtime'
-import { useNodesStore, dataTypeMeta } from '@/stores/nodes'
+import { useNodesStore } from '@/stores/nodes'
 import { monochrome, type DitherMode } from '@/services/ble/escpos/escpos'
 import { requestPrint } from './printerState'
+import PairDeviceButton from '../PairDeviceButton.vue'
 
 const props = defineProps<NodeProps>()
 const runtimeStore = useRuntimeStore()
@@ -14,12 +16,15 @@ const nodesStore = useNodesStore()
 const def = computed(() => nodesStore.getDefinition('thermal-printer'))
 const inputs = computed(() => def.value?.inputs ?? [])
 const outputs = computed(() => def.value?.outputs ?? [])
-const typeColor = (t: string) => (dataTypeMeta as Record<string, { color?: string }>)[t]?.color ?? 'var(--color-neutral-400)'
 
 const metrics = () => runtimeStore.nodeMetrics.get(props.id)?.outputValues
 const status = computed(() => (metrics()?.status as string) ?? 'idle')
 const ready = computed(() => metrics()?.ready === true)
 const printing = computed(() => metrics()?.printing === true)
+// The executor's guidance (e.g. "Pair a printer via Add Bluetooth Device") — shown when not
+// connected so the bare status word isn't the only cue (mirrors the Muse head-map).
+const errorText = computed(() => (metrics()?.error as string | null) ?? null)
+const bound = computed(() => !!(props.data as Record<string, unknown> | undefined)?.deviceId)
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 let cctx: CanvasRenderingContext2D | null = null
@@ -85,24 +90,11 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
     class="printer-node"
     :class="{ selected: props.selected }"
   >
-    <!-- Input handles -->
-    <div class="handles-column left">
-      <div
-        v-for="inp in inputs"
-        :key="inp.id"
-        class="handle-slot in"
-      >
-        <Handle
-          :id="inp.id"
-          type="target"
-          :position="Position.Left"
-          class="port-handle in"
-          :aria-label="`${inp.label} input`"
-          :style="{ background: typeColor(inp.type) }"
-        />
-        <span class="port-label">{{ inp.label }}</span>
-      </div>
-    </div>
+    <NodePorts
+      :inputs="inputs"
+      :outputs="outputs"
+      :selected="props.selected"
+    />
 
     <div class="node-body">
       <div class="node-header">
@@ -116,6 +108,14 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
           :data-status="status"
         >{{ printing ? 'printing' : status }}</span>
       </div>
+      <p
+        v-if="errorText && status !== 'connected'"
+        class="node-hint"
+        :data-status="status"
+        role="status"
+      >
+        {{ errorText }}
+      </p>
       <div class="preview-wrap">
         <canvas
           ref="canvas"
@@ -131,25 +131,12 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
         <Play :size="12" />
         <span>{{ printing ? 'Printing…' : 'Print' }}</span>
       </button>
-    </div>
-
-    <!-- Output handles -->
-    <div class="handles-column right">
-      <div
-        v-for="out in outputs"
-        :key="out.id"
-        class="handle-slot out"
-      >
-        <span class="port-label">{{ out.label }}</span>
-        <Handle
-          :id="out.id"
-          type="source"
-          :position="Position.Right"
-          class="port-handle out"
-          :aria-label="`${out.label} output`"
-          :style="{ background: typeColor(out.type) }"
-        />
-      </div>
+      <PairDeviceButton
+        :node-id="props.id"
+        node-type="thermal-printer"
+        label="Thermal Printer"
+        :bound="bound"
+      />
     </div>
   </div>
 </template>
@@ -157,12 +144,10 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
 <style scoped>
 .printer-node {
   position: relative;
-  display: flex;
-  align-items: flex-start;
+  width: fit-content;
   font-family: var(--font-mono);
 }
 .node-body {
-  flex: 0 0 auto;
   width: 220px;
   background: var(--color-neutral-900);
   border: 2px solid var(--color-neutral-700);
@@ -191,6 +176,16 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
 .node-status[data-status='no device'] { color: var(--color-warning); }
 .node-status[data-status='connecting'],
 .node-status[data-status='reconnecting'] { color: var(--color-primary-400); }
+
+.node-hint {
+  margin: 0;
+  padding: 2px 8px 4px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--color-warning);
+}
+.node-hint[data-status='error'],
+.node-hint[data-status='unsupported'] { color: var(--color-error); }
 
 .preview-wrap {
   display: flex;
@@ -227,21 +222,4 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
 }
 .print-btn:hover:not(:disabled) { background: var(--color-primary-600); }
 .print-btn:disabled { background: var(--color-neutral-700); color: var(--color-neutral-400); cursor: not-allowed; }
-
-.handles-column { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; padding-top: 30px; }
-.handle-slot { position: relative; display: flex; align-items: center; height: 18px; }
-.handle-slot.in { justify-content: flex-start; padding-left: 8px; }
-.handle-slot.out { justify-content: flex-end; padding-right: 8px; }
-.port-label { font-size: 8px; color: var(--color-neutral-400); white-space: nowrap; }
-:deep(.port-handle) {
-  width: var(--node-port-size, 10px) !important;
-  height: var(--node-port-size, 10px) !important;
-  border: 2px solid var(--color-neutral-900) !important;
-  border-radius: 50% !important;
-  position: absolute !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
-}
-:deep(.port-handle.in) { left: -5px !important; }
-:deep(.port-handle.out) { right: -5px !important; }
 </style>

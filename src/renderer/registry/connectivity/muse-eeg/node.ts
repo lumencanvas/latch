@@ -38,7 +38,7 @@ const definition: NodeDefinition = {
   id: 'muse-eeg',
   name: 'Muse EEG',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'devices',
   description: 'Muse 2 EEG headband: raw channels, δ/θ/α/β/γ band powers, blink & jaw-clench, focus/calm, contact & battery',
   icon: 'brain',
   platforms: ['web', 'electron'],
@@ -65,7 +65,7 @@ const definition: NodeDefinition = {
   controls: [
     {
       id: 'deviceId',
-      type: 'text',
+      type: 'ble-pair',
       label: 'Device ID',
       default: '',
       props: { placeholder: 'Set by "Add Bluetooth Device"' },
@@ -97,7 +97,7 @@ const definition: NodeDefinition = {
   info: {
     overview: 'Streams live EEG from a Muse 2 headband: four raw electrode channels (TP9/AF7/AF8/TP10), δ/θ/α/β/γ band powers, blink and jaw-clench triggers, focus (β/α) and calm (α/θ) indices, per-electrode contact quality, and battery. Pair the headband with the "Add Bluetooth Device" panel, then Play.',
     tips: [
-      'Use the "Add Bluetooth Device" panel (Bluetooth icon in the header) to pair a Muse — it drops this node already bound.',
+      'Click "Pair device…" on this node to bind a Muse, or use the "Add Bluetooth Device" panel (Bluetooth icon in the header) to drop a pre-bound node.',
       'Watch the head map: the electrode halos fill in as contact improves. Green ≈ good contact.',
       'Blink and Jaw Clench are trigger outputs — wire them to fire events; tune their thresholds if they miss or double-fire.',
     ],
@@ -156,9 +156,16 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     museState.set(ctx.nodeId, state)
   }
 
+  // Web Bluetooth is Chromium-only (absent in Safari/Firefox). Feature-detect up
+  // front so the node reports "unsupported" with guidance instead of failing with a
+  // confusing connect error deep in the adapter (ble-scanner already does this).
+  if (!('bluetooth' in navigator)) {
+    return emit(IDLE_SNAPSHOT, 'unsupported', 'Web Bluetooth needs Chrome/Edge or the desktop app')
+  }
+
   if (!deviceId) {
     if (state.adapter) { disposeMuse(ctx.nodeId); museState.set(ctx.nodeId, { adapter: null, deviceId: '', preset, lastConnectAt: 0, status: 'no device', error: null }) }
-    return emit(IDLE_SNAPSHOT, 'no device', 'Pair a Muse via "Add Bluetooth Device"')
+    return emit(IDLE_SNAPSHOT, 'no device', 'No device — click "Pair device…" to connect a Muse')
   }
 
   // (Re)create the adapter when the bound device or preset changes.
@@ -166,7 +173,11 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     if (state.adapter) state.adapter.dispose()
     state.adapter = new MuseAdapter(
       ctx.nodeId,
-      { id: ctx.nodeId, name: 'Muse', protocol: 'ble', deviceId, preset, autoConnect: false, autoReconnect: true, reconnectDelay: 2000, maxReconnectAttempts: 0 },
+      // autoReconnect:false — the executor's canConnect()-throttled loop below is the
+      // SINGLE reconnect owner. With adapter autoReconnect on, a drop lands the machine
+      // in 'reconnecting' (never left across a frame), making the executor retry
+      // unreachable; false leaves it in 'error', from which the executor re-dials.
+      { id: ctx.nodeId, name: 'Muse', protocol: 'ble', deviceId, preset, autoConnect: false, autoReconnect: false, reconnectDelay: 2000, maxReconnectAttempts: 0 },
       blinkThreshold,
       clenchThreshold,
     )

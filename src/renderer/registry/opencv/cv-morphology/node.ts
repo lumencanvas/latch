@@ -6,7 +6,7 @@ const definition: NodeDefinition = {
   id: 'cv-morphology',
   name: 'CV Morphology',
   version: '1.0.0',
-  category: 'visual',
+  category: 'opencv',
   description: 'Erode, dilate, open, or close with OpenCV.js',
   icon: 'maximize',
   platforms: ['web', 'electron'],

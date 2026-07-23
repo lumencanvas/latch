@@ -1,19 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, shallowRef } from 'vue'
+import '@/services/monaco/monacoEnv' // set MonacoEnvironment.getWorker before any editor is created
 import * as monaco from 'monaco-editor'
-
-// Set up Monaco environment for Vite
-// Monaco will use a simple fallback without web workers
-self.MonacoEnvironment = {
-  getWorker: function () {
-    // Return a simple inline worker
-    const blob = new Blob(
-      ['self.onmessage = function() {}'],
-      { type: 'application/javascript' }
-    )
-    return new Worker(URL.createObjectURL(blob))
-  },
-}
 
 const props = withDefaults(
   defineProps<{

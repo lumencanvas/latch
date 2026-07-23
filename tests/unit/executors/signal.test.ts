@@ -5,6 +5,7 @@ import {
   derivativeExecutor,
   integralExecutor,
   tweenToTargetExecutor,
+  tapTempoExecutor,
   signalState,
   tapState,
 } from '@/engine/executors/signal'
@@ -107,5 +108,38 @@ describe('tweenToTargetExecutor', () => {
     const m = tweenToTargetExecutor(ctx(id, { target: 42, reset: true }, { speed: 1 }))
     expect(out(m, 'value')).toBe(42)
     expect((m as Map<string, unknown>).get('arrived')).toBe(true)
+  })
+})
+
+describe('tapTempoExecutor — BPM from tap intervals', () => {
+  // tap-time-aware context (the shared ctx() pins totalTime to 0)
+  const tapCtx = (nodeId: string, inputs: Record<string, unknown>, totalTime: number): ExecutionContext =>
+    ({ nodeId, inputs: new Map(Object.entries(inputs)), controls: new Map(), getInputNode: () => null, deltaTime: 0.016, totalTime, frameCount: 0 }) as unknown as ExecutionContext
+
+  it('needs two taps; a 0.5s interval → 120 BPM (period 0.5)', () => {
+    const id = 'tap-120'
+    tapTempoExecutor(tapCtx(id, { tap: 1 }, 0)) // first tap, rising
+    tapTempoExecutor(tapCtx(id, { tap: 0 }, 0.1)) // release
+    const r = tapTempoExecutor(tapCtx(id, { tap: 1 }, 0.5)) // second tap 0.5s later
+    expect(r.get('bpm')).toBeCloseTo(120, 5)
+    expect(r.get('period')).toBeCloseTo(0.5, 5)
+    expect(r.get('taps')).toBe(2)
+  })
+
+  it('only counts the RISING edge (held tap does not add taps)', () => {
+    const id = 'tap-held'
+    tapTempoExecutor(tapCtx(id, { tap: 1 }, 0)) // rising → 1 tap
+    const held = tapTempoExecutor(tapCtx(id, { tap: 1 }, 0.25)) // still high → no new tap
+    expect(held.get('taps')).toBe(1)
+  })
+
+  it('reset clears the accumulated taps + bpm', () => {
+    const id = 'tap-reset'
+    tapTempoExecutor(tapCtx(id, { tap: 1 }, 0))
+    tapTempoExecutor(tapCtx(id, { tap: 0 }, 0.1))
+    tapTempoExecutor(tapCtx(id, { tap: 1 }, 0.5)) // bpm 120
+    const r = tapTempoExecutor(tapCtx(id, { tap: 0, reset: 1 }, 0.6))
+    expect(r.get('bpm')).toBe(0)
+    expect(r.get('taps')).toBe(0)
   })
 })

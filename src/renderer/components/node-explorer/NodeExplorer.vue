@@ -41,16 +41,23 @@ const availableTags = computed(() => {
 })
 
 const filteredNodes = computed(() => {
-  let nodes = categoryNodes.value
+  const query = explorerStore.searchQuery.trim()
 
-  // Filter by selected tags (a node matches if it carries any selected tag)
-  if (explorerStore.selectedTags.length) {
+  // A search spans EVERY category — scoping it to the selected category means a
+  // node like "Muse EEG" (connectivity) is invisible while you're browsing another
+  // category, even though its name/tags match. Browsing (no query) stays scoped.
+  let nodes = query ? nodesStore.allDefinitions : categoryNodes.value
+
+  // Filter by selected tags — browse-time narrowing only. A tag is chosen from the
+  // current category's chips, so applying it during a global search would hide
+  // cross-category matches (the tag doesn't exist in the other category). Search wins.
+  if (explorerStore.selectedTags.length && !query) {
     const selected = new Set(explorerStore.selectedTags)
     nodes = nodes.filter(n => (n.tags ?? []).some(t => selected.has(t)))
   }
 
   // Filter by search
-  if (explorerStore.searchQuery.trim()) {
+  if (query) {
     const results = fuzzySearch(
       nodes,
       explorerStore.searchQuery,
@@ -77,7 +84,9 @@ const categorySnippets = computed(() => {
 const visibleSnippets = computed(() => {
   const query = explorerStore.searchQuery.trim()
   if (!query) return categorySnippets.value
-  return fuzzySearch(categorySnippets.value, query, s => [s.name, s.description]).map(r => r.item)
+  // A search spans every category (mirrors the node search) — otherwise a snippet
+  // in another category is invisible while browsing a different one.
+  return fuzzySearch(flowSnippets, query, s => [s.name, s.description]).map(r => r.item)
 })
 
 // The node grid, so we can return keyboard focus to the originating card when the

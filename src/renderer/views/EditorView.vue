@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, markRaw } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, markRaw, nextTick } from 'vue'
 import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
@@ -28,6 +28,7 @@ import WireSuggestionPopover, { type SuggestionItem } from '@/components/canvas/
 import { validateConnection, getPortType, areTypesCompatible } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 import { useCanvasKeyboard } from '@/composables/useCanvasKeyboard'
+import { useDialogA11y } from '@/composables/useDialogA11y'
 import { getCustomNodeLoader } from '@/services/customNodes'
 
 // Import node registry
@@ -95,13 +96,12 @@ const isInitializing = ref(true)
 
 // Initialize flows on mount
 onMounted(async () => {
-  // Try to load sample flow for first-time users
+  // Picker-first first-run: land new users on the empty canvas's template picker
+  // rather than auto-loading the full demo. The demo stays one click away via the
+  // empty state's "Open the full Starter Flow" CTA (openStarterFlow). This is the
+  // UX-audit recommendation — see docs/UX_EXPERIENCE_AUDIT_2026-07-13.md.
   if (!flowsStore.activeFlow) {
-    const loaded = await flowsStore.loadSampleFlowIfFirstVisit()
-    if (!loaded && !flowsStore.activeFlow) {
-      // Not first visit or failed to load, create empty flow
-      flowsStore.createFlow('My First Flow')
-    }
+    flowsStore.createFlow('My First Flow')
   }
   isInitializing.value = false
 })
@@ -414,7 +414,7 @@ function insertStarterTemplate(snippetId: string) {
   })
 }
 
-// Open the full "Starter Flow" showcase (the same flow first-time visitors get) as a NEW tab —
+// Open the full "Starter Flow" showcase (the demo behind the empty-state CTA) as a NEW tab —
 // 3D scene, keyboard→synth→analysis, and MediaPipe hand/face tracking. Non-destructive: imported
 // with replace:false so any other open flows are untouched; the file's activeFlowId switches to it.
 async function openStarterFlow() {
@@ -503,6 +503,15 @@ function onNodesChange(changes: NodeChange[]) {
 function handleKeyDown(event: KeyboardEvent) {
   // Ignore if typing in an input
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+    return
+  }
+
+  // Help: ? (Shift+/) toggles the shortcuts cheat sheet. Don't open it ON TOP of another
+  // modal (every modal is aria-modal) — but still allow ? to toggle Help itself closed.
+  if (event.key === '?') {
+    if (document.querySelector('[aria-modal="true"]') && !uiStore.helpOpen) return
+    event.preventDefault()
+    uiStore.toggleHelp()
     return
   }
 
@@ -765,26 +774,52 @@ function duplicateSelectedNodes() {
 /**
  * Create a subflow from selected nodes
  */
+// Subflow-name modal (replaces the native window.prompt — styled + focus-trapped + validated).
+const subflowNameModal = ref<{ visible: boolean; name: string; nodeIds: string[] }>({
+  visible: false,
+  name: '',
+  nodeIds: [],
+})
+const subflowNameInput = ref<HTMLInputElement | null>(null)
+const subflowDialogRef = ref<HTMLElement | null>(null)
+const { onKeydown: onSubflowNameKeydown } = useDialogA11y({
+  isOpen: () => subflowNameModal.value.visible,
+  container: subflowDialogRef,
+  onClose: cancelSubflowName,
+})
+
 function createSubflowFromSelection() {
   const selectedNodeIds = uiStore.selectedNodes
   if (selectedNodeIds.length < 1) {
     showConnectionError('Select at least one node to create a subflow')
     return
   }
+  // Open the name modal; the actual creation happens on confirm (see confirmSubflowName).
+  subflowNameModal.value = { visible: true, name: 'My Subflow', nodeIds: [...selectedNodeIds] }
+  nextTick(() => {
+    subflowNameInput.value?.focus()
+    subflowNameInput.value?.select()
+  })
+}
 
-  // Prompt for subflow name
-  const name = window.prompt('Enter name for the new subflow:', 'My Subflow')
-  if (!name) return // User cancelled
+function cancelSubflowName() {
+  subflowNameModal.value.visible = false
+}
+
+function confirmSubflowName() {
+  const name = subflowNameModal.value.name.trim()
+  const nodeIds = subflowNameModal.value.nodeIds
+  if (!name || nodeIds.length < 1) return // empty name: keep the modal open for correction
+
+  subflowNameModal.value.visible = false
 
   const before = startBatch()
-
-  const result = flowsStore.createSubflowFromSelection(selectedNodeIds, name)
+  const result = flowsStore.createSubflowFromSelection(nodeIds, name)
 
   if (result) {
     uiStore.clearSelection()
     uiStore.selectNodes([result.instanceNodeId])
     showConnectionError(`Created subflow "${name}"`) // Reusing the toast for feedback
-
     endBatch(before, `Create subflow "${name}"`)
   } else {
     showConnectionError('Failed to create subflow')
@@ -954,8 +989,7 @@ onUnmounted(() => {
 
       <MiniMap
         v-if="uiStore.showMinimap && flowsStore.activeNodes.length > 0"
-        position="bottom-right"
-        :style="{ marginBottom: '50px' }"
+        position="bottom-left"
         :pannable="true"
         :zoomable="true"
         :node-color="getNodeMinimapColor"
@@ -1026,6 +1060,52 @@ onUnmounted(() => {
         {{ connectionError }}
       </div>
     </Transition>
+
+    <!-- Name-a-new-subflow modal (replaces window.prompt) -->
+    <Teleport to="body">
+      <div
+        v-if="subflowNameModal.visible"
+        class="modal-overlay"
+        @click.self="cancelSubflowName"
+        @keydown="onSubflowNameKeydown"
+      >
+        <div
+          ref="subflowDialogRef"
+          class="subflow-name-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="subflow-name-title"
+        >
+          <h3 id="subflow-name-title">
+            Name the subflow
+          </h3>
+          <input
+            ref="subflowNameInput"
+            v-model="subflowNameModal.name"
+            type="text"
+            class="subflow-name-input"
+            placeholder="Subflow name"
+            aria-label="Subflow name"
+            @keydown.enter.prevent="confirmSubflowName"
+          >
+          <div class="modal-actions">
+            <button
+              class="btn btn-secondary"
+              @click="cancelSubflowName"
+            >
+              Cancel
+            </button>
+            <button
+              class="btn btn-primary"
+              :disabled="!subflowNameModal.name.trim()"
+              @click="confirmSubflowName"
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- Drag-a-wire-into-empty-space → compatible-node suggestions -->
     <Teleport to="body">
@@ -1288,5 +1368,77 @@ onUnmounted(() => {
 .toast-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(10px);
+}
+
+/* Subflow-name modal (mirrors the FlowTabs rename modal for a consistent styled prompt). */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+.subflow-name-modal {
+  width: 320px;
+  padding: var(--space-4);
+  background: var(--color-neutral-800);
+  border: 1px solid var(--color-neutral-600);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-mono);
+}
+.subflow-name-modal h3 {
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-100);
+}
+.subflow-name-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-100);
+  background: var(--color-neutral-900);
+  border: 1px solid var(--color-neutral-600);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-4);
+}
+.subflow-name-input:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.modal-actions .btn {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.modal-actions .btn-secondary {
+  background: var(--color-neutral-700);
+  border: 1px solid var(--color-neutral-600);
+  color: var(--color-neutral-200);
+}
+.modal-actions .btn-secondary:hover {
+  background: var(--color-neutral-600);
+}
+.modal-actions .btn-primary {
+  background: var(--color-primary-500);
+  border: 1px solid var(--color-primary-500);
+  color: white;
+}
+.modal-actions .btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-600);
+}
+.modal-actions .btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

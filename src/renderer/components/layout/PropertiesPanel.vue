@@ -12,6 +12,7 @@ import TemplateSelect from '@/components/connections/TemplateSelect.vue'
 import HttpTemplateEditor from '@/components/connections/HttpTemplateEditor.vue'
 import AssetPickerControl from '@/components/controls/AssetPickerControl.vue'
 import ControlRenderer from '@/components/controls/ControlRenderer.vue'
+import PairDeviceButton from '@/registry/connectivity/PairDeviceButton.vue'
 import NodeView from '@/components/controls/NodeView.vue'
 import type { HttpConnectionConfig, HttpEndpointTemplate } from '@/services/connections/types'
 import DebugPanel from '@/components/debug/DebugPanel.vue'
@@ -678,6 +679,15 @@ function shouldShowControl(control: { when?: WhenSchema; props?: Record<string, 
                 >
                   <span class="code-preview">{{ (controlValues[control.id] as string)?.slice(0, 50) }}...</span>
                 </div>
+
+                <!-- Bluetooth device: pair instead of typing a raw device id -->
+                <PairDeviceButton
+                  v-else-if="control.type === 'ble-pair' && inspectedNode && nodeDefinition"
+                  :node-id="inspectedNode.id"
+                  :node-type="nodeDefinition.id"
+                  :label="nodeDefinition.name"
+                  :bound="!!controlValues[control.id]"
+                />
               </div>
             </div>
           </div>

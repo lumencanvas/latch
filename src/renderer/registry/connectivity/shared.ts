@@ -13,7 +13,7 @@
 
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { defineLifecycle } from '@/engine/nodeState'
-import { BleAdapter, type BleServiceInfo } from '@/services/connections/adapters/BleAdapter'
+import { BleAdapter, type BleServiceInfo, type BleCharacteristicProperties } from '@/services/connections/adapters/BleAdapter'
 
 
 
@@ -557,9 +557,28 @@ export const bleCharacteristicState = new Map<string, {
   text: string
   formatted: string
   notified: boolean
-  properties: Record<string, boolean> | null
+  properties: BleCharacteristicProperties | null
   error: string | null
+  /** Discovered GATT services (captured on connect) — the panel's dropdowns pick from these. */
+  services: BleServiceInfo[]
+  /** Set by the panel's Read button; the executor performs one read next frame and clears it. */
+  readRequested: boolean
+  /** The characteristic UUID currently subscribed — so switching characteristics unsubscribes the old one. */
+  subscribedChar: string
+  /** Device resolved gesture-free from the `deviceId` control (direct-pairing path, no upstream node). */
+  boundDevice: BluetoothDevice | null
+  /** Throttle + retarget bookkeeping for the gesture-free `deviceId` resolve (mirrors ble-scanner). */
+  lastBindAttempt?: number
+  boundAttemptId?: string
+  /** Last connect() attempt (ms) — the executor owns reconnect (throttled), so a drop re-dials + re-discovers. */
+  lastConnectAt: number
 }>()
+
+/** Called by the BLE Characteristic panel's Read button — the executor reads once next frame. */
+export function requestBleRead(nodeId: string): void {
+  const s = bleCharacteristicState.get(nodeId)
+  if (s) s.readRequested = true
+}
 
 // ============================================================================
 // Cleanup helpers

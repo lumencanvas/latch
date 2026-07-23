@@ -26,6 +26,7 @@ import {
   Github,
   Undo2,
   Redo2,
+  HelpCircle,
 } from 'lucide-vue-next'
 import LatchLogo from '@/components/branding/LatchLogo.vue'
 import { aiInference } from '@/services/ai/AIInference'
@@ -355,6 +356,15 @@ const isMacElectron = computed(() => {
         @click="uiStore.openNodeExplorer()"
       >
         <Boxes />
+      </button>
+
+      <button
+        class="btn btn-icon btn-ghost"
+        title="Help & keyboard shortcuts (?)"
+        aria-label="Help and keyboard shortcuts"
+        @click="uiStore.openHelp()"
+      >
+        <HelpCircle />
       </button>
 
       <button

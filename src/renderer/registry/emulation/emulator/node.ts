@@ -11,7 +11,7 @@ const definition: NodeDefinition = {
   component: markRaw(EmulatorNode),
   name: 'Emulator',
   version: '1.0.0',
-  category: 'video',
+  category: 'visual',
   description: 'Run a retro game ROM with EmulatorJS — outputs video + audio and takes controller inlets',
   icon: 'gamepad-2',
   platforms: ['web', 'electron'],

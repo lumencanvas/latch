@@ -15,9 +15,10 @@ import type { Node, Edge } from '@vue-flow/core'
 const subflowContexts = new Map<string, Map<string, unknown>>()
 
 /**
- * Get or create a context for a subflow instance
+ * Get or create a context for a subflow instance. Exported (alongside clear/gc, which already
+ * operate on the same store) so the input/output port round-trip can be exercised in tests.
  */
-function getSubflowContext(instanceId: string): Map<string, unknown> {
+export function getSubflowContext(instanceId: string): Map<string, unknown> {
   if (!subflowContexts.has(instanceId)) {
     subflowContexts.set(instanceId, new Map())
   }

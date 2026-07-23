@@ -55,10 +55,14 @@ function setup() {
 describe('useCanvasKeyboard — navigation', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
-  it('focus sets the cursor to the first node; arrows rove and wrap', () => {
+  it('cursor seeds LAZILY on the first arrow (not on focus), then roves and wraps', () => {
     const { api, uiStore, srcId, tgtId, stop } = setup()
     api.onCanvasFocus()
-    expect(uiStore.canvasCursor).toBe(srcId) // top-left first
+    // Focus no longer seeds a cursor — a plain mouse click focuses the canvas, and seeding one
+    // would paint a phantom keyboard-nav ring on a node the user never navigated to.
+    expect(uiStore.canvasCursor).toBeNull()
+    api.onCanvasKeydown(key('ArrowRight'))
+    expect(uiStore.canvasCursor).toBe(srcId) // first nav lands ON the first node (top-left)
     api.onCanvasKeydown(key('ArrowRight'))
     expect(uiStore.canvasCursor).toBe(tgtId)
     api.onCanvasKeydown(key('ArrowRight')) // wrap back to first
@@ -66,11 +70,22 @@ describe('useCanvasKeyboard — navigation', () => {
     stop()
   })
 
-  it('Enter selects the cursor node', () => {
+  it('Enter selects the cursor node (after roving to it)', () => {
     const { api, uiStore, srcId, stop } = setup()
     api.onCanvasFocus()
+    api.onCanvasKeydown(key('ArrowRight')) // rove onto the first node
     api.onCanvasKeydown(key('Enter'))
     expect(uiStore.selectedNodes).toContain(srcId)
+    stop()
+  })
+
+  it('blur clears the roved cursor so it cannot re-appear on a later mouse-focus', () => {
+    const { api, uiStore, srcId, stop } = setup()
+    api.onCanvasFocus()
+    api.onCanvasKeydown(key('ArrowRight'))
+    expect(uiStore.canvasCursor).toBe(srcId)
+    api.onCanvasBlur()
+    expect(uiStore.canvasCursor).toBeNull()
     stop()
   })
 })
@@ -100,6 +115,7 @@ describe('useCanvasKeyboard — wire', () => {
   it('w → source auto-advances to a valid target and drafts the wire', () => {
     const { api, uiStore, srcId, tgtId, stop } = setup()
     api.onCanvasFocus()
+    api.onCanvasKeydown(key('ArrowRight')) // seed the roved cursor on src (no longer auto-seeded on focus)
     api.onCanvasKeydown(key('w'))
     expect(uiStore.wireDraft?.sourceId).toBe(srcId)
     expect(uiStore.canvasCursor).toBe(tgtId) // moved onto the candidate target
@@ -110,6 +126,7 @@ describe('useCanvasKeyboard — wire', () => {
     const { api, flowsStore, uiStore, deps, stop } = setup()
     const edgesBefore = flowsStore.activeFlow!.edges.length
     api.onCanvasFocus()
+    api.onCanvasKeydown(key('ArrowRight')) // seed the roved cursor on src (no longer auto-seeded on focus)
     api.onCanvasKeydown(key('w'))      // → target-node
     api.onCanvasKeydown(key('Enter'))  // → target-port
     api.onCanvasKeydown(key('Enter'))  // → commit
@@ -122,6 +139,7 @@ describe('useCanvasKeyboard — wire', () => {
   it('Escape cancels an in-progress wire', () => {
     const { api, uiStore, stop } = setup()
     api.onCanvasFocus()
+    api.onCanvasKeydown(key('ArrowRight')) // seed the roved cursor on src (no longer auto-seeded on focus)
     api.onCanvasKeydown(key('w'))
     expect(uiStore.wireDraft).not.toBeNull()
     api.onCanvasKeydown(key('Escape'))
@@ -132,6 +150,7 @@ describe('useCanvasKeyboard — wire', () => {
   it('n during a wire hands the source port to the node picker and cancels the wire', () => {
     const { api, uiStore, deps, srcId, stop } = setup()
     api.onCanvasFocus()
+    api.onCanvasKeydown(key('ArrowRight')) // seed the roved cursor on src (no longer auto-seeded on focus)
     api.onCanvasKeydown(key('w')) // wire from src.out (single output auto-advances)
     expect(uiStore.wireDraft?.sourceHandle).toBe('out')
     api.onCanvasKeydown(key('n'))

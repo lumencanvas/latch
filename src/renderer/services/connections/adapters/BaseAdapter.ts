@@ -212,7 +212,18 @@ export abstract class BaseAdapter implements ConnectionAdapter {
 
     // Transition to connecting
     this.stateMachine.send({ type: 'CONNECT' })
+    await this.performConnect()
+  }
 
+  /**
+   * Runs the actual connect once the machine is already in `connecting` — entered
+   * either via CONNECT (from {@link connect}) or RECONNECT_START (from
+   * {@link scheduleReconnect}). Reconnect MUST route here rather than calling
+   * connect() again: `CONNECT` is not a valid event from `connecting`, so a second
+   * connect() would throw before doConnect() ever runs and the link would never
+   * come back (auto-reconnect would spin error↔reconnecting forever).
+   */
+  private async performConnect(): Promise<void> {
     try {
       await this.doConnect()
       this.stateMachine.send({ type: 'CONNECTED' })
@@ -369,19 +380,20 @@ export abstract class BaseAdapter implements ConnectionAdapter {
     this._reconnectTimer = setTimeout(async () => {
       if (this._disposed) return
 
-      // Start the reconnection attempt
+      // Start the reconnection attempt: reconnecting -> connecting.
       if (!this.stateMachine.send({ type: 'RECONNECT_START' })) {
         // Can't start reconnect from current state
         return
       }
 
+      // Run the connect body directly — we're already in `connecting`, so
+      // connect() would reject (CONNECT is invalid here). performConnect() has
+      // already sent ERROR on failure, so we just schedule the next attempt.
       try {
-        await this.connect()
+        await this.performConnect()
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         console.error(`[${this.protocol}] Reconnect failed:`, errorMsg)
-        // Transition to error state before scheduling next reconnect
-        this.stateMachine.send({ type: 'ERROR', error: errorMsg })
         this.scheduleReconnect()
       }
     }, delay)

@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { Handle, Position, type NodeProps } from '@vue-flow/core'
+import { type NodeProps } from '@vue-flow/core'
+import NodePorts from '@/components/nodes/NodePorts.vue'
 import { Brain } from 'lucide-vue-next'
 import { useRuntimeStore } from '@/stores/runtime'
-import { useNodesStore, dataTypeMeta } from '@/stores/nodes'
+import { useNodesStore } from '@/stores/nodes'
 import type { MuseSnapshot } from '@/services/connections/adapters/MuseAdapter'
 import { MUSE_CHANNELS, type MuseChannel } from '@/services/ble/muse/museSignal'
+import PairDeviceButton from '../PairDeviceButton.vue'
 
 const props = defineProps<NodeProps>()
+
+// Whether a device is bound (the `deviceId` control isn't shown on this custom node body,
+// so the pair button is the only way to set/change it on a hand-added node).
+const bound = computed(() => !!(props.data as Record<string, unknown> | undefined)?.deviceId)
 const runtimeStore = useRuntimeStore()
 const nodesStore = useNodesStore()
 
 const outputs = computed(() => nodesStore.getDefinition('muse-eeg')?.outputs ?? [])
-const typeColor = (type: string) =>
-  (dataTypeMeta as Record<string, { color?: string }>)[type]?.color ?? 'var(--color-neutral-400)'
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 let cctx: CanvasRenderingContext2D | null = null
@@ -38,6 +42,9 @@ const BANDS = [
 ] as const
 
 const status = computed(() => (runtimeStore.nodeMetrics.get(props.id)?.outputValues?._status as string) ?? 'idle')
+// The executor's guidance (e.g. "Pair a Muse via Add Bluetooth Device") — shown when
+// the node can't stream, so the bare status word isn't the only cue.
+const errorText = computed(() => (runtimeStore.nodeMetrics.get(props.id)?.outputValues?._error as string | null) ?? null)
 const battery = computed(() => {
   const b = (runtimeStore.nodeMetrics.get(props.id)?.outputValues?._snapshot as MuseSnapshot | undefined)?.battery
   return b == null ? null : Math.round(b * 100)
@@ -185,6 +192,11 @@ watch(() => runtimeStore.isRunning, (running) => {
     class="muse-node"
     :class="{ selected: props.selected }"
   >
+    <NodePorts
+      :outputs="outputs"
+      :selected="props.selected"
+    />
+
     <div class="node-body">
       <div class="node-header">
         <Brain
@@ -199,31 +211,26 @@ watch(() => runtimeStore.isRunning, (running) => {
           {{ status }}<template v-if="battery !== null"> · {{ battery }}%</template>
         </span>
       </div>
+      <p
+        v-if="errorText && status !== 'connected'"
+        class="node-hint"
+        :data-status="status"
+        role="status"
+      >
+        {{ errorText }}
+      </p>
       <canvas
         ref="canvas"
         :width="W"
         :height="H"
         class="head-canvas"
       />
-    </div>
-
-    <!-- Output handles -->
-    <div class="handles-column">
-      <div
-        v-for="out in outputs"
-        :key="out.id"
-        class="handle-slot"
-      >
-        <span class="port-label">{{ out.label }}</span>
-        <Handle
-          :id="out.id"
-          type="source"
-          :position="Position.Right"
-          class="port-handle"
-          :aria-label="`${out.label} output`"
-          :style="{ background: typeColor(out.type) }"
-        />
-      </div>
+      <PairDeviceButton
+        :node-id="props.id"
+        node-type="muse-eeg"
+        label="Muse EEG"
+        :bound="bound"
+      />
     </div>
   </div>
 </template>
@@ -231,13 +238,11 @@ watch(() => runtimeStore.isRunning, (running) => {
 <style scoped>
 .muse-node {
   position: relative;
-  display: flex;
-  align-items: flex-start; /* body + handle column side by side; taller one sets node height */
+  width: fit-content;
   font-family: var(--font-mono);
 }
 
 .node-body {
-  flex: 0 0 auto;
   background: var(--color-neutral-900);
   border: 2px solid var(--color-neutral-700);
   box-shadow: 3px 3px 0 0 var(--color-neutral-800);
@@ -280,42 +285,19 @@ watch(() => runtimeStore.isRunning, (running) => {
 .node-status[data-status='connecting'],
 .node-status[data-status='reconnecting'] { color: var(--color-primary-400); }
 
+.node-hint {
+  margin: 0;
+  padding: 2px 8px 4px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--color-warning);
+}
+.node-hint[data-status='error'],
+.node-hint[data-status='unsupported'] { color: var(--color-error); }
+
 .head-canvas {
   display: block;
   width: 220px;
   height: 180px;
-}
-
-/* Output handle column (mirrors the oscilloscope node's handle styling, right side) */
-.handles-column {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-top: 4px;
-}
-.handle-slot {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-1);
-  height: 16px;
-  padding-right: 8px;
-}
-.port-label {
-  font-size: 8px;
-  color: var(--color-neutral-400);
-  white-space: nowrap;
-}
-:deep(.port-handle) {
-  width: var(--node-port-size, 10px) !important;
-  height: var(--node-port-size, 10px) !important;
-  border: 2px solid var(--color-neutral-900) !important;
-  border-radius: 50% !important;
-  position: absolute !important;
-  right: -5px !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
 }
 </style>

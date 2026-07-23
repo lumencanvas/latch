@@ -12,6 +12,15 @@ export interface AppNotification {
   message: string
 }
 
+/** Target for "pair-from-node": bind a paired device to an existing node's `deviceId`. */
+export interface BluetoothPairTarget {
+  nodeId: string
+  /** The node's type (e.g. 'muse-eeg') — lets the panel pre-focus the matching device profile. */
+  nodeType?: string
+  /** Human label for the panel copy (e.g. 'Muse EEG'). */
+  label?: string
+}
+
 let notificationSeq = 0
 
 // LocalStorage keys
@@ -148,6 +157,12 @@ interface UIState {
 
   // Add Bluetooth Device modal
   bluetoothDeviceManagerOpen: boolean
+  // When set, the panel pairs a device and binds it to THIS existing node's `deviceId`
+  // (instead of dropping a new node). Cleared on close.
+  bluetoothPairTarget: BluetoothPairTarget | null
+
+  // Help / keyboard-shortcuts modal
+  helpOpen: boolean
 
   // Canvas state
   zoom: number
@@ -225,6 +240,10 @@ export const useUIStore = defineStore('ui', {
 
     // Add Bluetooth Device modal
     bluetoothDeviceManagerOpen: false,
+    bluetoothPairTarget: null,
+
+    // Help / keyboard-shortcuts modal
+    helpOpen: false,
 
     // Canvas
     zoom: 1,
@@ -363,12 +382,29 @@ export const useUIStore = defineStore('ui', {
     },
 
     // Add Bluetooth Device modal
-    openBluetoothDeviceManager() {
+    // Pass a target to pair a device and bind it to an existing node; omit it for the
+    // default "drop a new bound node" flow (the header button).
+    openBluetoothDeviceManager(target: BluetoothPairTarget | null = null) {
+      this.bluetoothPairTarget = target
       this.bluetoothDeviceManagerOpen = true
     },
 
     closeBluetoothDeviceManager() {
       this.bluetoothDeviceManagerOpen = false
+      this.bluetoothPairTarget = null
+    },
+
+    // Help / keyboard-shortcuts modal
+    openHelp() {
+      this.helpOpen = true
+    },
+
+    closeHelp() {
+      this.helpOpen = false
+    },
+
+    toggleHelp() {
+      this.helpOpen = !this.helpOpen
     },
 
     setZoom(zoom: number) {

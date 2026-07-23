@@ -6,6 +6,7 @@ import { Code2 } from 'lucide-vue-next'
 import { categoryMeta, dataTypeMeta } from '@/stores/nodes'
 import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
+import '@/services/monaco/monacoEnv' // set MonacoEnvironment.getWorker before this node creates its editor
 import * as monaco from 'monaco-editor'
 
 const props = defineProps<NodeProps>()

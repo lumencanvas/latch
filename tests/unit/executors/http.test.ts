@@ -90,6 +90,37 @@ describe('HTTP Executor', () => {
 
       expect(mockFetch).toHaveBeenCalled()
     })
+
+    it('fires on a NUMERIC trigger (the canonical TRIGGER=1 that Button/Interval/Trigger emit)', async () => {
+      // Regression: the executor gated on `trigger === true`, so the numeric `1` produced by the
+      // codebase's canonical trigger sources never fired the request. It must fire on isHigh().
+      const ctx = createMockContext({
+        controls: new Map([['url', 'https://api.example.com/data'], ['method', 'GET']]),
+        inputs: new Map([['trigger', 1]]),
+      })
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true, status: 200,
+        headers: new Map([['content-type', 'application/json']]),
+        json: () => Promise.resolve({ data: 'ok' }),
+      })
+      global.fetch = mockFetch
+
+      await httpExecutor(ctx)
+      expect(mockFetch).toHaveBeenCalled()
+    })
+
+    it('does NOT fire on a low numeric trigger (0)', async () => {
+      const ctx = createMockContext({
+        controls: new Map([['url', 'https://api.example.com/data'], ['method', 'GET']]),
+        inputs: new Map([['trigger', 0]]),
+      })
+      const mockFetch = vi.fn()
+      global.fetch = mockFetch
+
+      const outputs = await httpExecutor(ctx)
+      expect(mockFetch).not.toHaveBeenCalled()
+      expect(outputs.get('status')).toBe(0)
+    })
   })
 
   describe('Timeout Support', () => {

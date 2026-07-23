@@ -328,10 +328,12 @@ describe('Timing Executors', () => {
       it('starts on start trigger', () => {
         const nodeId = 'metro-start'
 
-        const r = metronomeExecutor(createContext(nodeId, { start: 1 }, { bpm: 120, running: false }, { totalTime: 0 }))
-        // After start, should be running
+        metronomeExecutor(createContext(nodeId, { start: 1 }, { bpm: 120, running: false }, { totalTime: 0 }))
+        // After starting, a beat fires at t=0.5s (bpm 120 = one beat per 0.5s). `toBeDefined()` was
+        // vacuous — beat is always 0 or 1, so it passed even if the start trigger never engaged the
+        // metronome. toBe(1) verifies it actually started AND fired (a stopped metronome → beat 0).
         const r2 = metronomeExecutor(createContext(nodeId, {}, { bpm: 120 }, { totalTime: 0.5 }))
-        expect(r2.get('beat')).toBeDefined()
+        expect(r2.get('beat')).toBe(1)
       })
 
       it('stops on stop trigger', () => {

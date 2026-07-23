@@ -2,13 +2,14 @@
 import { ref, computed, watch, nextTick, type Component } from 'vue'
 import {
   X, Bluetooth, Search, ChevronLeft, CheckCircle2, AlertCircle, Loader2,
-  Brain, Printer, HeartPulse, Battery, Info, Thermometer, Bike, Footprints,
+  Brain, Printer, HeartPulse, Battery, Info, Thermometer, Bike, Footprints, Vibrate,
 } from 'lucide-vue-next'
 import { useUIStore } from '@/stores/ui'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
 import { useDialogA11y } from '@/composables/useDialogA11y'
-import { deviceProfiles } from '@/services/ble/deviceProfileRegistry'
+import { useFlowHistory } from '@/composables/useFlowHistory'
+import { deviceProfiles, profileForNodeType } from '@/services/ble/deviceProfileRegistry'
 import type { BleDeviceProfile } from '@/services/ble/defineDeviceProfile'
 import { BleAdapter } from '@/services/connections/adapters/BleAdapter'
 import {
@@ -21,6 +22,7 @@ import {
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
+const { recordParamEdit } = useFlowHistory()
 
 const dialogRef = ref<HTMLElement | null>(null)
 const { onKeydown } = useDialogA11y({
@@ -39,6 +41,30 @@ const recognized = ref<BleDeviceProfile | null>(null)
 const supported = computed(() => typeof navigator !== 'undefined' && 'bluetooth' in navigator)
 const profiles = computed(() => deviceProfiles)
 
+// Previously-granted devices (union of session cache + getDevices()), with live connection state.
+const pairedDevices = ref<{ id: string; name: string; connected: boolean }[]>([])
+const loadingPaired = ref(false)
+async function refreshPaired() {
+  if (!supported.value) return
+  loadingPaired.value = true
+  try {
+    pairedDevices.value = await BleAdapter.listKnownDevices()
+  } catch {
+    pairedDevices.value = []
+  } finally {
+    loadingPaired.value = false
+  }
+}
+
+// "Pair from a node": when set, pairing binds the granted device to THIS existing node's
+// `deviceId` instead of dropping a new node. The matching profile (by node type) is pre-focused.
+const target = computed(() => uiStore.bluetoothPairTarget)
+const targetProfile = computed(() =>
+  target.value?.nodeType ? profileForNodeType(target.value.nodeType) : null
+)
+// Pre-focus the target node's matching device card (so Enter pairs the right type); else the first.
+const autofocusProfileId = computed(() => targetProfile.value?.id ?? profiles.value[0]?.id ?? null)
+
 // Lucide components for the icon ids the shipped profiles use; anything else
 // falls back to the generic Bluetooth glyph so a drop-in profile never breaks.
 const PROFILE_ICONS: Record<string, Component> = {
@@ -50,6 +76,7 @@ const PROFILE_ICONS: Record<string, Component> = {
   thermometer: Thermometer,
   bike: Bike,
   footprints: Footprints,
+  vibrate: Vibrate,
   bluetooth: Bluetooth,
 }
 function iconFor(profile: BleDeviceProfile): Component {
@@ -95,6 +122,40 @@ function reset() {
   errorMsg.value = ''
   granted.value = null
   recognized.value = null
+  refreshPaired()
+}
+
+/** Use an already-granted device: bind it to the target node, or route it through the result phase. */
+function usePaired(dev: { id: string; name: string }) {
+  const t = target.value
+  if (t) {
+    const node = flowsStore.activeFlow?.nodes.find((n) => n.id === t.nodeId)
+    if (!node) {
+      errorMsg.value = 'That node no longer exists — close and try again from the node.'
+      return
+    }
+    recordParamEdit(t.nodeId, `Pair device to ${t.label || 'node'}`, () => {
+      flowsStore.updateNodeData(t.nodeId, { deviceId: dev.id })
+    })
+    uiStore.selectNodes([t.nodeId])
+    uiStore.notify(`Paired ${dev.name || 'device'} to ${t.label || 'node'}`, 'success')
+    close()
+    return
+  }
+  // No target node: reuse the recognition-result phase so the user picks which nodes to drop.
+  granted.value = { id: dev.id, name: dev.name }
+  recognized.value = recognizeByName(dev.name)
+  phase.value = 'result'
+}
+
+/** Revoke a granted device (Web Bluetooth permission + session cache), then refresh the list. */
+async function forget(id: string) {
+  try {
+    await BleAdapter.forgetDevice(id)
+  } catch {
+    /* forget is best-effort */
+  }
+  await refreshPaired()
 }
 
 function close() {
@@ -184,6 +245,31 @@ function addGeneric() {
   dropChain(buildDeviceNodeChain(recognized.value, granted.value.id, () => false))
   close()
 }
+
+/**
+ * Pair-from-node: write the granted device id onto the target node's `deviceId` control, so a
+ * hand-added muse-eeg/thermal-printer node (whose control isn't shown on its custom body) can
+ * bind a device without dropping a new node. The device stays in `BleAdapter.grantedDevices`
+ * (set during the scan), so the node's executor reconnects to it gesture-free.
+ */
+function bindToTarget() {
+  const t = target.value
+  if (!granted.value || !t) return
+  const node = flowsStore.activeFlow?.nodes.find((n) => n.id === t.nodeId)
+  if (!node) {
+    errorMsg.value = 'That node no longer exists — close and try again from the node.'
+    return
+  }
+  // Route through the history recorder like every other control edit (BaseNode.updateControl /
+  // PropertiesPanel), so pairing is undoable and doesn't get silently reverted by a later undo.
+  const deviceId = granted.value.id
+  recordParamEdit(t.nodeId, `Pair device to ${t.label || 'node'}`, () => {
+    flowsStore.updateNodeData(t.nodeId, { deviceId })
+  })
+  uiStore.selectNodes([t.nodeId])
+  uiStore.notify(`Paired ${granted.value.name || 'device'} to ${t.label || 'node'}`, 'success')
+  close()
+}
 </script>
 
 <template>
@@ -210,7 +296,7 @@ function addGeneric() {
                 id="ble-manager-modal-title"
                 class="modal-title"
               >
-                ADD BLUETOOTH DEVICE
+                {{ target ? 'PAIR DEVICE' : 'ADD BLUETOOTH DEVICE' }}
               </h2>
             </div>
             <button
@@ -257,7 +343,18 @@ function addGeneric() {
                 v-if="phase === 'choose'"
                 class="choose"
               >
-                <p class="intro">
+                <p
+                  v-if="target"
+                  class="intro"
+                >
+                  Pair a device for this <strong>{{ target.label || 'device' }}</strong> node. Pick
+                  its type below (or scan for any nearby device); a browser dialog will ask you to
+                  choose the specific device, and it'll be bound to this node.
+                </p>
+                <p
+                  v-else
+                  class="intro"
+                >
                   Pick a device type to pair, or scan for any nearby device. A browser dialog will
                   ask you to choose the specific device.
                 </p>
@@ -271,7 +368,7 @@ function addGeneric() {
                     :key="profile.id"
                     class="device-card"
                     role="listitem"
-                    :data-autofocus="profile.id === profiles[0]?.id ? '' : undefined"
+                    :data-autofocus="profile.id === autofocusProfileId ? '' : undefined"
                     @click="selectKnown(profile)"
                   >
                     <div class="card-head">
@@ -299,6 +396,45 @@ function addGeneric() {
                   <Search :size="16" />
                   <span>Scan all devices</span>
                 </button>
+
+                <!-- Previously-paired devices: reconnect gesture-free, or forget (revoke). -->
+                <div
+                  v-if="pairedDevices.length"
+                  class="paired"
+                >
+                  <p class="paired-title">
+                    Paired devices
+                  </p>
+                  <ul class="paired-list">
+                    <li
+                      v-for="dev in pairedDevices"
+                      :key="dev.id"
+                      class="paired-row"
+                    >
+                      <span
+                        class="paired-dot"
+                        :class="{ on: dev.connected }"
+                        :title="dev.connected ? 'Connected' : 'Not connected'"
+                        aria-hidden="true"
+                      />
+                      <span class="paired-name">{{ dev.name }}</span>
+                      <button
+                        class="paired-use"
+                        @click="usePaired(dev)"
+                      >
+                        {{ target ? 'Pair' : 'Use' }}
+                      </button>
+                      <button
+                        class="paired-forget"
+                        :aria-label="`Forget ${dev.name}`"
+                        title="Forget this device"
+                        @click="forget(dev.id)"
+                      >
+                        <X :size="13" />
+                      </button>
+                    </li>
+                  </ul>
+                </div>
               </div>
 
               <!-- Busy: native chooser is open -->
@@ -348,7 +484,13 @@ function addGeneric() {
                     {{ recognized.description }}
                   </p>
                   <p
-                    v-if="!vendorInstalled && suggestion"
+                    v-if="target"
+                    class="result-note"
+                  >
+                    Binds to your <strong>{{ target.label || 'device' }}</strong> node.
+                  </p>
+                  <p
+                    v-else-if="!vendorInstalled && suggestion"
                     class="result-note"
                   >
                     A dedicated node ships soon — for now, dropping a bound scanner + device node
@@ -367,13 +509,47 @@ function addGeneric() {
                   <p class="result-name">
                     {{ granted?.name || 'Unnamed device' }}
                   </p>
-                  <p class="result-desc">
+                  <p
+                    v-if="target"
+                    class="result-desc"
+                  >
+                    Not a device we recognize — it'll still be bound to your
+                    <strong>{{ target.label || 'device' }}</strong> node.
+                  </p>
+                  <p
+                    v-else
+                    class="result-desc"
+                  >
                     Not a device we recognize — dropping a bound scanner + device node; add a
                     characteristic node for the services it lists.
                   </p>
                 </div>
 
-                <div class="result-actions">
+                <!-- Pair-from-node: bind to the existing node instead of dropping a new one. -->
+                <div
+                  v-if="target"
+                  class="result-actions"
+                >
+                  <button
+                    class="btn-primary"
+                    data-autofocus
+                    @click="bindToTarget"
+                  >
+                    Bind to this node
+                  </button>
+                  <button
+                    class="btn-ghost"
+                    @click="backToChoose"
+                  >
+                    <ChevronLeft :size="14" />
+                    <span>Back</span>
+                  </button>
+                </div>
+
+                <div
+                  v-else
+                  class="result-actions"
+                >
                   <button
                     class="btn-primary"
                     data-autofocus
@@ -582,6 +758,86 @@ function addGeneric() {
 .scan-all:hover {
   border-color: var(--color-neutral-400);
   color: var(--color-neutral-800);
+}
+
+/* Paired devices */
+.paired {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--color-neutral-200);
+  padding-top: var(--space-3);
+}
+.paired-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  color: var(--color-neutral-500);
+}
+.paired-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.paired-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+}
+.paired-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: var(--color-neutral-300);
+}
+.paired-dot.on {
+  background: var(--color-success);
+}
+.paired-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.paired-use {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--color-neutral-300);
+  background: var(--color-neutral-0, #fff);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-700);
+  cursor: pointer;
+}
+.paired-use:hover {
+  border-color: var(--color-protocol-ble);
+  color: var(--color-protocol-ble);
+}
+.paired-forget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--color-neutral-400);
+  cursor: pointer;
+}
+.paired-forget:hover {
+  color: var(--color-error);
 }
 
 /* Busy */

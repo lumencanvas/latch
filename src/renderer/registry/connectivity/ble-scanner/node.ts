@@ -8,7 +8,7 @@ const definition: NodeDefinition = {
   id: 'ble-scanner',
   name: 'BLE Scanner',
   version: '1.0.0',
-  category: 'connectivity',
+  category: 'devices',
   description: 'Scan for Bluetooth LE devices and select one to connect',
   icon: 'bluetooth-searching',
   platforms: ['web', 'electron'],

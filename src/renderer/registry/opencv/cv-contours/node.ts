@@ -6,7 +6,7 @@ const definition: NodeDefinition = {
   id: 'cv-contours',
   name: 'CV Contours',
   version: '1.0.0',
-  category: 'visual',
+  category: 'opencv',
   description: 'Find and draw contours, with bounding-box data output',
   icon: 'git-branch',
   platforms: ['web', 'electron'],

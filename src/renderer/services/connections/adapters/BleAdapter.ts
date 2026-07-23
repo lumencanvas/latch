@@ -11,6 +11,7 @@
 
 import { BaseAdapter } from './BaseAdapter'
 import type { BleConnectionConfig, ConnectionTypeDefinition, SendOptions } from '../types'
+import { normalizeUuid } from '@/services/ble/defineDeviceProfile'
 
 // ============================================================================
 // Types
@@ -106,12 +107,24 @@ export class BleAdapter extends BaseAdapter {
    */
   private static grantedDevices = new Map<string, BluetoothDevice>()
 
+  /**
+   * Per-`deviceId` count of live logical holders of the shared GATT link. `getDeviceById` hands the
+   * SAME `BluetoothDevice` (hence the same GATTServer) to every adapter bound to one id, so a naive
+   * `dispose()` would `server.disconnect()` a link a sibling adapter still needs. We only physically
+   * disconnect when the LAST holder releases. Keyed by device id; see acquire/releaseGattRef.
+   */
+  private static gattRefs = new Map<string, number>()
+
   private device: BluetoothDevice | null = null
   private server: BluetoothRemoteGATTServer | null = null
   private services: Map<string, BluetoothRemoteGATTService> = new Map()
   private characteristics: Map<string, BluetoothRemoteGATTCharacteristic> = new Map()
   private notificationHandlers: Map<string, (event: Event) => void> = new Map()
   private boundDisconnectHandler: (() => void) | null = null
+  /** The device id this adapter currently holds a shared-GATT ref for (null = not holding). Captured
+   *  at acquire so release works even after `this.device` is nulled during dispose, and so a reconnect
+   *  (which re-enters doConnect) doesn't double-count. */
+  private gattRefId: string | null = null
 
   constructor(
     connectionId: string,
@@ -208,6 +221,42 @@ export class BleAdapter extends BaseAdapter {
   }
 
   /**
+   * List every device this session knows about — the union of the gesture-granted cache and
+   * `getDevices()` — with each device's current GATT connection state. Powers the device-manager
+   * "Paired devices" list. De-duplicated by id (the cache and getDevices() can overlap).
+   */
+  static async listKnownDevices(): Promise<{ id: string; name: string; connected: boolean }[]> {
+    const map = new Map<string, BluetoothDevice>()
+    for (const [id, d] of BleAdapter.grantedDevices) map.set(id, d)
+    for (const d of await BleAdapter.getPairedDevices()) map.set(d.id, d)
+    return Array.from(map.values()).map((d) => ({
+      id: d.id,
+      name: d.name || '(unnamed device)',
+      connected: d.gatt?.connected ?? false,
+    }))
+  }
+
+  /**
+   * Forget a granted device: drop it from the session cache AND, where supported, revoke the
+   * Web Bluetooth permission via `BluetoothDevice.forget()` (Chromium 101+). Closes the
+   * "grantedDevices cache never evicted" gap. Best-effort — a browser without `forget()` still
+   * evicts the cache entry so the app stops offering a gesture-free reconnect to it.
+   */
+  static async forgetDevice(id: string): Promise<void> {
+    const cached = BleAdapter.grantedDevices.get(id)
+    const device = cached ?? (await BleAdapter.getPairedDevices()).find((d) => d.id === id)
+    BleAdapter.grantedDevices.delete(id)
+    const forgettable = device as (BluetoothDevice & { forget?: () => Promise<void> }) | undefined
+    if (forgettable?.forget) {
+      try {
+        await forgettable.forget()
+      } catch {
+        /* revoke is best-effort — the cache eviction above is the guaranteed part */
+      }
+    }
+  }
+
+  /**
    * Inject a pre-selected/granted `BluetoothDevice` (from the scan panel or a
    * `ble-scanner` node's `device` output) so {@link doConnect} reuses it instead
    * of popping the native chooser again. Idempotent for the same device; swapping
@@ -241,17 +290,18 @@ export class BleAdapter extends BaseAdapter {
       const optionalServices: BluetoothServiceUUID[] = []
 
       if (this.bleConfig.serviceUUID) {
-        // Try to use short UUID if it's a standard service
-        const shortUUID = this.bleConfig.serviceUUID.length <= 4
-          ? this.bleConfig.serviceUUID
-          : this.bleConfig.serviceUUID
-
-        filters.push({ services: [shortUUID] })
-        optionalServices.push(shortUUID)
+        // requestDevice() only accepts a full 128-bit UUID string or a numeric SIG alias — a bare
+        // 4-hex string (e.g. '180d', from a hand-typed generic ble node) throws. Normalize to the
+        // canonical full UUID (same fix class as the SIG device-profile requests). See later-111.
+        const serviceUUID = normalizeUuid(this.bleConfig.serviceUUID)
+        filters.push({ services: [serviceUUID] })
+        optionalServices.push(serviceUUID)
       }
 
       if (this.bleConfig.characteristicUUIDs) {
-        optionalServices.push(...this.bleConfig.characteristicUUIDs)
+        // Normalize here too: these are pushed straight into optionalServices, so a bare-short
+        // entry would throw the same way.
+        optionalServices.push(...this.bleConfig.characteristicUUIDs.map((u) => normalizeUuid(u)))
       }
 
       this.device = await BleAdapter.scanDevices({
@@ -274,13 +324,23 @@ export class BleAdapter extends BaseAdapter {
       throw new Error('GATT not available on device')
     }
 
+    // Capture the id NOW, before the await: a concurrent dispose() nulls this.device synchronously,
+    // so reading this.device.id after the await (in the _disposed branch below) would be null and the
+    // acquire/release would silently no-op — leaking the just-opened radio (a lone node deleted while
+    // connecting). We register the hold against the captured id regardless.
+    const deviceId = this.device.id
     this.server = await this.device.gatt.connect()
 
+    // Register as a holder of this device's shared GATT link. Idempotent per adapter (a reconnect
+    // re-enters doConnect but a holder already counted stays counted). Done BEFORE the _disposed
+    // check so the block below can release-and-conditionally-disconnect without dropping a sibling's link.
+    this.acquireGattRef(deviceId)
+
     // The adapter may have been disposed DURING the awaited gatt.connect() (node deleted /
-    // device changed mid-connect). dispose() already ran its synchronous server.disconnect()
-    // on a then-null server, so the link we just opened would leak — drop it now.
+    // device changed mid-connect). Release our just-acquired hold and only drop the physical link
+    // if no sibling adapter is still bound to this device (else we'd tear down a link they need).
     if (this._disposed) {
-      try { this.server?.disconnect() } catch { /* already gone */ }
+      try { if (this.releaseGattRef() && this.server?.connected) this.server.disconnect() } catch { /* already gone */ }
       this.server = null
       return
     }
@@ -309,7 +369,9 @@ export class BleAdapter extends BaseAdapter {
     this.characteristics.clear()
     this.services.clear()
 
-    if (this.server?.connected) {
+    // Release our hold; only physically disconnect if we were the LAST holder (a sibling adapter
+    // bound to the same device keeps the shared link alive).
+    if (this.releaseGattRef() && this.server?.connected) {
       this.server.disconnect()
     }
 
@@ -372,7 +434,11 @@ export class BleAdapter extends BaseAdapter {
     // <uuid> not found" (or, for the all-services printer path, a false "no write characteristic").
     let services: BluetoothRemoteGATTService[]
     if (this.bleConfig.serviceUUID) {
-      services = [await this.server.getPrimaryService(this.bleConfig.serviceUUID)]
+      // Normalize like the scan-path filters (later-111): getPrimaryService rejects a bare 4-hex
+      // string ('180d') the same way requestDevice does — it needs a full 128-bit UUID or a numeric
+      // alias. Without this, a hand-typed short serviceUUID reaching discovery via the pre-injected
+      // setDevice() path (no scan) throws instead of resolving the service.
+      services = [await this.server.getPrimaryService(normalizeUuid(this.bleConfig.serviceUUID))]
     } else {
       services = await this.server.getPrimaryServices()
     }
@@ -439,6 +505,39 @@ export class BleAdapter extends BaseAdapter {
 
     const value = await characteristic.readValue()
     return this.parseValue(value, format)
+  }
+
+  /**
+   * Read the raw {@link DataView} without format parsing, so callers can run the
+   * SIG profile parser (`parseCharacteristicValue`) exactly like the notification
+   * path — otherwise a read and a notification of the same characteristic decode
+   * to different outputs.
+   */
+  async readCharacteristicRaw(uuid: string): Promise<DataView> {
+    const characteristic = this.characteristics.get(uuid) || await this.getCharacteristic(uuid)
+    if (!characteristic) {
+      throw new Error(`Characteristic ${uuid} not found`)
+    }
+    if (!characteristic.properties.read) {
+      throw new Error(`Characteristic ${uuid} does not support read`)
+    }
+    return characteristic.readValue()
+  }
+
+  /** Discovered GATT properties for a characteristic UUID, or null if not yet discovered. */
+  getCharacteristicProperties(uuid: string): BleCharacteristicProperties | null {
+    const c = this.characteristics.get(uuid)
+    if (!c) return null
+    const p = c.properties
+    return {
+      read: p.read,
+      write: p.write,
+      writeWithoutResponse: p.writeWithoutResponse,
+      notify: p.notify,
+      indicate: p.indicate,
+      broadcast: p.broadcast,
+      authenticatedSignedWrites: p.authenticatedSignedWrites,
+    }
   }
 
   async writeCharacteristic(
@@ -657,6 +756,36 @@ export class BleAdapter extends BaseAdapter {
   // Lifecycle
   // =========================================================================
 
+  /** Register this adapter as a holder of the shared GATT link for `id`. Idempotent: a reconnect
+   *  re-enters doConnect but a holder already counted stays counted (so a flapping device can't leak
+   *  refs), and a graceful disconnect clears gattRefId so a later reconnect re-acquires. Takes an
+   *  explicit id (captured before doConnect's await) so a dispose that nulls this.device mid-connect
+   *  can't make this silently no-op. */
+  private acquireGattRef(id: string): void {
+    if (!id || this.gattRefId) return
+    this.gattRefId = id
+    BleAdapter.gattRefs.set(id, (BleAdapter.gattRefs.get(id) ?? 0) + 1)
+  }
+
+  /** Release this adapter's hold. Returns true ONLY if this call was the LAST holder releasing — i.e.
+   *  the caller should physically disconnect the shared server. Idempotent + clamped at zero: a second
+   *  call (gattRefId already null) returns FALSE, so the double release-path in dispose() —
+   *  the sync block AND the doDisconnect() that super.dispose() runs (SYNCHRONOUSLY when there are no
+   *  notification awaits, before `this.server` is nulled) — can't drop a sibling's still-shared link or
+   *  underflow the count. A never-connected adapter (null) also returns false (its server is null anyway). */
+  private releaseGattRef(): boolean {
+    const id = this.gattRefId
+    if (!id) return false
+    this.gattRefId = null
+    const n = (BleAdapter.gattRefs.get(id) ?? 1) - 1
+    if (n <= 0) {
+      BleAdapter.gattRefs.delete(id)
+      return true
+    }
+    BleAdapter.gattRefs.set(id, n)
+    return false
+  }
+
   override dispose(): void {
     // Remove gattserverdisconnected event listener
     if (this.device && this.boundDisconnectHandler) {
@@ -674,7 +803,10 @@ export class BleAdapter extends BaseAdapter {
     // and the disconnect listener was already removed above so this won't re-enter
     // handleBleDisconnect.
     try {
-      if (this.server?.connected) this.server.disconnect()
+      // Release our hold; only physically drop the radio if we were the last holder (a sibling
+      // adapter bound to the same deviceId keeps it alive). releaseGattRef reads the captured
+      // gattRefId, so it's correct even though this runs before the async doDisconnect from super.dispose().
+      if (this.releaseGattRef() && this.server?.connected) this.server.disconnect()
     } catch {
       // Device already gone.
     }

@@ -25,6 +25,7 @@ import {
   latchState,
   debounceState,
   throttleState,
+  matchValueExecutor,
 } from '@/engine/executors/utility'
 import type { ExecutionContext } from '@/engine/ExecutionEngine'
 
@@ -518,5 +519,38 @@ describe('Utility Executors', () => {
       const result = throttleExecutor(createContext({ value: 'second' }, { interval: 100 }, nodeId, 0.15))
       expect(result.get('result')).toBe('second')
     })
+  })
+})
+
+describe('matchValueExecutor — typed equality with value passthrough', () => {
+  const m = (value: unknown, target: string, type = 'auto') =>
+    matchValueExecutor(createContext({ value }, { target, type }))
+
+  it('auto-coerces numeric targets and compares numerically', () => {
+    expect(m(5, '5').get('result')).toBe(1)
+    expect(m(5, '6').get('result')).toBe(0)
+    expect(m('5', '5').get('result')).toBe(1) // "5" coerced to 5
+  })
+
+  it('auto handles true/false targets as booleans', () => {
+    expect(m(true, 'true').get('result')).toBe(1)
+    expect(m(false, 'true').get('result')).toBe(0)
+  })
+
+  it('auto falls back to string comparison', () => {
+    expect(m('cat', 'cat').get('result')).toBe(1)
+    expect(m('cat', 'dog').get('result')).toBe(0)
+  })
+
+  it('explicit string type does NOT numerically coerce', () => {
+    expect(m('5', '5', 'string').get('result')).toBe(1)
+    expect(m(5, '5', 'string').get('result')).toBe(1) // String(5) === '5'
+  })
+
+  it('empty target → no match, and value always passes through', () => {
+    const out = m('anything', '')
+    expect(out.get('result')).toBe(0)
+    expect(out.get('value')).toBe('anything')
+    expect(m(42, '7').get('value')).toBe(42)
   })
 })

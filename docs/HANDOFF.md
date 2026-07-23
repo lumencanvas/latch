@@ -6,6 +6,788 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-07-23 (later 130) — Category cleanup + docs + LAND to main (PR greenlit)
+
+Maintainer greenlit the merge. Final cleanup + certification + docs, then committed the whole changeset and merged to main.
+- **Category cleanup:** the `video` category held a single, misplaced node (`emulator`, a retro game console that outputs a
+  texture) → moved it to `visual`; `video` is now empty and auto-hidden (the sidebar's `visibleCategories` filters 0-count
+  categories, same as the empty `shaders`). Gave the 6 OpenCV nodes (cv-grayscale/canny/threshold/contours/corners/morphology,
+  which lived in `registry/opencv/` but were categorized `visual`) their **own `opencv` category** ("OpenCV", ScanEye icon).
+  Sidebar now: Visual 25, OpenCV 6, Devices 6, Connectivity 7; Video hidden. Total still 251.
+- **Docs:** README node count 241→251; added Devices (Web Bluetooth), Computer Vision (OpenCV), and generative-music/bellows
+  bullets. HANDOFF kept current.
+- **Audit before merge:** typecheck 0 · lint 0 err · `test:unit` **2592** pass (174 files) · build 0 · browser-smoke clean
+  (251 defs) · integrity clean (no `.only`/`.skip`/`debugger`, no stray `console.log`). `src/renderer/dev/bellowsSpike.ts`
+  (orphaned dead-code dev spike, graduated into the real bellows-instrument node) EXCLUDED from the commit — left untracked so
+  the maintainer's local copy survives; it does not ship to main.
+- **Landed:** committed on `phase0-file-format` (author Moheeb Zara, NO AI attribution) → pushed → merged to `main`.
+
+---
+
+## 2026-07-22 (later 129) — UI/UX fixes from live maintainer testing
+
+Maintainer ran the app locally and flagged UI issues; fixed three:
+- **Minimap covered the zoom/tool palette** — both `<MiniMap>` and `<Controls>` were `position="bottom-right"`. Moved the
+  minimap to `bottom-left` (EditorView.vue). Verified.
+- **Phantom dashed ring on an unselected node** — the keyboard-nav "roved cursor" ring (`.kbd-cursor`) was seeded on ANY
+  canvas focus, and a mouse click focuses the canvas, so it painted on the first node with no keyboard use. Made it lazy
+  (useCanvasKeyboard.ts): `onCanvasFocus` no longer seeds the cursor; `moveCursor` seeds it on the first arrow (lands ON the
+  first/selected node); `onCanvasBlur` clears it so it can't re-appear on a later mouse-focus. Updated the 6 affected
+  useCanvasKeyboard tests + added a blur-clears-cursor test.
+- **Custom device panels didn't follow the established port pattern** — Buzz/BLE/Muse/printer hand-rolled a plain dot+label
+  port style instead of the standard `glyph · label · type` pill (revealed on hover/select) that BaseNode uses (e.g. Camera 3D).
+  **Extracted a shared `components/nodes/NodePorts.vue`** (the established pill rendering + type glyph/semantic-label helpers)
+  and refactored all four custom panels to use it — so custom nodes can't drift again. Verified visually: all four now match.
+- **Gates green:** typecheck 0 · lint 0 err · `test:unit` **2592** pass · build 0. Nothing committed; PR still held.
+- **New `Devices` category** (maintainer chose the name): added `devices` to the `NodeCategory` union + `BUILTIN_CATEGORY_META`
+  (label 'Devices', Usb icon, #0891B2) + categoryIcons. Moved the 6 device nodes (muse-eeg, thermal-printer, neosensory-buzz,
+  ble-scanner, ble-device, ble-characteristic) from `connectivity` → `devices` (category FIELD only; folders unchanged to avoid
+  import churn). Sidebar now: Connectivity 7, Devices 6. Verified.
+- **Pair button in Properties** (replaces the raw `deviceId` text field): added a `ble-pair` control-type branch to
+  PropertiesPanel (it already has node context — id/nodeType/definition) rendering the shared `PairDeviceButton`; switched the
+  4 custom-panel device nodes' `deviceId` control from `type: 'text'` → `type: 'ble-pair'`. `ControlDefinition.type` is
+  `string`, so no union edit needed. Verified: Properties shows the Pair button, no deviceId text input.
+- **Gates green after all UI work:** typecheck 0 · lint 0 err · `test:unit` **2592** pass · build 0 · smoke clean (251 defs).
+  All 5 items from the live testing session are DONE + browser-verified. Nothing committed; PR still held.
+
+---
+
+## 2026-07-22 (later 128) — Coverage pass on previously-untested executors (+40 solid tests)
+
+Wrote real behavioral tests for executors that had ZERO or thin coverage — picking the ones testable with
+strong assertions and no hardware/heavy-mock scaffolds. **+40 tests, 2551 → 2591.** All examined against the real
+executor code (not guessed):
+- **input.ts (whole module, was entirely untested):** new `input.test.ts` — lfo waveform math (sine/square/triangle/
+  sawtooth + amp/offset), trigger rising-edge + typed outputs (bool/number/string/json), knob/xy-pad range mapping,
+  constant/slider/textbox/keyboard/time passthroughs.
+- **subflow.ts (known-fragile area):** new `subflow.test.ts` — the input/output **context port round-trip** (input reads
+  what the parent set, output writes back under `output:<port>`, namespaces don't cross) + all subflowExecutor resolver
+  guards. Notable: the executor-level context mechanism WORKS — so the "subflows broken" issue is at the node-ports/
+  definition level, not here. Exported `getSubflowContext` (a pure getter; its clear/gc siblings were already exported)
+  to enable the round-trip test.
+- **clasp.ts (biggest gap — 10 executors untested):** new `clasp.test.ts` — graceful-degradation for set/emit/get (no
+  connection → clear error, never throws/connects; numeric trigger honored). The CONNECTED behavior still needs a
+  @clasp-to/core mock harness (deferred). **Observation for the maintainer:** CLASP set/emit gate on `if (trigger)`
+  (truthy — numeric OK, unlike the old http bug) but do NOT edge-detect, so a held trigger fires every frame — fine for
+  continuous `set`, but `emit` (events) firing 60×/s while held is inconsistent with http/messaging (which rising-edge).
+  Not fixed (design ambiguity; flagged).
+- Also filled: `template` (code.test.ts — {{key}} interp, numeric 2dp, unknown-placeholder passthrough), `matchValue`
+  (utility.test.ts — typed equality + auto-coercion + value passthrough), `tapTempo` (signal.test.ts — BPM from tap
+  intervals, rising-edge, reset), `random` (math.test.ts — seeded determinism + range).
+- **Gates green:** typecheck 0 · lint 0 err · `test:unit` **2591** pass · build 0. Nothing committed; PR still held.
+  Remaining untested: the CLASP *connected* paths (need a relay mock), plus trivial input already covered.
+
+---
+
+## 2026-07-22 (later 127) — Pre-PR integrity certification (fresh, all green)
+
+Fresh full-tree certification + integrity audit of the whole uncommitted changeset before the (still-held) PR — no new
+features. **Gates re-run, all green NOW:** typecheck exit 0 · lint **0 err** (48 pre-existing `any`/unused-var warns,
+unchanged) · `test:unit` **2551** pass + 11 todo (171 files) · build exit 0. **Integrity:** no `.only`/`.skip`/`debugger`
+anywhere in tests; no `console.log`/`debugger` added in any tracked source diff; changeset coherent = 31 tracked-modified +
+23 untracked-new; `src/renderer/dev/bellowsSpike.ts` correctly still present (dev-only, slated for deletion once the
+maintainer audible-verifies bellows). Nothing new to fix — the changeset is **PR-ready** (confirms the later-120/121/124/126
+verdicts). State: UNCOMMITTED on `phase0-file-format`; PR still held pending the maintainer's word.
+
+**Coherent commit units (this session-series added, on top of the original later-121 eight):** (9) Neosensory Buzz node +
+generic BLE node/UI overhaul + modal paired-devices/Forget (later-122); (10) shared-GATT per-deviceId refcount (later-123);
+(11) full-system audit fixes — Monaco worker env, http-request numeric-trigger, Buzz auth-handshake-during-connecting
+(later-124/125); (12) adversarial test-audit fixes — discoverServices UUID normalization + metronome blind-spot +
+gate/counter/toggle/value-delay coverage (later-126). 251 node defs.
+
+---
+
+## 2026-07-22 (later 126) — Complex cross-domain flows + adversarial test-suite audit
+
+**Part 1 — complex flows (browser).** Built + ran large CROSS-domain graphs via the runspec harness (catalog-dumped
+exact ports). audio-reactive-3D-visual (16 nodes), generative-music-brain (14), and a **28-node/34-edge kitchen-sink**
+spanning 8 categories with cross-links (music note→audio pitch→analysis→3D scale; clock→3D rotation; progression→camera;
+chord+prog→string) — ALL build/wire/run at real-time with **0 errors** and correct data propagation across every boundary.
+Adversarial edge: feedback **cycles are safely excluded** (Kahn's algorithm + `console.warn`, no hang/crash); `value-delay`
+is a non-cyclic delay utility (doesn't break cycles) — LATCH intentionally has no feedback loops. Documented constraint,
+not a bug (minor UX note: cycle exclusion is only surfaced in the console). No new bugs.
+
+**Part 2 — adversarial test audit (test QUALITY, not pass/fail).** Structural: no `.only`/`.skip` leaks; healthy assertion
+strength (3103 strong value-asserts vs 81 weak, ~1.9%). Real coverage gaps: **all 10 CLASP executors untested** (+ the 11
+todos are CLASP/WebSocket stubs) and **subflow executors untested** (a known-fragile area) — the biggest gaps, flagged for
+the maintainer. Fanned out 3 adversarial explorers (executor / services+stores / registry+components) hunting BLIND SPOTS
+(tests that pass even with a real bug, like the earlier http `trigger:true` gap). **Verified every finding against real
+code** — most were code-correct coverage gaps and 3 were FALSE (slewLimiter "divide-by-zero" is `rise*dt` multiply;
+timer is edge-guarded; ControlRenderer step=0 is guarded by `guardedStep`). Distilled to **2 genuine issues, both fixed:**
+- **BUG — `discoverServices()` didn't normalize serviceUUID.** It passed `serviceUUID` RAW to `getPrimaryService()`, which
+  (like requestDevice) rejects a bare 4-hex string. The scan path normalizes; the gesture-free `setDevice()` path skips
+  that, so a hand-typed short UUID reaching discovery threw instead of resolving. **Fix:** `normalizeUuid()` in
+  discoverServices + regression test (asserts getPrimaryService is called with the full UUID).
+- **Blind spot — metronome start test was vacuous.** `expect(beat).toBeDefined()` always passed (beat is 0 or 1), so it
+  never verified the start trigger fired a beat. **Fix:** `toBe(1)` (a stopped metronome → beat 0, so this now catches it).
+- **Filled the highest-value coverage gaps (+18 tests):** new `logic.test.ts` for the sample-and-hold `gate` (open/closed
+  hold, numeric-vs-boolean gate, undefined-hold, control fallback) and `code.test.ts` for `counter`/`toggle`/`value-delay`
+  (rising-edge vs held-high, numeric+boolean triggers, step/clamp/wrap, N-frame delay) — all real stateful edge-triggered
+  nodes that had ZERO coverage.
+- **Gates green:** typecheck 0 · lint 0 err · `test:unit` **2551** pass · build 0. Nothing committed; PR still held.
+  Remaining coverage gaps (CLASP, subflow, WebSocket todos) noted for the maintainer — they need protocol/mocking scaffolds.
+
+---
+
+## 2026-07-22 (later 125) — BLE/Buzz coverage pass → caught a node-breaking Buzz handshake bug
+
+Closed the flagged test-coverage gaps on the BLE/Buzz code I authored (device management + the Buzz connect
+handshake/streaming, previously HW-verify-only). Writing a connect-through integration test **caught a real,
+node-breaking bug** that every prior code review + adversarial pass missed:
+- **BUG — Buzz auth handshake never ran.** `NeosensoryBuzzAdapter.doConnect` gated the `auth as developer → accept →
+  audio stop → motors start` loop on `this.status === 'connected'`. But the handshake runs INSIDE `doConnect`, which
+  executes BEFORE `BaseAdapter.performConnect` flips the state machine to `'connected'` — so `status` is `'connecting'`
+  there, the guard fired on iteration 1, and the ENTIRE handshake was skipped. Result: the band would connect (and even
+  report battery, which needs no auth) but **never enable its motors → never vibrate.** A pure logic review reads the
+  guard as reasonable; only an integration test through the real connect path exposes it. **Fix:** bail only on
+  `this._disposed` (a mid-handshake link drop surfaces as a propagating write rejection). Swept the sibling adapters —
+  Muse's start-sequence has no such guard (correct), the printer's status guard is in `print()` where status genuinely IS
+  connected — so the bug was UNIQUE to Buzz.
+- **+5 tests:** `BleAdapter.listKnownDevices`/`forgetDevice` (union + de-dup + revoke-with/without-`forget()`); Buzz
+  connect integration (NUS discovery → handshake order → deduped `motors vibrate` frames → battery/button telemetry off TX).
+- **Gates green:** typecheck 0 · lint 0 · `test:unit` **2537** pass · build 0. Nothing committed; PR still held.
+
+---
+
+## 2026-07-22 (later 124) — Full-system broad audit (browser + complex flows) via ultracode
+
+Broad "does everything work?" audit: real browser exercise + visual inspection + complex multi-node flows.
+**Verdict: the system is healthy.** Method + findings:
+- **Runtime sweep** (Playwright + system Chrome, `scratchpad/sweep.mjs`): dropped ALL **251** nodes across 18 categories,
+  Play→Stop each, captured console errors + a screenshot per category + curated UI shots. **251/251 nodes drop, render, run.**
+  UI visually clean across every surface (sidebar/categories, picker-first empty state, my Buzz + BLE-characteristic node
+  panels, the Bluetooth modal with the Buzz profile card, help modal). Only noise errors (WebSocket :8080 refused, webcam
+  OverconstrainedError) except ONE real bug.
+- **BUG #1 fixed — Monaco worker error.** Dropping a `function` node emitted an uncaught `[object Event]`: `FunctionNode.vue`
+  creates a Monaco editor directly, but the `MonacoEnvironment.getWorker` config lived only in `MonacoEditor.vue`, so a bare
+  Function node mounting first left it unset → Monaco's worker load 404'd → uncaught ErrorEvent on window. **Fix:** hoisted the
+  config to a shared side-effect module `services/monaco/monacoEnv.ts`, imported by both direct Monaco consumers. Verified: 0 errors.
+- **Complex-flow audit** (workflow, 6 domain agents each build+run a wired 4-8 node graph via `scratchpad/runspec.mjs`):
+  **audio** (osc→filter→gain→analyzer: live -13dB/bass 0.53), **visual** (2 shaders→blend→color-correction→display: textures
+  flow), **music** (metronome→chord→arpeggiator→scale-quantize + progression walks tonic→V on the clock — exercises the
+  Thread-D generative nodes + clock contract), **data-logic** (textbox→json-parse→object-get→compare→gate→template→monitor:
+  full number/bool/string cross-type propagation), **math-3d** (slider→sin→transform.rotY on a box→scene→render: `sin(0.5)=0.4794`
+  propagates into a mesh, real canvas render) — all **verdict: works, dataPropagated**. **connectivity** surfaced a real bug ↓.
+- **BUG #2 fixed — http-request trigger.** `http.ts` gated firing on `trigger === true`, but the canonical trigger value is the
+  NUMBER `1` (`engine/trigger.ts` `TRIGGER=1`; every other executor uses `isHigh()`/`===1||>0`). So a Button/Interval/Toggle
+  wired to http-request's Fetch input never fired — the node's primary mechanism was dead for the standard convention. **Fix:**
+  `isTriggered = isHigh(trigger)`. Swept all executors — http was the ONLY instance of the class. Verified end-to-end (interval→
+  http→monitor now surfaces "Failed to fetch") + 2 regression tests (the old tests only passed `trigger:true`, the exact blind spot).
+- **Gates green:** typecheck 0 · lint 0 err (2 pre-existing warns in http.test) · `test:unit` **2532** pass · build 0 · smoke clean.
+  Nothing committed; PR still held. Harness scripts (sweep/runspec/isolate) + 18 category + UI screenshots in scratchpad.
+
+---
+
+## 2026-07-22 (later 123) — Shared-GATT refcount fix (#1) via ultracode orchestration
+
+Continued the later-122 audit's #1 open item (the highest-value fix that was mine to execute). **Fixed** the per-`deviceId`
+shared-GATT dispose bug: two nodes bound to one physical device shared a GATT server, so disposing one dropped the radio for the
+other. Added a refcount in the shared `BleAdapter` (details folded into the later-122 #1 note below). **Method (ultracode):**
+(1) an *understand* workflow (3 parallel readers) mapped every connect/disconnect/dispose path in BaseAdapter + BleAdapter + all
+5 BLE consumers, surfacing the reconnect-leak + dispose-double-release + fire-and-forget-doDisconnect hazards up front;
+(2) implemented the refcount (idempotent `gattRefId` guard neutralizes the reconnect leak without touching `handleBleDisconnect`);
+(3) a *verify* workflow (5 adversarial skeptics, diverse failure-mode lenses) attacked it and **caught a regression I'd
+introduced** — a lone adapter disposed mid-connect leaked the just-opened radio because acquire read `this.device.id` live and
+dispose nulls it synchronously; (4) fixed by capturing the id before the `gatt.connect()` await + explicit-id acquire; (5) a
+final independent re-verify confirmed all 5 scenarios SAFE. **Gates green:** typecheck 0 · lint 0 · `test:unit` **2530** pass
+(+9 across the two sessions' BLE work) · build 0 · browser-smoke clean (251 defs). Nothing committed; PR still held.
+
+---
+
+## 2026-07-21 (later 122) — Neosensory Buzz node + generic BLE node/UI overhaul
+
+Two maintainer asks landed on top of the held changeset (still on `phase0-file-format`, PR still held). **All gates green:**
+typecheck exit 0 · lint 0 err · `test:unit` **2521** pass + 11 todo (169 files) · build exit 0 · **browser-smoke clean**
+(`definitions.size === 251`; both new panels render; Play→Stop 0 console errors). +1 node (250 → **251**).
+
+**A) Neosensory Buzz node (`neosensory-buzz`, connectivity, +1 def).** Full BLE haptic-wristband integration, layered
+(live 4-motor drive + Pulse trigger) with battery + button + LED. Protocol verified from the official Apache-2.0
+neosensory SDKs (Bluefruit/Android/Python): the Buzz speaks the **Nordic UART Service** — commands are `\n`-terminated ASCII
+on the RX char (`6e400002…`), JSON responses/battery/button NOTIFY on TX (`6e400003…`). New files:
+- `services/ble/neosensory/buzzProtocol.ts` — pure, unit-tested: NUS UUIDs, intensity→byte + base64 frame encoding, dedupe
+  key, auth/init command list (`auth as developer`→`accept`→`audio stop`→`motors start`), defensive CLI-JSON extraction
+  (spans notifications) + battery/button parse, hex→rgb + experimental `leds set`.
+- `services/connections/adapters/NeosensoryBuzzAdapter.ts` — extends BleAdapter (mirrors EscPosPrinterAdapter): gesture-free
+  connect, NUS write/notify resolution, paced auth handshake, deduped `vibrate()`, battery/button off TX, best-effort `setLed`.
+- `registry/connectivity/neosensory-buzz/{node,buzzState,BuzzPanel.vue}` — co-located defineNode + defineLifecycle; panel shows
+  4 live motor bars + battery + Test-buzz + PairDeviceButton. Executor: throttled connect, PACE_MS≈32 send throttle + adapter
+  dedupe, `motors[]` array overrides scalars, Pulse/Test hold-all-motors ~180 ms.
+- device profile `deviceProfiles/neosensory-buzz/profile.ts` (name-match only — NUS too generic); modal `PROFILE_ICONS` += `vibrate`.
+- Tests: `tests/unit/registry/connectivity/neosensory-buzz.test.ts` (17: recognition + frame encoding + CLI parsing + LED).
+- **Dedupe correctness confirmed**: Buzz firmware holds the last `motors vibrate` frame until a new one arrives ("or longer,
+  if no subsequent frame") — so skipping identical frames sustains vibration; the SDKs dedupe the same way.
+
+**B) Generic `ble-characteristic` node + UI overhaul (no more blind UUID typing).**
+- Node now carries a **custom panel** (`BleCharacteristicPanel.vue`): after connect it lists discovered **services &
+  characteristics as named dropdowns** (via `getServiceName`/`getCharacteristicName`, R/W/N badges from GATT props), a live
+  value readout + notify pulse, and a Read button. Selections write `serviceUUID`/`characteristicUUID` through
+  `recordParamEdit`+`updateNodeData` (undoable).
+- **Direct pairing**: added a `deviceId` control + gesture-free resolve via `getDeviceById` (mirrors ble-scanner's bind
+  throttle) — works standalone, no upstream ble-device node; the wired `device` port still overrides.
+- Adapter now created with `serviceUUID: ''` → `discoverServices()` enumerates ALL services (populates the dropdowns).
+  Switched to **executor-owned reconnect** (autoReconnect:false + throttled connect loop that re-runs discovery) — necessary
+  because with an empty serviceUUID the adapter's own reconnect would NOT re-discover, silently breaking reads after a drop.
+- shared.ts: `bleCharacteristicState` gained `services/readRequested/subscribedChar/boundDevice/lastBindAttempt/boundAttemptId/
+  lastConnectAt`; new `requestBleRead(nodeId)`. Characteristic-switch now unsubscribes the old char.
+- **Bluetooth Device Manager modal**: new **"Paired devices"** section — lists `BleAdapter.listKnownDevices()` (cache ∪
+  getDevices()) with live connection dot, **Use/Pair** (bind gesture-free) and **Forget** (new `BleAdapter.forgetDevice()` →
+  `BluetoothDevice.forget()` where supported + cache eviction; closes the "grantedDevices never evicted" gap).
+- `custom-node-components.test.ts` frozen sets updated for both new panels (buzz + ble-characteristic → 26 custom types).
+
+**HW-verify (code can't — need a real Buzz):** auth handshake authorizes; `motors vibrate` drives all 4 LRAs at expected
+intensity; min/max byte mapping feels right; battery % parses from TX JSON; button presses emit; **LED `leds set` format is
+UNVERIFIED** (only in the experimental Bluefruit branch, undocumented wire format — fault-isolated so a reject never breaks
+motors); closed-loop LRA stays off by default.
+
+**Adversarial review pass (same session):** ran an independent reviewer over the whole diff (verified each finding vs real
+code). Cleared: executor-owned reconnect, characteristic-switch unsubscribe, Buzz dedupe/pace, modal, CSS tokens. **Fixed 5
+(all Buzz-local, low-risk) + tests (2521 → 2526):** [#2] wired the dead `stopMotors()` into teardown — `NeosensoryBuzzAdapter.
+doDisconnect()` now silences motors before dropping the link + `disposeBuzz` best-effort (hard-dispose still relies on the
+band self-stopping on GATT disconnect — HW-verify); [#3] `extractJsonObjects` is now string/escape-aware (a brace inside a
+JSON string value no longer desyncs the scanner); [#4] `readCliEvent` fires the Button trigger only on a TRUTHY button value,
+not mere field presence (a `button:0` released-state report no longer spuriously fires); [#5] `sendCommand` picks write-vs-
+write-without-response from the char's properties (tolerates clones); [#6] added a `_disposed` re-check after `discoverServices`
+(no listener leak if the node is deleted mid-discovery). New adapter test: `NeosensoryBuzzAdapter.test.ts` (write-mode).
+**[#1, MAJOR — NOW FIXED, later-123 ultracode pass]:** two device nodes bound to the SAME physical `deviceId` shared one GATT
+link (`getDeviceById` returns the cached device → one server; `dispose()` unconditionally `server.disconnect()`d), so deleting
+one dropped the radio for the other. **Fixed** via a per-`deviceId` GATT **refcount** in the shared `BleAdapter`: static
+`gattRefs` Map + per-adapter `gattRefId`; `acquireGattRef(id)` (id captured BEFORE the `gatt.connect()` await) right after the
+physical connect; `releaseGattRef()` gates all three physical-disconnect sites (the `_disposed`-mid-connect block, `doDisconnect`,
+`dispose`) and only returns true for the LAST holder. The `gattRefId` null-gate makes release idempotent (returns FALSE on a
+second/never-acquired call) so the sync-dispose + the doDisconnect that `super.dispose()` runs SYNCHRONOUSLY (no notification
+awaits) can't double-decrement or drop a sibling's link; acquire is idempotent across reconnects so a flapping device can't leak.
+**Orchestrated + adversarially verified** (ultracode): an understand workflow mapped every connect/disconnect/dispose path +
+all 5 consumers; a 5-skeptic verify workflow attacked it and CAUGHT a regression I'd introduced (lone adapter disposed
+mid-connect leaked the just-opened radio because acquire read `this.device.id` live and dispose nulls it) → fixed by capturing
+the id before the await; a final re-verify confirmed all paths SAFE. +4 regression tests (`BleAdapter.test.ts`: lone/two-holder/
+never-connected/mid-connect). Still wants **HW re-verify** for the multi-node-same-device case on real Muse/printer/Buzz.
+
+**Two OPEN MAINTAINER DECISIONS still unanswered (from the prior kickoff, not mine):** (a) first-frame semantics — progression
++ melody-walk resolve their first chord/note BEFORE the first clock edge while arpeggiator resolves ON it (consistent-but-
+different; aligning touches 2 executors + tests); (b) D2 category — all 5 generative nodes shipped in `timing`; keep, or add a
+`music` grouping? Both are bellows/Thread-D, untouched this session.
+
+**Open:** still nothing committed; PR still held pending maintainer's word. The changeset is now a 9-body one (add the Buzz +
+BLE-overhaul unit). Smoke scripts in scratchpad (`smoke-buzz.mjs`, `smoke-ble.mjs`).
+
+---
+
+## 2026-07-20 (later 121) — Pre-handoff certification + hygiene sweep
+
+Ultrathink audit to certify the full uncommitted changeset before a fresh-context handoff (no new features).
+**Live gates re-run, all green NOW:** typecheck exit 0 · lint 0 err (49 pre-existing any-warns) · `test:unit` **2503** pass +
+11 todo (170 files) · build exit 0. **Hygiene:** removed a stray root scratch file `test-voicerange.mjs` (leftover from the
+later-120 audit's voiceLead testing — never tracked, now gone); no `console.log`/`debugger`/`.only`/`FIXME` added to source by
+the diff; remaining untracked files are all intentional (HelpModal, PairDeviceButton, bellowsTheory, the bellows node dirs,
+BaseAdapter.reconnect test). **State: UNCOMMITTED** on `phase0-file-format` (PR still held).
+
+**Changeset shape (coherent commit units for when the PR is greenlit):** (1) bellows D0 spike (dev-only) — note bellowsjs is
+now a genuine PROD dep used by D1/D2/poly-voice, so the old "move to devDeps" caveat is void; (2) node-search discoverability;
+(3) device/BLE deep-audit fixes; (4) pair-from-node; (5) help surface; (6) #18 prompt→modal; (7) picker-first first-run
+(RESOLVED this session); (8) Thread D — bellows: D1 instrument + shared kernel/theory + D2's 5 generative nodes + poly-voice
+(7 nodes, 250 defs total). ~1236 tracked insertions + the untracked node dirs. Audit verdict from later-120 stands:
+**PR-ready** now the blocker is fixed. A fresh kickoff prompt was produced for the next session.
+
+---
+
+## 2026-07-19 (later 120) — Thread-D audit (6-dim) + fixes + poly-voice node (closes the mono-per-trigger gap)
+
+Ran a **holistic 6-dimension adversarial audit** (`wf_3da6918f-363`, 26 agents: correctness / lifecycle / contract-determinism
+/ integration / tests / bundle-hygiene → refute-or-confirm each finding vs real code + real bellows → synthesize) over the whole
+uncommitted Thread-D changeset. **18 confirmed findings; verdict prReady=false on ONE blocker.** Lifecycle + bundle-hygiene
+dimensions came back CLEAN (kernel refcount/dispose, defineNodeState wiring, lazy-chunk split all sound). Fixed the blocker +
+the real major + a robustness nit, then built the audit's recommended next node.
+
+**Fixes landed:**
+- **[BLOCKER] progression `voiceLead` throws when voiceLow > voiceHigh** — reachable via the node's own overlapping control
+  ranges (36–72 / 60–96); bellows throws "no voicing fits the range" → the engine's outer try-catch stops a crash but the node
+  silently stops emitting. Fixed: order the bounds (`Math.min/max`) before the call. + regression test (inverted window emits a
+  valid voicing, no throw).
+- **[MAJOR] trigger pulse lost during async kernel boot** (bellows-instrument) — `ctx.trig` was gated behind `if(rec.instrument)`,
+  so a hit landing in the boot window was dropped. Fixed by a boot-safe **`queueNote(nodeId,note,vel)`** added to bellowsManager
+  (plays now, or queues + replays on boot); the trigger edge is now latched every frame. Gate switched to LEVEL-based (starts once
+  the voice is ready) so a note held through boot self-heals. + boot-race test.
+- **[minor] `nativeNodeOf` robustness** — Tone.Gain's `.input` IS the native GainNode (no `_nativeAudioNode` wrapper); added an
+  `inner instanceof AudioNode` check so the master-routing fallback can't silently no-op.
+- **[hygiene] `resetNodeState` beforeEach** added to the 3 stateful timing tests; **discoverability**: bellows-instrument
+  `pairsWith`/tips now point at poly-voice (chords) + arpeggiator.
+
+**NEW node — `poly-voice`** (`registry/audio/poly-voice/`, the audit's recommended next): the polyphonic counterpart to
+bellows-instrument — takes a `notes` array (a chord from Chord/Progression) and plays every note at once on one bellowsjs
+voice, **closing the mono-per-trigger gap** (chords couldn't sound as chords before — only via the arpeggiator). Reuses the
+shared kernel via bellowsManager (acquireVoice/getVoice/setVoiceEngine/queueNote); trigger fires the whole chord one-shot,
+gate sustains it (level-based, own `defineNodeState` heldIds); engine/gain/pan controls. 7 tests.
+
+**Gates green:** typecheck clean · lint 0 err (49 pre-existing any-warns) · `test:unit` **2503** pass + 11 todo (170 files, +2)
+· build ok (bellows chunk unchanged 368 KB; main +3 KB) · browser-smoke clean (**250 defs**; chord→poly-voice + progression→
+poly-voice chains build + Play→Stop 0 real errors — a chord audibly plays as a chord). **State: UNCOMMITTED** on
+`phase0-file-format` (PR still held). Audit says the changeset is **PR-ready now that the blocker is fixed**.
+
+**DEFERRED to maintainer (audit flagged as a design call, not a bug):** first-frame semantics — progression + melody-walk
+resolve their first chord/note BEFORE the first clock edge, while arpeggiator resolves ON the first edge. Consistent-but-different;
+the audit recommends confirming intended first-frame behavior before aligning them (would touch 2 executors + tests). Also
+deferred: assorted minor test-coverage additions (velocity edge cases, octaveRange/voice-range boundaries, curated-subset
+assertions) — all impl-correct, coverage-only. Dev spike `bellowsSpike.ts` has the same old `nativeNodeOf`; it's dev-only/
+slated for deletion, left untouched.
+
+**Thread D:** D0✓ D1✓ D2✓ + poly-voice✓. Remaining/optional: D3 `bellows-render` (offline→AudioBuffer); richer per-engine
+params + preset bank; a `strum` control on poly-voice. **Maintainer:** audible verify (chord→poly-voice) + the first-frame call.
+
+---
+
+## 2026-07-19 (later 119) — D2 COMPLETE: chord + progression + melody-walk (build→verify workflow)
+
+Finished the D2 node set. Inline-scouted the remaining bellows APIs (confirmed `buildStepwiseMatrix`/`weightedWalk` DO
+exist — the later-118 critique was over-cautious; and the exact `CHORD_TYPES` keys / `voiceLead` array-of-candidates arg /
+`buildProgression` signature), then ran a **build→adversarial-verify pipeline** (`wf_3bd5f217-058`, 6 agents) — one builder
+per node writing disjoint files, each followed by a verifier that re-derives expected values from REAL bellows, re-runs the
+test, and fixes defects in place. All three verified **pass**.
+
+**Built (all co-located `registry/timing/<id>/`, real-bellows tests, green):**
+- **`chord`** — stateless harmony source; `chord(parsePitchClass(root), type).midi(octave)` + `invert`, guarded type
+  (fallback `maj`), emits `notes`(array)/root/bass/name(symbol)/trigger passthrough; memoized. 9 tests.
+- **`progression`** — stateful (`defineNodeState`), clock-driven voice-led diatonic progression: `buildProgression`(seeded)
+  → per-bar `diatonicTriads`[degree] → `voiceLead(prev,[cand.midi],{low,high})`; emits voicing/root/bass/roman/degree;
+  reset→tonic; deterministic per seed. Restricted to 7-degree diatonic scales. 8 tests.
+- **`melody-walk`** — stateful, clock-driven musical random walk: `buildStepwiseMatrix`(states,rng,{leap,repeat}) +
+  `weightedWalk` with a chord-tone `gravitySet`; in-key, deterministic per seed, reset re-seeds. 8 tests.
+
+Verifier fixes: two misleading inline test COMMENTS in `progression.test.ts` (hard-coded degree arrays bellows doesn't
+produce; the assertions used runtime-derived values and always passed) — corrected. No code defects found in any node.
+
+**Gates green:** typecheck clean · lint 0 err (49 pre-existing any-warns) · `test:unit` **2493** pass + 11 todo (168 files,
++3) · build ok (all 3 ride the existing lazy bellows chunk — main `index` +11 KB total; bellows chunk unchanged at 368 KB)
+· browser-smoke clean (**249 defs**; all 6 D1+D2 nodes registered; a live 6-node chain — chord→arpeggiator→bellows-instrument
+plus metronome clocking arp/progression/melody-walk — builds + Play→Stop 0 real errors). **State: UNCOMMITTED** on
+`phase0-file-format` (PR still held).
+
+**Thread D status:** D0 spike ✓ · D1 bellows-instrument ✓ · **D2 generative/theory (5 nodes) ✓**. Remaining/optional: D3
+`bellows-render` (deterministic offline→AudioBuffer); richer per-engine params + preset bank for bellows-instrument (casual
+tier); a `poly-voice`/chord-player node (today `chord`/`progression` emit `notes` arrays but bellows-instrument is
+mono-per-trigger — they sound via the arpeggiator). **Maintainer:** audible verify of the generative chains; `music` vs
+`timing` category call (all D2 nodes shipped in `timing` — no `category.ts` descriptor precedent).
+
+---
+
+## 2026-07-18 (later 118) — D2 bellows generative nodes: scale-quantize + arpeggiator (design workflow + build)
+
+Continued Thread D → D2 ("the distinctive win"). Ran a 6-agent **design workflow** (understand→design→adversarial-critique;
+`wf_207d3454-e48`) that mapped the bellows generator/theory API + LATCH timing/note-flow conventions, proposed a 5-node set
+(scale-quantize, arpeggiator, chord, melody-walk, progression), and adversarially verified it against real code. The critique
+**caught two real API bugs by reading bellows source** and gave a conditional GO. Then built the two highest-value nodes.
+
+**Verified note-stream contract (adopted):** LATCH note streams are TRIGGER-DRIVEN (not array playback). Clock-driven
+generators take `clock`/`reset` trigger inputs, advance internal position ONLY on `ctx.trig('clock')` (reset wins on a
+coincident frame — matches step-sequencer), emit `note` HELD between edges + `trigger`=1 only on the edge frame. Determinism:
+any randomness derives from `rng(\`${nodeId}:${seed}\`)` stored in `defineNodeState`, re-created on reset/seed-change.
+
+**Built (both green + real-bellows-tested):**
+- **`scale-quantize`** (`registry/timing/scale-quantize/`, category `timing`) — snaps a MIDI note to the nearest tone of a
+  chosen key (root + scale), transpose, clamp 0..127; passes the trigger edge through 1:1 (changes WHICH note, never WHEN).
+  Outputs note/trigger/degree/inScale. Stateless. **Critique fix applied:** scale-select option values are the EXACT bellows
+  `SCALES` keys (space-separated: `harmonic minor`, `major pentatonic`, `whole tone`, …) — `new Scale()` throws on an unknown
+  name; guarded with a fallback to `major`. 8 tests (real quantize: C#→C tie-down, degree, transpose+clamp, passthrough).
+- **`arpeggiator`** (`registry/timing/arpeggiator/`) — the marquee generative node. Clock-driven; wraps bellows `Arpeggiator`
+  (up/down/updown/downup/random/order × 1–4 octaves) in `defineNodeState`. Resolves a note pool from a `notes` array input
+  or the root triad of the key; `setNotes` keeps position on live pool change; random mode deterministic per `rng(nodeId:seed)`;
+  reset re-seeds. Outputs held note/trigger/velocity + pool echo. 8 tests (up/down/octaves sequences, explicit pool, hold-between-edges,
+  reset-to-top, random determinism, velocity clamp).
+
+**Shared:** `services/audio/bellowsTheory.ts` — lazy `getTheory()` (dynamic `import('bellowsjs')`, reuses the SAME lazy
+bellows chunk as bellowsManager → theory adds ZERO main-bundle weight; verified: main `index` grew only ~6 KB total for both
+nodes; bellows chunk 304→368 KB, still lazy) + `getScale(theory,root,name)` cached-with-fallback. **Deliberately chose dynamic
+import over the critique's static-import suggestion** — static risks dragging bellows into the main chunk (the package only
+exposes the bundled `.` entry, no theory subpath); dynamic keeps main clean at the cost of a trivial passthrough-until-loaded
+guard, which is fully tested.
+
+**Gates green:** typecheck clean · lint 0 err (49 pre-existing any-warns) · `test:unit` **2465** pass + 11 todo (165 files, +2)
+· build ok · browser-smoke clean (**246 defs**; both nodes registered; a live metronome→arpeggiator→bellows-instrument chain
+builds + Play→Stop 0 real errors). **State: UNCOMMITTED** on `phase0-file-format` (PR still held).
+
+**D2 REMAINING (next increment):** `chord` (apply critique fixes — chord type `'m'`→`'min'`; `chord(root,type)` needs a
+pitch-class NUMBER via `parsePitchClass`, not the select string), `progression` (voice-led, highest complexity, `voiceLead`
+state), `melody-walk` (⚠ MUST first verify `buildStepwiseMatrix`/`weightedWalk` actually exist in bellows 0.1.5 — the design
+cited them but the critique did NOT confirm; may be fabricated). **Open decisions:** new `music` category vs keep in `timing`
+(no `category.ts` descriptor precedent — shipped in `timing` for now); polyphony (chord/progression emit a `notes` array but
+bellows-instrument plays one note/trigger — needs the arp to serialize, or a future poly-voice node).
+
+**MAINTAINER AUDIBLE-VERIFY:** metronome→arpeggiator→bellows-instrument should play an audible arpeggio (the D2 payoff).
+
+---
+
+## 2026-07-18 (later 117) — D1 bellows-instrument node + picker-first first-run (both maintainer-approved)
+
+Two maintainer-picked tracks, both landed green + browser-verified.
+
+**Track A — picker-first first-run (re-enabled).** `EditorView.onMounted` no longer calls
+`loadSampleFlowIfFirstVisit()`; first-timers get `createFlow('My First Flow')` at **0 nodes**, so the empty-state
+template picker shows. The full 19-node demo stays one click away via the existing "Open the full Starter Flow" CTA
+(`openStarterFlow` → `sample-flow.json`, `replace:false`). The store method `loadSampleFlowIfFirstVisit` is left in place
+(unused, re-enable-able). This is the `latch-ux-audit-2026-07` recommendation; supersedes the later-114 built-then-reverted
+sample-on-first-visit decision. **Browser-verified:** fresh load → 0 nodes + `.empty-state` (560×443, visible) + CTA
+visible; clicking the CTA loads the 19-node Starter Flow.
+
+**Track B — D1 `bellows-instrument` node (Thread D).** New co-located audio node
+(`registry/audio/bellows-instrument/{node.ts,bellowsManager.ts}`) + unit test. **244 defs** now (was 243).
+- **Design (follows the plan §5):** ONE shared bellows kernel per session (`bellowsManager` singleton) booted lazily on
+  LATCH's native `AudioContext` (recovered from Tone's standardized-audio-context wrapper, same helpers as the D0 spike);
+  each node is a `b.voice(engine)`. The shared `b.analyser` is routed ONCE into LATCH's master (Tone.connect →
+  native-connect fallback), so master volume/meter/recording capture it. **No per-node audio output port** — bellows has
+  no free graph out of the worklet, so a per-node wireable output would need a kernel per node (deferred).
+- **bellowsjs is now a lazy dynamic `import()`** inside the manager → build emits a **separate `bellows-*.js` chunk
+  (304 KB raw / 86.6 KB gzip)**, NOT in the main bundle. (Bigger than the plan's ~125 KB estimate; still zero main-bundle
+  cost until first use.) The prod dep is now justified by real use (no longer dev-spike-only).
+- **Ports/controls:** inputs note (MIDI) / velocity (0–1 or 0–127, normalized) / gate / trigger; controls engine (select,
+  18 engines) / gain (linear) / pan. Trigger fires a one-shot `note({dur:'8n'})`; gate `on()`/`off()` sustains on the
+  rising/falling edge (uses `ctx.trig`/`ctx.level`). Gain/pan applied only on change.
+- **Lifecycle:** `defineLifecycle({label:'bellows', gc, disposeAll})` — gc releases (allOff) voices for removed nodes and
+  disposes the kernel when the last bellows node is gone; disposeAll (engine stop) allOffs all + disposes the kernel +
+  resets the singleton so the next Play re-boots. (Leak-class discipline.)
+- **Test:** `tests/unit/registry/audio/bellows-instrument.test.ts` (8) — ports/controls shape, engine acquire, trigger
+  one-shot, velocity normalize, gate on/off edges, gain/pan dedup. Manager mocked (kernel can't boot under happy-dom).
+
+**Gates green:** typecheck clean · lint 0 err (49 pre-existing any-warns) · `test:unit` **2447** pass + 11 todo (162
+files, +1) · build ok (bellows chunk split) · browser-smoke clean (244 defs; picker-first + demo-CTA + Play→Stop 0 real
+errors). **State: UNCOMMITTED** on `phase0-file-format` (PR still held). These two tracks are NOT yet folded into the
+6-body changeset summary above — they're a 7th/8th coherent unit (bellows D1 node; first-run flip).
+
+**MAINTAINER AUDIBLE-VERIFY (code can't):** bellows kernel actually boots under LATCH's COEP headers + makes sound routed
+through master (the D0 spike proved wiring headlessly; audible is HW). Play a note into a `bellows-instrument` (e.g.
+keyboard/sequencer → Note + Trigger). **Known D1 limits (documented):** no per-node audio output (shared-kernel design);
+live engine-change re-voices but the old kernel channel isn't individually freed until kernel dispose (bounded by the
+voice pool); per-engine param controls (attack/cutoff/…) deferred to the structured layer — only engine/gain/pan for now.
+
+**Next:** D2 generative/theory nodes (euclid/arp/scale/chord) · richer per-engine params + preset bank (casual layer) ·
+`bellows-render` (D3) · OR back to the held PR / component-test pass / #2 responsive header. Move `bellowsSpike.ts` intent:
+D0 spike can now be deleted (graduated into D1) once the maintainer signs off on the audible check.
+
+---
+
+## 2026-07-16 (later 116) — Integrity/hygiene audit of the full changeset + bounded-retry test
+
+Ultrathink **self-audit** (no new features) to certify the whole uncommitted changeset is PR-ready after a long
+multi-turn session. **Integrity re-verified green:** typecheck clean · lint 0 err (49 pre-existing any-warns) ·
+`test:unit` **2438** pass + 11 todo (161 files, +1) · build ok. **State: UNCOMMITTED** on `phase0-file-format`
+(PR still held).
+
+**Audit results:**
+- **Hygiene scan clean:** no `console.log`/`debugger`/`TODO`/`.only`/`xit` added to source by the diff (the only "TODO"
+  hits are HANDOFF prose); untracked files are exactly the intended set (`HelpModal.vue`, `PairDeviceButton.vue`,
+  `dev/` spike, `registry/connectivity/` + `BaseAdapter.reconnect` tests); no scratchpad/`.mjs`/tmp junk tracked.
+- **`bellowsjs` confirmed dev-spike-only:** imported ONLY by `src/renderer/dev/bellowsSpike.ts`, and nothing outside
+  `dev/` references the spike → tree-shaken, zero bundle. Prod-dep placement is the documented intentional pre-staging
+  (move to devDeps if D1 slips). PR-clean with that caveat.
+- **Closed the clearest real gap from the later-115 audit** (a refuted-but-accurate coverage hole): **BaseAdapter
+  bounded-retry termination.** The reconnect loop is self-recursive (performConnect failure → scheduleReconnect); the
+  finite `maxReconnectAttempts` cap is the ONLY thing preventing an infinite retry storm. **+1 test**
+  (`BaseAdapter.reconnect.test.ts`): with `maxReconnectAttempts:2` and always-failing `doConnect`, exactly 3 `doConnect`
+  calls (initial + 2), ends in `error`, and advancing more fake-time schedules **no further attempts** (proves termination).
+- **Benign observation (not fixed — cosmetic, pre-existing):** the cap's `ERROR: 'Max reconnection attempts reached'` is
+  a no-op when the machine is already `error` (the last failed `performConnect` already sent ERROR), so that specific
+  message never surfaces (`Invalid transition: error + ERROR`). Termination + `error` status are correct; only the final
+  error string differs. Not worth a state-machine change now.
+
+**Still-open coverage gaps (deferred, non-blocking — from later-115):** `bindToTarget` write-back (needs a modal
+component test — heavier harness per the component-test gotchas); `ble-characteristic` read-path parse-agreement;
+NodeExplorer cross-category search (distinct impl from the tested store getter). A focused component-test pass could
+close these if desired.
+
+**Overall:** changeset = 6 coherent bodies (bellows spike / search fixes / BLE audit fixes / pair-from-node+audit / help
+surface / prompt-modal+PR-audit), green + browser-verified + audited three ways (later-113 pair, later-115 PR-readiness,
+later-116 integrity). **Ready to commit + open the PR on the maintainer's word.**
+
+**Next:** MAINTAINER DECISION on #1 first-run (built+reverted later-114) · #2 responsive header · optional component-test
+pass for the deferred gaps · D1 bellows-instrument (Path A) · commit + open PR.
+
+---
+
+## 2026-07-15 (later 115) — PR-readiness audit (4-dim) + fixes + #18 window.prompt→modal
+
+Ran a **PR-readiness ultracode audit** (4 dimensions — correctness/regressions, hygiene/dead-code, a11y/UX, test-coverage
+— find → adversarial default-refute verify, 12 agents) over the **entire uncommitted changeset** (24 tracked + 4 untracked
+files, ~825 insertions, all 5 bodies) since it's heading toward a PR never reviewed as a whole. **4 confirmed / 0
+ship-blocking.** Fixed all 4, then implemented the queued **#18 window.prompt→modal**. **Gates green:** typecheck · lint
+0 err (49 any-warns) · `test:unit` **2437** pass + 11 todo (160 files, +2) · build ok. **State: UNCOMMITTED** on
+`phase0-file-format` (PR still held).
+
+**Audit fixes:**
+- **[minor] `?` opened Help ON TOP of another modal** (the new `?` handler only guarded input/textarea focus, not
+  other open dialogs → stacked dialogs). Fixed: `?` bails when a `[aria-modal="true"]` dialog is already open unless it's
+  Help itself (so `?` still toggles Help closed). **Browser-verified:** `?` over the Bluetooth modal no longer stacks;
+  opens normally when nothing's open.
+- **[nit] node-hint not announced** — added `role="status"` to the guidance `<p>` in MuseHeadMap + PrintPreview so SR
+  users hear the "pair a device" hint when it appears.
+- **[nit] the Web-Bluetooth `unsupported` feature-detect branch was untested** (duplicated in muse + printer executors) →
+  **+2 tests** (`registry/connectivity/device-unsupported.test.ts`): both executors emit status `unsupported` when
+  `navigator.bluetooth` is absent (executor reached via the node's default-export `.executor`; stub `ImageBitmap` for the
+  printer's compose path).
+- **Refuted (accurate gaps, judged non-blocking):** `bindToTarget` untested (no modal component test exists),
+  BaseAdapter bounded-retry termination untested, ble-characteristic read-path parse-agreement untested, NodeExplorer
+  cross-category search untested. Worth a follow-up test pass but not ship-blockers.
+
+**#18 window.prompt→modal (SHIPPED).** Replaced the native `window.prompt` for subflow naming (`EditorView`
+`createSubflowFromSelection`) with a styled, focus-trapped, validated modal mirroring the FlowTabs rename-modal pattern
+(`useDialogA11y`, empty-name → Create disabled, Enter confirms / Esc cancels). The Ctrl/⌘+G → function wiring is
+unchanged; only the prompt body changed. **Browser-verified** (keyboard path: ArrowRight→Enter selects, ⌘G opens
+"Name the subflow", `window.prompt` never called, whitespace disables Create, Enter creates the subflow instance, 0
+errors). *(Note: headless Vue-Flow node selection via mouse-click is unreliable — clicks land on in-node controls; the
+keyboard selection path is the reliable e2e harness for canvas-selection features.)*
+
+**Next:** #2 responsive-header kebab (open) · follow-up test pass for the refuted gaps · MAINTAINER DECISION on #1
+first-run (built+reverted later-114) · D1 bellows-instrument (Path A) · commit the changeset (6 bodies now: bellows spike
+/ search fixes / BLE audit fixes / pair-from-node+audit / help surface / prompt-modal+PR-audit) + open the PR on the word.
+
+---
+
+## 2026-07-15 (later 114) — `?` help/shortcuts surface (#4); first-run change built then REVERTED (deliberate-decision conflict)
+
+Ran an **ultracode triage workflow** (8 candidate next-works from the UX audit → each verified against the *current*
+code → synthesis pick). It found #9 empty-play-guard + #17 header aria-labels already shipped, and picked **#1 first-run
+routing** (do-now) with **#4 help surface** as runner-up. Built both — then, checking the `latch-ux-audit-2026-07`
+memory, found #1 was already logged as a **deliberate maintainer decision** ("sample-flow-on-first-visit is deliberate",
+under later-105's "Deferred maintainer DECISIONS, not bugs"). So **#1 was reverted** to respect that decision; only **#4
+shipped**. (The triage agents read the code + audit doc but not that memory — the audit *recommends* #1 as a quick win,
+but the recorded *decision* was to keep the demo-on-first-visit. Flagged for the maintainer; trivially re-enableable.)
+**Gates green:** typecheck · lint 0 err (49 any-warns) · `test:unit` **2435** pass + 11 todo (160 files, +1) · build ok.
+**State: UNCOMMITTED** on `phase0-file-format` (PR still held).
+
+**#4 `?` Help / shortcuts surface (SHIPPED).** New `HelpModal.vue` (mirrors the existing modal + `useDialogA11y`
+focus-trap pattern): a 3-step quickstart (add a node → wire it → Play), a **shortcut cheat sheet enumerated from the real
+handlers** (`EditorView.handleKeyDown` + `useCanvasKeyboard` — editing / subflows / canvas-nav, platform-correct ⌘ vs
+Ctrl), and a `latch.design` docs link. Wired via `ui` store `helpOpen`/`openHelp`/`closeHelp`/`toggleHelp`, a header `?`
+button (`HelpCircle`), and a `?` (Shift+/) keybinding in `handleKeyDown`. `<HelpModal/>` mounted in App.vue. +1 store test.
+
+**Browser walkthrough (verified):** `?` opens **HELP & SHORTCUTS** (3 quickstart + 15 shortcuts + ⌘Z + docs link, **focus
+trapped in dialog**) → Escape closes → the header `?` button also opens it. **0 real console errors.** (While #1 was
+still in, the walkthrough also confirmed picker-first first-run works end-to-end — that path is available on request.)
+
+**#1 first-run → template picker (BUILT, REVERTED — maintainer's call).** The change: land first-timers on the empty
+canvas so the existing template picker greets them (demo stays one click away via the picker's "Open the full Starter
+Flow" CTA), instead of auto-loading the 263 KB / 19-node sample flow. Reverted per the deliberate-decision memo above.
+**To re-enable:** in `EditorView.onMounted` drop the `loadSampleFlowIfFirstVisit()` call and just `createFlow(...)` when
+`!activeFlow`; the picker (which renders at 0 nodes) then does the rest. The `loadSampleFlowIfFirstVisit` store method is
+kept intact.
+
+**Process note — a phantom bug, caught + reverted.** Mid-walkthrough a selector matched the **Properties-panel**
+`.empty-state` (not the canvas picker), which looked like the picker "not hiding after adding nodes." I briefly added a
+`canvasNodeCount` computed to "fix" a theorized `v-model:nodes` array-swap reactivity bug — then DOM-dumped the parent
+chain, found the mismatch, and **verified the original `activeNodes.length` gate hides the picker correctly**. Reverted.
+Lesson: the canvas picker is uniquely `.starter-templates` / `.open-starter-flow` — don't match the bare `.empty-state`
+(the Properties panel reuses that class).
+
+**Deferred (from the triage, with reasons):** #2 responsive-header kebab (mobile isn't a core node-editor persona; adds
+a11y-sensitive dropdown) · #18 window.prompt→modal for subflow naming (clean FlowTabs pattern to copy, not a first-run
+surface) · #6 audio-mod-ports (L effort / poor headless-testability; ship reverb wet/decay alone if picked up).
+
+**Next:** MAINTAINER DECISION on #1 first-run (audit recommends picker-first; earlier memo said keep the demo) · #18
+prompt→modal or #2 responsive-header · D1 bellows-instrument (Path A) · commit the changeset (bellows spike / search fixes
+/ BLE audit fixes / pair-from-node+audit / help surface) + open the PR when the maintainer says go.
+
+---
+
+## 2026-07-15 (later 113) — Pair-from-node ultracode audit (6-dim) + 2 fixes + adjacent doConnect UUID fix
+
+Ran a **6-dimension ultracode adversarial audit** (find → per-finding default-refute verify, 11 agents) over the
+later-112 pair-from-node changeset: **2 confirmed / 3 refuted**. Fixed both confirmed (minor) + did the queued adjacent
+`BleAdapter.doConnect` UUID latent. **Gates green:** typecheck · lint 0 err (49 any-warns) · `test:unit` **2434** pass +
+11 todo (160 files, +2) · build ok. **Browser smoke (243 defs):** button + target-mode + reactivity intact, **a11y
+verified** (no aria-label, accessible name = visible text, icon aria-hidden), Play→Stop 0 real errors. **State:
+UNCOMMITTED** on `phase0-file-format` (PR still held).
+
+**Confirmed → fixed:**
+- **[minor a11y] `PairDeviceButton` failed WCAG 2.5.3 (Label in Name):** the hard-coded `aria-label`
+  ("Pair a Bluetooth device") overrode the visible text ("Pair device…"), so a speech-input user couldn't activate it by
+  its visible name. **Fix:** dropped the `aria-label` (visible text is now the accessible name) + `aria-hidden` on the
+  decorative Bluetooth glyph.
+- **[minor undo] `bindToTarget` wrote `deviceId` outside undo history**, unlike every other control edit
+  (`BaseNode.updateControl` / properties panel route through `recordParamEdit`). Pairing wasn't undoable and a later
+  unrelated undo could silently revert the bind (snapshot-based undo). **Fix:** wrapped the write in
+  `recordParamEdit(nodeId, 'Pair device to …', …)` for parity/undoability. (The modal's sibling *drop* ops stay
+  history-free — consistent with `addNode`/`addEdge`; only the control write needed recording.)
+
+**Refuted (verified non-issues):** a claimed target→drop template flip during the modal leave-transition (Vue keeps the
+leaving element's prior vnode — no re-render against `target=null`); a bind race; and a muse `info.overview` copy nit
+(the reworded tip already surfaces the button — overview left as-is).
+
+**Adjacent latent fixed (the queued "continue" item):** `BleAdapter.doConnect` had a **no-op ternary**
+(`serviceUUID.length<=4 ? uuid : uuid`) and pushed a possibly-bare-short UUID string into `requestDevice()` filters +
+raw `characteristicUUIDs` into `optionalServices` — `requestDevice` rejects a bare 4-hex string (needs a full 128-bit
+UUID or numeric alias), so a hand-typed generic `ble-*` node with a short UUID threw (same class as the later-111 SIG
+fix, on the no-injected-device path). **Fix:** normalize both via `normalizeUuid`. **+2 regression tests**
+(`BleAdapter.test.ts`: bare short service+char UUIDs → full 128-bit in the `requestDevice` opts; full UUID unchanged).
+
+**Next:** D1 bellows-instrument (Path A) · Track 2 UX (header kebab / ?-help / prompt→modal / audio-mod ports) · commit
+the changeset (now 4 logical bodies: bellows spike / search fixes / BLE audit fixes / pair-from-node+audit) + open the
+PR when the maintainer says go.
+
+---
+
+## 2026-07-15 (later 112) — [7] Pair-from-node: bind a device to an existing device node
+
+Closed the deepest device-UX gap ([7], the later-111 "recommended next"): a **hand-added** `muse-eeg`/`thermal-printer`
+node was a dead-end. Their custom NodeViews (head-map / print-preview) replace the whole node body, so the `deviceId`
+**control is never rendered on the canvas** — the only way to bind a device was the header panel's *drop a new node* flow.
+Now each device node carries a **"Pair device…" button** that opens the Bluetooth panel in a new **target (bind) mode**:
+instead of dropping a node, it writes the granted id onto **this** node via `flowsStore.updateNodeData(id,{deviceId})`.
+
+**What changed:**
+- **`ui` store** — `bluetoothPairTarget: {nodeId,nodeType?,label?} | null`; `openBluetoothDeviceManager(target?)` sets it
+  (header button still calls it targetless → unchanged drop flow), `closeBluetoothDeviceManager()` clears it. All modal
+  close paths (X / Esc / overlay / bind) route through `close()`, so no stale target across open/close cycles.
+- **`PairDeviceButton.vue`** (NEW, `registry/connectivity/`) — shared button; `@click.stop @mousedown.stop` (no node-drag),
+  text flips **"Pair device…" → "Change device…"** off `props.data.deviceId` (reactive via Vue Flow `v-model:nodes`).
+  Rendered by **MuseHeadMap** (below the head-map) and **PrintPreview** (below Print). PrintPreview also gained the
+  `_error`/no-device **hint** the head-map already had (parity).
+- **`deviceProfileRegistry.profileForNodeType(nodeType)`** (NEW) — resolves a node type → the profile that `suggests` it,
+  so the panel **pre-focuses the matching device card** in target mode (drop-in vendor profiles wire this for free).
+- **`BluetoothDeviceManagerModal`** — target mode: title `PAIR DEVICE`, retargeted intro, autofocus the matching card,
+  and a single **"Bind to this node"** result action (`bindToTarget()`, node-existence-guarded) replacing the drop/generic
+  buttons. Every scan outcome (vendor / not-installed / unknown / scan-all) binds; **no path both binds and drops.**
+- **Executor guidance reworded** (muse + printer `node.ts`) from `Pair … via "Add Bluetooth Device"` →
+  `No device — click "Pair device…" to connect …`, and node help tips now mention the on-node button. String-only.
+
+**Tests (+6):** `profileForNodeType` (round-trips muse-eeg/thermal-printer, null for unsuggested types) in
+`deviceRecognition.test.ts`; `ui` store target open/close/clear in `ui.test.ts`.
+
+**Gates green:** typecheck · lint 0 err (49 pre-existing any-warns) · `test:unit` **2432** pass + 11 todo (160 files) ·
+build ok. **Browser smoke (live app, 243 defs):** hand-added muse node shows "Pair device…" → click opens **PAIR DEVICE**
+targeted at the node, autofocuses "Muse (EEG headband)", binds → button flips to "Change device…"; header targetless-open
+leaves target null; printer button renders; **Play→Stop 0 real console errors.** **Adversarial review:** no real bugs
+(reactivity / bind-guard / focus-a11y / no-double-action / event-stop / close-paths / tokens all verified). **State:
+UNCOMMITTED** on `phase0-file-format` (PR still held).
+
+**Next:** adjacent latent `BleAdapter.doConnect` UUID normalize (no-op ternary + bare-short push, ~L245) · D1
+bellows-instrument (Path A) · Track 2 UX · commit the 3-body changeset + open PR when the maintainer says go.
+
+---
+
+## 2026-07-15 (later 111) — Muse live-test → device/search deep audit (6-dim, 33 agents) + 15 fixes + regression tests
+
+Maintainer live-tested a real Muse headband and hit two snags: (a) the node didn't show in search; (b) a hand-added
+node said "no device". Diagnosed both, then ran an **ultracode 6-dimension adversarial audit** (find → per-finding
+default-refute verify) over the BLE/device/connection/search subsystem: **24 confirmed / 3 refuted**, and it independently
+confirmed the search fix is regression-free. Fixed the blocker + all majors + most minors; deferred the rest with clear
+notes. **Gates green:** typecheck · lint 0 err · `test:unit` **2426** pass + 11 todo (160 files, +8 new) · build ok.
+**Browser smoke:** 243 defs, muse/printer/BLE modal render, Play→Stop 0 errors; sidebar search verified end-to-end.
+**State: UNCOMMITTED** on `phase0-file-format` (PR still held).
+
+**The blocker (would hit every live Muse drop):**
+- **`BaseAdapter.scheduleReconnect` never reconnected.** The timer sent `RECONNECT_START` (→`connecting`) then called
+  `connect()`, which throws because `CONNECT` is invalid from `connecting` — so `doConnect()` was NEVER reached and the
+  machine spun `error↔reconnecting` forever. A dropped Muse (routine on a moving head) never recovered; also broke
+  auto-reconnect for **WS/MQTT/OSC**. Fix: extracted `performConnect()` (the connect body) and route both `connect()`
+  and the reconnect timer through it, so reconnect runs `doConnect()` from `connecting`. **+3 regression tests**
+  (`BaseAdapter.reconnect.test.ts`: recovers after drop, retries across a transient failure, no adapter-retry when off).
+  - **Blast radius (self-audited later-111 close):** this was dead for EVERY `autoReconnect:true` adapter —
+    WS/MQTT/OSC/Clasp/BLE — so the fix *activates* a dormant path (cf. the earlier BLE reconnect fix exposing latent
+    bugs). Verified reconnect-safe: **MQTT** (`reconnectPeriod:0` → no mqtt.js self-reconnect double-up;
+    `if(client?.connected)return` guard) and **WebSocket** (`if(ws&&OPEN)return`; `onclose` nulls `this.ws`, dead socket
+    GC'd; fresh socket per attempt). **OSC/Clasp not individually verified this session** (same fresh-client-per-`doConnect`
+    pattern) — light watch item, not a blocker.
+
+**Majors fixed:**
+- **muse/thermal set `autoReconnect:true` AND ran executor retry** (two owners; drop-retry unreachable) → `autoReconnect:false`
+  so the executor's `canConnect()`-throttled loop is the single owner (re-dials from `error`).
+- **SIG profiles passed bare 4-hex UUID *strings* to `requestDevice()`** (`deviceProfileRegistry.ts:70`) → "Scan all
+  devices" + every standard-service card threw. Now use the full 128-bit `p.uuid`. **+1 regression test** (all `sig-*`
+  requests carry full UUIDs).
+- **`ble-characteristic` Read bypassed the profile parser** → read outputs ≠ notify outputs. Added
+  `BleAdapter.readCharacteristicRaw()` + `getCharacteristicProperties()`; the Read path now decodes via
+  `parseCharacteristicValue` like notify. Also **[11]** `properties` port (was always null) now populated, **[21]**
+  `rawValue` honours DataView `byteOffset/byteLength` (both read + notify). **+3 BleAdapter tests.**
+
+**Minors fixed (search/discoverability + device UX):**
+- Node search now truly spans all categories on ALL surfaces: **sidebar auto-expands** collapsed sections during a query
+  (`AppSidebar.isCategoryCollapsed`), **snippet search** spans all (NodeExplorer), **stale tags** no longer suppress
+  cross-category hits, **category dropdown** shows "Searching all categories". **+1 store regression test**
+  (`filteredDefinitions` cross-category). *(The earlier same-session fix made `filteredDefinitions`/`filteredNodes`
+  skip category scoping when a query is present; this completes it.)*
+- **Web Bluetooth feature-detect** in muse-eeg + thermal-printer executors → clear "unsupported" (Chrome/Edge) message on
+  Safari/Firefox instead of a deep adapter error.
+- **Muse `_error` guidance now rendered** in `MuseHeadMap` (was a bare status word) — "Pair a Muse via Add Bluetooth
+  Device" now visible on the node, directly unblocking the hand-added-node case.
+
+**Deferred (documented, NOT done):**
+- **[7] Full pair-from-node** (the deepest UX fix): a "Pair device…" button that retargets the manager to bind THIS
+  node's `deviceId` (rather than only dropping a NEW bound node). The visible `_error` guidance mitigates the dead-end;
+  the real fix is a modal target-node mode + `flowsStore.updateNode`. **Recommended next.**
+- **Adjacent latent bug (not in confirmed set):** `BleAdapter.doConnect` (~line 245) has a no-op ternary
+  `length<=4 ? serviceUUID : serviceUUID` and pushes a possibly-bare-short `{ services:[shortUUID] }` into `requestDevice`
+  — same class as the SIG fix, but only on the no-injected-device path. Normalize via `normalizeUuid`/numeric alias.
+- **[17]** static `grantedDevices` cache never evicted (evict on SecurityError/NetworkError). **[18]** default preset is
+  `p50` (EEG+PPG) but PPG is never subscribed; reference default is `p21` (EEG-only) — HW-verify which presets stream
+  before changing. **[23]** `bellowsjs` is a prod `dependency` though only the DEV spike imports it — left as intentional
+  pre-staging for D1 (spike comments note it); move to devDeps if D1 slips.
+
+**HW-VERIFY CHECKLIST (maintainer, reference-derived — audit ranked these):** (1) Muse **battery** telemetry
+`getUint16(2)/512` offset+endianness vs the Muse app %; (2) Muse **resume opcode** `d` — confirm EEG notifications flow
+after connect (head-map not flat while 'connected'); (3) **contact heuristic** thresholds (DC-inclusive RMS — consider
+DC-removed window); (4) **ESC/POS** 100 B/28 ms pacing + FF02-vs-Nordic write char on a tall live print.
+
+**Next:** [7] pair-from-node · fix the adjacent doConnect UUID latent · D1 bellows-instrument (Path A) · Track 2 UX · open PR.
+
+---
+
+## 2026-07-15 (later 110) — D0: bellowsjs spike (Thread D) — routing RESOLVED, worklet-under-COEP CONFIRMED
+
+Ran the Thread-D **D0 spike** (`docs/plans/BELLOWSJS_EVALUATION_2026-07-13.md` §5–6): add `bellowsjs`, boot on LATCH's
+shared context, prove one voice sounds + **routes into LATCH's master graph**, and confirm the blob worklet loads under
+COEP. Done empirically inside a real LATCH page (headless Chrome, `crossOriginIsolated=true`) so the COEP headers + Vite
+dep pipeline are production-representative. **All three D0 questions answered PASS.** `bellowsjs@0.1.5` installed
+(Apache-2.0 — one-way compatible into MIT; NOTICE/attribution owed at release, not spike).
+
+**Artifact:** `src/renderer/dev/bellowsSpike.ts` — DEV-ONLY, **not imported by the app** (zero bundle impact; Vite
+tree-shakes it). Driven by `scratchpad/bellows-spike.mjs`. Delete after sign-off or graduate into the D1 node.
+
+**Findings (empirical):**
+- **Worklet-under-COEP: CONFIRMED.** bellows loads its kernel via `URL.createObjectURL(new Blob([code]))` →
+  `audioWorklet.addModule(blobUrl)`. Same-origin blob is NOT blocked by COEP `credentialless`; `Bellows.boot` succeeded,
+  `crossOriginIsolated=true`, `va`+`pluck` voices created + notes scheduled, `kernelErrors: []`, 0 console errors. The
+  `{ workletUrl }` → bundled `dist/worklet.js` fallback is only needed if a `blob:` CSP is ever added.
+- **Routing into master: ACHIEVABLE (the §5 open question is resolved — no parallel-to-destination / MediaStream tap
+  needed).** bellows wires `kernelNode → analyser → ctx.destination` (`bellows.js:6976`), so `b.analyser` is **inline**:
+  detach it (`analyser.disconnect()`) and reconnect into LATCH master. bellows' own meter reads the analyser's *input*
+  side, so rerouting the output is safe; dispose already calls `analyser.disconnect()` (`bellows.js:7242`).
+- **THE integration snag (new, material):** LATCH's Tone.js runs on **`standardized-audio-context`**, so
+  `Tone.getContext().rawContext` is a **wrapper, not a native `BaseAudioContext`** — bellows' native `AudioWorkletNode`
+  ctor rejects it (`parameter 1 is not of type 'BaseAudioContext'`). Two proven paths around it:
+  - **Path A (works today, recommended for D1):** recover the native ctx via `rawContext._nativeContext`, boot bellows on
+    it, and native-connect `b.analyser` onto master's underlying `_nativeAudioNode`. `Tone.connect(nativeAnalyser, …)`
+    REJECTS the truly-native node, so the native fallback is required. Cost: standardized-audio-context private-field
+    access — but **isolated to the bellows boot/route code**, guardable + unit-testable, and leaves Tone's context + all
+    200+ existing audio nodes untouched.
+  - **Path B (clean-looking, DEFERRED):** `Tone.setContext(new AudioContext())` at AudioManager init → native rawContext
+    → bellows boots directly + `Tone.connect(b.analyser, master)` works with no private fields. Probe-confirmed on
+    Chromium (`scratchpad/setcontext-probe.mjs`). **NOT adopted** — see review.
+
+**Adversarial review (verified):** flipped the recommendation from B→A. Key confirmed findings: (1) **all proof is
+Chromium-only**; Path B swaps the audio foundation for *every* node on the exact **iOS-Safari** path that
+standardized-audio-context + `audioUnlock.ts` exist to serve — under-evidenced. (2) **Broad, SILENT blast radius:** ~20
+nodes cross-context `.connect()` off `rawContext` inside `try/catch {}` (`pitch-detect/node.ts:126-155`,
+`wavetable/node.ts`, `emulation.ts:198-201`, `AudioBufferService.ts:91-102`) — under Path B on Safari these could refuse
+the connect and silently return zeros, no error. (3) A literal `setContext(new AudioContext())` **drops the resume**
+(`Tone.start()` at `AudioManager.ts:68` both installs *and* resumes) → silent output; Path B must `setContext` **then**
+still `Tone.start()`/resume in the gesture, and must `close()` the orphaned prior context (~6-ctx cap; 2 extra
+`new AudioContext()` already exist: `SynthNode.vue:160`, `AudioBufferService.ts:111`). Verdict: **Path A is the
+lower-regression D1 choice; Path B only after real iOS-Safari validation against those ~20 consumers + interruption
+recovery.**
+
+**Bundle (§7 Q4):** bellows ≈ **125 KB gzip** main-thread (worklet code is inlined into the blob; `worklet.js` 36 KB is
+CSP-fallback-only). Modest vs LATCH's ~1.8 MB-gzip index + ML bundles. **D1 should lazy-load** (dynamic import in the
+bellows executor) so it loads only when a bellows node is used.
+
+**D1 open items (carry-over):** connect-then-disconnect on reroute (a failed reroute leaves a live-but-silent engine);
+per-node dispose/gc removing the `analyser→master` edge on node removal (repo's recurring leak class); `b.meter` was
+`null` after 400 ms (populates once transport runs — confirm in D1); commit the Path-B probe if B is ever revisited.
+
+**Gates green:** typecheck · lint 0 err (49 pre-existing any-warns) · `test:unit` **2418** pass + 11 todo · build ok
+(bundle hash unchanged — bellows unbundled). **Browser smoke:** 243 defs, BLE modal + muse + printer render, Play→Stop 0
+real errors; **spike browser run PASS**. **State: UNCOMMITTED** on `phase0-file-format` (PR still held). **Maintainer
+TODO:** live-verify **audible** output (headless has no audio device). **Next:** D1 `bellows-instrument` node (Path A;
+engine + preset + params, played by LATCH triggers/notes, lazy-loaded, per-node dispose) — or Track 2 UX / open the PR.
+
+---
+
 ## 2026-07-14 (later 109) — Device-thread branch audit (B2+C1+C2 holistic)
 
 Ran a 3-lens audit (regressions to shared code / integration + lifecycle / deploy-readiness + security + bundle) over

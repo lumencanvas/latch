@@ -67,7 +67,10 @@ const sigProfiles: BleDeviceProfile[] = getAllProfiles().map((p) => ({
   icon: p.icon,
   description: p.description,
   match: { services: [p.uuid] },
-  request: { filters: [{ services: [p.shortUuid] }], optionalServices: [p.shortUuid] },
+  // Full 128-bit UUID, NOT the bare 4-hex `shortUuid` string: requestDevice() only
+  // accepts a full-UUID string or a numeric 16/32-bit alias, so `'180d'` throws
+  // ("... not a valid UUID") and breaks the scan/standard-service cards.
+  request: { filters: [{ services: [p.uuid] }], optionalServices: [p.uuid] },
   suggests: [{ nodeType: 'ble-characteristic', label: `${p.name} (generic)`, primary: true }],
 }))
 
@@ -115,4 +118,16 @@ export function recognizeDevice(input: RecognitionInput): RankedMatch[] {
 /** The single best match, or `null` if unrecognized. */
 export function recognizeBest(input: RecognitionInput): RankedMatch | null {
   return recognizeDevice(input)[0] ?? null
+}
+
+/**
+ * The profile that suggests a given node type (e.g. `muse-eeg` → the Muse profile), or `null`.
+ * Lets "pair from a node" pre-focus the right device card. A profile's own `suggests` list is
+ * the source of truth, so a drop-in vendor profile wires this up for free.
+ */
+export function profileForNodeType(nodeType: string): BleDeviceProfile | null {
+  for (const profile of deviceProfiles) {
+    if (profile.suggests.some((s) => s.nodeType === nodeType)) return profile
+  }
+  return null
 }

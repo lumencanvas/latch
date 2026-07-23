@@ -6,7 +6,7 @@ const definition: NodeDefinition = {
   id: 'cv-threshold',
   name: 'CV Threshold',
   version: '1.0.0',
-  category: 'visual',
+  category: 'opencv',
   description: 'Binarize a feed with fixed, Otsu, or adaptive thresholding',
   icon: 'sliders',
   platforms: ['web', 'electron'],

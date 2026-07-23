@@ -6,7 +6,7 @@ const definition: NodeDefinition = {
   id: 'cv-corners',
   name: 'CV Corners',
   version: '1.0.0',
-  category: 'visual',
+  category: 'opencv',
   description: 'Detect and mark Shi-Tomasi corner features with OpenCV.js',
   icon: 'crosshair',
   platforms: ['web', 'electron'],

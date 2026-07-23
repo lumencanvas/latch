@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <em>Status: Active development · 241 built-in nodes · Web + Desktop (Electron) · MiniMap · AI Model Manager · Debug Nodes</em>
+  <em>Status: Active development · 251 built-in nodes · Web + Desktop (Electron) · MiniMap · AI Model Manager · Debug Nodes</em>
 </p>
 
 <p align="center">
@@ -144,6 +144,8 @@ Download CLASP Bridge at [clasp.to](https://clasp.to/#downloads) or from the Con
 - Real-time audio analysis (levels, bass, mid, high frequencies)
 - Full synthesizer capabilities (oscillators with multiple waveforms)
 - Effects processing (gain, filter, delay with feedback)
+- Generative music: metronome-clocked arpeggiator, chord, progression, melody-walk, and scale-quantize nodes
+- Bellows instrument + polyphonic voice (synthesis powered by bellowsjs, routed through the master bus)
 - Powered by Tone.js and Meyda.js
 
 ### Video & Shaders
@@ -181,6 +183,17 @@ Download CLASP Bridge at [clasp.to](https://clasp.to/#downloads) or from the Con
 - MIDI input/output (notes, velocity, CC messages)
 - OSC support via CLASP Bridge
 - JSON parse/stringify utilities
+
+### Devices (Web Bluetooth)
+- Pair physical devices from a node or the header's "Add Bluetooth Device" panel — gesture-free reconnect, no re-chooser
+- **Muse 2 EEG** headband: raw channels, δ/θ/α/β/γ band powers, blink & jaw-clench, focus/calm, contact & battery, with a live head-map view
+- **Thermal printer** (ESC/POS — Phomemo/Nordic-UART): print live textures or text with a real-time dithered preview
+- **Neosensory Buzz** haptic wristband: drive the 4 motors live, plus battery, buttons, and an experimental LED
+- Generic **BLE Characteristic** node: pick a service & characteristic from named dropdowns (no blind UUIDs), read/write/subscribe
+- Chromium-only (Chrome/Edge or the desktop app); nodes report "unsupported" gracefully elsewhere
+
+### Computer Vision (OpenCV)
+- Grayscale, Canny edge detection, threshold, contours, corner detection, morphology — running in-browser via OpenCV.js
 
 ### Code Nodes
 - JavaScript function nodes with sandboxed execution

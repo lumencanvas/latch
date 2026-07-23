@@ -138,6 +138,10 @@ function toggleCategory(categoryId: string) {
 
 // Check if a category is collapsed
 function isCategoryCollapsed(categoryId: string): boolean {
+  // Categories all start collapsed, so during an active search force every section
+  // open — otherwise cross-category matches stay hidden inside collapsed groups.
+  // Non-destructive: browse-time collapse state is restored when the query clears.
+  if (nodesStore.searchQuery.trim()) return false
   return collapsedCategories.value.has(categoryId)
 }
 
@@ -245,13 +249,16 @@ function onSelectConnection(connectionId: string) {
               @click="toggleDropdown"
             >
               <span
-                v-if="nodesStore.categoryFilter"
+                v-if="nodesStore.categoryFilter && !nodesStore.searchQuery.trim()"
                 class="select-color"
                 :style="{ background: categoryMeta[nodesStore.categoryFilter]?.color }"
               />
               <span class="select-text">
-                {{ nodesStore.categoryFilter ? categoryMeta[nodesStore.categoryFilter]?.label : 'All Categories' }}
-                ({{ nodesStore.categoryFilter ? (categoryCounts[nodesStore.categoryFilter] ?? 0) : nodesStore.definitions.size }})
+                <template v-if="nodesStore.searchQuery.trim()">Searching all categories</template>
+                <template v-else>
+                  {{ nodesStore.categoryFilter ? categoryMeta[nodesStore.categoryFilter]?.label : 'All Categories' }}
+                  ({{ nodesStore.categoryFilter ? (categoryCounts[nodesStore.categoryFilter] ?? 0) : nodesStore.definitions.size }})
+                </template>
               </span>
               <ChevronDown
                 :size="14"

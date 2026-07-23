@@ -17,6 +17,7 @@ import smoothstepNode from '@/registry/math/smoothstep/node'
 import remapNode from '@/registry/math/remap/node'
 import quantizeNode from '@/registry/math/quantize/node'
 import wrapNode from '@/registry/math/wrap/node'
+import { randomExecutor } from '@/engine/executors/math'
 
 const trigExecutor = trigNode.executor
 const powerExecutor = powerNode.executor
@@ -1075,5 +1076,39 @@ describe('Math Executors', () => {
       const result = wrapExecutor(ctx)
       expect(result.get('result')).toBeCloseTo(0.5, 5)
     })
+  })
+})
+
+describe('randomExecutor', () => {
+  const rand = (inputs: Record<string, unknown> = {}, controls: Record<string, unknown> = {}) =>
+    randomExecutor({
+      nodeId: 'rand',
+      inputs: new Map(Object.entries(inputs)),
+      controls: new Map(Object.entries(controls)),
+      deltaTime: 0.016,
+      totalTime: 0,
+      frameCount: 0,
+    } as unknown as ExecutionContext).get('result') as number
+
+  it('a connected seed makes it DETERMINISTIC (same seed → same value)', () => {
+    expect(rand({ seed: 7 })).toBe(rand({ seed: 7 }))
+    // different seeds almost surely differ
+    expect(rand({ seed: 7 })).not.toBe(rand({ seed: 8 }))
+  })
+
+  it('a seeded value stays within [min, max)', () => {
+    for (const s of [0, 1, 2, 3, 42, 99]) {
+      const v = rand({ seed: s }, { min: 10, max: 20 })
+      expect(v).toBeGreaterThanOrEqual(10)
+      expect(v).toBeLessThan(20)
+    }
+  })
+
+  it('unseeded output (Math.random path) still respects the range', () => {
+    for (let i = 0; i < 50; i++) {
+      const v = rand({}, { min: -5, max: 5 })
+      expect(v).toBeGreaterThanOrEqual(-5)
+      expect(v).toBeLessThan(5)
+    }
   })
 })

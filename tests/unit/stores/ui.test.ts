@@ -162,4 +162,55 @@ describe('UI Store', () => {
       expect(store.notifications.some((n) => n.id === id)).toBe(false)
     })
   })
+
+  describe('Bluetooth device manager (pair-from-node target)', () => {
+    it('opens with no target for the default "drop a new node" flow', () => {
+      const store = useUIStore()
+      expect(store.bluetoothPairTarget).toBeNull()
+
+      store.openBluetoothDeviceManager()
+      expect(store.bluetoothDeviceManagerOpen).toBe(true)
+      expect(store.bluetoothPairTarget).toBeNull()
+    })
+
+    it('opens with a target to bind a paired device to an existing node', () => {
+      const store = useUIStore()
+      store.openBluetoothDeviceManager({ nodeId: 'n1', nodeType: 'muse-eeg', label: 'Muse EEG' })
+      expect(store.bluetoothDeviceManagerOpen).toBe(true)
+      expect(store.bluetoothPairTarget).toEqual({
+        nodeId: 'n1',
+        nodeType: 'muse-eeg',
+        label: 'Muse EEG',
+      })
+    })
+
+    it('clears the target on close so a later header-open starts targetless', () => {
+      const store = useUIStore()
+      store.openBluetoothDeviceManager({ nodeId: 'n1', nodeType: 'muse-eeg' })
+      store.closeBluetoothDeviceManager()
+      expect(store.bluetoothDeviceManagerOpen).toBe(false)
+      expect(store.bluetoothPairTarget).toBeNull()
+
+      store.openBluetoothDeviceManager()
+      expect(store.bluetoothPairTarget).toBeNull()
+    })
+  })
+
+  describe('Help modal', () => {
+    it('opens, closes, and toggles', () => {
+      const store = useUIStore()
+      expect(store.helpOpen).toBe(false)
+
+      store.openHelp()
+      expect(store.helpOpen).toBe(true)
+
+      store.closeHelp()
+      expect(store.helpOpen).toBe(false)
+
+      store.toggleHelp()
+      expect(store.helpOpen).toBe(true)
+      store.toggleHelp()
+      expect(store.helpOpen).toBe(false)
+    })
+  })
 })
