@@ -84,6 +84,12 @@ export interface ExecutionContext {
   deltaTime: number
   totalTime: number
   frameCount: number
+  /**
+   * Output port ids of this node that have at least one wire. Lets a source whose sound
+   * otherwise plays on its own (bellows → master) leave that path only while its output is
+   * wired. Absent in contexts built outside the engine (tests) → treat as "nothing wired".
+   */
+  connectedOutputs?: ReadonlySet<string>
   /** input ?? control ?? fallback, coerced to a finite number (NaN/±Infinity → fallback). */
   num(id: string, fallback?: number): number
   /** input ?? control ?? fallback, coerced to a boolean. */
@@ -197,6 +203,8 @@ export function coerceToPortType(value: unknown, portType: string | undefined): 
   }
 }
 
+const NO_WIRED_OUTPUTS: ReadonlySet<string> = new Set()
+
 /**
  * Execution engine for running flow graphs
  */
@@ -207,6 +215,8 @@ export class ExecutionEngine {
   private executionOrder: string[] = []
   /** target nodeId -> source nodeIds (incoming adjacency), for dirty-mode change propagation. */
   private sourcesByTarget: Map<string, string[]> = new Map()
+  /** source nodeId -> its output port ids that have a wire (ExecutionContext.connectedOutputs). */
+  private wiredOutputs: Map<string, Set<string>> = new Map()
 
   // --- Change-driven (dirty) execution (Phase 2) ---
   private executionMode: ExecutionMode = 'full'
@@ -342,6 +352,13 @@ export class ExecutionEngine {
       const arr = this.sourcesByTarget.get(edge.target)
       if (arr) arr.push(edge.source)
       else this.sourcesByTarget.set(edge.target, [edge.source])
+    }
+    this.wiredOutputs = new Map()
+    for (const edge of edges) {
+      if (!edge.sourceHandle) continue
+      const set = this.wiredOutputs.get(edge.source)
+      if (set) set.add(edge.sourceHandle)
+      else this.wiredOutputs.set(edge.source, new Set([edge.sourceHandle]))
     }
     this.executionOrder = this.topologicalSort()
   }
@@ -511,6 +528,7 @@ export class ExecutionEngine {
         deltaTime,
         totalTime: (performance.now() - this.startTime) / 1000,
         frameCount: this.frameCount,
+        connectedOutputs: this.wiredOutputs.get(node.id) ?? NO_WIRED_OUTPUTS,
       },
       capabilityContext
     )

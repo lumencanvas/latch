@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased (1.4.0): bellows as a node family
+
+Needs bellowsjs 0.5.2 (direct inputs/outputs and the filter effect). Existing flows behave as
+before: a bellows node whose new Audio output is left unwired still plays straight to the speakers.
+
+### New
+- **Audio out on every bellows sound node** (Instrument, Chord/Poly Voice, Singer, Speak and all the
+  new ones). Unwired it plays to the speakers as before; wired, its sound goes only down the wire, so
+  bellows can run through any LATCH audio node, analyzer or Audio Output.
+- **Bellows effects as nodes:** Filter (low/high/band-pass, notch, shelves, bell, Moog-style ladder),
+  Reverb (hall, plate), Delay (stereo, tape, multitap), Dynamics (compressor, limiter, gate, transient
+  shaper), Modulation (chorus, flanger, phaser, tremolo, auto-pan, ring mod, frequency shifter),
+  Saturator, 6-band EQ and Spectral (pitch shift, freeze, blur, robotize, whisper, denoise). They take
+  any LATCH audio in (oscillators, the mic, other bellows nodes), and key parameters (cutoff,
+  resonance, mix, drive, semitones…) can be wired from LFOs and envelopes.
+- **Bellows SoundFont:** play any .sf2 file (upload or URL), choose an instrument by preset number,
+  play notes, held notes or whole chords.
+- **Bellows Voice Keys:** the singing voice as a keyboard instrument. Lyrics mode sings the next
+  syllable of your words on each key (consonants, held vowel, closing consonants on release); Vowel
+  mode sings a chosen vowel on every key; optional legato glides.
+- **Bellows Beatbox:** eight beatbox grooves or your own step pattern, from the physical voice model.
+- **Bellows Granular:** any audio file as a granular instrument (position, grain size, density,
+  spray, pitch; wireable for scrubbing and freezing).
+- **Bellows Tuning:** retune all bellows sound to N-EDO, 12-note just intonation or a Scala file.
+- **Chord Detect**, **Cellular Rhythm** (Rule 30/90/110 drum patterns) and **L-System Melody**.
+- Singer and Speak pronounce words with the CMU dictionary by default (shipped in 1.3.0).
+
 ## 1.3.0
 
 Existing flows open and wire exactly as before: no node, port or control was removed or renamed,

@@ -7,11 +7,14 @@ import { makeContext } from '../../_helpers/executionContext'
 const configureVoice = vi.fn()
 const queueNote = vi.fn()
 const setPolyGate = vi.fn()
+const routeChannel = vi.fn(() => null)
 
 vi.mock('@/registry/audio/bellows-instrument/bellowsManager', () => ({
   configureVoice: (...a: unknown[]) => configureVoice(...a),
   queueNote: (...a: unknown[]) => queueNote(...a),
   setPolyGate: (...a: unknown[]) => setPolyGate(...a),
+  routeChannel: (...a: unknown[]) => routeChannel(...a),
+  getVoice: () => null,
 }))
 
 import node from '@/registry/audio/poly-voice/node'
@@ -26,11 +29,11 @@ beforeEach(() => {
 })
 
 describe('poly-voice definition', () => {
-  it('is an audio node taking a notes array + gate/trigger, no audio output', () => {
+  it('is an audio node taking a notes array + gate/trigger, with an audio output', () => {
     expect(def.id).toBe('poly-voice')
     expect(def.category).toBe('audio')
     expect(def.inputs.map((p) => p.id)).toEqual(['notes', 'velocity', 'gate', 'trigger'])
-    expect(def.outputs).toEqual([])
+    expect(def.outputs).toEqual([{ id: 'audio', type: 'audio', label: 'Audio' }])
     // Shares the bellows-instrument surface: preset + engine + params + fx + gain/pan.
     expect(def.controls.some((c) => c.id === 'preset')).toBe(true)
     expect(def.controls.find((c) => c.id === 'engine')?.default).toBe('additive')

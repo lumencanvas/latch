@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { configureSinger, performLine, stopLine, readSinger } from './singerManager'
+import { routeSinger, configureSinger, performLine, stopLine, readSinger } from './singerManager'
 import {
   MOUTH_OUTPUTS,
   LINE_OUTPUTS,
@@ -30,7 +30,7 @@ const definition: NodeDefinition = {
     { id: 'stop', type: 'trigger', label: 'Stop' },
   ],
   // Like every bellows voice, audio plays through the shared kernel into LATCH master.
-  outputs: [...LINE_OUTPUTS, ...MOUTH_OUTPUTS],
+  outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }, ...LINE_OUTPUTS, ...MOUTH_OUTPUTS],
   controls: [
     ...voiceControls(DEFAULT_VOICE),
     { id: 'lyrics', type: 'text', label: 'Lyrics', default: 'twinkle twinkle little star', props: { placeholder: 'twin-kle twin-kle lit-tle star' } },
@@ -57,6 +57,8 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const cfg = resolveSingerConfig(ctx.controls, DEFAULT_VOICE)
+  const wired = !!ctx.connectedOutputs?.has('audio')
+  if (wired) cfg.send = 0 // wired: sound only down the wire (the shared reverb returns into master)
   configureSinger(ctx.nodeId, cfg)
 
   if (ctx.trig('stop')) stopLine(ctx.nodeId, cfg)
@@ -69,6 +71,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   const out = new Map<string, unknown>()
   writeVoiceOutputs(out, readSinger(ctx.nodeId))
+  out.set('audio', routeSinger(ctx.nodeId, wired))
   return out
 }
 

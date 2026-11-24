@@ -312,11 +312,11 @@ describe('bellows-singer / bellows-speak nodes', () => {
     expect(voice.singers[0].speak).toHaveBeenCalledWith('G’day?', { accent: 'australian', rate: 1.5, hz: 120, breath: 'none' })
   })
 
-  it('declares the line + mouth outputs and no audio port', () => {
+  it('declares an audio port plus the line + mouth outputs', () => {
     for (const node of [singerNode, speakNode]) {
       const ids = node.definition.outputs.map((o) => o.id)
       expect(ids).toEqual(expect.arrayContaining(['ipa', 'busy', 'done', 'jaw', 'mouthOpen', 'lipRound', 'phoneme']))
-      expect(node.definition.outputs.some((o) => o.type === 'audio')).toBe(false)
+      expect(node.definition.outputs[0]).toEqual({ id: 'audio', type: 'audio', label: 'Audio' })
     }
   })
 })

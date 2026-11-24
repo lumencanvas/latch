@@ -5,6 +5,8 @@ import {
   configureVoice,
   queueNote,
   setPolyGate,
+  routeChannel,
+  getVoice,
 } from '@/registry/audio/bellows-instrument/bellowsManager'
 import { resolveVoiceConfig, buildVoiceControls } from '@/registry/audio/bellows-instrument/engineParams'
 
@@ -23,7 +25,7 @@ const definition: NodeDefinition = {
     { id: 'trigger', type: 'trigger', label: 'Trigger' },
   ],
   // Like bellows-instrument, the shared kernel routes to master — no wireable audio out.
-  outputs: [],
+  outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }],
   controls: buildVoiceControls('additive'),
   info: {
     overview:
@@ -48,7 +50,9 @@ function readNotes(raw: unknown): number[] {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  configureVoice(ctx.nodeId, resolveVoiceConfig(ctx.controls))
+  const wired = !!ctx.connectedOutputs?.has('audio')
+  const cfg = resolveVoiceConfig(ctx.controls)
+  configureVoice(ctx.nodeId, wired ? { ...cfg, send: 0 } : cfg) // wired: sound only down the wire
 
   const notes = readNotes(ctx.inputs.get('notes'))
   const velRaw = ctx.num('velocity', 100)
@@ -62,7 +66,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Gate is LEVEL-based (self-heals through the boot window): manager holds the chord's ids.
   setPolyGate(ctx.nodeId, ctx.level('gate'), notes, vel)
 
-  return new Map()
+  const audio = routeChannel(ctx.nodeId, getVoice(ctx.nodeId)?.instrument ?? null, wired)
+  return new Map<string, unknown>([['audio', audio]])
 }
 
 export default defineNode({ definition, executor })

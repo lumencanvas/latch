@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { configureVoice, queueNote, setMonoGate } from './bellowsManager'
+import { configureVoice, queueNote, setMonoGate, routeChannel, getVoice } from './bellowsManager'
 import { resolveVoiceConfig, buildVoiceControls } from './engineParams'
 
 const definition: NodeDefinition = {
@@ -18,15 +18,15 @@ const definition: NodeDefinition = {
     { id: 'gate', type: 'boolean', label: 'Gate' },
     { id: 'trigger', type: 'trigger', label: 'Trigger' },
   ],
-  // No audio output: bellows hosts every voice inside one worklet kernel with no free
-  // graph out, so the shared kernel routes straight into LATCH's master (see bellowsManager).
-  outputs: [],
+  // Unwired: plays straight into LATCH's master through the shared kernel. Wired: the kernel
+  // routes this voice to its own direct output instead (see bellowsManager routeChannel).
+  outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }],
   // Layered surface: Preset (casual) → Manual engine + core params → Show All / Raw params
   // (power). Only the active engine's params are ever visible (see buildVoiceControls).
   controls: buildVoiceControls('va'),
   info: {
     overview:
-      'A bellowsjs synthesizer voice with a layered surface. Pick one of fifty ready-to-play presets (guitars, strings, winds, brass, keys, mallets, voices, synths) for instant sound — or switch Preset to “Manual” and build a sound on any of seventeen engines (virtual analog, FM, additive, wavetable, plucked and bowed strings, wind tube, modal mallets, west-coast, formant, drums…). Manual mode opens on each engine’s core controls; “Show All Parameters” reveals the rest. Add an insert effect and a shared reverb send. Play it from LATCH note / gate / trigger inputs: the trigger fires a one-shot eighth note; the gate sustains a note while it stays high. bellowsjs boots on first use and all voices share LATCH’s master output, so no audio wire is needed.',
+      'A bellowsjs synthesizer voice with a layered surface. Pick one of fifty ready-to-play presets (guitars, strings, winds, brass, keys, mallets, voices, synths) for instant sound — or switch Preset to “Manual” and build a sound on any of seventeen engines (virtual analog, FM, additive, wavetable, plucked and bowed strings, wind tube, modal mallets, west-coast, formant, drums…). Manual mode opens on each engine’s core controls; “Show All Parameters” reveals the rest. Add an insert effect and a shared reverb send. Play it from LATCH note / gate / trigger inputs: the trigger fires a one-shot eighth note; the gate sustains a note while it stays high. It plays straight to your speakers with no wire needed; wire its Audio output to take it through effects (Bellows Filter, Reverb, Delay…, or any LATCH audio node) and on to an Audio Output instead.',
     tips: [
       'Start with a Preset — 50 curated instruments, zero theory required. Choose “Manual” to pick an engine and shape it yourself.',
       'Changing Preset or Engine starts that sound fresh from its defaults — the previous sound rings out instead of cutting off.',
@@ -45,7 +45,11 @@ const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Idempotent boot/voice acquisition + config push (async kernel boot applies it on boot).
-  configureVoice(ctx.nodeId, resolveVoiceConfig(ctx.controls))
+  // Wired, the node's sound goes ONLY down its Audio wire: the shared reverb (which returns into
+  // master) is off then; put a Bellows Reverb downstream instead.
+  const wired = !!ctx.connectedOutputs?.has('audio')
+  const cfg = resolveVoiceConfig(ctx.controls)
+  configureVoice(ctx.nodeId, wired ? { ...cfg, send: 0 } : cfg)
 
   // Note value is a MIDI number (bellows resolves it through the active tuning);
   // velocity accepts 0–1 directly or 0–127 (normalized like the synth node).
@@ -60,7 +64,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Gate is LEVEL-based (self-heals through the boot window): manager holds the note id.
   setMonoGate(ctx.nodeId, ctx.level('gate'), note, vel)
 
-  return new Map()
+  // Unwired: plays straight into master (as always). Wired: its own output, out of master.
+  const audio = routeChannel(ctx.nodeId, getVoice(ctx.nodeId)?.instrument ?? null, wired)
+  return new Map<string, unknown>([['audio', audio]])
 }
 
 export default defineNode({ definition, executor })

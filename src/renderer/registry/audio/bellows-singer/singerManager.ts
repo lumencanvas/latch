@@ -25,6 +25,8 @@ import {
   registerKernelClient,
   releaseKernelIfIdle,
   sharedReverbBus,
+  routeChannel,
+  releaseDirectPorts,
   type VoicePluginHandle,
 } from '@/registry/audio/bellows-instrument/bellowsManager'
 
@@ -57,6 +59,7 @@ export interface SingerConfig {
 export type VoiceLine =
   | { kind: 'sing'; lyrics: string; notes: SingNote[] }
   | { kind: 'speak'; text: string; rate: number; hz?: number; breath: 'between' | 'all' | 'none' }
+  | { kind: 'beat'; pattern: string; bpm: number; swing: number; repeat: number; vel: number }
 
 interface SingerRec {
   singer: Singer | null
@@ -155,6 +158,7 @@ function stopProbe(rec: SingerRec): void {
 
 /** Free a record's singer + probe. The probe goes first (it parks the singer's probe slot). */
 function retire(rec: SingerRec, releaseSeconds: number): void {
+  for (const [id, r] of recs) if (r === rec) held.delete(id)
   stopProbe(rec)
   if (rec.singer) {
     try { rec.singer.dispose({ releaseSeconds }) } catch { /* ignore */ }
@@ -245,8 +249,15 @@ function perform(rec: SingerRec, h: VoicePluginHandle, line: VoiceLine): void {
   try {
     const result = line.kind === 'sing'
       ? s.sing(line.lyrics, line.notes, { accent: s.accent })
-      : s.speak(line.text, { accent: s.accent, rate: line.rate, hz: line.hz, breath: line.breath })
+      : line.kind === 'beat'
+        ? s.beatbox(line.pattern, { bpm: line.bpm, swing: line.swing, repeat: line.repeat, vel: line.vel })
+        : s.speak(line.text, { accent: s.accent, rate: line.rate, hz: line.hz, breath: line.breath })
     rec.lineEnd = Math.max(rec.lineEnd, lineEndOf(result))
+    if (line.kind === 'beat') {
+      rec.ipa = ''
+      rec.error = null
+      return
+    }
     const text = line.kind === 'sing' ? line.lyrics : line.text
     try {
       rec.ipa = h.mod.toIPA(text, {
@@ -360,6 +371,169 @@ export function readSinger(nodeId: string): SingerReadout {
   return { frame: rec.frame, busy, done, ipa: rec.ipa, error: rec.error ?? rec.probeError }
 }
 
+// ── Playing the voice like an instrument (bellows-vocal-keys) ────────────────
+// bellows-voice has no live-keyboard API, but its pieces compose into one: the `vocal` engine
+// sings whatever `phoneme` its channel holds, morphs to a new one at articulator speed when the
+// param changes mid-note, and bends pitch with `bend` (semitones, ±48) without re-attacking. So a
+// key press = note-on with the syllable's onset consonants then its vowel scheduled a few tens
+// of ms apart, the vowel sustains while held, and the release sings the coda then note-off.
+
+/** One syllable as vocal-engine phoneme indices. */
+export interface VocalPhones {
+  text: string
+  ipa: string
+  onset: number[]
+  /** The vowel; two entries for a diphthong (the glide target second). */
+  nucleus: number[]
+  coda: number[]
+}
+
+/** Seconds per consonant; a diphthong's second vowel arrives after DIPHTHONG_GLIDE. */
+const CONSONANT_SECONDS = 0.06
+const DIPHTHONG_GLIDE = 0.16
+/** Scheduling slack so the first phoneme and the note-on land together. */
+const KEY_LEAD = 0.01
+
+interface HeldKey {
+  id: number
+  note: number
+  coda: number[]
+}
+const held = new Map<string, HeldKey>()
+const syllableCache = new Map<string, VocalPhones[]>()
+
+function phonemeIndices(mod: VoicePluginHandle['mod'], ipa: string): number[] {
+  const clean = ipa.replace(/[ˈˌːˑ.]/g, '')
+  const whole = mod.vocalPhonemeIndex(clean)
+  if (whole >= 0) return [whole]
+  // a diphthong or a cluster the engine has no single sound for: its parts, longest match first
+  const out: number[] = []
+  let i = 0
+  while (i < clean.length) {
+    let matched = 0
+    for (let len = Math.min(3, clean.length - i); len >= 1; len--) {
+      const idx = mod.vocalPhonemeIndex(clean.slice(i, i + len))
+      if (idx >= 0) { out.push(idx); matched = len; break }
+    }
+    i += matched || 1
+  }
+  return out
+}
+
+/**
+ * Lyric text → syllables as phoneme indices, through the node's accent and (if loaded) the
+ * pronouncing dictionary. null until the voice plugin is loaded. Cached per text + accent + dict.
+ */
+export function vocalSyllables(nodeId: string, text: string): VocalPhones[] | null {
+  const rec = recs.get(nodeId)
+  const h = currentHandle()
+  const s = rec?.singer
+  if (!rec || !h || !s || waitingForDict(rec)) return null
+  const accent = typeof s.accent === 'string' ? s.accent : 'general-american'
+  const key = `${accent}|${s.dictionary ? 'd' : '-'}|${text}`
+  const cached = syllableCache.get(key)
+  if (cached) return cached
+  let out: VocalPhones[] = []
+  try {
+    const syl = h.mod.lyricsToSyllables(text, { accent, dictionary: s.dictionary ?? undefined })
+    out = syl.map((x) => ({
+      text: x.text,
+      ipa: [...x.onset, x.nucleus, ...x.coda].map((g) => g.ipa).join(''),
+      onset: x.onset.flatMap((g) => phonemeIndices(h.mod, g.ipa)),
+      nucleus: phonemeIndices(h.mod, x.nucleus.ipa),
+      coda: x.coda.flatMap((g) => phonemeIndices(h.mod, g.ipa)),
+    })).filter((x) => x.nucleus.length > 0)
+  } catch (e) {
+    rec.error = errText(e)
+  }
+  if (syllableCache.size > 64) syllableCache.clear()
+  syllableCache.set(key, out)
+  return out
+}
+
+/** A plain vowel (or any single IPA sound) as a syllable. */
+export function vocalVowel(nodeId: string, ipa: string): VocalPhones | null {
+  const h = currentHandle()
+  if (!h || !recs.get(nodeId)?.singer) return null
+  const nucleus = phonemeIndices(h.mod, ipa)
+  return nucleus.length ? { text: ipa, ipa, onset: [], nucleus, coda: [] } : null
+}
+
+/** Schedule onset → vowel (→ glide) from `t` on the node's singer. */
+function schedulePhones(s: Singer, phones: VocalPhones, t: number): void {
+  let at = t
+  for (const p of phones.onset) {
+    s.param('phoneme', p, at)
+    at += CONSONANT_SECONDS
+  }
+  s.param('phoneme', phones.nucleus[0], at)
+  for (let i = 1; i < phones.nucleus.length; i++) s.param('phoneme', phones.nucleus[i], at + i * DIPHTHONG_GLIDE)
+}
+
+/**
+ * Key down: sing `phones` on `note`. Mono: a key already held is released first, unless `legato`,
+ * which keeps the note sounding and re-articulates the new syllable while the pitch bends to it.
+ */
+export function vocalKeyDown(nodeId: string, phones: VocalPhones, note: number, vel: number, legato: boolean): void {
+  const rec = recs.get(nodeId)
+  const h = currentHandle()
+  const s = rec?.singer
+  if (!rec || !h || !s) return
+  const now = h.b.ctx.currentTime + KEY_LEAD
+  const prev = held.get(nodeId)
+  try {
+    if (prev && legato) {
+      s.param('bend', note - prev.note, now)
+      schedulePhones(s, phones, now)
+      held.set(nodeId, { id: prev.id, note: prev.note, coda: phones.coda })
+      rec.ipa = phones.ipa
+      return
+    }
+    if (prev) vocalKeyUp(nodeId)
+    s.param('bend', 0, now)
+    schedulePhones(s, phones, now)
+    const id = s.on(note, vel, now)
+    held.set(nodeId, { id, note, coda: phones.coda })
+    rec.ipa = phones.ipa
+    rec.error = null
+  } catch (e) {
+    rec.error = errText(e)
+  }
+}
+
+/** Glide the held note to a new pitch without re-attacking (legato, vowel mode). */
+export function vocalBend(nodeId: string, note: number): void {
+  const k = held.get(nodeId)
+  const s = recs.get(nodeId)?.singer
+  const h = currentHandle()
+  if (!k || !s || !h) return
+  try { s.param('bend', note - k.note, h.b.ctx.currentTime + KEY_LEAD) } catch { /* ignore */ }
+}
+
+/** Key up: sing the held syllable's coda, then release the note. */
+export function vocalKeyUp(nodeId: string): void {
+  const k = held.get(nodeId)
+  held.delete(nodeId)
+  const s = recs.get(nodeId)?.singer
+  const h = currentHandle()
+  if (!k || !s || !h) return
+  const now = h.b.ctx.currentTime + KEY_LEAD
+  try {
+    k.coda.forEach((p, i) => s.param('phoneme', p, now + i * CONSONANT_SECONDS))
+    s.off(k.id, now + k.coda.length * CONSONANT_SECONDS)
+  } catch { /* the singer was retired: its notes went with it */ }
+}
+
+export function vocalHeld(nodeId: string): boolean {
+  return held.has(nodeId)
+}
+
+/** Route the node's voice to its wired Audio output (or master); the Tone node for the port. */
+export function routeSinger(nodeId: string, wired: boolean) {
+  const rec = recs.get(nodeId)
+  return routeChannel(nodeId, rec?.singer?.instrument ?? null, wired)
+}
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 function gcSingers(validNodeIds: Set<string>): void {
   let removed = false
@@ -367,6 +541,7 @@ function gcSingers(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(id)) {
       retire(rec, RETIRE_RELEASE_SECONDS)
       recs.delete(id)
+      releaseDirectPorts(id)
       removed = true
     }
   }
@@ -376,6 +551,7 @@ function gcSingers(validNodeIds: Set<string>): void {
 function disposeAllSingers(): void {
   for (const rec of recs.values()) retire(rec, 0)
   recs.clear()
+  held.clear()
   handle = null
 }
 
@@ -393,6 +569,8 @@ export function __setVoiceHandleForTest(h: { b: unknown; mod: unknown } | null):
 
 export function __resetSingersForTest(): void {
   recs.clear()
+  held.clear()
+  syllableCache.clear()
   handle = null
   dict = null
   dictLoading = false

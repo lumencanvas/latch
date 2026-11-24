@@ -385,6 +385,7 @@ export const ENGINE_SELECT_OPTIONS: { value: string; label: string }[] = ENGINES
 // Spectral freeze/denoise are omitted: freeze needs a gate param a static insert can't drive.
 export const INSERT_FX_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'None' },
+  { value: 'filter', label: 'Filter' },
   { value: 'delay', label: 'Stereo Delay' }, { value: 'tapeDelay', label: 'Tape Delay' },
   { value: 'multitap', label: 'Multitap Delay' }, { value: 'chorus', label: 'Chorus' },
   { value: 'flanger', label: 'Flanger' }, { value: 'phaser', label: 'Phaser' },

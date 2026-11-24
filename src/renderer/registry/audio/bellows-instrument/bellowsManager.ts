@@ -5,9 +5,12 @@
  * Web-Audio graph out of it — the only boundary node is `b.analyser`. So LATCH shares
  * ONE kernel per session: each `bellows-instrument` / `poly-voice` node is a `b.voice()`,
  * and the shared kernel output is routed ONCE into LATCH's master gain (so master volume /
- * meter / recording capture it). Individual nodes therefore have no wireable audio-output
- * port — they play straight through the shared kernel into master. (Per-node wireable
- * outputs would need a kernel per node; deferred.)
+ * meter / recording capture it). A node whose Audio output is UNWIRED plays straight through
+ * the shared kernel into master (the original behaviour). A node whose Audio output IS wired is
+ * routed to one of the kernel's direct outputs (bellowsjs `boot({ outputs })` +
+ * `Instrument.route(k)`), handed to LATCH as a Tone node, and leaves the master mix — so it can
+ * go through LATCH effects / gain / analyzers like any other audio source. Direct inputs
+ * (`inputChannel(k)`) let any LATCH audio play through bellows effects (bellows-fx nodes).
  *
  * Topology (verified against dist/bellows.js): `workletNode → analyser → ctx.destination`.
  * We detach the analyser from `destination` and reroute it into LATCH's master.
@@ -163,7 +166,7 @@ async function getBellows(): Promise<Bellows> {
     if (gen !== kernelGen) throw new StaleKernelError()
     // We pass Tone's context, so bellows' dispose() leaves it open (closeContextOnDispose
     // defaults false for a caller-supplied context).
-    const b = await mod.Bellows.boot({ context: nativeCtx })
+    const b = await mod.Bellows.boot({ context: nativeCtx, outputs: DIRECT_PORTS, inputs: DIRECT_PORTS })
     if (gen !== kernelGen) {
       try { b.dispose() } catch { /* ignore */ }
       throw new StaleKernelError()
@@ -506,6 +509,171 @@ export function setPolyGate(nodeId: string, high: boolean, notes: number[], vel:
   }
 }
 
+// ── Direct outputs / inputs (wireable per-node audio) ────────────────────────
+/** Direct outputs and inputs asked of the kernel (bellowsjs MAX_DIRECT_IO). */
+const DIRECT_PORTS = 16
+
+interface DirectPort {
+  k: number
+  /** Generation of the kernel the port lives on. */
+  gen: number
+  /** The Tone node handed to LATCH (out: fed by the kernel; in: feeds the kernel). */
+  tone: Tone.Gain
+  /** Silent active source so Tone's standardized-audio-context keeps `tone` wired (see masterKeepAlive). */
+  keepAlive: Tone.Signal | null
+  /** in: the upstream Tone node currently connected into `tone`. */
+  source?: unknown
+}
+
+const outPorts = new Map<string, DirectPort>()
+const inPorts = new Map<string, DirectPort>()
+
+function freeSlot(used: Map<string, DirectPort>, max: number): number {
+  const taken = new Set([...used.values()].map((p) => p.k))
+  for (let k = 1; k <= max; k++) if (!taken.has(k)) return k
+  return 0
+}
+
+/** Connect a native node into a Tone node (or the reverse), falling back to native connect. */
+function bridge(from: unknown, to: unknown): void {
+  try {
+    Tone.connect(from as AudioNode, to as AudioNode)
+  } catch {
+    const f = nativeNodeOf(from)
+    const t = nativeNodeOf(to)
+    if (f && t) f.connect(t)
+    else throw new Error('bellows: could not bridge audio between LATCH and the kernel')
+  }
+}
+
+function disposePort(p: DirectPort): void {
+  try { p.keepAlive?.dispose() } catch { /* ignore */ }
+  try { p.tone.dispose() } catch { /* ignore */ }
+}
+
+/**
+ * The node's direct output as a Tone node, allocating a kernel output for it on first use.
+ * null when the kernel has no free output (or none at all: an older bellowsjs / a plugin
+ * kernel) — the caller then leaves the node on master.
+ */
+function acquireOutputPort(nodeId: string, b: Bellows): DirectPort | null {
+  const have = outPorts.get(nodeId)
+  if (have && have.gen === kernelGen) return have
+  if (have) { disposePort(have); outPorts.delete(nodeId) }
+  const max = Math.min(DIRECT_PORTS, b.outputs ?? 0)
+  const k = freeSlot(outPorts, max)
+  if (!k) return null
+  const tone = new Tone.Gain(1)
+  try {
+    bridge(b.outputNode(k), tone)
+  } catch (e) {
+    try { tone.dispose() } catch { /* ignore */ }
+    console.warn('[bellows] direct output unavailable:', e)
+    return null
+  }
+  let keepAlive: Tone.Signal | null = null
+  try { keepAlive = new Tone.Signal(0).connect(tone) } catch { keepAlive = null }
+  const port: DirectPort = { k, gen: kernelGen, tone, keepAlive }
+  outPorts.set(nodeId, port)
+  return port
+}
+
+function releaseOutputPort(nodeId: string): void {
+  const p = outPorts.get(nodeId)
+  if (p) disposePort(p)
+  outPorts.delete(nodeId)
+}
+
+/** Output a channel is routed to (0 = master), per live Instrument handle. */
+const routed = new WeakMap<Instrument, number>()
+
+/**
+ * Route a node's channel to its wired Audio output, or back to master when unwired. Returns
+ * the Tone node to emit on the `audio` port (null when unwired or no output is free).
+ * Idempotent per frame; a fresh Instrument (preset/engine swap) is routed again.
+ */
+export function routeChannel(nodeId: string, inst: Instrument | null, wired: boolean): Tone.Gain | null {
+  const b = bellowsInstance
+  if (!b || !inst) return wired ? (outPorts.get(nodeId)?.tone ?? null) : null
+  const port = wired ? acquireOutputPort(nodeId, b) : null
+  const want = port ? port.k : 0
+  if ((routed.get(inst) ?? 0) !== want) {
+    try {
+      inst.route(want)
+      routed.set(inst, want)
+    } catch (e) {
+      warnOnce(inst, 'route', e)
+      routed.set(inst, 0)
+      return null
+    }
+  }
+  if (!wired) releaseOutputPort(nodeId)
+  return port?.tone ?? null
+}
+
+/**
+ * A direct input for a node: a kernel input channel the node's upstream audio plays into.
+ * Returns the port (with `.k` for `b.inputChannel(k)`) or null when none is free.
+ */
+export function acquireInputPort(nodeId: string, b: Bellows): DirectPort | null {
+  const have = inPorts.get(nodeId)
+  if (have && have.gen === kernelGen) return have
+  if (have) { disposePort(have); inPorts.delete(nodeId) }
+  const max = Math.min(DIRECT_PORTS, b.inputs ?? 0)
+  const k = freeSlot(inPorts, max)
+  if (!k) return null
+  const tone = new Tone.Gain(1)
+  try {
+    bridge(tone, b.inputNode(k))
+  } catch (e) {
+    try { tone.dispose() } catch { /* ignore */ }
+    console.warn('[bellows] direct input unavailable:', e)
+    return null
+  }
+  let keepAlive: Tone.Signal | null = null
+  try { keepAlive = new Tone.Signal(0).connect(tone) } catch { keepAlive = null }
+  const port: DirectPort = { k, gen: kernelGen, tone, keepAlive }
+  inPorts.set(nodeId, port)
+  return port
+}
+
+/** Point a node's input port at its upstream audio (a Tone node), or disconnect it (null). */
+export function feedInputPort(port: DirectPort, source: unknown): void {
+  if (port.source === source) return
+  const prev = port.source as { disconnect?: (n?: unknown) => void } | undefined
+  if (prev?.disconnect) { try { prev.disconnect(port.tone) } catch { /* ignore */ } }
+  port.source = undefined
+  if (source && typeof (source as { connect?: unknown }).connect === 'function') {
+    try {
+      const src = source as { connect: (n: unknown) => void }
+      src.connect(port.tone)
+      port.source = source
+    } catch (e) {
+      warnOnce(port, 'input connect', e)
+    }
+  }
+}
+
+export function releaseInputPort(nodeId: string): void {
+  const p = inPorts.get(nodeId)
+  if (p) {
+    feedInputPort(p, null)
+    disposePort(p)
+  }
+  inPorts.delete(nodeId)
+}
+
+/** Free a node's direct ports (node deleted / engine stop). */
+export function releaseDirectPorts(nodeId: string): void {
+  releaseOutputPort(nodeId)
+  releaseInputPort(nodeId)
+}
+
+function releaseAllDirectPorts(): void {
+  for (const id of [...outPorts.keys()]) releaseOutputPort(id)
+  for (const id of [...inPorts.keys()]) releaseInputPort(id)
+}
+
 // ── Kernel sharing API (for other bellows node families) ─────────────────────
 /** The shared kernel (booting it if needed). Rejects with a stale error if disposed mid-boot. */
 export function acquireBellows(): Promise<Bellows> {
@@ -588,6 +756,7 @@ function releaseVoice(nodeId: string): void {
   const rec = voices.get(nodeId)
   if (rec) retireInstrument(rec)
   voices.delete(nodeId)
+  releaseOutputPort(nodeId)
 }
 
 /**
@@ -595,6 +764,7 @@ function releaseVoice(nodeId: string): void {
  * generation turns any in-flight boot / plugin load into a self-disposing stale one.
  */
 function disposeKernel(): void {
+  releaseAllDirectPorts()
   kernelGen++
   if (bellowsInstance) {
     try { bellowsInstance.dispose() } catch { /* ignore */ }
@@ -637,6 +807,8 @@ defineLifecycle({
 
 /** Test-only reset (state maps persist across test files otherwise). */
 export function __resetBellowsForTest(): void {
+  outPorts.clear()
+  inPorts.clear()
   voices.clear()
   kernelClients.clear()
   bellowsInstance = null

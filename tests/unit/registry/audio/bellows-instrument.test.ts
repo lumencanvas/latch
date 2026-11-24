@@ -8,11 +8,14 @@ import { makeContext } from '../../_helpers/executionContext'
 const configureVoice = vi.fn()
 const queueNote = vi.fn()
 const setMonoGate = vi.fn()
+const routeChannel = vi.fn((_id: string, _inst: unknown, wired: boolean) => (wired ? 'PORT' : null))
 
 vi.mock('@/registry/audio/bellows-instrument/bellowsManager', () => ({
   configureVoice: (...a: unknown[]) => configureVoice(...a),
   queueNote: (...a: unknown[]) => queueNote(...a),
   setMonoGate: (...a: unknown[]) => setMonoGate(...a),
+  routeChannel: (...a: unknown[]) => routeChannel(...a),
+  getVoice: () => null,
 }))
 
 // Import AFTER the mock is registered (vi.mock is hoisted, so this is fine).
@@ -28,12 +31,12 @@ beforeEach(() => {
 })
 
 describe('bellows-instrument definition', () => {
-  it('is an audio node with note/velocity/gate/trigger inputs and no audio output', () => {
+  it('is an audio node with note/velocity/gate/trigger inputs and one audio output', () => {
     expect(def.id).toBe('bellows-instrument')
     expect(def.category).toBe('audio')
     expect(def.inputs.map((p) => p.id)).toEqual(['note', 'velocity', 'gate', 'trigger'])
-    // Shared kernel routes straight to master — the node exposes no wireable audio out.
-    expect(def.outputs).toEqual([])
+    // Unwired it plays straight to master; wired, its own direct output (routeChannel).
+    expect(def.outputs).toEqual([{ id: 'audio', type: 'audio', label: 'Audio' }])
   })
 
   it('exposes preset, engine, per-engine params, fx, send, gain and pan controls', () => {
@@ -51,14 +54,21 @@ describe('bellows-instrument definition', () => {
 })
 
 describe('bellows-instrument executor', () => {
-  it('resolves + pushes the voice config every frame and returns no outputs', () => {
+  it('resolves + pushes the voice config every frame; audio is null while unwired', () => {
     const out = run(makeContext({}, { engine: 'fm' }))
     expect(configureVoice).toHaveBeenCalledTimes(1)
     const [nodeId, cfg] = configureVoice.mock.calls[0]
     expect(nodeId).toBe('test-node')
     expect(cfg).toMatchObject({ preset: '', engine: 'fm' })
     expect(out).toBeInstanceOf(Map)
-    expect((out as Map<string, unknown>).size).toBe(0)
+    expect((out as Map<string, unknown>).get('audio')).toBeNull()
+    expect(routeChannel).toHaveBeenLastCalledWith('test-node', null, false)
+  })
+
+  it('a wired Audio output asks for (and emits) its own direct output', () => {
+    const out = run(makeContext({}, { engine: 'fm' }, { nodeId: 'w', connectedOutputs: new Set(['audio']) }))
+    expect(routeChannel).toHaveBeenLastCalledWith('w', null, true)
+    expect((out as Map<string, unknown>).get('audio')).toBe('PORT')
   })
 
   it('fires a one-shot note on the trigger rising edge (boot-safe queueNote)', () => {

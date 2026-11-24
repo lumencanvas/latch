@@ -6,6 +6,35 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-24 (later 138): bellows as a LATCH node family (branch `bellows-nodes`, uncommitted)
+
+Asked: bellows nodes should have an audio out; then "more bellows nodes … soundfonts … singer as an
+instrument … bellows can do a ton". Built bellowsjs-side foundation + 13 LATCH nodes.
+- **bellowsjs (repo `ossuary-projects/bellowsjs`, published as **bellowsjs 0.5.2** (main dd9e59c, tag v0.5.2)):**
+  direct outputs/inputs (`boot({outputs,inputs})`, `inst.route(k)`, `b.outputNode/inputNode(k)`,
+  `b.inputChannel(k)`; KernelEngine `process(l, r, io?)`, messages `channelOutput` +
+  `createInputChannel`, off by default = byte-identical 0.5.1) and a `filter` effect (Svf modes,
+  12/24 dB, ladder; log-domain cutoff glide; BP normalized). 1463 tests pass. Shipped as a patch, not 0.6.0:
+  bellows-voice 0.8 and bellows-wasm 0.2 peer on `bellowsjs <0.6.0`, and every addition is opt in.
+- **LATCH:** `package.json` needs `bellowsjs ^0.5.2`.
+  - `ExecutionContext.connectedOutputs` (engine fills it from edges) so a source knows its port is wired.
+  - bellowsManager: boots with 16 outputs/16 inputs; `routeChannel()` slot allocator (Tone.Gain per
+    port + its own SAC keep-alive Signal: same passive-node trap as master); `acquireInputPort/
+    feedInputPort`. Wired nodes get send=0 (the shared reverb returns into master).
+  - New: bellows-filter/reverb/delay/dynamics/modulation/saturator/eq/spectral (shared `bellows-fx/`
+    factory + catalog-generated param table with drift test), bellows-soundfont, bellows-vocal-keys
+    (singerManager `vocalKeyDown/Up/Bend`, syllables via `lyricsToSyllables` → phoneme indices,
+    diphthongs split), bellows-beatbox, bellows-granular, bellows-tuning, chord-detect,
+    cellular-rhythm, lsystem-melody. Filter added to the instrument's Insert Effect list.
+  - **Verified in Chrome (speaker tap):** unwired starter 0.145 rms; kalimba→Filter→Audio Output 0.157,
+    same with output muted **0.000** (fully off master); Tone osc→Bellows Reverb 0.355; SoundFont
+    0.0175 (gain×2 → 0.0359; no font → 0); Voice Keys sings "hel|lo|world|how|are|you" looping with
+    IPA/jaw outputs; Beatbox loops; Granular 0.063 (no file → 0).
+  - Gates: typecheck 0 · lint 0 errors · vitest 203 files / 3033 · build:web OK.
+- Open: MIDI-file player node, SFZ/sample-kit node, analysis nodes (key/LUFS), per-node custom
+  `defEffect`; the 16-port cap per kernel is a soft limit (nodes past it play to master + say so).
+- 1.3.0 release still blocked only on the Apple developer agreement (re-run failed jobs of run 45369471437).
+
 ## 2026-11-24 (later 137) — Maintainer test fixes + 1.3.0 release
 
 Fixed from live testing of the packaged app, then committed, merged to `main` and tagged `v1.3.0`.
