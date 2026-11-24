@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
-import { nodeObjects } from '../shared'
+import { getOrCreateLight, updateLight } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'spot-light-3d',
@@ -66,23 +66,23 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const targetY = (ctx.controls.get('targetY') as number) ?? 0
   const targetZ = (ctx.controls.get('targetZ') as number) ?? 0
 
-  const color = parseInt(colorHex.replace('#', ''), 16)
   const angleRad = THREE.MathUtils.degToRad(angle)
 
-  const renderer = getThreeRenderer()
-  const light = renderer.createSpotLight(
-    color,
-    intensity,
-    distance,
-    angleRad,
-    penumbra,
-    decay,
-    [posX, posY, posZ],
-    [targetX, targetY, targetZ],
-    castShadow
+  // Cached per node and updated in place (was a new light + shadow map every frame)
+  const light = getOrCreateLight(ctx.nodeId, THREE.SpotLight, () =>
+    getThreeRenderer().createSpotLight(0xffffff, 1, distance, angleRad, penumbra, decay, [posX, posY, posZ], [targetX, targetY, targetZ], true)
   )
-
-  nodeObjects.set(ctx.nodeId, light)
+  updateLight(light, colorHex, intensity)
+  light.distance = distance
+  light.angle = angleRad
+  light.penumbra = penumbra
+  light.decay = decay
+  light.position.set(posX, posY, posZ)
+  light.castShadow = castShadow
+  // The target is never added to a scene, so three never refreshes its matrixWorld and the
+  // spot always aimed at the origin regardless of Target X/Y/Z. Update it explicitly.
+  light.target.position.set(targetX, targetY, targetZ)
+  light.target.updateMatrixWorld()
 
   const outputs = new Map<string, unknown>()
   outputs.set('light', light)

@@ -179,6 +179,28 @@ describe('ExecutionEngine', () => {
     expect(inputs).toEqual({ left: 1, right: 2 })
   })
 
+  it('collects every wire into a `multiple` input instead of keeping only the last', async () => {
+    const nodes = useNodesStore()
+    nodes.register({
+      id: 'multi-sink', name: 'MultiSink', version: '1.0.0', category: 'data', description: '', icon: 'box',
+      platforms: ['web'], inputs: [{ id: 'items', type: 'any', label: 'Items', multiple: true }], outputs: [], controls: [],
+    })
+    let seen: unknown
+    engine.registerExecutor('one', () => new Map<string, unknown>([['out', 'a']]))
+    engine.registerExecutor('two', () => new Map<string, unknown>([['out', 'b']]))
+    engine.registerExecutor('multi-sink', (ctx: ExecutionContext) => {
+      seen = ctx.inputs.get('items')
+      return new Map<string, unknown>()
+    })
+    engine.updateGraph(
+      [node('x', 'one'), node('y', 'two'), node('m', 'multi-sink')],
+      [edge('x', 'm', 'out', 'items'), edge('y', 'm', 'out', 'items')],
+    )
+    await engine.executeFrame()
+
+    expect(seen).toEqual(['a', 'b'])
+  })
+
   it('re-sorts and reflects graph changes on the next frame', async () => {
     const order: string[] = []
     engine.registerExecutor('rec', (ctx) => { order.push(ctx.nodeId); return new Map() })

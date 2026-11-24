@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
-import { getCached, setCached, hasTriggerValue, runModelInference } from '../shared'
+import { getCached, setCached, triggerFired, runModelInference } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'feature-extraction',
@@ -46,7 +46,8 @@ export const featureExtractionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
 
   // Run on an explicit trigger or when the (non-empty) text changes.
   const textChanged = text !== getCached<string>(`${ctx.nodeId}:lastText`, '')
-  const shouldRun = !!text.trim() && (hasTriggerValue(trigger) || textChanged)
+  const fired = triggerFired(ctx.nodeId, trigger) // every frame (edge state), not short-circuited
+  const shouldRun = !!text.trim() && (fired || textChanged)
 
   const { result, started } = runModelInference<number[]>(ctx, outputs, {
     task: 'feature-extraction',

@@ -65,7 +65,7 @@ function updatePreview() {
   if (!texture || !(texture instanceof THREE.Texture)) {
     ctx.fillStyle = '#1a1a1a'
     ctx.fillRect(0, 0, c.width, c.height)
-    ctx.fillStyle = '#666'
+    ctx.fillStyle = '#999' // 'No Input' placeholder: #666 on #1a1a1a was 3.1:1 (canvas-drawn, must be literal)
     ctx.font = `${14 * dpr}px monospace`
     ctx.textAlign = 'center'
     ctx.fillText('No Input', c.width / 2, c.height / 2)

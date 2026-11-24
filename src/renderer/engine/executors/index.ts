@@ -4,7 +4,9 @@
  */
 
 import type { NodeExecutorFn } from '../ExecutionEngine'
-import { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus } from './clasp'
+// From the lightweight facade, NOT './clasp' — a static import here would pull @clasp-to/core
+// into the main bundle and defeat the clasp nodes' lazy `import('@/engine/executors/clasp')`.
+import { disposeClaspNode, disposeAllClaspConnections, getClaspConnectionStatus } from './claspRuntime'
 import { disposeMqttNode, disposeAllMqttNodes, gcMqttState } from './mqtt'
 import { disposeWebSocketNode, disposeAllWebSocketNodes, gcWebSocketState } from './websocket'
 import { disposeHttpNode, disposeAllHttpNodes, gcHttpState } from './http'

@@ -12,12 +12,19 @@ export const gateLastValue = defineNodeState<unknown>({ label: 'gate' })
 export const gateExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const valueControl = ctx.controls.get('value') as string | undefined
   const value = ctx.inputs.get('value') ?? (valueControl !== '' ? valueControl : undefined)
-  const gate = Boolean(ctx.inputs.get('gate') ?? ctx.controls.get('open') ?? true)
+  const gateIn = ctx.inputs.get('gate')
+  const open = gateIn !== undefined ? ctx.bool('gate') : ((ctx.controls.get('open') as boolean) ?? true)
+  const whenClosed = (ctx.controls.get('whenClosed') as string) ?? 'hold'
 
-  // Only update stored value when gate is open and value is defined
-  if (gate && value !== undefined) {
-    gateLastValue.set(ctx.nodeId, value)
+  if (open) {
+    // OPEN = transparent: pass the CURRENT value, including "nothing". The old version
+    // always emitted the last stored value, so a 1-frame trigger passing an open gate became
+    // a permanently-high output (downstream edge detectors fired once, never again).
+    if (value !== undefined) gateLastValue.set(ctx.nodeId, value)
+    return new Map([['result', value]])
   }
 
-  return new Map([['result', gateLastValue.get(ctx.nodeId)]])
+  // CLOSED: hold the last passed value (freeze), or block entirely. Use 'block' for
+  // trigger streams so a held pulse can't read as a stuck-high signal.
+  return new Map([['result', whenClosed === 'block' ? undefined : gateLastValue.get(ctx.nodeId)]])
 }

@@ -177,7 +177,7 @@ watch(
 .node-status {
   margin-left: auto;
   font-size: var(--font-size-xs);
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-300); /* idle status on dark node header (neutral-400 was ~4.1:1) */
   text-transform: uppercase;
 }
 .node-status[data-status='connected'] {

@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
-import { getCached, setCached, hasTriggerValue, runModelInference, convertToImageData } from '../shared'
+import { getCached, setCached, triggerFired, runModelInference, imageForInference, isSupportedImageInput } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'image-captioning',
@@ -44,19 +44,19 @@ export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const outputs = new Map<string, unknown>()
   const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
-  const modelId = ctx.controls.get('model') as string | undefined
 
-  // Defer the (potentially expensive) image conversion until the model is loaded.
-  const imageData = aiInference.isModelLoaded('image-to-text', modelId)
-    ? convertToImageData(imageInput)
-    : null
+  // Cheap type check every frame (for the error/clear paths); the expensive pixel readback
+  // happens only on frames that actually start an inference (imageForInference).
+  const supported = isSupportedImageInput(imageInput)
 
   // Run on an explicit trigger or after a frame interval, only with valid image data.
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
   const interval = (ctx.controls.get('interval') as number) ?? 120
   const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
-  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
+  const fired = triggerFired(ctx.nodeId, trigger) // edge-deduped; a held trigger no longer loops
+  const imageData = imageForInference(ctx, 'image-to-text', imageInput, fired || intervalElapsed, fired)
+  const shouldRun = !!imageData
 
   const { result, started, state } = runModelInference<string>(ctx, outputs, {
     task: 'image-to-text',
@@ -69,7 +69,7 @@ export const imageCaptioningExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   // A bad/absent image (once the model is loaded) clears the stale caption — the original
   // cleared caption unconditionally on any `!imageData`. The error only flags a *present*
   // unsupported input; an absent image is not an error ("model not loaded" wins while unloaded).
-  if (state !== 'not-loaded' && !imageData) {
+  if (state !== 'not-loaded' && !supported) {
     outputs.set('caption', '')
     if (imageInput) {
       outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')

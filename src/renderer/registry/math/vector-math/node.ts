@@ -17,6 +17,7 @@ const definition: NodeDefinition = {
     { id: 'bx', type: 'number', label: 'B.x' },
     { id: 'by', type: 'number', label: 'B.y' },
     { id: 'bz', type: 'number', label: 'B.z' },
+    { id: 'scalar', type: 'number', label: 'Scalar' },
   ],
   outputs: [
     { id: 'x', type: 'number', label: 'X' },
@@ -34,26 +35,27 @@ const definition: NodeDefinition = {
         options: ['Add', 'Subtract', 'Cross', 'Normalize', 'Scale', 'Lerp', 'Dot'],
       },
     },
-    { id: 'scalar', type: 'number', label: 'Scalar', default: 1 },
+    { id: 'scalar', type: 'number', label: 'Scalar', default: 1, props: { step: 0.01 } },
   ],
   info: {
     overview: 'Performs 3D vector operations on two input vectors, including addition, subtraction, cross product, normalization, scaling, interpolation, and dot product. Also outputs the magnitude of the result. Select the operation from the dropdown.',
     tips: [
       'Use Normalize to get a unit-length direction vector from any input.',
-      'Use Dot to measure the alignment between two direction vectors.',
+      'Use Dot to measure the alignment between two direction vectors (the scalar result appears on X, Y and Z).',
+      'Scale and Lerp use Scalar (wire it to animate the amount).',
     ],
     pairsWith: ['add', 'multiply', 'lerp', 'trig', 'smooth'],
   },
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const ax = (ctx.inputs.get('ax') as number) ?? 0
-  const ay = (ctx.inputs.get('ay') as number) ?? 0
-  const az = (ctx.inputs.get('az') as number) ?? 0
-  const bx = (ctx.inputs.get('bx') as number) ?? 0
-  const by = (ctx.inputs.get('by') as number) ?? 0
-  const bz = (ctx.inputs.get('bz') as number) ?? 0
-  const scalar = (ctx.controls.get('scalar') as number) ?? 1
+  const ax = ctx.num('ax', 0)
+  const ay = ctx.num('ay', 0)
+  const az = ctx.num('az', 0)
+  const bx = ctx.num('bx', 0)
+  const by = ctx.num('by', 0)
+  const bz = ctx.num('bz', 0)
+  const scalar = ctx.num('scalar', 1)
   const operation = (ctx.controls.get('operation') as string) ?? 'Add'
 
   let x: number, y: number, z: number
@@ -108,7 +110,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
       z = az + bz
   }
 
-  const magnitude = Math.sqrt(x * x + y * y + z * z)
+  // Dot is a scalar (carried on X/Y/Z alike): its magnitude is |dot|, not |(d,d,d)| = |d|·√3.
+  const magnitude = operation === 'Dot' ? Math.abs(x) : Math.sqrt(x * x + y * y + z * z)
 
   return new Map([
     ['x', x],

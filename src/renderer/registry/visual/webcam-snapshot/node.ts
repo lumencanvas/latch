@@ -3,6 +3,7 @@ import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { webcamSnapshotState, initWebcamSnapshot } from '../shared'
+import { risingEdge, isHigh } from '@/engine/trigger'
 
 const definition: NodeDefinition = {
   id: 'webcam-snapshot',
@@ -68,10 +69,19 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   const outputs = new Map<string, unknown>()
 
+  // RISING edge (was level-triggered: a held trigger re-captured — drawImage + a full-frame
+  // getImageData + texture upload — every 100 ms debounce window). A non-empty string still
+  // counts as high. Evaluated before the init await/early-return so the edge state stays live.
+  const triggerHigh = (typeof trigger === 'string' && trigger.length > 0) || isHigh(trigger)
+  const hasTrigger = risingEdge(ctx.nodeId, 'trigger', triggerHigh)
+
   // Initialize webcam if not already
   await initWebcamSnapshot(ctx.nodeId, deviceId, resolution)
 
   const state = webcamSnapshotState.get(ctx.nodeId)
+  // Latch the edge: it stays pending until a capture actually happens (an edge landing while
+  // the stream isn't painting yet, or inside the 100 ms debounce, used to be dropped).
+  if (hasTrigger && state) state.pendingCapture = true
   if (!state || !state.initialized || !state.video || !state.canvas) {
     outputs.set('texture', null)
     outputs.set('imageData', null)
@@ -82,16 +92,10 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Check if trigger fired
-  const hasTrigger =
-    trigger === true ||
-    trigger === 1 ||
-    (typeof trigger === 'number' && trigger > 0) ||
-    (typeof trigger === 'string' && trigger.length > 0)
-
   let capturedThisFrame = false
 
-  if (hasTrigger) {
+  // videoWidth is 0 until the stream paints; getImageData(0,0,0,0) would throw.
+  if (state.pendingCapture && state.video.videoWidth > 0) {
     const now = Date.now()
     // Debounce captures to prevent rapid-fire
     if (now - state.lastCaptureTime > 100) {
@@ -129,6 +133,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       }
 
       state.lastCaptureTime = now
+      state.pendingCapture = false
       capturedThisFrame = true
     }
   }

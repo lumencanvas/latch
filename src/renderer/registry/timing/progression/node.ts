@@ -38,7 +38,8 @@ const definition: NodeDefinition = {
     { id: 'root', type: 'select', label: 'Root', default: 'C', props: { options: ROOTS } },
     { id: 'scaleName', type: 'select', label: 'Scale', default: 'major', props: { options: SCALE_NAMES } },
     { id: 'bars', type: 'number', label: 'Bars', default: 4, props: { min: 2, max: 16, step: 1 } },
-    { id: 'cadence', type: 'boolean', label: 'Cadence', default: true },
+    // 'toggle' (not 'boolean' — no control renderer exists for that type, so it never showed).
+    { id: 'cadence', type: 'toggle', label: 'End on a Cadence', default: true },
     { id: 'octave', type: 'number', label: 'Octave', default: 4, props: { min: 2, max: 6, step: 1 } },
     { id: 'voiceLow', type: 'number', label: 'Voice Low', default: 48, props: { min: 36, max: 72, step: 1 } },
     { id: 'voiceHigh', type: 'number', label: 'Voice High', default: 84, props: { min: 60, max: 96, step: 1 } },
@@ -50,7 +51,9 @@ const definition: NodeDefinition = {
     tips: [
       'Clock Advance from a bar-length metronome pulse; each edge moves to the next chord.',
       'Voicing is a polyphonic MIDI array — feed it straight into a poly synth or the Bellows Instrument; Bass gives you the lowest voice for a separate bassline.',
+      'The first Advance after Play or Reset sounds the tonic (bar 0); each later edge moves one bar.',
       'Reset returns to the tonic (bar 0) without regenerating; change Seed to compose a new progression.',
+      'With 2 bars and Cadence on, the plan is a half cadence (tonic → dominant-function chord).',
     ],
     pairsWith: ['metronome', 'step-sequencer', 'bellows-instrument', 'scale-quantize', 'arpeggiator'],
   },
@@ -60,6 +63,8 @@ const definition: NodeDefinition = {
 interface ProgressionState {
   degrees: number[]
   barIndex: number
+  /** False until the first clock edge after start/reset: that edge PLAYS bar 0 instead of skipping it. */
+  started: boolean
   resolvedIndex: number
   prevVoicing: number[]
   voicing: number[]
@@ -89,7 +94,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const resetEdge = ctx.trig('reset')
 
   const state = progressionState.getOrCreate(ctx.nodeId, () => ({
-    degrees: [], barIndex: 0, resolvedIndex: -1, prevVoicing: [],
+    degrees: [], barIndex: 0, started: false, resolvedIndex: -1, prevVoicing: [],
     voicing: [], rootMidi: 60, bass: 60, roman: '', degree: 0, sig: '',
   }))
 
@@ -112,6 +117,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   if (state.sig !== sig) {
     state.degrees = theory.buildProgression(theory.rng(`${ctx.nodeId}:${seed}`), bars, { cadence })
     state.barIndex = 0
+    state.started = false
     state.resolvedIndex = -1
     state.prevVoicing = []
     state.sig = sig
@@ -122,10 +128,15 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   if (resetEdge) {
     // Reset wins over a coincident clock edge — return to the tonic (bar 0).
     state.barIndex = 0
+    state.started = false
     state.resolvedIndex = -1
     state.prevVoicing = []
   } else if (clockEdge && state.degrees.length > 0) {
-    state.barIndex = (state.barIndex + 1) % state.degrees.length
+    // First-edge semantics match the arpeggiator: the FIRST clock after start/reset sounds
+    // step 0 (the tonic), each later edge advances. Previously the first edge jumped straight
+    // to bar 1, so a trigger-driven Poly Voice never heard the opening tonic.
+    if (state.started) state.barIndex = (state.barIndex + 1) % state.degrees.length
+    state.started = true
   }
 
   // Resolve (re-voice) only when the bar actually changed — not every frame.

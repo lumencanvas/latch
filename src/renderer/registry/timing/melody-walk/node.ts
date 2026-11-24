@@ -63,6 +63,8 @@ interface MelodyWalkState {
   states: number[]
   gravitySet: Set<number>
   pos: number
+  /** False until the first clock edge after start/reset: that edge plays the start note. */
+  started: boolean
   note: number
   degree: number
   sig: string
@@ -87,7 +89,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const resetEdge = ctx.trig('reset')
 
   const state = walkState.getOrCreate(ctx.nodeId, () => ({
-    matrix: [], rng: null, states: [], gravitySet: new Set<number>(), pos: 0, note: 60, degree: 0, sig: '',
+    matrix: [], rng: null, states: [], gravitySet: new Set<number>(), pos: 0, started: false, note: 60, degree: 0, sig: '',
   }))
 
   const outputs = new Map<string, unknown>()
@@ -115,6 +117,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     state.gravitySet = new Set(states.filter((i) => [0, 2, 4].includes(i % scale.length)))
     state.states = states
     state.pos = 0
+    state.started = false
     state.note = clamp(scale.degreeToMidi(0, 4), 0, 127)
     state.degree = 0
   }
@@ -127,6 +130,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // draws) and rebuild the matrix, then restart at position 0 for a deterministic replay.
   if (resetEdge) {
     rebuild()
+  } else if (clockEdge && state.rng && !state.started) {
+    // First edge after start/reset PLAYS the start note (the tonic) — same first-edge
+    // semantics as the arpeggiator and progression — and only later edges walk.
+    state.started = true
   } else if (clockEdge && state.rng) {
     const gravityGain = 1 + gravity * 3
     const next = theory.weightedWalk(state.matrix, state.pos, state.rng, state.gravitySet, gravityGain)

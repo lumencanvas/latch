@@ -1,6 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { risingEdge } from '@/engine/trigger'
 import { getServiceName, getCharacteristicName } from '@/services/ble/BleProfileRegistry'
 import { BleAdapter } from '@/services/connections/adapters/BleAdapter'
 import { bleAdapters, bleDeviceState } from '../shared'
@@ -63,8 +64,13 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const deviceInput = ctx.inputs.get('device') as BluetoothDevice | null
-  const connectTrigger = ctx.inputs.get('connect')
-  const disconnectTrigger = ctx.inputs.get('disconnect')
+  // Connect / disconnect fire on the trigger's RISING edge only — a held-high trigger must
+  // not re-issue connect/disconnect every frame (disconnect in particular raced the async
+  // status flip, re-calling adapter.disconnect() ~60×/s). Computed here, before the no-device
+  // early return, so the edge state stays current while no device is wired (else a trigger
+  // held across that gap was swallowed / fired late). autoConnect stays level-driven below.
+  const hasConnectTrigger = risingEdge(ctx.nodeId, 'connect', ctx.inputs.get('connect'))
+  const hasDisconnectTrigger = risingEdge(ctx.nodeId, 'disconnect', ctx.inputs.get('disconnect'))
   const autoConnect = (ctx.controls.get('autoConnect') as boolean) ?? false
   const autoReconnect = (ctx.controls.get('autoReconnect') as boolean) ?? true
   const serviceUUID = (ctx.controls.get('serviceUUID') as string) ?? ''
@@ -132,10 +138,6 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   }
 
   const adapter = state.adapter
-
-  // Handle connect trigger
-  const hasConnectTrigger = connectTrigger === true || connectTrigger === 1 || (typeof connectTrigger === 'number' && connectTrigger > 0)
-  const hasDisconnectTrigger = disconnectTrigger === true || disconnectTrigger === 1 || (typeof disconnectTrigger === 'number' && disconnectTrigger > 0)
 
   if (adapter) {
     if (hasDisconnectTrigger && state.connected) {

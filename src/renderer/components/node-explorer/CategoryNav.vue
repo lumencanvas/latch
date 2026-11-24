@@ -112,7 +112,7 @@ const categories = computed(() =>
 }
 
 .cat-count {
-  font-size: 9px;
-  color: var(--color-neutral-400);
+  font-size: 10px;
+  color: var(--color-neutral-600); /* AA on white + on the active neutral-200 row (neutral-400 was 3.36:1 / 2.27:1) */
 }
 </style>

@@ -17,6 +17,7 @@ const definition: NodeDefinition = {
   ],
   controls: [
     { id: 'removeEmpty', type: 'toggle', label: 'Remove Empty Strings', default: true },
+    { id: 'removeNaN', type: 'toggle', label: 'Remove NaN', default: false },
   ],
   tags: ['array', 'filter', 'null', 'clean', 'compact'],
   info: {
@@ -32,6 +33,7 @@ const definition: NodeDefinition = {
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const array = ctx.inputs.get('array')
   const removeEmpty = (ctx.controls.get('removeEmpty') as boolean) ?? true
+  const removeNaN = (ctx.controls.get('removeNaN') as boolean) ?? false
   const outputs = new Map<string, unknown>()
 
   if (!Array.isArray(array)) {
@@ -44,6 +46,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const filtered = array.filter((item) => {
     if (item === null || item === undefined) return false
     if (removeEmpty && typeof item === 'string' && item === '') return false
+    if (removeNaN && typeof item === 'number' && Number.isNaN(item)) return false
     return true
   })
 

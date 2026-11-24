@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
-import { hasTriggerValue, runModelInference } from '../shared'
+import { triggerFired, runModelInference } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'text-generation',
@@ -65,7 +65,7 @@ export const textGenerationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =>
   // Generate only on an explicit trigger carrying a non-empty prompt; the shared
   // helper owns the model-loaded gate, the in-flight dedup, and the loading/progress/
   // done/error latching (previously open-coded here, with the error swallowed).
-  const triggered = hasTriggerValue(trigger)
+  const triggered = triggerFired(ctx.nodeId, trigger)
   const shouldRun = triggered && !!prompt.trim()
   const { result } = runModelInference<string>(ctx, outputs, {
     task: 'text-generation',

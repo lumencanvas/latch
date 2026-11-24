@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { getOrCreateNode } from '../shared'
+import { getOrCreateNode, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'oscillator',
@@ -61,12 +61,12 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   })
 
   // Update parameters
-  osc.frequency.value = frequency
-  osc.detune.value = detune
+  setParam(osc.frequency, frequency)
+  setParam(osc.detune, detune)
   if (osc.type !== waveform) {
     osc.type = waveform
   }
-  osc.volume.value = volume
+  setParam(osc.volume, volume)
 
   const outputs = new Map<string, unknown>()
   outputs.set('audio', osc)

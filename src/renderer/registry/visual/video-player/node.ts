@@ -3,6 +3,7 @@ import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { videoPlayerState } from '../shared'
+import { risingEdge } from '@/engine/trigger'
 
 const definition: NodeDefinition = {
   id: 'video-player',
@@ -117,6 +118,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
     state.video = video
     state.loadedUrl = url
+    state.texture?.dispose() // old clip's GPU texture was dropped without dispose
     state.texture = null
   }
 
@@ -129,8 +131,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   video.muted = volume === 0
 
   // Handle play/pause triggers
-  const hasPlayTrigger = playTrigger === true || playTrigger === 1 || (typeof playTrigger === 'number' && playTrigger > 0)
-  const hasPauseTrigger = pauseTrigger === true || pauseTrigger === 1 || (typeof pauseTrigger === 'number' && pauseTrigger > 0)
+  // Rising edges: a held Play re-started playback right after every Pause (and vice versa),
+  // so the two triggers fought each frame.
+  const hasPlayTrigger = risingEdge(ctx.nodeId, 'play', playTrigger)
+  const hasPauseTrigger = risingEdge(ctx.nodeId, 'pause', pauseTrigger)
 
   if (hasPlayTrigger && video.paused) {
     video.play().catch(() => {})
@@ -141,10 +145,11 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Handle seek
   if (seekInput !== undefined && seekInput !== state.lastSeek) {
+    // Only latch the seek once it's applied — a seek sent before metadata loaded was dropped.
     if (video.readyState >= 1) {
       video.currentTime = Math.max(0, Math.min(seekInput, video.duration || 0))
+      state.lastSeek = seekInput
     }
-    state.lastSeek = seekInput
   }
 
   // Update texture from video frame

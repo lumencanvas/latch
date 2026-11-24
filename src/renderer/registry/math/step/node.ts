@@ -10,10 +10,13 @@ const definition: NodeDefinition = {
   description: 'Returns 0 if value < edge, otherwise 1',
   icon: 'stairs',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'value', type: 'number', label: 'Value' }],
+  inputs: [
+    { id: 'value', type: 'number', label: 'Value' },
+    { id: 'edge', type: 'number', label: 'Edge' },
+  ],
   outputs: [{ id: 'result', type: 'number', label: 'Result' }],
   controls: [
-    { id: 'edge', type: 'number', label: 'Edge', default: 0.5 },
+    { id: 'edge', type: 'number', label: 'Edge', default: 0.5, props: { step: 0.01 } },
   ],
   tags: ['step', 'threshold', 'binary', 'heaviside'],
   info: {
@@ -27,8 +30,8 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
-  const edge = (ctx.controls.get('edge') as number) ?? 0.5
+  const value = ctx.num('value', 0)
+  const edge = ctx.num('edge', 0.5)
 
   const result = value < edge ? 0 : 1
 

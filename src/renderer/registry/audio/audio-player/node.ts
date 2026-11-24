@@ -2,7 +2,8 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { audioNodes, playerState } from '../shared'
+import { audioNodes, playerState, setParam, setProp } from '../shared'
+import { risingEdge } from '@/engine/trigger'
 
 const definition: NodeDefinition = {
   id: 'audio-player',
@@ -44,8 +45,10 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const url = (ctx.inputs.get('url') as string) ?? (ctx.controls.get('url') as string) ?? ''
-  const play = ctx.inputs.get('play') as boolean | undefined
-  const stop = ctx.inputs.get('stop') as boolean | undefined
+  // Rising edges: a held-high Play restarted the clip the moment it ended (and a held Stop
+  // blocked Play forever). Computed every frame so the edge state never goes stale.
+  const play = risingEdge(ctx.nodeId, 'play', ctx.inputs.get('play'))
+  const stop = risingEdge(ctx.nodeId, 'stop', ctx.inputs.get('stop'))
   const loop = (ctx.controls.get('loop') as boolean) ?? false
   const volume = (ctx.controls.get('volume') as number) ?? 0 // dB
   const playbackRate = (ctx.controls.get('playbackRate') as number) ?? 1
@@ -75,6 +78,8 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     state.url = url
     state.loading = true
     state.error = null
+    // A Play pending on the previous clip must not auto-start the new one.
+    state.pendingPlay = false
 
     // Dispose old player
     if (state.player) {
@@ -95,6 +100,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
         onerror: (err) => {
           state.error = err?.message ?? 'Failed to load audio'
           state.loading = false
+          state.pendingPlay = false
           // Clear player reference on error - it's in an invalid state
           if (state.player === player) {
             state.player = null
@@ -119,17 +125,19 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   if (player) {
     // Update parameters
-    player.loop = loop
-    player.volume.value = volume
-    player.playbackRate = playbackRate
+    setProp(player, 'loop', loop)
+    setParam(player.volume, volume)
+    setProp(player, 'playbackRate', playbackRate)
 
     // Handle play/stop triggers
-    if (play && player.loaded && player.state !== 'started') {
-      player.start()
+    if (play) state.pendingPlay = true
+    if (stop) {
+      state.pendingPlay = false
+      if (player.state === 'started') player.stop()
     }
-
-    if (stop && player.state === 'started') {
-      player.stop()
+    if (state.pendingPlay && player.loaded) {
+      state.pendingPlay = false
+      if (player.state !== 'started') player.start()
     }
   }
 

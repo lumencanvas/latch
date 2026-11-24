@@ -204,15 +204,15 @@ function draw() {
     ctx.stroke()
 
     // Band label
-    ctx.fillStyle = '#666'
-    ctx.font = '9px monospace'
+    ctx.fillStyle = '#9a9a9a' // ~5:1 on the #0a0a0a canvas (was #666, ~2.3:1)
+    ctx.font = '10px monospace'
     ctx.textAlign = 'center'
     ctx.fillText(`${i + 1}`, x, y + 3)
   }
 
   // Frequency labels
-  ctx.fillStyle = '#444'
-  ctx.font = '8px monospace'
+  ctx.fillStyle = '#9a9a9a' // ~5:1 on #0a0a0a (was #444, ~1.4:1 — axis was unreadable)
+  ctx.font = '10px monospace'
   ctx.textAlign = 'center'
   ctx.fillText('100', freqToX(100), h - 2)
   ctx.fillText('1k', freqToX(1000), h - 2)

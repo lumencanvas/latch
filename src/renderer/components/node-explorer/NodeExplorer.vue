@@ -9,6 +9,7 @@ import CategoryNav from './CategoryNav.vue'
 import NodeCard from './NodeCard.vue'
 import NodeDetail from './NodeDetail.vue'
 import FlowSnippetCard from './FlowSnippet.vue'
+import { groupSnippetsByPersona } from '@/utils/snippets'
 
 const emit = defineEmits<{
   addNode: [nodeId: string]
@@ -88,6 +89,9 @@ const visibleSnippets = computed(() => {
   // in another category is invisible while browsing a different one.
   return fuzzySearch(flowSnippets, query, s => [s.name, s.description]).map(r => r.item)
 })
+
+// Starters grouped by who they're for (Start here, Visuals & VJ, Music, AI, 3D, ...).
+const snippetGroups = computed(() => groupSnippetsByPersona(visibleSnippets.value))
 
 // The node grid, so we can return keyboard focus to the originating card when the
 // detail view closes (WCAG 2.4.3 — the swap must not strand focus on <body>).
@@ -370,17 +374,26 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
           >
         </div>
 
-        <div
-          v-if="visibleSnippets.length > 0"
-          class="snippets-grid"
-        >
-          <FlowSnippetCard
-            v-for="snippet in visibleSnippets"
-            :key="snippet.id"
-            :snippet="snippet"
-            @insert="handleInsertSnippet"
-          />
-        </div>
+        <template v-if="visibleSnippets.length > 0">
+          <section
+            v-for="group in snippetGroups"
+            :key="group.persona"
+            class="snippet-group"
+            :aria-label="group.persona"
+          >
+            <h3 class="snippet-group-title">
+              {{ group.persona }}
+            </h3>
+            <div class="snippets-grid">
+              <FlowSnippetCard
+                v-for="snippet in group.snippets"
+                :key="snippet.id"
+                :snippet="snippet"
+                @insert="handleInsertSnippet"
+              />
+            </div>
+          </section>
+        </template>
         <div
           v-else
           class="empty-state"
@@ -515,7 +528,7 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
 }
 
 .search-input::placeholder {
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-500); /* AA-ish: neutral-400 placeholder was 3.36:1 — the only search cue */
 }
 
 /* Restore a keyboard focus ring the base `outline: none` suppressed (WCAG 2.4.7).
@@ -537,7 +550,10 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
   font-family: var(--font-mono);
   font-size: 10px;
   text-transform: lowercase;
-  padding: 2px var(--space-2);
+  padding: 4px var(--space-2);
+  min-height: 24px; /* WCAG 2.5.8 target size — chips were ~19px tall */
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--color-neutral-300);
   background: var(--color-neutral-50);
   color: var(--color-neutral-600);
@@ -572,7 +588,7 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
 .empty-state {
   padding: var(--space-8);
   text-align: center;
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-500); /* AA: the zero-result guidance was 3.36:1 */
   font-size: 12px;
 }
 
@@ -580,7 +596,17 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.snippet-group-title {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-600);
 }
 
 /* Let the category list scroll so the port legend stays pinned to the bottom. */

@@ -2,6 +2,16 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
+import { defineNodeState } from '@/engine/nodeState'
+
+/** Per-node output canvas (copy of the shared renderer canvas). Freed on delete / Stop. */
+const outputCanvases = defineNodeState<HTMLCanvasElement>({
+  label: 'render-3d-output',
+  dispose: (canvas) => {
+    canvas.width = 0
+    canvas.height = 0
+  },
+})
 
 const definition: NodeDefinition = {
   id: 'render-3d',
@@ -62,7 +72,21 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   } else {
     // Render to default framebuffer (canvas) for better compatibility
     renderer.renderToCanvas(scene, camera, width, height)
-    outputs.set('texture', renderer.getCanvas()) // HTMLCanvasElement
+    // The renderer's canvas is ONE shared element: with two Render 3D nodes, the second render
+    // overwrote the first's output before its downstream consumers ran. Copy into a per-node
+    // canvas (a GPU-side blit) so each node's output is stable for the rest of the frame.
+    const src = renderer.getCanvas()
+    const out = outputCanvases.getOrCreate(ctx.nodeId, () => document.createElement('canvas'))
+    if (out.width !== src.width) out.width = src.width
+    if (out.height !== src.height) out.height = src.height
+    const c2d = out.getContext('2d')
+    if (c2d) {
+      c2d.clearRect(0, 0, out.width, out.height)
+      c2d.drawImage(src, 0, 0)
+      outputs.set('texture', out) // HTMLCanvasElement
+    } else {
+      outputs.set('texture', src)
+    }
     outputs.set('depth', null)
   }
 

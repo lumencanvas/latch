@@ -1,4 +1,18 @@
 import { defineStore } from 'pinia'
+import {
+  type ControlLayout,
+  type LayoutItem,
+  collides as layoutCollides,
+  findFirstValidPosition as layoutFirstFit,
+  findNearestFreePosition,
+  defaultSize,
+  typePriority,
+  placeItem,
+  autoLayout,
+  clampRect,
+  tileNodeId,
+} from '@/utils/controlPanelLayout'
+import { useFlowsStore } from './flows'
 
 export type Theme = 'light' | 'dark' | 'system'
 export type ViewMode = 'editor' | 'controlPanel'
@@ -23,58 +37,23 @@ export interface BluetoothPairTarget {
 
 let notificationSeq = 0
 
+/** Every node id across all open flows (exposed controls / tiles are global). */
+function allFlowNodeIds(): string[] {
+  try {
+    return useFlowsStore().flows.flatMap(f => f.nodes.map(n => n.id))
+  } catch {
+    return [] // no active pinia (isolated tests) — fall back to the caller's ids
+  }
+}
+
 // LocalStorage keys
 const STORAGE_KEY_EXPOSED_CONTROLS = 'clasp-exposed-controls'
 const STORAGE_KEY_CONTROL_GROUPS = 'clasp-control-groups'
 const STORAGE_KEY_CONTROL_LAYOUT = 'latch-control-layout'
 
-// Node type priorities (higher = placed first, better position)
-const NODE_TYPE_PRIORITY: Record<string, number> = {
-  'main-output': 100,    // Top, prominent
-  'oscilloscope': 90,
-  'monitor': 85,
-  'knob': 50,
-  'slider': 50,
-  'trigger': 50,
-  'constant': 50,
-  'lfo': 50,
-  'envelope-visual': 45,
-  'parametric-eq': 45,
-  'wavetable': 45,
-  'xy-pad': 40,
-  'keyboard': 10,        // Bottom, low priority = placed last
-  'synth': 45,           // Audio controls, mid-high priority
-}
-
-// Default sizes per node type (grid units)
-const NODE_TYPE_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
-  'main-output': { w: 6, h: 5 },
-  'oscilloscope': { w: 5, h: 3 },
-  'monitor': { w: 3, h: 2 },
-  'keyboard': { w: 10, h: 2 },  // Wide, short
-  'xy-pad': { w: 4, h: 4 },
-  'knob': { w: 3, h: 3 },
-  'slider': { w: 2, h: 4 },
-  'trigger': { w: 2, h: 2 },
-  'constant': { w: 3, h: 2 },
-  'lfo': { w: 4, h: 3 },
-  'envelope-visual': { w: 5, h: 3 },
-  'parametric-eq': { w: 5, h: 4 },
-  'wavetable': { w: 4, h: 3 },
-  'synth': { w: 4, h: 4 },
-}
-
-/**
- * Position and size for a control in the control panel grid
- */
-export interface ControlLayout {
-  nodeId: string
-  x: number // Grid column (0-based)
-  y: number // Grid row (0-based)
-  w: number // Width in grid units
-  h: number // Height in grid units
-  manuallyPlaced?: boolean // True if user has dragged this control
-}
+// Grid packing (priorities, default sizes, collision, reflow) is pure and lives
+// in utils/controlPanelLayout.ts; this store only owns state + persistence.
+export type { ControlLayout } from '@/utils/controlPanelLayout'
 
 // Helper to load from localStorage
 function loadFromStorage<T>(key: string, defaultValue: T): T {
@@ -555,7 +534,42 @@ export const useUIStore = defineStore('ui', {
       }
 
       this.exposedControls.push(control)
+      // Persist — previously only unexpose/update saved, so a freshly exposed
+      // control vanished on reload.
+      saveToStorage(STORAGE_KEY_EXPOSED_CONTROLS, this.exposedControls)
       return control
+    },
+
+    /**
+     * Copy Control Panel state (exposed controls + tile positions) onto remapped node ids —
+     * used by Duplicate Flow so the copy gets its own, independent panel instead of sharing
+     * the original's (they used to share node ids, so moving a tile moved both).
+     */
+    cloneControlPanelForNodes(idMap: ReadonlyMap<string, string>) {
+      if (idMap.size === 0) return
+      const remapKey = (key: string): string | null => {
+        const nodeId = tileNodeId(key)
+        const to = idMap.get(nodeId)
+        return to ? to + key.slice(nodeId.length) : null
+      }
+      const exposed: ExposedControl[] = []
+      for (const c of this.exposedControls) {
+        const to = idMap.get(c.nodeId)
+        if (to) exposed.push({ ...c, id: `${to}:${c.controlId}`, nodeId: to })
+      }
+      const layouts: ControlLayout[] = []
+      for (const l of this.controlPanelLayout) {
+        const key = remapKey(l.nodeId)
+        if (key) layouts.push({ ...l, nodeId: key })
+      }
+      if (exposed.length) {
+        this.exposedControls = [...this.exposedControls, ...exposed]
+        saveToStorage(STORAGE_KEY_EXPOSED_CONTROLS, this.exposedControls)
+      }
+      if (layouts.length) {
+        this.controlPanelLayout = [...this.controlPanelLayout, ...layouts]
+        saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
+      }
     },
 
     /**
@@ -691,12 +705,23 @@ export const useUIStore = defineStore('ui', {
     },
 
     /**
-     * Clean up exposed controls for deleted nodes
+     * Clean up exposed controls (and their panel tiles) for deleted nodes.
+     *
+     * Callers pass the ACTIVE flow's node ids, but exposed controls are stored
+     * globally — so a control is kept while its node still exists in ANY open
+     * flow (deleting a node in flow A used to wipe flow B's exposed controls).
+     * `otherFlowNodeIds` is supplied by the caller when known; otherwise the
+     * flows store is consulted lazily.
      */
-    cleanupExposedControls(existingNodeIds: string[]) {
-      const nodeIdSet = new Set(existingNodeIds)
-      this.exposedControls = this.exposedControls.filter((c) => nodeIdSet.has(c.nodeId))
-      saveToStorage(STORAGE_KEY_EXPOSED_CONTROLS, this.exposedControls)
+    cleanupExposedControls(existingNodeIds: string[], otherFlowNodeIds?: Iterable<string>) {
+      const keep = new Set(existingNodeIds)
+      for (const id of otherFlowNodeIds ?? allFlowNodeIds()) keep.add(id)
+      const before = this.exposedControls.length
+      this.exposedControls = this.exposedControls.filter((c) => keep.has(c.nodeId))
+      if (this.exposedControls.length !== before) {
+        saveToStorage(STORAGE_KEY_EXPOSED_CONTROLS, this.exposedControls)
+      }
+      this.pruneControlLayouts(keep)
     },
 
     // =========================================================================
@@ -707,123 +732,92 @@ export const useUIStore = defineStore('ui', {
      * Check if a position collides with any existing layout
      */
     checkCollision(x: number, y: number, w: number, h: number, excludeNodeId?: string): boolean {
-      for (const layout of this.controlPanelLayout) {
-        if (layout.nodeId === excludeNodeId) continue
-        // Check rectangle overlap
-        if (
-          x < layout.x + layout.w &&
-          x + w > layout.x &&
-          y < layout.y + layout.h &&
-          y + h > layout.y
-        ) {
-          return true
-        }
-      }
-      return false
+      return layoutCollides(this.controlPanelLayout, { x, y, w, h }, excludeNodeId)
     },
 
     /**
-     * Find first valid position for a control using bin packing
+     * Find first valid position for a control using bin packing. `scope`
+     * restricts collision to those tile keys (the active flow's tiles) — the
+     * layout list is global, so other flows' tiles must not block placement.
      */
-    findFirstValidPosition(w: number, h: number, gridCols: number = 12): { x: number; y: number } {
-      // Scan grid left-to-right, top-to-bottom
-      for (let y = 0; y < 100; y++) {
-        for (let x = 0; x <= gridCols - w; x++) {
-          if (!this.checkCollision(x, y, w, h)) {
-            return { x, y }
-          }
-        }
-      }
-      // Fallback: place at end
-      const maxY = this.controlPanelLayout.length > 0
-        ? Math.max(...this.controlPanelLayout.map(l => l.y + l.h))
-        : 0
-      return { x: 0, y: maxY }
+    findFirstValidPosition(w: number, h: number, gridCols: number = 12, scope?: ReadonlySet<string>): { x: number; y: number } {
+      const layouts = scope ? this.controlPanelLayout.filter(l => scope.has(l.nodeId)) : this.controlPanelLayout
+      return layoutFirstFit(layouts, w, h, gridCols)
     },
 
     /**
      * Get default size for a node type
      */
     getDefaultSize(nodeType: string): { w: number; h: number } {
-      return NODE_TYPE_DEFAULT_SIZE[nodeType] ?? { w: 4, h: 3 }
+      return defaultSize(nodeType)
     },
 
     /**
      * Get priority for a node type (higher = placed first)
      */
     getNodeTypePriority(nodeType: string): number {
-      return NODE_TYPE_PRIORITY[nodeType] ?? 50
+      return typePriority(nodeType)
     },
 
     /**
-     * Get layout for a node, or create default if not exists
-     * Uses smart bin-packing to find first available position
+     * Get layout for a tile, creating (and persisting) a default if missing.
+     * Prefer {@link ensureControlLayouts} from views — it batches the writes and
+     * keeps mutation out of computed getters.
      */
-    getControlLayout(nodeId: string, nodeType?: string): ControlLayout {
-      let layout = this.controlPanelLayout.find(l => l.nodeId === nodeId)
-      if (!layout) {
-        // Auto-place new controls using bin packing with type-specific size
-        const size = this.getDefaultSize(nodeType ?? 'unknown')
-
-        // Keyboard: prefer bottom placement
-        if (nodeType === 'keyboard') {
-          const maxY = this.controlPanelLayout.length > 0
-            ? Math.max(...this.controlPanelLayout.map(l => l.y + l.h))
-            : 0
-          layout = { nodeId, x: 0, y: maxY, w: size.w, h: size.h, manuallyPlaced: false }
-        } else {
-          const { x, y } = this.findFirstValidPosition(size.w, size.h)
-          layout = { nodeId, x, y, w: size.w, h: size.h, manuallyPlaced: false }
-        }
-
-        this.controlPanelLayout.push(layout)
-        saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
-      }
+    getControlLayout(nodeId: string, nodeType?: string, gridCols: number = 12): ControlLayout {
+      const existing = this.controlPanelLayout.find(l => l.nodeId === nodeId)
+      if (existing) return existing
+      const layout = placeItem(this.controlPanelLayout, { key: nodeId, nodeType: nodeType ?? 'unknown' }, gridCols)
+      this.controlPanelLayout.push(layout)
+      saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
       return layout
     },
 
     /**
-     * Auto-layout all controls based on priority
+     * Create layouts for any of `items` that don't have one yet, packing them
+     * around the existing tiles of the SAME panel (other flows' tiles are
+     * ignored). One storage write per call. Returns true if anything was added.
      */
-    autoLayoutAll(nodes: Array<{ id: string; nodeType: string }>, gridCols: number = 12) {
-      // Clear all layouts
-      this.controlPanelLayout = []
-
-      // Sort by priority (high first)
-      const sorted = [...nodes].sort((a, b) =>
-        this.getNodeTypePriority(b.nodeType) - this.getNodeTypePriority(a.nodeType)
-      )
-
-      // Place each node
-      for (const node of sorted) {
-        const size = this.getDefaultSize(node.nodeType)
-
-        // Keyboard special case: place at bottom, full width
-        if (node.nodeType === 'keyboard') {
-          const maxY = this.controlPanelLayout.length > 0
-            ? Math.max(...this.controlPanelLayout.map(l => l.y + l.h))
-            : 0
-          this.controlPanelLayout.push({
-            nodeId: node.id,
-            x: 0,
-            y: maxY,
-            w: Math.min(gridCols, size.w),
-            h: size.h,
-            manuallyPlaced: false,
-          })
-        } else {
-          const { x, y } = this.findFirstValidPosition(size.w, size.h, gridCols)
-          this.controlPanelLayout.push({
-            nodeId: node.id,
-            x,
-            y,
-            w: size.w,
-            h: size.h,
-            manuallyPlaced: false,
-          })
-        }
+    ensureControlLayouts(items: readonly LayoutItem[], gridCols: number): boolean {
+      const scope = new Set(items.map(i => i.key))
+      const existing = new Set(this.controlPanelLayout.map(l => l.nodeId))
+      const missing = items.filter(i => !existing.has(i.key))
+      if (missing.length === 0) return false
+      const inScope = this.controlPanelLayout.filter(l => scope.has(l.nodeId))
+      for (const item of missing) {
+        const layout = placeItem(inScope, item, gridCols)
+        inScope.push(layout)
+        this.controlPanelLayout.push(layout)
       }
+      saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
+      return true
+    },
 
+    /**
+     * Auto-layout the given tiles based on priority. Only those tiles are
+     * replaced — tiles belonging to other flows are preserved (this used to
+     * clear the whole global list, wiping every other flow's arrangement).
+     */
+    autoLayoutAll(nodes: Array<{ id: string; nodeType: string; size?: { w: number; h: number } }>, gridCols: number = 12) {
+      const keys = new Set(nodes.map(n => n.id))
+      const fresh = autoLayout(nodes.map(n => ({ key: n.id, nodeType: n.nodeType, size: n.size })), gridCols)
+      this.controlPanelLayout = [
+        ...this.controlPanelLayout.filter(l => !keys.has(l.nodeId)),
+        ...fresh,
+      ]
+      saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
+    },
+
+    /**
+     * Replace the given tiles' layouts in one write (e.g. adopting a reflowed
+     * narrow-screen packing as the saved layout). Other tiles are untouched.
+     */
+    replaceControlLayouts(list: readonly ControlLayout[]) {
+      const keys = new Set(list.map(l => l.nodeId))
+      this.controlPanelLayout = [
+        ...this.controlPanelLayout.filter(l => !keys.has(l.nodeId)),
+        ...list.map(l => ({ ...l })),
+      ]
       saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
     },
 
@@ -853,11 +847,56 @@ export const useUIStore = defineStore('ui', {
     },
 
     /**
+     * Commit a user move/resize of a tile without overlapping its panel-mates
+     * (`scope` = the active panel's tile keys). The rect is clamped to the grid;
+     * if it would overlap another tile it settles in the nearest free spot (a
+     * resize that would overlap is rejected instead). Returns the final rect.
+     */
+    placeControlTile(
+      key: string,
+      rect: { x: number; y: number; w: number; h: number },
+      gridCols: number,
+      scope: ReadonlySet<string>,
+      mode: 'move' | 'resize' = 'move',
+    ): ControlLayout | null {
+      const layout = this.controlPanelLayout.find(l => l.nodeId === key)
+      if (!layout) return null
+      const mates = this.controlPanelLayout.filter(l => scope.has(l.nodeId) && l.nodeId !== key)
+      // A resize anchors the top-left: clamp the width to the space right of x
+      // (clampRect alone would slide x left to fit, then collide with a neighbour).
+      const r = mode === 'resize'
+        ? clampRect({ ...rect, w: Math.min(rect.w, gridCols - Math.max(0, rect.x)) }, gridCols)
+        : clampRect(rect, gridCols)
+      if (mode === 'resize') {
+        if (layoutCollides(mates, r)) return layout // reject: keep the last valid size
+        Object.assign(layout, { w: r.w, h: r.h, x: r.x })
+      } else {
+        const p = findNearestFreePosition(mates, r, gridCols)
+        Object.assign(layout, { x: p.x, y: p.y, w: r.w, h: r.h, manuallyPlaced: true })
+      }
+      saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
+      return layout
+    },
+
+    /**
      * Remove layout for a node
      */
     removeControlLayout(nodeId: string) {
       this.controlPanelLayout = this.controlPanelLayout.filter(l => l.nodeId !== nodeId)
       saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
+    },
+
+    /**
+     * Drop layout entries whose node no longer exists anywhere (`liveNodeIds`
+     * should cover every open flow). Stale entries otherwise accumulate in
+     * localStorage forever — removeControlLayout had no callers.
+     */
+    pruneControlLayouts(liveNodeIds: ReadonlySet<string>) {
+      const before = this.controlPanelLayout.length
+      this.controlPanelLayout = this.controlPanelLayout.filter(l => liveNodeIds.has(tileNodeId(l.nodeId)))
+      if (this.controlPanelLayout.length !== before) {
+        saveToStorage(STORAGE_KEY_CONTROL_LAYOUT, this.controlPanelLayout)
+      }
     },
 
     /**

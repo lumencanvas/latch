@@ -20,7 +20,7 @@ const definition: NodeDefinition = {
     { id: 'found', type: 'boolean', label: 'Found' },
   ],
   controls: [
-    { id: 'defaultPath', type: 'text', label: 'Path', default: '', props: { placeholder: 'data.items[0].name' } },
+    { id: 'defaultPath', type: 'text', label: 'Path (if unwired)', default: '', props: { placeholder: 'data.items[0].name' } },
     { id: 'default', type: 'text', label: 'Default', default: '' },
   ],
   tags: ['object', 'get', 'property', 'path', 'access'],
@@ -29,6 +29,7 @@ const definition: NodeDefinition = {
     tips: [
       'Use bracket notation in the path to access array indices, like "items[2].id".',
       'Check the found output before using the value to handle missing data gracefully.',
+      'Default is parsed as JSON when possible (5 → number, true → boolean), otherwise used as text.',
     ],
     pairsWith: ['object-set', 'object-has', 'json-parse', 'gate'],
   },

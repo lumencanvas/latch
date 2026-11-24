@@ -169,7 +169,7 @@ watch(() => runtimeStore.isRunning, (r) => { if (r) start(); else { stop(); draw
 }
 .head-icon { color: var(--color-protocol-ble); }
 .node-title { font-size: var(--font-size-xs); font-weight: var(--font-weight-bold); letter-spacing: var(--letter-spacing-wider); }
-.node-status { margin-left: auto; font-size: var(--font-size-xs); color: var(--color-neutral-400); text-transform: uppercase; }
+.node-status { margin-left: auto; font-size: var(--font-size-xs); color: var(--color-neutral-300); text-transform: uppercase; }
 .node-status[data-status='connected'] { color: var(--color-success); }
 .node-status[data-status='error'] { color: var(--color-error); }
 .node-status[data-status='awaiting-pairing'],

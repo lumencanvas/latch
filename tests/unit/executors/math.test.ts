@@ -29,22 +29,22 @@ const smoothstepExecutor = smoothstepNode.executor
 const remapExecutor = remapNode.executor
 const quantizeExecutor = quantizeNode.executor
 const wrapExecutor = wrapNode.executor
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
 // Helper to create a mock execution context
 function createContext(
   inputs: Record<string, unknown> = {},
   controls: Record<string, unknown> = {}
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId: 'test-node',
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
-    getInputNode: () => null,
     deltaTime: 0.016,
     totalTime: 0,
     frameCount: 0,
-  }
+    definition: {} as never,
+  })
 }
 
 // Tolerance for floating-point comparisons
@@ -168,16 +168,16 @@ describe('Math Executors', () => {
         expect(result.get('result')).toBeCloseTo(45, 10)
       })
 
-      it('returns NaN for asin out of range [-1, 1]', () => {
+      it('returns 0 (never NaN) for asin out of range [-1, 1]', () => {
         const ctx = createContext({ value: 2 }, { function: 'asin', degrees: false })
         const result = trigExecutor(ctx)
-        expect(result.get('result')).toBeNaN()
+        expect(result.get('result')).toBe(0)
       })
 
-      it('returns NaN for acos out of range [-1, 1]', () => {
+      it('returns 0 (never NaN) for acos out of range [-1, 1]', () => {
         const ctx = createContext({ value: -2 }, { function: 'acos', degrees: false })
         const result = trigExecutor(ctx)
-        expect(result.get('result')).toBeNaN()
+        expect(result.get('result')).toBe(0)
       })
     })
 
@@ -1081,14 +1081,15 @@ describe('Math Executors', () => {
 
 describe('randomExecutor', () => {
   const rand = (inputs: Record<string, unknown> = {}, controls: Record<string, unknown> = {}) =>
-    randomExecutor({
+    randomExecutor(createExecutionContext({
       nodeId: 'rand',
       inputs: new Map(Object.entries(inputs)),
       controls: new Map(Object.entries(controls)),
       deltaTime: 0.016,
       totalTime: 0,
       frameCount: 0,
-    } as unknown as ExecutionContext).get('result') as number
+      definition: {} as never,
+    })).get('result') as number
 
   it('a connected seed makes it DETERMINISTIC (same seed → same value)', () => {
     expect(rand({ seed: 7 })).toBe(rand({ seed: 7 }))

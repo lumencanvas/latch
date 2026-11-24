@@ -56,10 +56,16 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   }
 
   const bleKey = `${ctx.nodeId}:ble`
+  const failedKey = `${ctx.nodeId}:connectFailed`
+  const bleSendKey = `${ctx.nodeId}:lastSend`
   let connection = bleDevices.get(bleKey)
 
-  // Handle connection
-  if (connect && !connection && serviceUUID) {
+  // Turning Connect off re-arms a failed/cancelled attempt.
+  if (!connect) bleState.delete(failedKey)
+
+  // Handle connection. One attempt per Connect toggle: a cancelled chooser / failed connect used
+  // to retry EVERY frame, re-opening the device chooser in a loop.
+  if (connect && !connection && serviceUUID && !bleState.get(failedKey)) {
     try {
       // Request device (this will show a browser dialog)
       const device = await (navigator as Navigator & {
@@ -73,11 +79,26 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       const server = await device.gatt?.connect()
 
       if (server) {
-        connection = { device, server }
-        bleDevices.set(bleKey, connection)
+        const conn = { device, server }
+        connection = conn
+        bleDevices.set(bleKey, conn)
         setCached(bleState, `${ctx.nodeId}:connected`, true)
         setCached(bleState, `${ctx.nodeId}:deviceName`, device.name ?? 'Unknown')
         setCached(bleState, `${ctx.nodeId}:error`, null)
+        bleState.delete(bleSendKey) // fresh link — re-send the current value
+
+        // A dropped link (out of range / powered off) must not leave `connected` stuck true with a
+        // dead server cached forever. Drop the entry; Connect off→on re-pairs.
+        const onDrop = () => {
+          device.removeEventListener('gattserverdisconnected', onDrop)
+          if (bleDevices.get(bleKey) !== conn) return
+          bleDevices.delete(bleKey)
+          bleCharacteristicHandlers.delete(ctx.nodeId)
+          setCached(bleState, `${ctx.nodeId}:connected`, false)
+          setCached(bleState, `${ctx.nodeId}:error`, 'Device disconnected')
+          bleState.set(failedKey, true)
+        }
+        device.addEventListener('gattserverdisconnected', onDrop)
 
         // Setup notifications if characteristic UUID provided
         if (characteristicUUID) {
@@ -92,12 +113,13 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
             const handler = (event: Event) => {
               const value = (event.target as BluetoothRemoteGATTCharacteristic).value
               if (value) {
-                const bytes = new Uint8Array(value.buffer)
+                // Honour the DataView's window — the value can be a slice of a larger buffer.
+                const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
                 setCached(bleState, `${ctx.nodeId}:rawValue`, bytes)
 
                 // Try to interpret as number (first 4 bytes as float)
                 if (bytes.length >= 4) {
-                  const view = new DataView(bytes.buffer)
+                  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
                   setCached(bleState, `${ctx.nodeId}:value`, view.getFloat32(0, true))
                 } else if (bytes.length >= 1) {
                   setCached(bleState, `${ctx.nodeId}:value`, bytes[0])
@@ -119,22 +141,43 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       setCached(bleState, `${ctx.nodeId}:error`, errorMsg)
       setCached(bleState, `${ctx.nodeId}:connected`, false)
+      bleState.set(failedKey, true)
     }
   }
 
   // Handle disconnect
   if (!connect && connection) {
+    // Release the notification listener first (it was only ever freed on node delete).
+    const h = bleCharacteristicHandlers.get(ctx.nodeId)
+    if (h) {
+      h.characteristic.removeEventListener('characteristicvaluechanged', h.handler)
+      bleCharacteristicHandlers.delete(ctx.nodeId)
+    }
+    bleDevices.delete(bleKey) // before disconnect() so the gattserverdisconnected handler no-ops
     try {
       connection.server?.disconnect()
     } catch (e) {
       console.error('[BLE] Disconnect error:', e)
     }
-    bleDevices.delete(bleKey)
+    connection = undefined
     setCached(bleState, `${ctx.nodeId}:connected`, false)
+    bleState.delete(bleSendKey)
   }
 
   // Send data
-  if (connection && connection.server && sendData && characteristicUUID) {
+  // SEND-ON-CHANGE (no trigger port) — writing every frame re-ran GATT discovery + writeValue
+  // ~60×/s, flooding the device. Gate on a payload change.
+  const rawSend: unknown = sendData
+  const sendSig = typeof rawSend === 'string'
+    ? rawSend
+    : rawSend instanceof Uint8Array
+      ? rawSend.join(',')
+      : rawSend instanceof ArrayBuffer
+        ? new Uint8Array(rawSend).join(',')
+        : String(rawSend)
+  // Empty/absent payload re-arms send-on-change (so the same command can be sent twice).
+  if (!sendData) bleState.delete(bleSendKey)
+  if (connection && connection.server && sendData && characteristicUUID && bleState.get(bleSendKey) !== sendSig) {
     try {
       const service = await connection.server.getPrimaryService(serviceUUID)
       const characteristic = await service.getCharacteristic(characteristicUUID)
@@ -146,6 +189,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       // Convert Uint8Array to ArrayBuffer for writeValue
       const buffer = data instanceof Uint8Array ? data.buffer : data
       await characteristic.writeValue(buffer as ArrayBuffer)
+      bleState.set(bleSendKey, sendSig)
     } catch (error) {
       console.error('[BLE] Write error:', error)
     }

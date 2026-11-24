@@ -207,6 +207,16 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   state.dither = dither
   state.threshold = threshold
 
+  // Edge-detect the Print/Feed triggers EVERY frame, before the unsupported/no-device early
+  // returns — otherwise a trigger held across those frames left lastPrintHigh stale and
+  // fired (or was swallowed) on the first connected frame.
+  const printHigh = printTrig === true || printTrig === 1 || (typeof printTrig === 'number' && printTrig > 0)
+  const printEdge = printHigh && !state.lastPrintHigh
+  state.lastPrintHigh = printHigh
+  const feedHigh = feedTrig === true || feedTrig === 1 || (typeof feedTrig === 'number' && feedTrig > 0)
+  const feedEdge = feedHigh && !state.lastFeedHigh
+  state.lastFeedHigh = feedHigh
+
   // Compose the print source from the current inputs (used by the preview + print). Throttled
   // to ~10 fps by TIME (not by source===null): a texture source needs a GPU readback
   // (renderToCanvas + getImageData) that is too costly for the 60 fps loop, and a null result
@@ -226,7 +236,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   }
 
   if (!deviceId) {
-    if (state.adapter) { disposePrinter(ctx.nodeId); state = { adapter: null, deviceId: '', transport, lastConnectAt: 0, lastComposeAt: state.lastComposeAt, source: state.source, width, dither, threshold, printRequested: false, lastPrintHigh: false, lastFeedHigh: false, status: 'no device', error: 'No device — click "Pair device…" to connect a printer' }; printerState.set(ctx.nodeId, state) }
+    if (state.adapter) { disposePrinter(ctx.nodeId); state = { adapter: null, deviceId: '', transport, lastConnectAt: 0, lastComposeAt: state.lastComposeAt, source: state.source, width, dither, threshold, printRequested: false, lastPrintHigh: printHigh, lastFeedHigh: feedHigh, status: 'no device', error: 'No device — click "Pair device…" to connect a printer' }; printerState.set(ctx.nodeId, state) }
     else { state.status = 'no device'; state.error = 'No device — click "Pair device…" to connect a printer' }
     return emit(state, false, false, false)
   }
@@ -258,9 +268,6 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   // Print on a RISING EDGE of the trigger (a held-high trigger must NOT re-print every frame)
   // OR the preview's Print button (printRequested). The request survives until a print is
   // actually dispatched — so a click while still connecting prints once ready, not never.
-  const printHigh = printTrig === true || printTrig === 1 || (typeof printTrig === 'number' && printTrig > 0)
-  const printEdge = printHigh && !state.lastPrintHigh
-  state.lastPrintHigh = printHigh
   if ((printEdge || state.printRequested) && adapter.ready && state.source && !adapter.isPrinting) {
     state.printRequested = false // drain only when actually enqueued
     const a = adapter
@@ -268,9 +275,6 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     a.print(job).catch((e) => { const s = printerState.get(ctx.nodeId); if (s && s.adapter === a) s.error = e instanceof Error ? e.message : 'Print failed' })
   }
   // Feed on a rising edge only, and never mid-print (a queued feed corrupts the raster stream).
-  const feedHigh = feedTrig === true || feedTrig === 1 || (typeof feedTrig === 'number' && feedTrig > 0)
-  const feedEdge = feedHigh && !state.lastFeedHigh
-  state.lastFeedHigh = feedHigh
   if (feedEdge && adapter.ready && !adapter.isPrinting) adapter.feed(feedLines).catch(() => {})
 
   return emit(state, connected, adapter.ready, adapter.isPrinting)

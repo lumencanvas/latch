@@ -58,15 +58,45 @@ describe('progression executor', () => {
     expect(out.get('trigger')).toBe(0)
   })
 
-  it('advances one degree per clock edge and wraps at the end of the plan', () => {
+  it('first edge plays bar 0, then advances one bar per edge and wraps at the end', () => {
     const controls = { root: 'C', scaleName: 'major', seed: 0 }
-    const degs = expectedDegrees('adv', 4, true, 0) // [0,5,4,0]
-    // Initial resolve (no clock) sits on bar 0.
+    const degs = expectedDegrees('adv', 4, true, 0)
+    // Initial resolve (no clock) previews bar 0.
     expect(frame('adv', { clock: false }, controls).get('degree')).toBe(degs[0])
-    // Each edge steps to the next bar; the 4th edge wraps back to bar 0.
+    // Same first-edge semantics as the arpeggiator: edge 1 SOUNDS bar 0 (the tonic — before
+    // this fix it skipped straight to bar 1), edges 2..4 step on, edge 5 wraps to bar 0.
     const seen: number[] = []
-    for (let i = 0; i < degs.length; i++) seen.push(advance('adv', controls).get('degree') as number)
-    expect(seen).toEqual([degs[1], degs[2], degs[3], degs[0]])
+    for (let i = 0; i < degs.length + 1; i++) seen.push(advance('adv', controls).get('degree') as number)
+    expect(seen).toEqual([degs[0], degs[1], degs[2], degs[3], degs[0]])
+  })
+
+  it('the first edge after Reset plays the tonic again', () => {
+    const controls = { root: 'C', scaleName: 'major', seed: 0 }
+    const degs = expectedDegrees('rs2', 4, true, 0)
+    advance('rs2', controls) // bar 0
+    advance('rs2', controls) // bar 1
+    frame('rs2', { reset: true }, controls)
+    frame('rs2', { reset: false }, controls)
+    expect(advance('rs2', controls).get('degree')).toBe(degs[0])
+    expect(advance('rs2', controls).get('degree')).toBe(degs[1])
+  })
+
+  it('a 2-bar plan is a half cadence (bellows 0.5.0): tonic then a dominant-function chord', () => {
+    // 0.5.0 changed buildProgression(…, 2): it used to be able to return [0, 0] (no motion);
+    // now bar 1 always takes the dominant-function chord (IV, V or viio).
+    for (const seed of [0, 1, 2, 3, 4, 5, 6, 7]) {
+      const degs = expectedDegrees(`two${seed}`, 2, true, seed)
+      expect(degs).toHaveLength(2)
+      expect(degs[0]).toBe(0)
+      expect([3, 4, 6]).toContain(degs[1])
+      const controls = { root: 'C', scaleName: 'major', seed, bars: 2 }
+      expect(advance(`two${seed}`, controls).get('degree')).toBe(0)
+      expect(advance(`two${seed}`, controls).get('degree')).toBe(degs[1])
+    }
+  })
+
+  it('renders Cadence as a toggle control (a "boolean" control type has no renderer)', () => {
+    expect(def.controls.find((c) => c.id === 'cadence')?.type).toBe('toggle')
   })
 
   it('pulses trigger only on the clock rising edge and holds the chord between edges', () => {
@@ -100,6 +130,7 @@ describe('progression executor', () => {
     const controls = { root: 'C', scaleName: 'major', seed: 0 }
     const degs = expectedDegrees('rst', 4, true, 0)
     frame('rst', { clock: false }, controls)
+    advance('rst', controls) // bar 0 (first edge)
     advance('rst', controls) // bar 1
     advance('rst', controls) // bar 2
     // Reset AND clock on the same frame → reset wins, back to bar 0.
@@ -111,9 +142,9 @@ describe('progression executor', () => {
   it('is deterministic — the degree plan matches real bellows for a node+seed', () => {
     const controls = { root: 'A', scaleName: 'minor', seed: 3 }
     const degs = expectedDegrees('det', 4, true, 3)
-    const seen: number[] = [frame('det', { clock: false }, controls).get('degree') as number]
-    for (let i = 0; i < degs.length - 1; i++) seen.push(advance('det', controls).get('degree') as number)
-    expect(seen).toEqual(degs) // [0,1,4,0] for node 'det' / seed 3
+    const seen: number[] = []
+    for (let i = 0; i < degs.length; i++) seen.push(advance('det', controls).get('degree') as number)
+    expect(seen).toEqual(degs)
   })
 
   it('holds a safe passthrough while theory is still loading (no NaN/undefined)', () => {

@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { isPlainData, safeStringify } from '../valueHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -31,12 +32,26 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return new Map<string, unknown>([['result', []]])
   }
 
-  // Use JSON stringify for object comparison
-  const seen = new Set<string>()
+  // Primitives dedupe by SameValueZero (keeps 1 and '1', null and 'null' distinct; NaN
+  // dedupes). Plain objects/arrays dedupe by JSON content in their OWN key space, so an
+  // object never collides with a string that happens to equal its JSON. Non-serializable
+  // values (cycles, textures) fall back to identity.
+  const seenPrim = new Set<unknown>()
+  const seenJson = new Set<string>()
   const result = array.filter((item) => {
-    const key = typeof item === 'object' ? JSON.stringify(item) : String(item)
-    if (seen.has(key)) return false
-    seen.add(key)
+    if (item !== null && typeof item === 'object') {
+      const key = isPlainData(item) ? safeStringify(item) : undefined
+      if (key === undefined) {
+        if (seenPrim.has(item)) return false
+        seenPrim.add(item)
+        return true
+      }
+      if (seenJson.has(key)) return false
+      seenJson.add(key)
+      return true
+    }
+    if (seenPrim.has(item)) return false
+    seenPrim.add(item)
     return true
   })
 

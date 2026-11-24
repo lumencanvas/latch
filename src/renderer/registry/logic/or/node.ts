@@ -30,8 +30,9 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = Boolean(ctx.inputs.get('a') ?? ctx.controls.get('a'))
-  const b = Boolean(ctx.inputs.get('b') ?? ctx.controls.get('b'))
+  // ctx.bool: the string "false" / "0" from an `any` source is false (Boolean("false") is true).
+  const a = ctx.bool('a')
+  const b = ctx.bool('b')
   return new Map([['result', a || b ? 1 : 0]])
 }
 

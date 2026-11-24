@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { FORBIDDEN_KEYS } from '../pathHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -19,12 +20,17 @@ const definition: NodeDefinition = {
     { id: 'value3', type: 'any', label: 'Value 3' },
   ],
   outputs: [{ id: 'result', type: 'data', label: 'Result' }],
-  controls: [],
+  // Key controls so keys can be typed (a wired key input still wins).
+  controls: [
+    { id: 'key1', type: 'text', label: 'Key 1', default: '' },
+    { id: 'key2', type: 'text', label: 'Key 2', default: '' },
+    { id: 'key3', type: 'text', label: 'Key 3', default: '' },
+  ],
   tags: ['object', 'create', 'build', 'construct'],
   info: {
-    overview: 'Builds a new object from up to three key/value pairs. Each key is a string input and each value can be any type. Unused pairs are omitted from the output.',
+    overview: 'Builds a new object from up to three key/value pairs. Type each key in its control (or wire a string into the key input); each value can be any type. Pairs with an empty key or no value are omitted.',
     tips: [
-      'Leave key inputs empty to skip those pairs and create objects with fewer properties.',
+      'Leave a key empty to skip that pair and create objects with fewer properties.',
       'Chain with Object Merge to combine the result with an existing object.',
     ],
     pairsWith: ['object-merge', 'object-set', 'json-stringify', 'http-request'],
@@ -32,18 +38,15 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const key1 = ctx.inputs.get('key1') as string | undefined
-  const value1 = ctx.inputs.get('value1')
-  const key2 = ctx.inputs.get('key2') as string | undefined
-  const value2 = ctx.inputs.get('value2')
-  const key3 = ctx.inputs.get('key3') as string | undefined
-  const value3 = ctx.inputs.get('value3')
-
   const result: Record<string, unknown> = {}
-
-  if (key1 && key1.trim()) result[key1] = value1
-  if (key2 && key2.trim()) result[key2] = value2
-  if (key3 && key3.trim()) result[key3] = value3
+  for (const i of [1, 2, 3]) {
+    const key = ctx.str(`key${i}`, '').trim()
+    const value = ctx.inputs.get(`value${i}`)
+    // Skip unset pairs and prototype-polluting keys (`result.__proto__ = v` would swap the
+    // result's prototype rather than create a property).
+    if (!key || value === undefined || FORBIDDEN_KEYS.has(key)) continue
+    result[key] = value
+  }
 
   return new Map<string, unknown>([['result', result]])
 }

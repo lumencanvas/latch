@@ -367,3 +367,47 @@ describe('Webcam Snapshot Executor Logic', () => {
     })
   })
 })
+
+// --- Behavioural: a trigger edge stays pending until a capture actually happens ---
+
+vi.mock('@/services/visual/ThreeShaderRenderer', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  const T = await import('three')
+  const r = { createTexture: vi.fn(() => new T.Texture()), updateTexture: vi.fn() }
+  return { ...actual, getThreeShaderRenderer: () => r }
+})
+
+describe('webcam-snapshot pending capture', () => {
+  it('a trigger edge that lands before the stream paints captures once it does (not dropped)', async () => {
+    const { webcamSnapshotState } = await import('@/registry/visual/shared')
+    const { default: node } = await import('@/registry/visual/webcam-snapshot/node')
+    const drawImage = vi.fn()
+    const video = { videoWidth: 0, videoHeight: 0 }
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage, getImageData: () => new ImageData(1, 1), save: vi.fn(), scale: vi.fn(), restore: vi.fn() }),
+    }
+    webcamSnapshotState.set('ws-pend', {
+      video, canvas, texture: null, stream: { active: true, getTracks: () => [] },
+      lastCaptureTime: 0, capturedImageData: null, deviceId: 'cam', resolution: '720p',
+      initialized: true, failed: false,
+    } as never)
+    const run = (trigger: unknown) => node.executor({
+      nodeId: 'ws-pend',
+      inputs: new Map([['trigger', trigger]]),
+      controls: new Map<string, unknown>([['device', 'cam'], ['resolution', '720p']]),
+      definition: { controls: [] },
+      deltaTime: 0, totalTime: 0, frameCount: 0,
+    } as never) as Promise<Map<string, unknown>>
+
+    expect((await run(1)).get('captured')).toBe(false) // edge, but videoWidth === 0
+    expect((await run(1)).get('captured')).toBe(false) // still not painting (trigger held, no new edge)
+    video.videoWidth = 4
+    video.videoHeight = 4
+    expect((await run(1)).get('captured')).toBe(true) // the pending edge captures now
+    expect((await run(1)).get('captured')).toBe(false) // and only once
+    expect(drawImage).toHaveBeenCalledTimes(1)
+    webcamSnapshotState.delete('ws-pend')
+  })
+})

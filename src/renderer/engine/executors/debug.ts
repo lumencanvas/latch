@@ -83,6 +83,14 @@ export const oscilloscopeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
+  // Audio unwired: release the analyser (it stayed connected to the old source, leaking an
+  // AnalyserNode and keeping that source's graph alive, until node delete/Stop).
+  if (state.waveform) {
+    disposeAnalyzer(state.waveform, state.prevAudio)
+    state.waveform = null
+    state.prevAudio = null
+  }
+
   // Handle number signal input
   const outputs = new Map<string, unknown>()
   outputs.set('_input_signal', signal ?? 0)

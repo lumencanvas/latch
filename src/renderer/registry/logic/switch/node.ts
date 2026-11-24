@@ -28,7 +28,7 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const condition = Boolean(ctx.inputs.get('condition'))
+  const condition = ctx.bool('condition')
   const trueValue = ctx.inputs.get('true') ?? 1
   const falseValue = ctx.inputs.get('false') ?? 0
   return new Map([['result', condition ? trueValue : falseValue]])

@@ -43,6 +43,12 @@ const definition: NodeDefinition = {
   },
 }
 
+// Last failed microphone request (ms). Permission is page-global, so one shared throttle:
+// a denied/dismissed prompt used to re-call getUserMedia on EVERY frame (re-prompting or
+// rejecting ~60×/s). Retry at most every MIC_RETRY_MS.
+let micFailedAt = 0
+const MIC_RETRY_MS = 3000
+
 const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const enabled = (ctx.controls.get('enabled') as boolean) ?? true
 
@@ -56,8 +62,10 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   // Ensure microphone is available
   if (!audioManager.hasMicrophone) {
     try {
+      if (Date.now() - micFailedAt < MIC_RETRY_MS) throw new Error('throttled')
       await audioManager.requestMicrophoneAccess()
     } catch {
+      if (!audioManager.hasMicrophone && Date.now() - micFailedAt >= MIC_RETRY_MS) micFailedAt = Date.now()
       const outputs = new Map<string, unknown>()
       outputs.set('audio', null)
       outputs.set('level', -Infinity)

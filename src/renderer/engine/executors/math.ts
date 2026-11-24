@@ -5,19 +5,47 @@
  * registry/math/<node>/node.ts (Phase 6).
  */
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
+import { defineNodeState } from '../nodeState'
+
+/** Deterministic hash of a seed → [0, 1). */
+export function seededUnit(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
+/** Held value for `on-trigger` mode (auto gc/dispose; Stop→Play draws a fresh value). */
+export const randomHeld = defineNodeState<number>({ label: 'random' })
 
 export const randomExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const min = (ctx.controls.get('min') as number) ?? 0
-  const max = (ctx.controls.get('max') as number) ?? 1
-  const seed = ctx.inputs.get('seed') !== undefined
+  const min = ctx.num('min', 0)
+  const max = ctx.num('max', 1)
+  const mode = (ctx.controls.get('mode') as string) ?? 'every-frame'
+  const integer = (ctx.controls.get('integer') as boolean) ?? false
 
-  // If seed input is connected, use it for deterministic random
-  if (seed) {
-    const seedValue = ctx.inputs.get('seed') as number
-    const x = Math.sin(seedValue * 12.9898) * 43758.5453
-    const random = x - Math.floor(x)
-    return new Map([['result', random * (max - min) + min]])
+  const scale = (u: number) => {
+    if (!integer) return u * (max - min) + min
+    // Uniform integer in [min, max] inclusive.
+    const lo = Math.ceil(Math.min(min, max))
+    const hi = Math.floor(Math.max(min, max))
+    return hi < lo ? lo : lo + Math.min(hi - lo, Math.floor(u * (hi - lo + 1)))
   }
 
-  return new Map([['result', Math.random() * (max - min) + min]])
+  // A connected seed gives a deterministic value per seed (same seed → same value).
+  const seedRaw = ctx.inputs.get('seed')
+  if (seedRaw !== undefined) {
+    return new Map([['result', scale(seededUnit(ctx.num('seed', 0)))]])
+  }
+
+  if (mode === 'on-trigger') {
+    // Draw once, then hold until the Trigger input's rising edge.
+    const fire = ctx.trig('trigger')
+    let held = randomHeld.get(ctx.nodeId)
+    if (held === undefined || fire) {
+      held = Math.random()
+      randomHeld.set(ctx.nodeId, held)
+    }
+    return new Map([['result', scale(held)]])
+  }
+
+  return new Map([['result', scale(Math.random())]])
 }

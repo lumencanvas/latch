@@ -10,13 +10,16 @@ const definition: NodeDefinition = {
   description: 'Delays a value by specified time',
   icon: 'clock',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'value', type: 'any', label: 'Value' }],
+  inputs: [
+    { id: 'value', type: 'any', label: 'Value' },
+    { id: 'delay', type: 'number', label: 'Delay (ms)' },
+  ],
   outputs: [{ id: 'value', type: 'any', label: 'Delayed' }],
   controls: [
     { id: 'delay', type: 'number', label: 'Delay (ms)', default: 500, props: { min: 0, max: 10000 } },
   ],
   info: {
-    overview: 'Passes any incoming value through to its output after a configurable delay in milliseconds. Useful for staggering events, creating echo-like timing patterns, or offsetting signals in a chain.',
+    overview: 'Replays its input after a configurable delay in milliseconds — exactly as it arrived, including gaps, so a delayed trigger is still a single pulse and a continuous value stays continuous. Useful for staggering events, creating echo-like timing patterns, or offsetting signals in a chain.',
     tips: [
       'Chain multiple delay nodes with different times to create a spread of staggered triggers from a single source.',
       'Set delay to 0 to use it as a simple pass-through for debugging signal flow.',

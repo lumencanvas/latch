@@ -1,16 +1,24 @@
 import { defineStore } from 'pinia'
+import { markRaw, type Raw } from 'vue'
 import type { Node, Edge } from '@vue-flow/core'
 
 export interface FlowSnapshot {
-  nodes: Node[]
-  edges: Edge[]
+  // Type-level Raw<> (see FlowState in stores/flows.ts): keeps ref()/Pinia UnwrapRef from
+  // recursing into Vue Flow's generics (TS2589 on Vue >= 3.5.4x).
+  nodes: Raw<Node>[]
+  edges: Raw<Edge>[]
   timestamp: number
 }
 
+/**
+ * Snapshots are immutable deep copies, so they are stored `markRaw`: Vue doesn't deep-proxy
+ * large node arrays, and the `Raw<>` type stops Pinia's UnwrapRef from recursing into Vue
+ * Flow's Node/Edge generics (TS2589 "excessively deep" on Vue >= 3.5.4x).
+ */
 export interface HistoryEntry {
   flowId: string
-  before: FlowSnapshot
-  after: FlowSnapshot
+  before: Raw<FlowSnapshot>
+  after: Raw<FlowSnapshot>
   description: string
 }
 
@@ -86,8 +94,8 @@ export const useHistoryStore = defineStore('history', {
       // Add entry
       const entry: HistoryEntry = {
         flowId,
-        before,
-        after,
+        before: markRaw(before),
+        after: markRaw(after),
         description,
       }
       undoStack.push(entry)

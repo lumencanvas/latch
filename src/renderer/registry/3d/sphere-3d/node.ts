@@ -1,8 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
-import { nodeObjects, nodeMaterials } from '../shared'
+import { THREE } from '@/services/visual/ThreeRenderer'
+import { updatePrimitiveMesh } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'sphere-3d',
@@ -44,35 +44,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const radius = (ctx.inputs.get('radius') as number) ?? (ctx.controls.get('radius') as number) ?? 0.5
   const widthSegments = (ctx.controls.get('widthSegments') as number) ?? 32
   const heightSegments = (ctx.controls.get('heightSegments') as number) ?? 16
-  const material = ctx.inputs.get('material') as THREE.Material | undefined
 
-  const colorHex = (ctx.controls.get('color') as string) ?? '#808080'
-
-  const renderer = getThreeRenderer()
-
-  let mesh = nodeObjects.get(ctx.nodeId) as THREE.Mesh | undefined
-
-  if (!mesh) {
-    const defaultMat = renderer.createMaterial({ color: parseInt(colorHex.replace('#', ''), 16) })
-    mesh = renderer.createSphere(radius, widthSegments, heightSegments, material ?? defaultMat)
-    nodeObjects.set(ctx.nodeId, mesh)
-  } else {
-    mesh.geometry.dispose()
-    mesh.geometry = new THREE.SphereGeometry(radius, widthSegments, heightSegments)
-
-    if (material && mesh.material !== material) {
-      const oldMat = mesh.material as THREE.Material
-      if (oldMat && !nodeMaterials.has(ctx.nodeId)) {
-        oldMat.dispose()
-      }
-      mesh.material = material
-    }
-  }
-
-  const posX = (ctx.inputs.get('posX') as number) ?? 0
-  const posY = (ctx.inputs.get('posY') as number) ?? 0
-  const posZ = (ctx.inputs.get('posZ') as number) ?? 0
-  mesh.position.set(posX, posY, posZ)
+  // Geometry is rebuilt only when its params change; color/material/position update in place.
+  const mesh = updatePrimitiveMesh(ctx, `${radius}|${widthSegments}|${heightSegments}`, () => new THREE.SphereGeometry(radius, widthSegments, heightSegments))
 
   const outputs = new Map<string, unknown>()
   outputs.set('object', mesh)

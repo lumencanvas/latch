@@ -10,14 +10,17 @@ const definition: NodeDefinition = {
   description: 'Fires at regular intervals',
   icon: 'timer',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'enabled', type: 'boolean', label: 'Enabled' }],
+  inputs: [
+    { id: 'enabled', type: 'boolean', label: 'Enabled' },
+    { id: 'interval', type: 'number', label: 'Interval (ms)' },
+  ],
   outputs: [{ id: 'trigger', type: 'trigger', label: 'Trigger' }],
   controls: [
     { id: 'interval', type: 'number', label: 'Interval (ms)', default: 1000, props: { min: 10, max: 60000 } },
     { id: 'enabled', type: 'toggle', label: 'Enabled', default: true },
   ],
   info: {
-    overview: 'Emits a trigger output repeatedly at a fixed time interval. The interval is adjustable in milliseconds and can be toggled on and off. This is the go-to node for polling, periodic updates, or any repeating action.',
+    overview: 'Emits a trigger output repeatedly at a fixed time interval (first tick one interval after it is enabled). The interval is adjustable in milliseconds (wire it to modulate) and can be toggled on and off; re-enabling restarts the period. Ticks stay on schedule without drifting. This is the go-to node for polling, periodic updates, or any repeating action.',
     tips: [
       'Very short intervals (under 50ms) can cause performance issues if the downstream chain is expensive.',
       'Use the enabled input to gate the interval from another node rather than removing connections.',

@@ -46,15 +46,20 @@ const definition: NodeDefinition = {
 export const smoothState = defineNodeState<number>({ label: 'smooth' })
 
 export const smoothExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const target = (ctx.inputs.get('value') as number) ?? 0
-  const rawFactor = (ctx.controls.get('factor') as number) ?? 0.1
-  // Guard against NaN and invalid values
-  const factor = Number.isFinite(rawFactor) ? rawFactor : 0.1
+  const stored = smoothState.get(ctx.nodeId)
+  // A non-numeric / NaN frame HOLDS the current output (fallback = previous) instead of
+  // snapping toward 0; the accumulator can never be poisoned by NaN.
+  const target = ctx.num('value', stored ?? 0)
+  const factor = Math.max(0, Math.min(1, ctx.num('factor', 0.1)))
 
   // First frame (no stored state) initializes to the target, then eases toward it.
-  const prev = smoothState.get(ctx.nodeId) ?? target
-  const smoothed = prev + (target - prev) * Math.min(1, factor * ctx.deltaTime * 60)
-  smoothState.set(ctx.nodeId, smoothed)
+  const prev = stored ?? target
+  // Frame-rate-independent exponential smoothing: `factor` is the per-frame blend at 60 fps.
+  // The old linear `factor * dt * 60` over-corrected at low fps (dt 0.25 s, factor 0.1 →
+  // alpha 1.5, clamped to 1 = no smoothing at all).
+  const alpha = 1 - Math.pow(1 - factor, Math.max(0, ctx.deltaTime) * 60)
+  const smoothed = prev + (target - prev) * alpha
+  smoothState.set(ctx.nodeId, Number.isFinite(smoothed) ? smoothed : target)
 
   return new Map<string, unknown>([['result', smoothed]])
 }

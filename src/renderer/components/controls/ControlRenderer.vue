@@ -5,6 +5,7 @@ import {
   useControlSelectOptions,
   isDeviceOptions,
   clampControlNumber,
+  coerceSelectValue,
   type DeviceOption,
 } from '@/composables/useControlHelpers'
 
@@ -173,7 +174,7 @@ onUnmounted(() => {
     :class="ctxClass"
     :aria-label="control.label"
     :value="modelValue"
-    @change="emit('update', ($event.target as HTMLSelectElement).value)"
+    @change="emit('update', coerceSelectValue(($event.target as HTMLSelectElement).value, getSelectOptions(control)))"
     @mousedown="onControlMousedown"
   >
     <template v-if="isDeviceOptions(getSelectOptions(control))">

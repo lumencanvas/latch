@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -28,10 +29,11 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
+  const input = toStr(ctx.inputs.get('input'))
 
   return new Map([
-    ['length', input.length],
+    // Count characters (code points), so an emoji is 1, not 2 UTF-16 units.
+    ['length', Array.from(input).length],
     ['isEmpty', input.length === 0 ? 1 : 0],
   ])
 }

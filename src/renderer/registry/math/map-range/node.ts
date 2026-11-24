@@ -13,10 +13,10 @@ const definition: NodeDefinition = {
   inputs: [{ id: 'value', type: 'number', label: 'Value', required: true }],
   outputs: [{ id: 'result', type: 'number', label: 'Result' }],
   controls: [
-    { id: 'inMin', type: 'number', label: 'In Min', default: 0 },
-    { id: 'inMax', type: 'number', label: 'In Max', default: 1 },
-    { id: 'outMin', type: 'number', label: 'Out Min', default: 0 },
-    { id: 'outMax', type: 'number', label: 'Out Max', default: 100 },
+    { id: 'inMin', type: 'number', label: 'In Min', default: 0, props: { step: 0.01 } },
+    { id: 'inMax', type: 'number', label: 'In Max', default: 1, props: { step: 0.01 } },
+    { id: 'outMin', type: 'number', label: 'Out Min', default: 0, props: { step: 0.01 } },
+    { id: 'outMax', type: 'number', label: 'Out Max', default: 100, props: { step: 0.01 } },
   ],
   info: {
     overview: 'Rescales a value from one numeric range to another. For example, an input in the 0-1 range can be mapped to 0-100. The mapping is linear and does not clamp, so values outside the input range will extrapolate.',
@@ -29,7 +29,7 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = ctx.num('value', 0)
   const inMin = (ctx.controls.get('inMin') as number) ?? 0
   const inMax = (ctx.controls.get('inMax') as number) ?? 1
   const outMin = (ctx.controls.get('outMin') as number) ?? 0
@@ -39,7 +39,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const normalized = inMax !== inMin ? (value - inMin) / (inMax - inMin) : 0
   const result = normalized * (outMax - outMin) + outMin
 
-  return new Map([['result', result]])
+  return new Map([['result', Number.isFinite(result) ? result : outMin]])
 }
 
 export default defineNode({ definition, executor, pure: true })

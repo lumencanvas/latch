@@ -1,40 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { makeContext } from '../../_helpers/executionContext'
 
-// The real manager boots an AudioWorklet kernel, which happy-dom can't provide — mock
-// it so this exercises the node's per-frame note/gate/param logic deterministically.
-// (Kernel boot + master routing are covered by the browser smoke + the maintainer's
-// audible check, not unit-testable here.)
-const acquireVoice = vi.fn()
-const setVoiceEngine = vi.fn()
+// The real manager boots an AudioWorklet kernel, which happy-dom can't provide — mock it so
+// this exercises the NODE's per-frame responsibility (resolve config, delegate note/gate to
+// the manager). The manager's own apply/gate/diff logic is covered by bellowsManager.test.ts
+// against a fake kernel; kernel boot + master routing by the browser smoke + audible check.
+const configureVoice = vi.fn()
 const queueNote = vi.fn()
-let voiceRecord: {
-  instrument: ReturnType<typeof makeInstrument> | null
-  engine: string
-  heldId: number | null
-  gateHigh: boolean
-  prevGain: number
-  prevPan: number
-  error: string | null
-} | null = null
+const setMonoGate = vi.fn()
 
 vi.mock('@/registry/audio/bellows-instrument/bellowsManager', () => ({
-  acquireVoice: (...a: unknown[]) => acquireVoice(...a),
-  setVoiceEngine: (...a: unknown[]) => setVoiceEngine(...a),
-  getVoice: () => (voiceRecord?.instrument ? voiceRecord : null),
+  configureVoice: (...a: unknown[]) => configureVoice(...a),
   queueNote: (...a: unknown[]) => queueNote(...a),
+  setMonoGate: (...a: unknown[]) => setMonoGate(...a),
 }))
-
-function makeInstrument() {
-  return {
-    note: vi.fn(),
-    on: vi.fn(() => 42),
-    off: vi.fn(),
-    gain: vi.fn(),
-    pan: vi.fn(),
-    allOff: vi.fn(),
-  }
-}
 
 // Import AFTER the mock is registered (vi.mock is hoisted, so this is fine).
 import node from '@/registry/audio/bellows-instrument/node'
@@ -43,10 +22,9 @@ const def = node.definition
 const run = node.executor
 
 beforeEach(() => {
-  acquireVoice.mockClear()
-  setVoiceEngine.mockClear()
+  configureVoice.mockClear()
   queueNote.mockClear()
-  voiceRecord = null
+  setMonoGate.mockClear()
 })
 
 describe('bellows-instrument definition', () => {
@@ -58,41 +36,42 @@ describe('bellows-instrument definition', () => {
     expect(def.outputs).toEqual([])
   })
 
-  it('exposes engine (select), gain and pan controls', () => {
-    const engine = def.controls.find((c) => c.id === 'engine')
+  it('exposes preset, engine, per-engine params, fx, send, gain and pan controls', () => {
+    const byId = (id: string) => def.controls.find((c) => c.id === id)
+    expect(byId('preset')?.type).toBe('select')
+    const engine = byId('engine')
     expect(engine?.type).toBe('select')
-    expect((engine?.props?.options as string[])).toContain('va')
-    expect((engine?.props?.options as string[])).toContain('granular')
-    expect(def.controls.map((c) => c.id).sort()).toEqual(['engine', 'gain', 'pan'])
+    expect(engine?.when).toEqual({ preset: '' })
+    expect((engine?.props?.options as { value: string }[]).map((o) => o.value)).toContain('va')
+    // A representative per-engine param control, gated to its engine + manual mode.
+    const cutoff = byId('p_va_cutoff')
+    expect(cutoff?.when).toEqual({ engine: 'va', preset: '' })
+    for (const id of ['insertFx', 'sendLevel', 'gain', 'pan']) expect(byId(id)).toBeDefined()
   })
 })
 
 describe('bellows-instrument executor', () => {
-  it('acquires + selects the engine every frame and returns no outputs', () => {
+  it('resolves + pushes the voice config every frame and returns no outputs', () => {
     const out = run(makeContext({}, { engine: 'fm' }))
-    expect(acquireVoice).toHaveBeenCalledWith('test-node', 'fm')
-    expect(setVoiceEngine).toHaveBeenCalledWith('test-node', 'fm')
+    expect(configureVoice).toHaveBeenCalledTimes(1)
+    const [nodeId, cfg] = configureVoice.mock.calls[0]
+    expect(nodeId).toBe('test-node')
+    expect(cfg).toMatchObject({ preset: '', engine: 'fm' })
     expect(out).toBeInstanceOf(Map)
     expect((out as Map<string, unknown>).size).toBe(0)
   })
 
-  it('does nothing to a voice that has not booted yet', () => {
-    voiceRecord = null // getVoice → null
-    expect(() => run(makeContext({ trigger: true }, { engine: 'va' }))).not.toThrow()
-  })
-
-  it('fires a one-shot note on the trigger rising edge (via boot-safe queueNote)', () => {
-    const inst = makeInstrument()
-    voiceRecord = { instrument: inst, engine: 'va', heldId: null, gateHigh: false, prevGain: NaN, prevPan: NaN, error: null }
-
+  it('fires a one-shot note on the trigger rising edge (boot-safe queueNote)', () => {
     run(makeContext({ note: 64, velocity: 0.5, trigger: true }, { engine: 'va' }, { nodeId: 'trig-node' }))
     expect(queueNote).toHaveBeenCalledWith('trig-node', 64, 0.5)
+    // Held high on the next frame: not a new edge, no second note.
+    run(makeContext({ note: 64, velocity: 0.5, trigger: true }, { engine: 'va' }, { nodeId: 'trig-node' }))
+    expect(queueNote).toHaveBeenCalledTimes(1)
   })
 
-  it('queues the trigger even while the voice is still booting (not dropped)', () => {
-    voiceRecord = null // getVoice → null (kernel still booting)
-    run(makeContext({ note: 67, velocity: 0.8, trigger: true }, {}, { nodeId: 'boot-node' }))
-    expect(queueNote).toHaveBeenCalledWith('boot-node', 67, 0.8)
+  it('does not fire a note without a trigger', () => {
+    run(makeContext({ note: 64 }, { engine: 'va' }))
+    expect(queueNote).not.toHaveBeenCalled()
   })
 
   it('normalizes a 0–127 velocity to 0–1', () => {
@@ -100,32 +79,11 @@ describe('bellows-instrument executor', () => {
     expect(queueNote).toHaveBeenCalledWith('vel-node', 60, 1)
   })
 
-  it('sustains on the gate rising edge and releases on the falling edge', () => {
-    const inst = makeInstrument()
-    voiceRecord = { instrument: inst, engine: 'va', heldId: null, gateHigh: false, prevGain: NaN, prevPan: NaN, error: null }
-
-    // Rising: gate true (was false) → on(), storing the held id.
+  it('delegates the gate level + note/velocity to the manager every frame', () => {
     run(makeContext({ note: 62, velocity: 0.8, gate: true }, {}, { nodeId: 'gate-node' }))
-    expect(inst.on).toHaveBeenCalledWith(62, 0.8)
-    expect(voiceRecord.heldId).toBe(42)
+    expect(setMonoGate).toHaveBeenCalledWith('gate-node', true, 62, 0.8)
 
-    // Falling: gate false → off() with the stored id.
-    run(makeContext({ gate: false }, {}, { nodeId: 'gate-node' }))
-    expect(inst.off).toHaveBeenCalledWith(42)
-    expect(voiceRecord.heldId).toBeNull()
-  })
-
-  it('applies gain/pan once and skips re-applying an unchanged value', () => {
-    const inst = makeInstrument()
-    voiceRecord = { instrument: inst, engine: 'va', heldId: null, gateHigh: false, prevGain: NaN, prevPan: NaN, error: null }
-
-    run(makeContext({}, { engine: 'va', gain: 0.5, pan: -0.3 }, { nodeId: 'p-node' }))
-    expect(inst.gain).toHaveBeenCalledWith(0.5)
-    expect(inst.pan).toHaveBeenCalledWith(-0.3)
-
-    // Same values next frame → no redundant kernel writes.
-    run(makeContext({}, { engine: 'va', gain: 0.5, pan: -0.3 }, { nodeId: 'p-node' }))
-    expect(inst.gain).toHaveBeenCalledTimes(1)
-    expect(inst.pan).toHaveBeenCalledTimes(1)
+    run(makeContext({ note: 62, gate: false }, {}, { nodeId: 'gate-node' }))
+    expect(setMonoGate).toHaveBeenLastCalledWith('gate-node', false, 62, expect.any(Number))
   })
 })

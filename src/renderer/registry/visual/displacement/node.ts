@@ -1,6 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { resolveEffectSource, DISPLACEMENT_FRAGMENT_THREE } from '../shared'
@@ -29,7 +28,7 @@ const definition: NodeDefinition = {
     tips: [
       'Feed a noise shader into the displacement map input for organic, fluid-like distortion.',
       'Animate the strength value with an LFO to pulse the distortion in and out.',
-      'The rg channel mode gives independent horizontal and vertical displacement; use r for horizontal only.',
+      'The rg channel mode gives independent horizontal and vertical displacement; use r for horizontal only. rgb works like rg but the blue channel scales the amount per pixel.',
     ],
     pairsWith: ['shader', 'blur', 'webcam', 'lfo', 'blend'],
   },
@@ -37,11 +36,16 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
-  const displacementMap = ctx.inputs.get('displacement') as THREE.Texture | null
+  // The map goes through the same video→canvas resolution as the source (a webcam/video map
+  // sampled BLACK otherwise). Own `::disp` key so it doesn't share the source's scratch canvas.
+  const displacementMap = ctx.inputs.get('displacement')
+    ? resolveEffectSource(`${ctx.nodeId}::disp`, getThreeShaderRenderer(), ctx.inputs.get('displacement'))?.tex ?? null
+    : null
   const strength = (ctx.inputs.get('strength') as number) ?? (ctx.controls.get('strength') as number) ?? 0.1
 
   const channelStr = (ctx.controls.get('channel') as string) ?? 'rg'
-  const channelMap: Record<string, number> = { r: 0, g: 1, b: 2, rg: 3 }
+  // 'rgb' was offered in the select but missing here, so it silently behaved as 'rg'.
+  const channelMap: Record<string, number> = { r: 0, g: 1, b: 2, rg: 3, rgb: 4 }
   const channel = channelMap[channelStr] ?? 3
 
   const outputs = new Map<string, unknown>()

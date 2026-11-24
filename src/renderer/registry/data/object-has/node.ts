@@ -17,7 +17,7 @@ const definition: NodeDefinition = {
   ],
   outputs: [{ id: 'result', type: 'boolean', label: 'Result' }],
   controls: [
-    { id: 'defaultPath', type: 'text', label: 'Path', default: '', props: { placeholder: 'data.name' } },
+    { id: 'defaultPath', type: 'text', label: 'Path (if unwired)', default: '', props: { placeholder: 'data.name' } },
   ],
   tags: ['object', 'has', 'property', 'exists', 'check'],
   info: {

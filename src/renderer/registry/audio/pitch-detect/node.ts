@@ -51,6 +51,8 @@ const definition: NodeDefinition = {
 
 const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
+let scratch = new Float32Array(0)
+
 function autoCorrelate(buffer: Float32Array, sampleRate: number, minFreq: number, maxFreq: number): { frequency: number; confidence: number } {
   const size = buffer.length
   let maxCorrelation = 0
@@ -63,8 +65,10 @@ function autoCorrelate(buffer: Float32Array, sampleRate: number, minFreq: number
   }
   const dc = sum / size
 
-  // Copy buffer and remove DC offset to avoid mutating input
-  const processed = new Float32Array(size)
+  // Copy buffer and remove DC offset to avoid mutating input (scratch reused across frames —
+  // this runs every frame, so don't allocate 8 KB each time)
+  if (scratch.length !== size) scratch = new Float32Array(size)
+  const processed = scratch
   let rms = 0
   for (let i = 0; i < size; i++) {
     processed[i] = buffer[i] - dc

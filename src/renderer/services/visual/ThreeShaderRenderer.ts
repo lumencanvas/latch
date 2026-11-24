@@ -94,6 +94,9 @@ void main() {
 }
 `
 
+/** Max GPU-readback rate for on-screen (DOM-attached) preview canvases in renderToCanvas. */
+const PREVIEW_READBACK_FPS = 30
+
 const EFFECT_FRAGMENT_PREFIX = `
 varying vec2 vUv;
 `
@@ -105,6 +108,14 @@ export class ThreeShaderRenderer {
   private camera: THREE.OrthographicCamera
   private quad: THREE.Mesh
   private renderTargets: Map<string, THREE.WebGLRenderTarget> = new Map()
+  /** nodeId → its current render-target key (`${nodeId}_${w}_${h}`), to free the old size on resize. */
+  private renderTargetKeyByNode: Map<string, string> = new Map()
+  /** Reused readback buffers for renderToCanvas (was 2 full-frame allocs + a temp canvas per call). */
+  private readbackPixels: Uint8Array = new Uint8Array(0)
+  private readbackFlipped: Uint8ClampedArray<ArrayBuffer> = new Uint8ClampedArray(0)
+  private readbackCanvas: HTMLCanvasElement | null = null
+  /** Last GPU readback time per on-screen preview canvas (throttle, see renderToCanvas). */
+  private previewReadbackAt: WeakMap<HTMLCanvasElement, number> = new WeakMap()
   private materials: Map<string, THREE.ShaderMaterial> = new Map()
   private effectShaders: Map<string, CompiledShaderMaterial> = new Map()
   private defaultSize = { width: 512, height: 512 }
@@ -195,6 +206,7 @@ export class ThreeShaderRenderer {
       console.warn('[ThreeShaderRenderer] WebGL context lost')
       // Clear caches - GPU resources are invalid
       this.renderTargets.clear()
+      this.renderTargetKeyByNode.clear()
       this.materials.clear()
     }
 
@@ -699,25 +711,47 @@ export class ThreeShaderRenderer {
       return
     }
 
-    // Check if this is a render target texture (has no image source but has dimensions)
-    // Render target textures need to be read back from GPU via their render target
-    const isRenderTargetTexture = texture.source?.data === null || texture.image === null
+    // Render target textures need to be read back from GPU via their render target.
+    // three r184 gives a RenderTarget's texture image = {width,height,depth} (not null), so
+    // the null checks alone never matched — use three's own isRenderTargetTexture flag
+    // (set in core/RenderTarget.js), keeping the null checks as a fallback.
+    const isRenderTargetTexture =
+      (texture as THREE.Texture & { isRenderTargetTexture?: boolean }).isRenderTargetTexture === true ||
+      texture.source?.data === null ||
+      texture.image === null
 
 
     if (isRenderTargetTexture) {
       // Find the render target that owns this texture
       for (const [, target] of this.renderTargets) {
         if (target.texture === texture) {
+          // readRenderTargetPixels is a synchronous GPU→CPU stall. On-screen previews (node
+          // thumbnails, control panel) called this EVERY rAF for every visible texture node.
+          // Throttle canvases attached to the DOM to ~PREVIEW_READBACK_FPS — they just keep
+          // showing the last frame in between. Detached scratch canvases (snapshot, OpenCV,
+          // AI/thermal readback, texture-to-data) need the CURRENT frame and are never throttled.
+          if (targetCanvas.isConnected) {
+            const now = performance.now()
+            const last = this.previewReadbackAt.get(targetCanvas)
+            if (last !== undefined && now - last < 1000 / PREVIEW_READBACK_FPS) return
+            this.previewReadbackAt.set(targetCanvas, now)
+          }
+
           // Read pixels from render target
           const rtWidth = target.width
           const rtHeight = target.height
-          const pixels = new Uint8Array(rtWidth * rtHeight * 4)
+          const size = rtWidth * rtHeight * 4
+          if (this.readbackPixels.length !== size) {
+            this.readbackPixels = new Uint8Array(size)
+            this.readbackFlipped = new Uint8ClampedArray(size)
+          }
+          const pixels = this.readbackPixels
 
           this.renderer.readRenderTargetPixels(target, 0, 0, rtWidth, rtHeight, pixels)
 
           // Create ImageData and draw to canvas
           // WebGL pixels are bottom-to-top, need to flip
-          const flippedPixels = new Uint8ClampedArray(rtWidth * rtHeight * 4)
+          const flippedPixels = this.readbackFlipped
           for (let y = 0; y < rtHeight; y++) {
             const srcRow = (rtHeight - 1 - y) * rtWidth * 4
             const dstRow = y * rtWidth * 4
@@ -728,10 +762,11 @@ export class ThreeShaderRenderer {
 
           // Scale to target canvas size
           if (rtWidth !== width || rtHeight !== height) {
-            // Create temp canvas at render target size
-            const tempCanvas = document.createElement('canvas')
-            tempCanvas.width = rtWidth
-            tempCanvas.height = rtHeight
+            // Reused temp canvas at render target size
+            if (!this.readbackCanvas) this.readbackCanvas = document.createElement('canvas')
+            const tempCanvas = this.readbackCanvas
+            if (tempCanvas.width !== rtWidth) tempCanvas.width = rtWidth
+            if (tempCanvas.height !== rtHeight) tempCanvas.height = rtHeight
             const tempCtx = tempCanvas.getContext('2d')!
             tempCtx.putImageData(imageData, 0, 0)
             ctx.drawImage(tempCanvas, 0, 0, width, height)
@@ -776,6 +811,15 @@ export class ThreeShaderRenderer {
     let target = this.renderTargets.get(key)
 
     if (!target) {
+      // The node changed size (source resolution / control): free its previous-size target —
+      // keys embed the size, so the old one used to stay allocated forever (a full-res GPU
+      // buffer leaked per resize). Tracked per exact nodeId so `${id}_h` (blur's H pass) and
+      // `${id}` stay independent.
+      const prevKey = this.renderTargetKeyByNode.get(nodeId)
+      if (prevKey && prevKey !== key) {
+        this.renderTargets.get(prevKey)?.dispose()
+        this.renderTargets.delete(prevKey)
+      }
       target = new THREE.WebGLRenderTarget(width, height, {
         minFilter: THREE.LinearFilter,
         magFilter: THREE.LinearFilter,
@@ -783,6 +827,7 @@ export class ThreeShaderRenderer {
         type: THREE.UnsignedByteType,
       })
       this.renderTargets.set(key, target)
+      this.renderTargetKeyByNode.set(nodeId, key)
     }
 
     return target
@@ -845,20 +890,31 @@ export class ThreeShaderRenderer {
   createTextureFromWebGL(
     webglTexture: WebGLTexture,
     width: number,
-    height: number
+    height: number,
+    reuse?: THREE.DataTexture | null
   ): THREE.Texture | null {
     // Read pixels from WebGL texture and create a DataTexture
     const gl = this.renderer.getContext()
+    // A WebGLTexture from another GL context can't be attached here (isTexture is false).
+    if (!gl.isTexture(webglTexture)) return null
 
     const fb = gl.createFramebuffer()
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb)
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, webglTexture, 0)
 
-    const pixels = new Uint8Array(width * height * 4)
+    const reusable =
+      reuse && reuse.image.width === width && reuse.image.height === height &&
+      reuse.image.data instanceof Uint8Array
+    const pixels = reusable ? (reuse.image.data as Uint8Array) : new Uint8Array(width * height * 4)
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     gl.deleteFramebuffer(fb)
+
+    if (reusable) {
+      reuse.needsUpdate = true
+      return reuse
+    }
 
     const dataTexture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat)
     dataTexture.flipY = true
@@ -922,6 +978,9 @@ export class ThreeShaderRenderer {
         this.renderTargets.delete(key)
       }
     }
+    for (const [id, key] of this.renderTargetKeyByNode) {
+      if (!this.renderTargets.has(key)) this.renderTargetKeyByNode.delete(id)
+    }
   }
 
   /**
@@ -982,6 +1041,7 @@ export class ThreeShaderRenderer {
       target.dispose()
     }
     this.renderTargets.clear()
+    this.renderTargetKeyByNode.clear()
 
     // Dispose materials
     for (const material of this.materials.values()) {

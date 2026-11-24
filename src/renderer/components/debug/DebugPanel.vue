@@ -546,7 +546,7 @@ const warnCount = computed(() => {
 }
 
 .error-item:hover {
-  background: var(--color-error-light, #fef2f2);
+  background: var(--color-error-50);
 }
 
 .error-item:focus-visible {

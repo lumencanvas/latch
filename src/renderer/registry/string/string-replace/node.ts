@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { cachedRegExp, toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -36,7 +37,7 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
+  const input = toStr(ctx.inputs.get('input'))
 
   // Use nullish coalescing to properly handle empty string inputs
   // If search input is connected (even as empty string), use it; otherwise fall back to control
@@ -44,10 +45,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const replaceInput = ctx.inputs.get('replace')
 
   const search = searchInput !== undefined
-    ? (searchInput as string)
+    ? toStr(searchInput)
     : ((ctx.controls.get('search') as string) ?? '')
   const replace = replaceInput !== undefined
-    ? (replaceInput as string)
+    ? toStr(replaceInput)
     : ((ctx.controls.get('replace') as string) ?? '')
   const useRegex = (ctx.controls.get('useRegex') as boolean) ?? false
   const replaceAll = (ctx.controls.get('replaceAll') as boolean) ?? true
@@ -63,13 +64,14 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   try {
     if (useRegex) {
       const flags = replaceAll ? 'g' : ''
-      const regex = new RegExp(search, flags)
-      result = input.replace(regex, replace)
+      const regex = cachedRegExp(search, flags)
+      result = input.replace(regex, replace) // $1 / $& references are intended here
     } else {
       if (replaceAll) {
         result = input.split(search).join(replace)
       } else {
-        result = input.replace(search, replace)
+        // Function replacer: a literal replacement must not interpret `$&` / `$1` patterns.
+        result = input.replace(search, () => replace)
       }
     }
   } catch {

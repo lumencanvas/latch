@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -45,11 +46,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const template = (ctx.controls.get('template') as string) ?? ''
 
   // Replace placeholders {a}, {b}, {c}, {d} with values
-  const result = template
-    .replace(/\{a\}/g, String(a ?? ''))
-    .replace(/\{b\}/g, String(b ?? ''))
-    .replace(/\{c\}/g, String(c ?? ''))
-    .replace(/\{d\}/g, String(d ?? ''))
+  // ONE pass with a function replacer: string replacements interpreted `$&`/`$1` patterns in
+  // the VALUES (a value of "$&" re-inserted "{a}"), and objects printed "[object Object]".
+  const values: Record<string, unknown> = { a, b, c, d }
+  const result = template.replace(/\{([abcd])\}/g, (_, k: string) => toStr(values[k]))
 
   return new Map([['result', result]])
 }

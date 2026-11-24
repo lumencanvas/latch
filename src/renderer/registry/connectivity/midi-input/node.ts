@@ -23,13 +23,14 @@ const definition: NodeDefinition = {
   ],
   controls: [
     { id: 'enabled', type: 'toggle', label: 'Enabled', default: true },
-    { id: 'channel', type: 'number', label: 'Channel (-1=all)', default: -1, props: { min: -1, max: 15 } },
+    { id: 'channel', type: 'number', label: 'Channel (0–15, -1 = all)', default: -1, props: { min: -1, max: 15, step: 1 } },
   ],
   tags: ['midi', 'input', 'controller', 'cc', 'notes', 'music', 'hardware'],
   info: {
     overview: 'Receives MIDI messages from connected hardware or virtual MIDI devices. Outputs include note number, velocity, note on/off state, and control change values. Set the channel to -1 to listen on all channels at once.',
     tips: [
-      'Set the channel to -1 to receive messages from all MIDI channels simultaneously.',
+      'Set the channel to -1 to receive messages from all MIDI channels simultaneously. Channels are zero-based (0 = "Channel 1" on most hardware).',
+      'Web MIDI is unavailable in Safari — use Chrome, Edge, Firefox or the desktop app.',
       'Use the CC Value output to map hardware knobs and faders to parameters in your flow.',
       'Pair with a MIDI Output node to build MIDI processing chains.',
     ],
@@ -43,18 +44,38 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   const outputs = new Map<string, unknown>()
 
+  // The handler reads the CURRENT channel from state — it was captured in the closure at bind
+  // time, so changing the Channel control after the device bound had no effect.
+  midiState.set(`${ctx.nodeId}:channel`, channel)
+
   if (!enabled) {
     outputs.set('note', null)
     outputs.set('velocity', 0)
+    outputs.set('noteOn', false)
     outputs.set('cc', null)
     outputs.set('ccValue', 0)
     outputs.set('connected', false)
     return outputs
   }
 
-  // Request MIDI access if not already done
+  if (!navigator.requestMIDIAccess) {
+    outputs.set('note', null)
+    outputs.set('velocity', 0)
+    outputs.set('noteOn', false)
+    outputs.set('cc', null)
+    outputs.set('ccValue', 0)
+    outputs.set('connected', false)
+    outputs.set('_error', 'Web MIDI is not available in this browser (e.g. Safari) — use Chrome, Edge, Firefox or the desktop app')
+    return outputs
+  }
+
+  // Request MIDI access if not already done. Throttled (2 s): with no device plugged in (or
+  // access denied) this used to re-request access — and log — on every frame.
   const midiKey = `${ctx.nodeId}:midi`
-  if (!midiInputs.has(midiKey) && navigator.requestMIDIAccess) {
+  const attemptKey = `${ctx.nodeId}:lastAttempt`
+  const nowA = Date.now()
+  if (!midiInputs.has(midiKey) && nowA - ((midiState.get(attemptKey) as number) ?? 0) >= 2000) {
+    midiState.set(attemptKey, nowA)
     try {
       const access = await navigator.requestMIDIAccess()
 
@@ -69,8 +90,9 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
           const messageChannel = status & 0x0f
           const messageType = status & 0xf0
 
-          // Filter by channel if specified
-          if (channel !== -1 && messageChannel !== channel) return
+          // Filter by channel if specified (read live — see above)
+          const ch = (midiState.get(`${ctx.nodeId}:channel`) as number) ?? -1
+          if (ch !== -1 && messageChannel !== ch) return
 
           if (messageType === 0x90 && data2 > 0) {
             // Note On

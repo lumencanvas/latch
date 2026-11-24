@@ -6,6 +6,296 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-24 (later 137) — Maintainer test fixes + 1.3.0 release
+
+Fixed from live testing of the packaged app, then committed, merged to `main` and tagged `v1.3.0`.
+- **Bellows-only flows were silent** (Chords & Arpeggio; Generative Melody played because it uses a Tone
+  synth). Tone's standardized-audio-context keeps a node *natively* disconnected from the destination until
+  it sees an active SAC input; bellows feeds LATCH master from its native analyser (outside SAC), so master
+  stayed unplugged. Fix: `masterKeepAlive = new Tone.Signal(0).connect(master)` per kernel in
+  `bellowsManager.getBellows` (disposed in `disposeKernel`). Verified on a speaker tap: 120/120 frames with
+  sound vs 0/120 without. Bellows errors now `console.warn` once instead of being swallowed.
+- **Webcam unavailable in the packaged mac app** (no TCC prompt): unsigned/local builds kept Electron's
+  ad-hoc identifier `com.github.Electron` and helper apps failed `codesign --verify`. `forge.config.ts`
+  `postPackage` re-signs deep ad-hoc, then the outer bundle as `com.lumencanvas.latch` with the
+  entitlements (skipped when `APPLE_TEAM_ID` is set — CI's Developer ID signing handles it).
+- `customNodes:scanDirectory` creates the folder first (ENOENT console noise on fresh installs).
+
+## 2026-11-24 (later 136) — Release prep for 1.3.0 (compat-first)
+
+Goal: publishable, with existing users/flows unaffected. Nothing committed. Version → **1.3.0**, new
+`CHANGELOG.md` (user-facing; release.yml still auto-generates notes from commits).
+- **Desktop storage migration** (`src/main/storageMigration.ts`): ≤1.2.x stored everything in the `file://`
+  origin; 1.3 serves `app://latch`. On first packaged launch a hidden file:// window dumps localStorage +
+  every IndexedDB DB (schema + records; Blob/Date/binary tagged), a hidden `app://latch/__migrate.html`
+  (served by protocol.ts) MERGES it in (add-only — never clobbers, safe to retry), flag file
+  `<userData>/.storage-migrated-app-scheme`. Verified e2e (dev build via Playwright: flow shows in UI, Blob +
+  Date + LS keys survive, idempotent) and on the **packaged .app** (fuses block Playwright → launched directly
+  on a seeded profile; log "merged 4"; flow present in app_latch IDB). Found + fixed on the way: the
+  `GrantFileProtocolExtraPrivileges=false` fuse made file:// storage "Access is denied" → fuse now **true**
+  (commented in forge.config.ts); original "only if target empty" rule would have lost data after one
+  failed attempt → merge semantics. Cache Storage (AI models) not migrated.
+- **Compat check:** dumped all node definitions at HEAD vs now (temp worktree): 0 removed nodes/ports/controls,
+  0 changed defaults; only +2 nodes, 2 port types widened to `any`, progression `cadence` boolean→toggle.
+  Timing/gate/counter behaviour changes reviewed: all genuine bug fixes (listed in CHANGELOG).
+- **Duplicate Flow** now remaps node/edge ids (shared ids shared executor state + Control Panel);
+  `uiStore.cloneControlPanelForNodes` gives the copy its own panel (callback from FlowTabs — a direct
+  flows→ui import blew up Pinia types).
+- **Spring/slew/tween/integral/derivative** NaN-latch fixed (`finiteOr` in executors/signal.ts).
+- **Issue #1:** `stubs/onnxruntime-node` + `stubs/sharp` via deps + `overrides` (~300 MB less; Termux not
+  verified on-device). `onnxruntime-common@1.24.3` added as a direct dep (transformers.web imports it
+  undeclared; it was only hoisted via onnxruntime-node). See stubs/README.md. Not yet replied on the issue.
+- **Deps:** `npm audit fix` (prod 11 → 2 moderate, both dompurify via monaco — needs monaco major). Vue
+  3.5.27 → 3.5.46 (old one had a high SSR advisory) caused TS2589 in Pinia stores → fixed at the root with
+  type-level `Raw<Node>[]`/`Raw<Edge>[]` in FlowState/FlowSnapshot + `markRaw` history entries (immutable
+  snapshots; restore deep-clones).
+- **Typecheck now covers src/main** (`tsconfig.main.json`, chained in `npm run typecheck`) — it never did.
+- Gates: typecheck 0 · lint 0 err/47 warn · vitest 199 files **2976** pass · build:web + electron OK ·
+  Electron smoke (19-node starter, 39 fps, 0 console errors, MediaPipe under narrowed CSP) · web preview
+  smoke 0 errors · `npm run package` OK · migration e2e dev + packaged.
+- **Before tagging:** commit on a branch (not main), push, let CI run, then tag `v1.3.0`. Still needs ears
+  (bellows/voice), eyes (GPU fixes), hardware (BLE/MIDI/serial), and an on-device Termux try.
+
+## 2026-11-23 (later 135) — Adversarial review of the uncommitted changeset + fixes
+
+4 read-only reviewers (security/Electron, audio, visual/IO/AI, core/layout/starters) → ~30 findings, all
+verified and fixed except where noted. Nothing committed.
+- **Security:** a flow file could hide `nodeType` in `controls` to slip a Function node past the trust prompt
+  (fixed: reserved keys stripped in docToFlowState; trust-prompt import now fails closed to `disable`). Emulator
+  `pathToData` became a `<script src>` from flow data (now allowlisted to cdn.emulatorjs.org / same origin).
+  CSP narrowed from all of jsdelivr to `/npm/@mediapipe/` + the pinned onnxruntime-web path
+  (tests/unit/main/csp-sync.test.ts keeps it in step with ai.worker.ts). Device chooser settles on unknown id.
+- **CLASP:** connect resolving after Stop/delete resurrected an orphan socket (epoch + shared in-flight
+  promise); a node switching connectionId kept the old link retrying forever; late Get replies guarded.
+- **Saved-flow regressions reverted:** Array/String Slice negative End (back to: -1 = to end, others = JS
+  slice), String Replace `_error` port restored, Equals parses a typed side only vs a wired non-string.
+- **Other:** Quantize precision (decimal-places rounding), Delay wired value clamped to 10 s, sameValue fast
+  path, delete no longer prunes Control Panel tiles (undo keeps position), Play button green → success-700.
+  Audio: singer Done no longer fires on cancel; probe/alloc retry storms gated; audio-player pendingPlay
+  cleared on error. Visual: render-target fast path (isRenderTargetTexture), WebGLTexture input cached per
+  slot, AI triggers queued until model loads, BLE read guarded across swap, webcam snapshot pendingCapture.
+- **Known/intentional, not changed:** Gate passes pulses when open (no hold); Counter Set applies on change;
+  subflow executor doesn't collect `multiple` inputs (subflows dead anyway); duplicated flows share node ids
+  → share Control Panel layout; raw bellows params unclamped.
+- **Gates:** vue-tsc 0 · eslint 0 err/47 warn · vitest 199 files **2973 passed** · build:web + electron-vite OK.
+
+## 2026-11-23 (later 134) — System-wide fix sweep: bellows 0.5 + voice nodes, Electron 43, starters, layout, trust prompt
+
+7 parallel audit+fix agents (disjoint file ownership, one working tree) + my own glue fixes. Nothing committed.
+- **bellows:** bellowsjs 0.5.0; channel leak (Instrument.dispose), stale preset params, Stop→Play boot race
+  (generation counter), raw-param removal, rampParam, granular dropped, drift test vs listEngines() (caught 9
+  presets with changed engines). NEW `bellows-singer` + `bellows-speak` (bellows-voice 0.8; articulator/mouth
+  outputs for visuals). `optimizeDeps.exclude: ['bellows-voice']`; notices at public/THIRD_PARTY_NOTICES.md.
+- **Electron:** pinned **43.8.12** (44+ needs macOS 13; this dev Mac is 12.7). Forge 8 / electron-vite 5, `app://`
+  protocol (COOP/COEP, absolute paths), sandbox on, IPC sender checks, CSP, fuses, permission handlers, unused
+  bridge removed, BLE/serial device chooser. Smoke: flow plays, 0 console errors. CI → Node 24, gh-pages jobs gone.
+  Open: old file:// IndexedDB data doesn't migrate to app://.
+- **Engine:** `multiple: true` inputs now collect every wire (scene-3d/group-3d only got the last one).
+- **Starters:** 8 audited (keyboard-synth was silent, labels lost on insert), 12 new (20 total), drift test.
+- **Layout:** Expose-to-Control-Panel never worked; layout was global (cross-flow deletes) → per-flow; touch +
+  keyboard; BaseNode caps inline controls at 8; new "Tidy graph" (Shift+Alt+L). Open: layout not in flow file.
+- **Nodes:** media/IO/core sweeps fixed the known lists + many new bugs (see agent reports in session).
+- **Security:** import trust prompt (ImportTrustModal; code disabled by default); base.css focus ring fixed.
+- Gates: typecheck 0 · lint 0 err · test:unit **2953** pass · build:web 0 · electron build + smoke 0 errors.
+- Still open: subflow runtime (design in docs/plans/SUBFLOW_RUNTIME_2026-11.md); signal.ts spring NaN-latch;
+  bellows voice/sound needs ears; GPU fixes need eyes; BLE/MIDI/serial need hardware.
+
+---
+
+## 2026-11-23 (later 133) — Deep state-of-the-project audit (read-only)
+
+Full report: **`docs/AUDIT_2026-11-23.md`**. No source changed. Headlines:
+- **Jul-23 work (68 files) still uncommitted after 4 months**; latch.design serves `main@976d720`, so none of
+  those fixes are live. A fresh review found 6 issues to fix before committing (bellows channel leak / stale
+  preset params / Stop→Play boot race; rising-edge lost across reconnect; send-on-change never re-arms;
+  color-correction hue input rescaled).
+- **Issue #1 (Termux EBADPLATFORM)** root cause: transformers' hard dep `onnxruntime-node` (os-restricted).
+  Fix = local stub packages + `overrides`; reporter has pinged 4x since Aug.
+- **Security:** no import trust prompt exists (code.ts comment claims one); Electron preload exposes unused
+  `openPath`/`setBasePath`/`on` → shared flow can write + launch files on desktop; Electron 29 EOL;
+  MediaPipe WASM loaded from `@latest` (prod runs 0.10 JS vs 1.2.3 WASM).
+- **New bugs:** base.css `button:focus{outline:none}` kills keyboard focus rings app-wide; material-3d
+  per-frame material churn; envelope level-triggered. 42/45 deferred items still open (subflows still dead).
+- **Deps:** bellowsjs 0.5.0 non-breaking + fixes LATCH's channel leak; transformers 4.3.2; three r187; whole
+  toolchain majors behind; CI on Node 20 + removed action runtimes; last tag v1.2.0 vs pkg 1.2.14.
+
+---
+
+## 2026-07-23 (later 132) — Bellows rebuild (Part 1) + deep whole-system audit (Part 2) + ultracode code & visual/persona audits
+
+Researched the shipped `bellowsjs@0.1.5` API against the installed package (dist `.d.ts` + the
+minified `bellows.js` bundle) and **rebuilt the two bellows audio nodes** from it, not from the old
+plan. Maintainer chose (via scope questions): **full per-engine params**, **defer the `bellows-script`
+power node**, **insert fx + shared reverb send**.
+
+### Verified against the real kernel (not assumed)
+- **Topology confirmed:** `workletNode → analyser → ctx.destination` (grep of `bellows.js`). The
+  manager's existing "detach analyser from destination, reroute into LATCH master" is therefore
+  **correct** — the analyser carries the full post-master bellows mix. Kept as-is.
+- **Every signature the nodes use is real** (`bellows.d.ts`): `Bellows.boot({context})`, `b.voice`,
+  `b.bus(['fdn'],{level})`, `inst.note/on/off/param/fx/fxParam/send/gain/pan/allOff`, `b.analyser`,
+  `getPreset`. The OLD nodes were API-correct but **thin** (only voice/note/on/off/allOff) — not broken.
+- **Extracted the full surface as data:** 18 engines with exact ParamSpecs, 50 presets across 8
+  families, ~24 fx. FM has 18 array-expanded operator params, additive **96** partial params — so
+  "full params" = every *named/macro* param as a control (full for 16 engines) + a **raw-params
+  escape** (`k=v` / JSON) that reaches `ratio1`, `partial5`, `fixed2`, … by name. 99 sliders would be
+  unusable.
+
+### Shipped (files)
+- **NEW `registry/audio/bellows-instrument/engineParams.ts`** — the whole surface as reviewable DATA
+  + pure helpers (`resolveVoiceConfig`, `parseRawParams`, `computeParamUpdates`,
+  `buildEngineParamControls`). No bellows import (node defs need controls synchronously; bellows stays
+  lazy).
+- **`bellowsManager.ts` rewritten** — per-node config apply with **diffing** (steady frame = no kernel
+  writes), preset application via `getPreset` at runtime, insert-fx chain, one **shared FDN reverb
+  bus** (`b.bus` once, `inst.send`), centralized **mono/poly gate** (held-note ids live in the record,
+  so an **engine swap now releases held notes** — fixed a latent poly-gate bug). Same shared-kernel +
+  lifecycle (`gc`/`disposeAll`) contract.
+- **`bellows-instrument` + `poly-voice` node.ts** — layered controls: `preset` (50, casual) → Manual →
+  `engine` + full per-engine params (`when:{engine,preset:''}`) + `insertFx` + `sendLevel` + raw
+  `params` + gain/pan. Poly-voice shares the same surface + manager (dropped its own held-state map).
+- Deleted **`src/renderer/dev/bellowsSpike.ts`** (orphaned dead spike; was untracked, unreferenced).
+
+### Gates — all green
+typecheck **0** · lint **0 err** (48 pre-existing `any` warns, unchanged) · `test:unit` **2624 pass**
+(176 files; was 2592 — added `engineParams.test.ts` 26, rewrote node tests, new `bellowsManager.test.ts`
+9 driving apply/diff/gate/swap/preset against a fake kernel via new `__setKernelForTest`/
+`__injectVoiceForTest` seams) · build **0** (bellows is its own **367 kB lazy chunk** —
+`bellows-*.js`, confirms it stays out of the main bundle) · **browser boot-smoke clean** (app mounts,
+**0 console errors** with the enriched registry loaded; Playwright + system Chrome).
+
+### ⚠️ NEEDS THE MAINTAINER'S EAR / EYES (cannot be verified headless — no AudioWorklet in happy-dom)
+1. **Does it sound right?** Boot the app, drop a Bellows Instrument, pick presets across families and
+   several manual engines, confirm audio through LATCH master (volume/meter/record capture it). Same
+   for Poly Voice with a Chord/Progression feeding Notes.
+2. **Does the ~130-control Properties panel render cleanly** when switching preset↔manual and between
+   engines (only the active engine's params should show; `when` gating is unit-tested but not
+   eyeballed).
+3. **`granular` caveat:** it's in the manual engine list (parity with the old node) but the granular
+   engine needs a sample buffer (`b.granular(data,…)`) the node doesn't feed — likely **silent**.
+   Decide: drop it from the manual list, or add a future sample-fed granular node.
+4. **euclid arg-order gotcha — CHECKED, not a problem:** bellows' facade `b.euclid(steps,pulses)` and
+   raw `euclid(pulses,steps)` disagree on arg order, but LATCH's `euclidean` node uses its OWN
+   `bjorklund(steps,pulses)` (executors/euclidean.ts) and **never calls bellows' euclid anywhere**. No fix needed.
+
+### Part 2 — deep whole-system audit (DONE this session)
+Ran a whole-system audit as **five parallel verification streams** (leaks/gc · connections/adapters ·
+UI/UX/a11y/CSS · properties/round-trip · efficiency/testing) + my own structural scan of all 251 nodes.
+Full prioritized report: **`docs/AUDIT_2026-07-23.md`** (fixed vs deferred clearly separated). Verdict:
+**system is healthy** — leak class structurally controlled (0 confirmed leaks), all 251 node defs
+structurally clean, a11y/CSS well-mitigated. **Fixed + landed green (10):**
+- **Per-frame "storm" fixes** (event actions firing 60×/s while a trigger is held → rising-edge):
+  CLASP `emit`+`bundle` (the named lead), MQTT publish, WebSocket send, BLE characteristic write+read,
+  BLE device connect/disconnect. All via the shared `risingEdge` helper (BLE ones still want HW verify).
+- **Numeric `select` round-trip bug** (MQTT QoS / Serial baud stored a string after an edit) — root fix
+  `coerceSelectValue` in ControlRenderer (+4 tests).
+- **3 undefined CSS tokens** (`--color-error-light`→`--color-error-50`; added `--color-success-bg`,
+  `--color-warning-ink`) — soft-failing theming defects.
+- **Code + Shader editor edits now undoable** (wrapped in `recordParamEdit`).
+- **Euclidean pattern memoized** (was recomputing Bjorklund + a map every frame) — +1 test.
+- **New `structural-integrity.test.ts`** pins the 251-node clean bill (dup ids / dead `when` / empty
+  select / bad range / missing default).
+
+**Deferred (in the audit doc, with reasons):** D1 mark ~45 stateless data/string nodes `pure` (semantics
+change, needs sign-off — biggest per-frame win); D2 image-fx per-frame texture leak + D3 scene-3d
+per-frame material disposal + D4 GPU churn (need a live canvas); D5 ~21 audio nodes push Tone params
+every frame (adopt the bellows diff pattern incrementally); D6/D7/D8 BLE adapter dispose-ordering +
+`setDevice` refcount + `getCharacteristic` masking (need HW); D9 CLASP subscriber bookkeeping; test gaps
+D-test-1..6 (CLASP connected paths, visual.test drives real executors, renderer coverage, subflow
+real-exec pin, weak assertions, logic-operator value tests).
+
+**Gates after Part 2:** typecheck **0** · lint **0 err** (48 pre-existing warns) · `test:unit` **2634
+pass** (was 2624; +10) · build **0** · browser boot-smoke **0 console errors**.
+
+### Part 2b — ULTRACODE audit (deeper, adversarially verified) + fixes (DONE this session)
+Ran a **121-agent** ultracode workflow (14 deep finders across all 251 nodes + subflow/security/GPU/
+AI/persistence deep-dives + adversarial re-verify of the session's own fixes; every fresh finding
+refuted-or-confirmed by 2 skeptic lenses; + a completeness critic). **41 confirmed findings + 1 critic
+finding.** Full report: **`docs/AUDIT_2026-07-23_ultracode-addendum.md`**. Security clean (0). It caught
+bugs the 5-stream pass missed — including **two storm sites I'd missed (synth, midi-output)** and **a bug
+in my OWN Part-1 bellows code** (preset→manual left stale params).
+- **Fixed + landed green (21):** storm fixes (synth via `ctx.trig`; midi-output rising-edge; osc/serial/
+  legacy-ble send-on-change; texture-to-data + timer-reset rising-edge); reverb IR-regen change-guard;
+  svf-filter stale-connection leak; **bellows applyConfig preset→manual** (my bug); smoothstep/divide/
+  wrap NaN guards; select index→label mapping; **`setByPath` prototype-pollution** guard; string-match
+  g-flag groups; image-loader asset-switch reload; color-correction hue ÷360; speech-recognition
+  post-dispose write guard; **metronome running-toggle** (was inert); **undo/redo mark-dirty** (critic:
+  silent data-loss). +regression tests (`audit-ultracode-fixes.test.ts`, bellows preset→manual,
+  metronome toggle, euclidean mutation-safe copy).
+- **Investigated, NOT a bug:** code/template `{{key}}` passthrough is intentional + tested (audit
+  conflated it with `string-template`).
+- **Deferred (in the addendum):** GPU cluster — light-node recreation + shadow-map leak, spot-light
+  target, camera aspect, group-3d shared-material dispose, render-target size-change leaks, readback
+  perf (need a live canvas); **subflow resolver injection** (exact root cause of the long-broken
+  subflow found — needs an ExecutionEngine wiring + maintainer sign-off; highest-value deferred);
+  per-node migration unwired; IndexedDB definition-blob bloat; midi-input channel frozen; a few
+  cosmetic/design items.
+
+**Gates after ultracode fixes:** typecheck **0** · lint **0 err** · `test:unit` **2645 pass** (was 2634;
++11) · build **0** · browser boot-smoke **0 console errors**.
+
+### Part 2c — ULTRACODE VISUAL + PERSONA audit (live screenshots) + fixes (DONE this session)
+Did a real **visual** audit: drove the running app with Playwright + system Chrome (via a temporary
+DEV-only `window.__latch` store hook — **added then fully reverted**, `main.ts` is clean) and captured
+**31 screenshots** of every surface (editor shell, all 6 modals, Code+Shader Monaco editors, 12 property
+panels, 9 custom-component nodes, canvas density). A **140-agent** ultracode workflow ran **9 surface
+inspectors** (each reading the actual PNGs + source) + **6 persona walkthroughs** (beginner/VJ/
+installation-artist/hardware-hacker/accessibility/IoT-maker), every finding refuted-or-confirmed by 2
+skeptic lenses. **37 confirmed + 4 critic findings.** Report: **`docs/AUDIT_2026-07-23_visual-persona.md`**.
+- **Headline:** structure/UX is strong; the systemic weakness is **contrast** (`--color-neutral-400`
+  #8C8C8C ~3.36:1 used pervasively for secondary text) — directly against LATCH's *accessible* positioning.
+- **Fixed + verified by re-capture (27):** the whole contrast cluster raised to WCAG AA — **status bar**
+  (base/dot/values primary-400→700/platform; covers all 4 critic findings), sidebar + node-explorer
+  counts/empty-states/placeholder, template path, bluetooth vendor, **4 device-node status labels**,
+  **piano key labels** (light+dark), **EQ axis labels** (#444 on near-black = 1.4:1), MainOutput canvas
+  placeholder, help step badges; plus UX: **Play is now a green GO button** when ready, code-editor
+  overlay 0.8→0.92 (background ghosted through) + minimap off, **starter CTA de-jargoned**, node-explorer
+  tag chips → 24px target.
+- **Not a bug:** the "watermark bleeding through template cards" was a LoadingScreen fade capture
+  artifact (verifiers correctly declined it).
+- **Deferred (in the doc):** AI model badge palette (accessible colors), **Bluetooth/connections header
+  live-status** (needs state wiring + HW — high value for installation artists), Envelope/Waveform canvas
+  theming, unify Code+Shader editors, a low toggle-target tweak. **Capture-harness gap:** the `20-props-*`
+  shots captured the empty panel (setInspectedNode didn't populate it headless), so per-control Properties
+  rendering wasn't visually inspected — a follow-up should fix the capture (select the node in Vue Flow).
+- **Gates:** typecheck 0 · lint 0 err · test:unit **2645** pass · build 0 · re-capture confirms fixes.
+
+### Open
+- **`bellows-script` power node deferred** (maintainer's call) — needs the `code`/`function` trust-model
+  review; can't be audibly verified headless. Its own follow-up.
+- **Deferred audit items** — Part 2's D1 (pure flags) + GPU/HW cluster; the ultracode addendum's
+  **subflow resolver injection** (big known-broken feature, root cause pinpointed) + migration wiring;
+  the visual doc's **header live connection/device status** + AI badge palette + Properties-panel
+  re-capture. Pick up with the maintainer.
+- Nothing committed; still on `phase0-file-format`; PR held per the standing rule.
+
+---
+
+## 2026-07-23 (later 131) — Merge to `main` confirmed; next session = bellows research + full audit
+
+- **`main` merge landed.** Fast-forwarded `phase0-file-format` → `main` (no divergence, no merge
+  commit) and pushed: `d390b05..976d720  main -> main`. Verified the whole landed range carries
+  **no AI attribution** (authors + messages clean; author stays Moheeb Zara). `main` HEAD is now
+  `976d720` "Add Bluetooth device subsystem, bellows generative audio, and editor polish".
+- **Next session is scoped** (kickoff written): (1) properly **research how bellowsjs actually
+  works** and rebuild the bellows nodes against the real API, then (2) a **deep whole-system audit**
+  of every node, the UI/UX, properties panel, functionality/implementation, efficiency, and testing.
+
+### bellows — why it needs a real research pass (open)
+The two bellows nodes (`registry/audio/bellows-instrument/` + `poly-voice/`) were built from a plan,
+not from a close read of the shipped `bellowsjs@0.1.5` API, and have **never been verified against a
+running kernel** (happy-dom can't boot an AudioWorklet, so tests only cover the pure theory helper).
+The installed package (`node_modules/bellowsjs/dist/*.d.ts`, README, `presets/`, `engines/`, `seq/`,
+`theory/`) exposes a far richer surface than the node uses today — `Bellows.boot({seed})`,
+`b.voice(engine, params)`, `b.bus`, `.fx().send()`, `b.scale`/`b.euclid`/`b.rng`, and a sample-accurate
+`b.clock`/`b.start()` sequencing layer. The current `bellowsManager.ts` only calls `voice()` + `note()`
++ `allOff()` + `dispose()` and **assumes** those signatures. Maintainer authored bellowsjs and wants it
+**richly/flexibly integrated** (see memory `bellows-latch-intent`): a layered easy surface + a power
+escape hatch — so this is a rebuild-from-the-real-API job, not a patch. `src/renderer/dev/bellowsSpike.ts`
+is orphaned dead code (untracked, not on `main`); delete it once the real nodes are verified.
+
+---
+
 ## 2026-07-23 (later 130) — Category cleanup + docs + LAND to main (PR greenlit)
 
 Maintainer greenlit the merge. Final cleanup + certification + docs, then committed the whole changeset and merged to main.

@@ -629,7 +629,7 @@ async function handleTestConnection() {
 .test-btn.success {
   color: var(--color-success);
   border-color: var(--color-success);
-  background: var(--color-success-bg, rgba(34, 197, 94, 0.1));
+  background: var(--color-success-bg);
 }
 
 .test-btn.error {

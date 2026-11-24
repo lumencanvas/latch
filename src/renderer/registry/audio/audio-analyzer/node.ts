@@ -53,6 +53,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return f
   }) as Tone.FFT
 
+  // Smoothing is a control — apply edits after creation too (was only read in the factory).
+  if (fft.smoothing !== smoothing) fft.smoothing = smoothing
+
   // Get or create meter
   const meter = getOrCreateNode(`${ctx.nodeId}_meter`, () => {
     return new Tone.Meter()

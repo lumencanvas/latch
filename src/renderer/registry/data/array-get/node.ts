@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { parseLooseJson } from '../valueHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -19,7 +20,8 @@ const definition: NodeDefinition = {
     { id: 'found', type: 'boolean', label: 'Found' },
   ],
   controls: [
-    { id: 'default', type: 'text', label: 'Default', default: '' },
+    { id: 'index', type: 'number', label: 'Index', default: 0, props: { step: 1 } },
+    { id: 'default', type: 'text', label: 'Default (JSON or text)', default: '', props: { placeholder: 'empty = no value' } },
   ],
   tags: ['array', 'get', 'index', 'element', 'access'],
   info: {
@@ -34,12 +36,14 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const array = ctx.inputs.get('array')
-  const index = Math.floor((ctx.inputs.get('index') as number) ?? 0)
-  const defaultVal = (ctx.controls.get('default') as string) ?? ''
+  const index = Math.floor(ctx.num('index', 0))
+  // Parse the default ONCE so both miss paths (not an array / out of range) emit the same
+  // value: `5` → 5, `[1]` → [1], text stays text, empty → no value.
+  const parsedDefault = parseLooseJson((ctx.controls.get('default') as string) ?? '')
   const outputs = new Map<string, unknown>()
 
   if (!Array.isArray(array)) {
-    outputs.set('value', defaultVal || undefined)
+    outputs.set('value', parsedDefault)
     outputs.set('found', 0)
     return outputs
   }
@@ -51,14 +55,6 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     outputs.set('value', array[normalizedIndex])
     outputs.set('found', 1)
     return outputs
-  }
-
-  // Try to parse default as JSON
-  let parsedDefault: unknown = defaultVal
-  try {
-    parsedDefault = JSON.parse(defaultVal)
-  } catch {
-    // Keep as string
   }
 
   outputs.set('value', parsedDefault)

@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getCached, setCached, serialPorts, serialState, type WebSerial } from '../shared'
+import { getCached, setCached, serialPorts, serialState, closeSerialConnection, type WebSerial } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'serial',
@@ -54,10 +54,16 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   }
 
   const serialKey = `${ctx.nodeId}:serial`
+  const failedKey = `${ctx.nodeId}:connectFailed`
+  const sendKey = `${ctx.nodeId}:lastSend`
   let connection = serialPorts.get(serialKey)
 
-  // Handle connection
-  if (connect && !connection) {
+  // Turning Connect off re-arms a failed/cancelled attempt.
+  if (!connect) serialState.delete(failedKey)
+
+  // Handle connection. One attempt per Connect toggle: a cancelled/failed requestPort() used to
+  // retry EVERY frame, re-popping the browser's port chooser in an endless loop.
+  if (connect && !connection && !serialState.get(failedKey)) {
     try {
       // Request port (this will show a browser dialog)
       const port = await (navigator as Navigator & { serial: WebSerial }).serial.requestPort()
@@ -67,6 +73,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
       serialPorts.set(serialKey, connection)
       setCached(serialState, `${ctx.nodeId}:connected`, true)
       setCached(serialState, `${ctx.nodeId}:error`, null)
+      serialState.delete(sendKey) // fresh link — re-send the current value
 
       // Start reading
       if (port.readable) {
@@ -118,40 +125,52 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
           }
         }
         // Handle promise to prevent unhandled rejection
+        const conn = connection
         readLoop().catch((error) => {
           console.error('[Serial] Unhandled read loop error:', error)
           setCached(serialState, `${ctx.nodeId}:error`, (error as Error).message ?? 'Read loop error')
+        }).finally(() => {
+          // The loop ends on unplug/device error too. If this link is still the live one, drop it
+          // so `connected` stops reading true and a Connect off→on re-opens the port.
+          if (serialPorts.get(serialKey) !== conn) return
+          serialPorts.delete(serialKey)
+          closeSerialConnection(conn)
+          setCached(serialState, `${ctx.nodeId}:connected`, false)
+          serialState.set(failedKey, true)
         })
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       setCached(serialState, `${ctx.nodeId}:error`, errorMsg)
       setCached(serialState, `${ctx.nodeId}:connected`, false)
+      serialState.set(failedKey, true)
     }
   }
 
   // Handle disconnect
   if (!connect && connection) {
-    try {
-      if (connection.reader) {
-        await connection.reader.cancel()
-        connection.reader = null
-      }
-      await connection.port.close()
-    } catch (e) {
-      console.error('[Serial] Close error:', e)
-    }
+    // Cancel + release the reader BEFORE close(): the old path cancelled but kept the lock,
+    // so port.close() rejected and the port stayed open (a later re-open then failed).
     serialPorts.delete(serialKey)
+    closeSerialConnection(connection)
+    connection = undefined
     setCached(serialState, `${ctx.nodeId}:connected`, false)
+    serialState.delete(sendKey)
   }
 
-  // Send data
-  if (connection && sendData && connection.port.writable) {
+  // Send data — SEND-ON-CHANGE (no trigger port, so a value change is the correct gate;
+  // writing every frame opened a writer + wrote to the port ~60×/s). An empty/absent value
+  // re-arms it, so sending the same command twice works via send → '' → send.
+  if (!sendData) serialState.delete(sendKey)
+  if (connection && sendData && connection.port.writable && serialState.get(sendKey) !== sendData) {
     try {
       const writer = connection.port.writable.getWriter()
-      const data = new TextEncoder().encode(sendData)
-      await writer.write(data)
-      writer.releaseLock()
+      try {
+        await writer.write(new TextEncoder().encode(sendData))
+      } finally {
+        writer.releaseLock() // a failed write must not leave the stream locked forever
+      }
+      serialState.set(sendKey, sendData)
     } catch (error) {
       console.error('[Serial] Write error:', error)
     }

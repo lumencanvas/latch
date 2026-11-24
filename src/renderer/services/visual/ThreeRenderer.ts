@@ -29,6 +29,8 @@ export class ThreeRenderer {
   private renderer: THREE.WebGLRenderer
   private canvas: HTMLCanvasElement
   private renderTargets: Map<string, THREE.WebGLRenderTarget> = new Map()
+  /** nodeId → current render-target key, so a resize frees the previous-size target. */
+  private renderTargetKeyByNode: Map<string, string> = new Map()
   private scenes: Map<string, SceneData> = new Map()
   private cameras: Map<string, CameraData> = new Map()
   private gltfLoader: GLTFLoader
@@ -51,7 +53,10 @@ export class ThreeRenderer {
     this.renderer.setSize(this.defaultSize.width, this.defaultSize.height)
     this.renderer.setPixelRatio(1)
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    // three r184 already treats PCFSoftShadowMap as deprecated and silently swaps in
+    // PCFShadowMap on first shadow render (with a console warning), so this is the exact
+    // shadow look we were already getting — just without the warning.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
 
     // Initialize GLTF loader
@@ -82,14 +87,14 @@ export class ThreeRenderer {
   /**
    * Clear a scene's objects
    */
-  clearScene(nodeId: string): void {
+  clearScene(nodeId: string, disposeObjects: boolean = true): void {
     const sceneData = this.scenes.get(nodeId)
     if (sceneData) {
       // Remove all objects except lights and helpers
       while (sceneData.scene.children.length > 0) {
         const obj = sceneData.scene.children[0]
         sceneData.scene.remove(obj)
-        this.disposeObject(obj)
+        if (disposeObjects) this.disposeObject(obj)
       }
       sceneData.objects.clear()
     }
@@ -151,6 +156,7 @@ export class ThreeRenderer {
         options.near ?? 0.1,
         options.far ?? 1000
       )
+      camera.userData.orthoSize = size
     }
 
     // Set position and target
@@ -186,7 +192,8 @@ export class ThreeRenderer {
       camera.updateProjectionMatrix()
     } else if (type === 'orthographic' && camera instanceof THREE.OrthographicCamera) {
       if (options.orthoSize !== undefined) {
-        const aspect = this.defaultSize.width / this.defaultSize.height
+        const aspect = (camera.userData.aspect as number | undefined) ?? this.defaultSize.width / this.defaultSize.height
+        camera.userData.orthoSize = options.orthoSize
         camera.left = -options.orthoSize * aspect
         camera.right = options.orthoSize * aspect
         camera.top = options.orthoSize
@@ -218,6 +225,17 @@ export class ThreeRenderer {
     let target = this.renderTargets.get(key)
 
     if (!target) {
+      // Size/depth changed: free the node's previous target (keys embed the size, so the old
+      // one — and its depth texture — used to stay allocated forever).
+      const prevKey = this.renderTargetKeyByNode.get(nodeId)
+      if (prevKey && prevKey !== key) {
+        const prev = this.renderTargets.get(prevKey)
+        if (prev) {
+          prev.depthTexture?.dispose()
+          prev.dispose()
+        }
+        this.renderTargets.delete(prevKey)
+      }
       const options: THREE.RenderTargetOptions = {
         minFilter: THREE.LinearFilter,
         magFilter: THREE.LinearFilter,
@@ -234,6 +252,7 @@ export class ThreeRenderer {
 
       target = new THREE.WebGLRenderTarget(width, height, options)
       this.renderTargets.set(key, target)
+      this.renderTargetKeyByNode.set(nodeId, key)
     }
 
     return target
@@ -251,6 +270,7 @@ export class ThreeRenderer {
     includeDepth: boolean = false
   ): ThreeRenderOutput {
     const target = this.getOrCreateRenderTarget(nodeId, width, height, includeDepth)
+    this.applyAspect(camera, width, height)
 
     // Resize renderer if needed
     if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -295,9 +315,36 @@ export class ThreeRenderer {
       this.renderer.setSize(width, height)
     }
 
+    this.applyAspect(camera, width, height)
+
     // Render directly to canvas (no render target)
     this.renderer.setRenderTarget(null)
     this.renderer.render(scene, camera)
+  }
+
+  /**
+   * Match the camera projection to the output size. Cameras were built with the 1:1 default
+   * aspect and never updated, so any non-square Render 3D output was stretched.
+   */
+  private applyAspect(camera: THREE.Camera, width: number, height: number): void {
+    if (!(width > 0) || !(height > 0)) return
+    const aspect = width / height
+    if (camera instanceof THREE.PerspectiveCamera) {
+      if (camera.aspect !== aspect) {
+        camera.aspect = aspect
+        camera.updateProjectionMatrix()
+      }
+    } else if (camera instanceof THREE.OrthographicCamera) {
+      if (camera.userData.aspect !== aspect) {
+        camera.userData.aspect = aspect
+        const size = (camera.userData.orthoSize as number | undefined) ?? camera.top
+        camera.left = -size * aspect
+        camera.right = size * aspect
+        camera.top = size
+        camera.bottom = -size
+        camera.updateProjectionMatrix()
+      }
+    }
   }
 
   /**
@@ -618,6 +665,11 @@ export class ThreeRenderer {
     object.children.forEach((child) => this.disposeObject(child))
   }
 
+  /** Node ids that own a scene, camera or render target here (for GC of deleted nodes). */
+  ownedNodeIds(): Set<string> {
+    return new Set<string>([...this.scenes.keys(), ...this.cameras.keys(), ...this.renderTargetKeyByNode.keys()])
+  }
+
   /**
    * Dispose resources for a specific node
    */
@@ -625,7 +677,9 @@ export class ThreeRenderer {
     // Dispose scene
     const sceneData = this.scenes.get(nodeId)
     if (sceneData) {
-      this.clearScene(nodeId)
+      // Detach only: a scene's children are owned by their upstream nodes (meshes, lights,
+      // the scene node's own helpers) and are disposed by those nodes' cleanup paths.
+      this.clearScene(nodeId, false)
       this.scenes.delete(nodeId)
     }
 
@@ -645,6 +699,7 @@ export class ThreeRenderer {
         this.renderTargets.delete(key)
       }
     }
+    this.renderTargetKeyByNode.delete(nodeId)
   }
 
   /**
@@ -668,6 +723,7 @@ export class ThreeRenderer {
       target.dispose()
     }
     this.renderTargets.clear()
+    this.renderTargetKeyByNode.clear()
 
     // Dispose renderer
     this.renderer.dispose()
@@ -703,6 +759,11 @@ export function getThreeRenderer(): ThreeRenderer {
   if (!sharedThreeRenderer) {
     sharedThreeRenderer = new ThreeRenderer()
   }
+  return sharedThreeRenderer
+}
+
+/** The renderer if one was already created (never constructs a WebGL context). */
+export function peekThreeRenderer(): ThreeRenderer | null {
   return sharedThreeRenderer
 }
 

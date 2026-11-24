@@ -20,7 +20,7 @@ const definition: NodeDefinition = {
       default: 'default',
       props: { options: ['default', 'json', 'fixed'] },
     },
-    { id: 'precision', type: 'number', label: 'Precision', default: 2 },
+    { id: 'precision', type: 'number', label: 'Precision', default: 2, props: { min: 0, max: 20, step: 1 }, when: { format: 'fixed' } },
   ],
   tags: ['convert', 'string', 'format', 'stringify'],
   info: {
@@ -33,24 +33,34 @@ const definition: NodeDefinition = {
   },
 }
 
+/** Typed arrays / ArrayBuffers serialize as `{"0":12,…}`; render them as plain arrays. */
+function normalizeBytes(v: unknown): unknown {
+  if (v instanceof ArrayBuffer) return Array.from(new Uint8Array(v))
+  if (ArrayBuffer.isView(v) && !(v instanceof DataView)) return Array.from(v as unknown as ArrayLike<number>)
+  return v
+}
+
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
   const format = (ctx.controls.get('format') as string) ?? 'default'
-  const precision = (ctx.controls.get('precision') as number) ?? 2
+  // toFixed throws RangeError outside 0-100 — every frame — so clamp.
+  const precision = Math.max(0, Math.min(100, Math.floor(ctx.num('precision', 2))))
 
   let result: string
 
   switch (format) {
     case 'json':
       try {
-        result = JSON.stringify(value, null, 2)
+        // JSON.stringify(undefined) is undefined (not a string): fall back to String().
+        result = JSON.stringify(normalizeBytes(value), null, 2) ?? String(value)
       } catch {
         result = String(value)
       }
       break
     case 'fixed':
-      if (typeof value === 'number') {
-        result = value.toFixed(precision)
+      // Numeric strings format too (a "3.14159" string from an `any` source).
+      if (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)))) {
+        result = Number(value).toFixed(precision)
       } else {
         result = String(value)
       }
@@ -62,7 +72,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
         result = 'undefined'
       } else if (typeof value === 'object') {
         try {
-          result = JSON.stringify(value)
+          result = JSON.stringify(normalizeBytes(value)) ?? String(value)
         } catch {
           result = String(value)
         }

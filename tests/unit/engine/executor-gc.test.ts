@@ -43,7 +43,7 @@ import {
 import { springExecutor, springState } from '@/engine/executors/spring'
 import { sendExecutor, gcMessagingState, disposeAllMessagingState } from '@/engine/executors/messaging'
 import { messageBus } from '@/services/messaging/MessageBus'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
 /**
  * Per-node executor state is cleared in two ways: `disposeAll*` on stop(), and
@@ -58,7 +58,7 @@ function ctx(
   controls: Record<string, unknown> = {},
   frameCount = 1,
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
@@ -66,7 +66,7 @@ function ctx(
     deltaTime: 1 / 60,
     totalTime: 0,
     frameCount,
-  }
+  })
 }
 
 describe('gcInputState', () => {

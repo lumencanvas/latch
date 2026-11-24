@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -19,6 +20,7 @@ const definition: NodeDefinition = {
     { id: 'endsWith', type: 'boolean', label: 'Ends With' },
   ],
   controls: [
+    { id: 'search', type: 'text', label: 'Search (if unwired)', default: '' },
     { id: 'caseSensitive', type: 'toggle', label: 'Case Sensitive', default: true },
   ],
   tags: ['prefix', 'suffix', 'starts', 'ends', 'begins'],
@@ -33,8 +35,8 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
-  const search = (ctx.inputs.get('search') as string) ?? ''
+  const input = toStr(ctx.inputs.get('input'))
+  const search = toStr(ctx.inputs.get('search') ?? ctx.controls.get('search'))
   const caseSensitive = (ctx.controls.get('caseSensitive') as boolean) ?? true
 
   if (!input || !search) {

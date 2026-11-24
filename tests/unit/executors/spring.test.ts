@@ -92,3 +92,13 @@ describe('springExecutor', () => {
     expect(b).toBeCloseTo(100, 1)
   })
 })
+
+describe('spring — NaN never latches (audit 2026-11)', () => {
+  it('a single NaN target holds position, then keeps tracking real targets', () => {
+    settle(1, {}, 300, 'nan-spring')
+    const held = springExecutor(ctx({ target: NaN }, {}, 1 / 60, 'nan-spring')) as Map<string, unknown>
+    expect(Number.isFinite(held.get('value') as number)).toBe(true)
+    const out = settle(5, {}, 600, 'nan-spring')
+    expect(out.get('value')).toBeCloseTo(5, 2)
+  })
+})

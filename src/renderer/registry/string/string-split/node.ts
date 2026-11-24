@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr, unescapeSeparator } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -19,7 +20,8 @@ const definition: NodeDefinition = {
     { id: 'count', type: 'number', label: 'Count' },
   ],
   controls: [
-    { id: 'separator', type: 'text', label: 'Separator', default: ',' },
+    { id: 'separator', type: 'text', label: 'Separator', default: ',', props: { placeholder: '\\n = newline, \\t = tab' } },
+    { id: 'trim', type: 'toggle', label: 'Trim Parts', default: false },
     { id: 'limit', type: 'number', label: 'Limit', default: 0, props: { min: 0 } },
   ],
   info: {
@@ -33,9 +35,10 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
-  const separator = (ctx.controls.get('separator') as string) ?? ','
-  const limit = (ctx.controls.get('limit') as number) ?? 0
+  const input = toStr(ctx.inputs.get('input'))
+  const separator = unescapeSeparator((ctx.controls.get('separator') as string) ?? ',')
+  const limit = Math.max(0, Math.floor(ctx.num('limit', 0)))
+  const trim = (ctx.controls.get('trim') as boolean) ?? false
 
   const outputs = new Map<string, unknown>()
 
@@ -54,7 +57,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const parts = limit > 0 ? input.split(separator, limit) : input.split(separator)
+  const raw = limit > 0 ? input.split(separator, limit) : input.split(separator)
+  const parts = trim ? raw.map((p) => p.trim()) : raw
 
   outputs.set('parts', parts)
   outputs.set('first', parts[0] ?? '')

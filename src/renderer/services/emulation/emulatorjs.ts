@@ -36,6 +36,27 @@ export interface EmulatorBootOptions {
 /** Default CDN for the EmulatorJS core/runtime data (path-configurable per node). */
 export const DEFAULT_EJS_DATA = 'https://cdn.emulatorjs.org/stable/data/'
 
+/**
+ * `pathToData` comes from flow data (a shared file can set it) and becomes a <script src>,
+ * so only the EmulatorJS CDN or a same-origin path is accepted — anything else would let a
+ * flow file run arbitrary script without the import trust prompt. Falls back to the default.
+ */
+export function safeEjsDataPath(raw: string | undefined | null): string {
+  const v = (raw ?? '').trim()
+  if (!v) return DEFAULT_EJS_DATA
+  try {
+    const u = new URL(v, window.location.href)
+    const ok = u.origin === 'https://cdn.emulatorjs.org' || u.origin === window.location.origin
+    if (!ok) {
+      console.warn('[EmulatorJS] Ignoring untrusted data URL:', v)
+      return DEFAULT_EJS_DATA
+    }
+    return u.href.endsWith('/') ? u.href : `${u.href}/`
+  } catch {
+    return DEFAULT_EJS_DATA
+  }
+}
+
 let capturePatched = false
 let lastAudioTap: MediaStream | null = null
 // Context to NOT tap (LATCH's own Tone context); otherwise the tap would capture
@@ -110,7 +131,8 @@ export class EmulatorJSLoader {
     w.EJS_core = opts.core
     w.EJS_gameUrl = opts.gameUrl
     w.EJS_gameName = opts.gameName ?? 'game'
-    w.EJS_pathtodata = opts.pathToData
+    const dataPath = safeEjsDataPath(opts.pathToData)
+    w.EJS_pathtodata = dataPath
     w.EJS_startOnLoaded = true
     w.EJS_threads = !!(opts.threaded && (globalThis as any).crossOriginIsolated)
     if (opts.volume != null) w.EJS_volume = opts.volume
@@ -120,7 +142,7 @@ export class EmulatorJSLoader {
     }
 
     const script = document.createElement('script')
-    script.src = `${opts.pathToData}loader.js`
+    script.src = `${dataPath}loader.js`
     document.body.appendChild(script)
     this.loaderScript = script
   }

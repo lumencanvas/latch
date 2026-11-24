@@ -1,7 +1,7 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
 import { nodeMaterials, convertToThreeTexture } from '../shared'
 
 const definition: NodeDefinition = {
@@ -47,6 +47,66 @@ const definition: NodeDefinition = {
   },
 }
 
+type MaterialParams = {
+  color: number
+  metalness: number
+  roughness: number
+  opacity: number
+  wireframe: boolean
+  side: 'front' | 'back' | 'double'
+  emissive: number
+  emissiveIntensity: number
+  map?: THREE.Texture
+  normalMap?: THREE.Texture
+  roughnessMap?: THREE.Texture
+  metalnessMap?: THREE.Texture
+}
+
+/**
+ * Apply params to an existing material, mirroring which fields createMaterial sets per type.
+ * Only flags `needsUpdate` (a program rebuild) for changes that alter the shader defines:
+ * transparency, side, or a map slot going empty↔filled.
+ */
+function updateMaterialInPlace(material: THREE.Material, p: MaterialParams): void {
+  const m = material as THREE.Material & Record<string, unknown>
+  const has = (k: string) => k in m && m[k] !== undefined
+
+  ;(m.color as THREE.Color | undefined)?.setHex(p.color)
+  if (has('metalness')) m.metalness = p.metalness
+  if (has('roughness')) m.roughness = p.roughness
+  if (material instanceof THREE.MeshStandardMaterial) {
+    material.emissive.setHex(p.emissive)
+    material.emissiveIntensity = p.emissiveIntensity
+  }
+  material.opacity = p.opacity
+  const transparent = p.opacity < 1
+  if (material.transparent !== transparent) {
+    material.transparent = transparent
+    material.needsUpdate = true
+  }
+  if (has('wireframe')) m.wireframe = p.wireframe
+  const side = p.side === 'back' ? THREE.BackSide : p.side === 'double' ? THREE.DoubleSide : THREE.FrontSide
+  if (material.side !== side) {
+    material.side = side
+    material.needsUpdate = true
+  }
+
+  const setMap = (key: string, tex: THREE.Texture | undefined) => {
+    if (!(key in m)) return // this material type has no such slot
+    const next = tex ?? null
+    const prev = (m[key] as THREE.Texture | null | undefined) ?? null
+    if (prev === next) return
+    m[key] = next
+    if (!prev !== !next) material.needsUpdate = true // USE_MAP-style define toggled
+  }
+  setMap('map', p.map)
+  if (!(material instanceof THREE.MeshBasicMaterial)) setMap('normalMap', p.normalMap)
+  if (material instanceof THREE.MeshStandardMaterial) {
+    setMap('roughnessMap', p.roughnessMap)
+    setMap('metalnessMap', p.metalnessMap)
+  }
+}
+
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const renderer = getThreeRenderer()
 
@@ -67,38 +127,45 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const metalnessMapInput = ctx.inputs.get('metalnessMap')
 
   // Convert pipeline textures to Three.js textures
-  // Cache keys include nodeId to ensure proper disposal
-  const colorMap = convertToThreeTexture(colorMapInput, `${ctx.nodeId}_colorMap`)
-  const normalMap = convertToThreeTexture(normalMapInput, `${ctx.nodeId}_normalMap`)
-  const roughnessMap = convertToThreeTexture(roughnessMapInput, `${ctx.nodeId}_roughnessMap`)
-  const metalnessMap = convertToThreeTexture(metalnessMapInput, `${ctx.nodeId}_metalnessMap`)
+  // Cache keys include nodeId, and nodeId is passed so the cached textures are tracked for disposal
+  const colorMap = convertToThreeTexture(colorMapInput, `${ctx.nodeId}_colorMap`, ctx.nodeId)
+  const normalMap = convertToThreeTexture(normalMapInput, `${ctx.nodeId}_normalMap`, ctx.nodeId)
+  const roughnessMap = convertToThreeTexture(roughnessMapInput, `${ctx.nodeId}_roughnessMap`, ctx.nodeId)
+  const metalnessMap = convertToThreeTexture(metalnessMapInput, `${ctx.nodeId}_metalnessMap`, ctx.nodeId)
 
   const color = parseInt(colorHex.replace('#', ''), 16)
   const emissive = parseInt(emissiveHex.replace('#', ''), 16)
 
-  const material = renderer.createMaterial({
-    type: materialType,
-    color,
-    metalness,
-    roughness,
-    opacity,
-    transparent: opacity < 1,
-    wireframe,
-    side,
-    emissive,
-    emissiveIntensity,
-    map: colorMap,
-    normalMap,
-    roughnessMap,
-    metalnessMap,
-  })
-
-  // Dispose old material
-  const oldMat = nodeMaterials.get(ctx.nodeId)
-  if (oldMat) {
-    oldMat.dispose()
+  // Create the material once per type and update it in place. Building a new material every
+  // frame (and disposing the previous) released its shader program, so three recompiled the
+  // program each frame — a hitch per frame per material node.
+  let material = nodeMaterials.get(ctx.nodeId)
+  if (!material || material.userData.materialType !== materialType) {
+    material?.dispose()
+    material = renderer.createMaterial({
+      type: materialType,
+      color,
+      metalness,
+      roughness,
+      opacity,
+      transparent: opacity < 1,
+      wireframe,
+      side,
+      emissive,
+      emissiveIntensity,
+      map: colorMap,
+      normalMap,
+      roughnessMap,
+      metalnessMap,
+    })
+    material.userData.materialType = materialType
+    nodeMaterials.set(ctx.nodeId, material)
+  } else {
+    updateMaterialInPlace(material, {
+      color, metalness, roughness, opacity, wireframe, side, emissive, emissiveIntensity,
+      map: colorMap, normalMap, roughnessMap, metalnessMap,
+    })
   }
-  nodeMaterials.set(ctx.nodeId, material)
 
   const outputs = new Map<string, unknown>()
   outputs.set('material', material)

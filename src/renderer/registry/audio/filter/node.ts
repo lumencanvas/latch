@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { audioNodes, getOrCreateNode } from '../shared'
+import { audioNodes, getOrCreateNode, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'filter',
@@ -56,8 +56,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }) as Tone.Filter
 
   // Update parameters
-  filter.frequency.value = frequency
-  filter.Q.value = Q
+  setParam(filter.frequency, frequency)
+  setParam(filter.Q, Q)
   if (filter.type !== type) {
     filter.type = type
   }

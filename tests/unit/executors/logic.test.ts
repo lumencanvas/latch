@@ -1,16 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 import { gateExecutor } from '@/engine/executors/logic'
 
 function mkCtx(nodeId: string, inputs: Record<string, unknown> = {}, controls: Record<string, unknown> = {}): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
+    definition: {} as never,
     deltaTime: 0.016,
     totalTime: 1,
     frameCount: 0,
-  } as unknown as ExecutionContext
+  })
 }
 
 /**

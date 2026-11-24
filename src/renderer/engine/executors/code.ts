@@ -10,11 +10,24 @@
  * Worker isn't viable). SANDBOX_PREAMBLE shadows the dangerous host globals as
  * defense-in-depth — it is NOT an airtight sandbox (the Function-constructor
  * escape remains). The real boundary for UNTRUSTED flows is the import
- * trust-prompt (stores/flows.ts). Do not advertise this as "sandboxed".
+ * trust-prompt: `flowsStore.importFlowsWithTrustPrompt` (file import) asks the
+ * user before any file carrying Function/Expression code is opened, and by default
+ * stamps those nodes `_codeDisabled` (services/security/flowTrust.ts) — the guard
+ * below then refuses to compile or run them. Do not advertise this as "sandboxed".
  */
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState } from '../nodeState'
+import { CODE_DISABLED_KEY } from '@/services/security/flowTrust'
+
+/** Shown on a code node imported from an untrusted file with its code disabled. */
+export const CODE_DISABLED_MESSAGE =
+  'Code disabled: this node came from an imported file. Review the code, then enable it (or edit it) to run.'
+
+/** True when the node was imported with its code disabled (never compile/run it). */
+function codeDisabled(ctx: ExecutionContext): boolean {
+  return ctx.controls.get(CODE_DISABLED_KEY) === true
+}
 
 // Cache for compiled functions and state. Both use compound keys (`nodeId:fn`,
 // `nodeId:state:…`); node ids never contain ':', so keyToNodeId splits on it so
@@ -61,6 +74,12 @@ export const functionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const code = (ctx.controls.get('code') as string) ?? ''
   const outputs = new Map<string, unknown>()
 
+  if (codeDisabled(ctx)) {
+    outputs.set('result', null)
+    outputs.set('error', CODE_DISABLED_MESSAGE)
+    return outputs
+  }
+
   if (!code.trim()) {
     outputs.set('result', null)
     outputs.set('error', null)
@@ -76,7 +95,7 @@ export const functionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Get all controls as an object
   const controls: Record<string, unknown> = {}
   ctx.controls.forEach((value, key) => {
-    if (key !== 'code') {
+    if (key !== 'code' && key !== CODE_DISABLED_KEY) {
       controls[key] = value
     }
   })
@@ -156,6 +175,12 @@ export const expressionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const expression = (ctx.controls.get('expression') as string) ?? 'a + b'
   const outputs = new Map<string, unknown>()
 
+  if (codeDisabled(ctx)) {
+    outputs.set('result', 0)
+    outputs.set('error', CODE_DISABLED_MESSAGE)
+    return outputs
+  }
+
   // Get inputs
   const a = (ctx.inputs.get('a') as number) ?? 0
   const b = (ctx.inputs.get('b') as number) ?? 0
@@ -225,6 +250,8 @@ export const expressionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // Template Node (String Interpolation)
 // ============================================================================
 
+const TEMPLATE_PORTS = new Set(['a', 'b', 'c', 'd', 'time', 'frame'])
+
 export const templateExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const template = (ctx.controls.get('template') as string) ?? ''
   const outputs = new Map<string, unknown>()
@@ -246,10 +273,20 @@ export const templateExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   try {
     // Simple template replacement: {{key}} -> value
-    const result = template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    const result = template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
       const value = values[key]
-      if (value === undefined) return match
-      if (typeof value === 'number') return value.toFixed(2)
+      // Disconnected a–d resolve to '' (as documented); unknown names stay literal so a
+      // typo is visible.
+      if (value === undefined || value === null) return TEMPLATE_PORTS.has(key) ? '' : match
+      // Integers print as-is ({{frame}} was "123.00"); fractions keep 2 decimals.
+      if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2)
+      if (typeof value === 'object') {
+        try {
+          return JSON.stringify(value) ?? String(value)
+        } catch {
+          return String(value)
+        }
+      }
       return String(value)
     })
     outputs.set('output', result)
@@ -268,11 +305,15 @@ export const counterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const increment = ctx.inputs.get('increment') as boolean | undefined
   const decrement = ctx.inputs.get('decrement') as boolean | undefined
   const reset = ctx.inputs.get('reset') as boolean | undefined
-  const setValue = ctx.inputs.get('set') as number | undefined
+  const setRaw = ctx.inputs.get('set')
 
-  const min = (ctx.controls.get('min') as number) ?? 0
-  const max = (ctx.controls.get('max') as number) ?? 100
-  const step = (ctx.controls.get('step') as number) ?? 1
+  const a = (ctx.controls.get('min') as number) ?? 0
+  const b = (ctx.controls.get('max') as number) ?? 100
+  // Normalise bad controls: inverted bounds, NaN, and a NaN step (which poisoned the count).
+  const min = Number.isFinite(Math.min(a, b)) ? Math.min(a, b) : 0
+  const max = Number.isFinite(Math.max(a, b)) ? Math.max(a, b) : 100
+  const rawStep = (ctx.controls.get('step') as number) ?? 1
+  const step = Number.isFinite(rawStep) ? rawStep : 1
   const wrap = (ctx.controls.get('wrap') as boolean) ?? false
 
   const outputs = new Map<string, unknown>()
@@ -282,16 +323,20 @@ export const counterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const lastIncrement = getCached<boolean>(`${ctx.nodeId}:lastInc`, false)
   const lastDecrement = getCached<boolean>(`${ctx.nodeId}:lastDec`, false)
   const lastReset = getCached<boolean>(`${ctx.nodeId}:lastReset`, false)
+  const lastSet = getCached<unknown>(`${ctx.nodeId}:lastSet`, undefined)
 
   // Handle reset (edge trigger)
   if (reset && !lastReset) {
     count = min
   }
 
-  // Handle set value
-  if (setValue !== undefined) {
-    count = setValue
+  // Handle set value — when the Set input CHANGES (not every frame). A continuously-wired
+  // Set (e.g. a Constant) used to pin the count, making increment/decrement dead.
+  const setNum = typeof setRaw === 'number' ? setRaw : typeof setRaw === 'string' ? parseFloat(setRaw) : NaN
+  if (setRaw !== undefined && setRaw !== lastSet && Number.isFinite(setNum)) {
+    count = Math.min(max, Math.max(min, setNum))
   }
+  setCached(`${ctx.nodeId}:lastSet`, setRaw)
 
   // Handle increment (edge trigger)
   if (increment && !lastIncrement) {
@@ -316,7 +361,7 @@ export const counterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   setCached(`${ctx.nodeId}:lastReset`, !!reset)
 
   outputs.set('count', count)
-  outputs.set('normalized', (count - min) / (max - min))
+  outputs.set('normalized', max > min ? (count - min) / (max - min) : 0)
   outputs.set('atMin', count <= min)
   outputs.set('atMax', count >= max)
 
@@ -373,9 +418,14 @@ export const toggleExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 // Delay Node (for values, not audio)
 // ============================================================================
 
+const MAX_DELAY_FRAMES = 3600
+
 export const valueDelayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const input = ctx.inputs.get('input')
-  const frames = (ctx.controls.get('frames') as number) ?? 1
+  // Integer frames, clamped: NaN/negative/fractional values misbehaved and a huge value grew
+  // the buffer without bound.
+  const rawFrames = (ctx.controls.get('frames') as number) ?? 1
+  const frames = Number.isFinite(rawFrames) ? Math.max(0, Math.min(MAX_DELAY_FRAMES, Math.floor(rawFrames))) : 1
 
   const outputs = new Map<string, unknown>()
 
@@ -390,8 +440,10 @@ export const valueDelayExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     buffer.shift()
   }
 
-  // Output delayed value
-  const delayedValue = buffer.length > frames ? buffer[0] : input
+  // Output the value from `frames` frames ago. While the line is still filling there IS no
+  // such value yet: emit nothing (the old code emitted the LIVE input, so an early trigger
+  // passed through undelayed and then fired a second time `frames` later).
+  const delayedValue = buffer.length > frames ? buffer[0] : undefined
 
   setCached(`${ctx.nodeId}:buffer`, buffer)
 

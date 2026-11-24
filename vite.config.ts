@@ -32,6 +32,11 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'credentialless',
     },
   },
+  // bellows-voice must not be pre-bundled: Vite would fold its own copy of
+  // bellowsjs into it, and that copy can't see the kernel/plugin LATCH booted.
+  optimizeDeps: {
+    exclude: ['bellows-voice'],
+  },
   build: {
     outDir: 'dist/web',
   },

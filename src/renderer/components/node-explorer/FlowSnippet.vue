@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FlowSnippet } from '@/data/flow-snippets'
+import { REQUIREMENT_LABELS, type FlowSnippet } from '@/data/flow-snippets'
 import { useNodesStore } from '@/stores/nodes'
 import { nodeTypeColor } from '@/utils/nodeColor'
 import FlowPreview from '@/components/preview/FlowPreview.vue'
@@ -30,6 +30,14 @@ const nodeColor = (nodeType: string) =>
     <div class="snippet-info">
       <span class="snippet-name">{{ snippet.name }}</span>
       <span class="snippet-desc">{{ snippet.description }}</span>
+      <span
+        v-if="snippet.requires?.length"
+        class="snippet-needs"
+      >Needs: {{ snippet.requires.map(r => REQUIREMENT_LABELS[r]).join(' · ') }}</span>
+      <span
+        v-if="snippet.setup"
+        class="snippet-setup"
+      >Setup: {{ snippet.setup }}</span>
       <div class="snippet-nodes">
         <span
           v-for="nodeId in snippet.relatedNodes"
@@ -40,6 +48,7 @@ const nodeColor = (nodeType: string) =>
     </div>
     <button
       class="snippet-btn"
+      :aria-label="`Insert ${snippet.name}`"
       @click="emit('insert', snippet.id)"
     >
       Insert
@@ -86,6 +95,16 @@ const nodeColor = (nodeType: string) =>
 .snippet-desc {
   font-size: 10px;
   color: var(--color-neutral-500);
+}
+
+.snippet-needs,
+.snippet-setup {
+  font-size: 10px;
+  color: var(--color-neutral-600);
+}
+
+.snippet-needs {
+  font-weight: var(--font-weight-bold);
 }
 
 .snippet-nodes {

@@ -29,13 +29,13 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 1
-  const t = (ctx.inputs.get('t') as number) ?? 0.5
+  const a = ctx.num('a', 0)
+  const b = ctx.num('b', 1)
+  const t = ctx.num('t', 0.5)
 
   const result = a + (b - a) * t
 
-  return new Map([['result', result]])
+  return new Map([['result', Number.isFinite(result) ? result : 0]])
 }
 
 export default defineNode({ definition, executor, pure: true })

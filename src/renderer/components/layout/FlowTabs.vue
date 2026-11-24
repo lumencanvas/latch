@@ -2,10 +2,12 @@
 import { ref, computed, nextTick, onUnmounted } from 'vue'
 import { Plus, X } from 'lucide-vue-next'
 import { useFlowsStore } from '@/stores/flows'
+import { useUIStore } from '@/stores/ui'
 import { usePersistence } from '@/composables/usePersistence'
 import { useDialogA11y } from '@/composables/useDialogA11y'
 
 const flowsStore = useFlowsStore()
+const uiStore = useUIStore()
 const { deleteFlow: deleteFlowFromDb, saveFlow } = usePersistence()
 
 // Get only main flows (not subflows) for tabs
@@ -218,7 +220,8 @@ function cancelRename() {
 
 async function duplicateFlow() {
   if (contextMenu.value.flowId) {
-    const newFlow = flowsStore.duplicateFlow(contextMenu.value.flowId)
+    // The copy gets fresh node ids; carry the original's Control Panel over to them.
+    const newFlow = flowsStore.duplicateFlow(contextMenu.value.flowId, (idMap) => uiStore.cloneControlPanelForNodes(idMap))
     if (newFlow) {
       flowsStore.setActiveFlow(newFlow.id)
       // Save the duplicated flow to the database

@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { parametricEqState } from '../shared'
+import { parametricEqState, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'parametric-eq',
@@ -90,17 +90,17 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   // Update filter parameters
-  state.band1.frequency.value = freq1
-  state.band1.Q.value = q1
-  state.band1.gain.value = gain1
+  setParam(state.band1.frequency, freq1)
+  setParam(state.band1.Q, q1)
+  setParam(state.band1.gain, gain1)
 
-  state.band2.frequency.value = freq2
-  state.band2.Q.value = q2
-  state.band2.gain.value = gain2
+  setParam(state.band2.frequency, freq2)
+  setParam(state.band2.Q, q2)
+  setParam(state.band2.gain, gain2)
 
-  state.band3.frequency.value = freq3
-  state.band3.Q.value = q3
-  state.band3.gain.value = gain3
+  setParam(state.band3.frequency, freq3)
+  setParam(state.band3.Q, q3)
+  setParam(state.band3.gain, gain3)
 
   // Connect input to first filter
   if (state.prevInput !== audio) {

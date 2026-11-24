@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import atan2Node from '@/registry/math/atan2/node'
 import minNode from '@/registry/math/min/node'
 import maxNode from '@/registry/math/max/node'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
 /**
  * Executor + spec tests for the co-located Phase-5 math primitives (atan2/min/max).
@@ -11,15 +11,16 @@ import type { ExecutionContext } from '@/engine/ExecutionEngine'
  */
 
 function ctx(inputs: Record<string, unknown>): ExecutionContext {
-  return {
+  // Real factory: the math nodes read inputs via ctx.num (finite-guarded, string-parsing).
+  return createExecutionContext({
     nodeId: 'test',
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(),
-    getInputNode: () => null,
+    definition: {} as never,
     deltaTime: 0.016,
     totalTime: 0,
     frameCount: 0,
-  } as unknown as ExecutionContext
+  })
 }
 
 const run = (spec: typeof atan2Node, inputs: Record<string, unknown>) =>

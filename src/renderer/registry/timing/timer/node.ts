@@ -21,7 +21,7 @@ const definition: NodeDefinition = {
   ],
   controls: [],
   info: {
-    overview: 'A stopwatch-style timer that counts elapsed seconds when running. It can be started, stopped, and reset via trigger inputs. The running output indicates whether the timer is currently active.',
+    overview: 'A stopwatch-style timer that counts elapsed seconds when running. It is started, stopped (paused) and reset by the rising edge of each trigger input; reset also stops it. The running output indicates whether the timer is currently active.',
     tips: [
       'Use the elapsed output with a clamp node to create a one-shot animation that plays for a fixed duration.',
       'Send a reset trigger followed by a start trigger to cleanly restart the timer from zero.',

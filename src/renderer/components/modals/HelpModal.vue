@@ -40,6 +40,7 @@ const groups = computed(() => [
       { keys: [mod, 'V'], label: 'Paste' },
       { keys: [mod, 'D'], label: 'Duplicate' },
       { keys: ['Del'], label: 'Delete selected' },
+      { keys: ['Shift', 'Alt', 'L'], label: 'Tidy graph (selection, or whole flow)' },
     ],
   },
   {
@@ -275,7 +276,7 @@ const groups = computed(() => [
   justify-content: center;
   width: 20px;
   height: 20px;
-  background: var(--color-primary-500);
+  background: var(--color-primary-700); /* darker so the white numeral clears WCAG AA (was primary-500) */
   color: var(--color-neutral-0);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-bold);

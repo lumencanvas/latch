@@ -12,24 +12,25 @@ import {
   metronomeExecutor,
   stepSequencerExecutor,
 } from '@/engine/executors/index'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
-// Helper to create a mock execution context with timing
+// Helper: a FAITHFUL context via the engine's own factory, so ctx.num/bool/trig behave as at
+// runtime (the timing executors use them).
 function createContext(
   nodeId: string,
   inputs: Record<string, unknown> = {},
   controls: Record<string, unknown> = {},
   timing: { deltaTime?: number; totalTime?: number; frameCount?: number } = {}
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
-    getInputNode: () => null,
+    definition: {} as never,
     deltaTime: timing.deltaTime ?? 0.016,
     totalTime: timing.totalTime ?? 0,
     frameCount: timing.frameCount ?? 0,
-  }
+  })
 }
 
 describe('Timing Executors', () => {
@@ -167,17 +168,30 @@ describe('Timing Executors', () => {
       })
     })
 
-    describe('output persistence', () => {
-      it('maintains last output when no new values', () => {
+    describe('timeline replay', () => {
+      it('holds the last released value until the next due entry', () => {
         const nodeId = 'delay-persist'
-
-        // Send and wait for delay
         delayExecutor(createContext(nodeId, { value: 'persist' }, { delay: 50 }, { totalTime: 0 }))
-        delayExecutor(createContext(nodeId, {}, { delay: 50 }, { totalTime: 0.06 }))
+        // released at 0.06 and HELD on frames where nothing new is due yet
+        expect(delayExecutor(createContext(nodeId, { value: 'persist' }, { delay: 50 }, { totalTime: 0.06 })).get('value')).toBe('persist')
+        expect(delayExecutor(createContext(nodeId, { value: 'persist' }, { delay: 50 }, { totalTime: 0.07 })).get('value')).toBe('persist')
+      })
 
-        // Later calls should still return the last value
-        const r = delayExecutor(createContext(nodeId, {}, { delay: 50 }, { totalTime: 1.0 }))
-        expect(r.get('value')).toBe('persist')
+      // Regression: the old delay HELD a delayed trigger forever, so a 1-frame pulse came out
+      // as a permanently-high signal and downstream edge detectors fired only once, ever.
+      it('a delayed 1-frame trigger comes out as a 1-frame pulse, and fires again next time', () => {
+        const nodeId = 'delay-pulse'
+        const f = (t: number, v?: number) =>
+          delayExecutor(createContext(nodeId, v === undefined ? {} : { value: v }, { delay: 100 }, { totalTime: t })).get('value')
+        f(0, 1) // pulse at t=0
+        f(0.016)
+        expect(f(0.05)).toBeUndefined()
+        expect(f(0.1)).toBe(1) // pulse emerges
+        expect(f(0.117)).toBeUndefined() // …and drops (the silent frame after it is replayed)
+        f(0.5, 1) // second pulse
+        f(0.516)
+        expect(f(0.6)).toBe(1) // fires again → a real rising edge downstream
+        expect(f(0.617)).toBeUndefined()
       })
     })
 
@@ -196,14 +210,12 @@ describe('Timing Executors', () => {
         expect(r2.get('value')).toBe('test')
       })
 
-      it('handles zero delay', () => {
+      it('handles zero delay as a pass-through (same frame)', () => {
         const nodeId = 'delay-zero'
-
-        // Zero delay should output immediately (on next call)
-        delayExecutor(createContext(nodeId, { value: 'immediate' }, { delay: 0 }, { totalTime: 0 }))
-
+        const r0 = delayExecutor(createContext(nodeId, { value: 'immediate' }, { delay: 0 }, { totalTime: 0 }))
+        expect(r0.get('value')).toBe('immediate')
         const r = delayExecutor(createContext(nodeId, {}, { delay: 0 }, { totalTime: 0.001 }))
-        expect(r.get('value')).toBe('immediate')
+        expect(r.get('value')).toBeUndefined()
       })
     })
   })
@@ -291,6 +303,21 @@ describe('Timing Executors', () => {
   // Metronome Executor
   // ============================================================================
   describe('metronomeExecutor', () => {
+    // Regression pin (2026-07-23 ultracode audit): the `running` toggle control was read only at
+    // init, so toggling it after the first frame was inert. It now reconciles every frame with
+    // edge memory.
+    it('running toggle control stops and restarts the metronome after init', () => {
+      const nid = 'metro-toggle'
+      metronomeExecutor(createContext(nid, {}, { running: true, bpm: 120 }, { totalTime: 0 }))
+      metronomeExecutor(createContext(nid, {}, { running: true, bpm: 120 }, { totalTime: 0.6 }))
+      // Toggle OFF: pre-fix this stayed running and would fire beat=1 at t=1.1.
+      const stopped = metronomeExecutor(createContext(nid, {}, { running: false, bpm: 120 }, { totalTime: 1.1 }))
+      expect(stopped.get('beat')).toBe(0)
+      // Toggle back ON (false→true edge): restarts and fires the downbeat.
+      const resumed = metronomeExecutor(createContext(nid, {}, { running: true, bpm: 120 }, { totalTime: 1.1 }))
+      expect(resumed.get('beat')).toBe(1)
+    })
+
     describe('beat generation', () => {
       it('fires beat on tempo intervals', () => {
         const nodeId = 'metro-beat'
@@ -440,15 +467,16 @@ describe('Timing Executors', () => {
         const r0 = stepSequencerExecutor(createContext(nodeId, {}, { steps: 4, mode: 'Forward', stepValues }))
         expect(r0.get('step')).toBe(1)
 
-        // Clock pulse 1
+        // Clock pulse 1 — PLAYS step 1 (the sequencer starts "armed"; the old code skipped
+        // straight to step 2, so step 1 never sounded on the first pass)
         stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
         const r1 = stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
-        expect(r1.get('step')).toBe(2)
+        expect(r1.get('step')).toBe(1)
 
         // Clock pulse 2
         stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
         const r2 = stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
-        expect(r2.get('step')).toBe(3)
+        expect(r2.get('step')).toBe(2)
       })
 
       it('wraps around at end', () => {
@@ -458,8 +486,8 @@ describe('Timing Executors', () => {
         // Initialize at step 1
         stepSequencerExecutor(createContext(nodeId, {}, { steps: 4, mode: 'Forward', stepValues }))
 
-        // Advance 4 times to wrap
-        for (let i = 0; i < 4; i++) {
+        // 5 clocks: steps 1,2,3,4 then wrap to 1
+        for (let i = 0; i < 5; i++) {
           stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
           stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
         }
@@ -492,8 +520,8 @@ describe('Timing Executors', () => {
         // Start at step 1
         stepSequencerExecutor(createContext(nodeId, {}, { steps: 4, mode: 'Ping-Pong', stepValues }))
 
-        // Advance to end
-        for (let i = 0; i < 3; i++) {
+        // Advance to end (clocks play 1,2,3,4)
+        for (let i = 0; i < 4; i++) {
           stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Ping-Pong', stepValues }))
           stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Ping-Pong', stepValues }))
         }
@@ -556,21 +584,19 @@ describe('Timing Executors', () => {
         // Initialize at step 1 (value 1)
         stepSequencerExecutor(createContext(nodeId, {}, { steps: 4, mode: 'Forward', stepValues }))
 
-        // First clock - advances from step 1 to step 2
-        // Gate fires based on whether the step we're NOW on has value > 0.5
+        // First clock PLAYS step 1 (value 1) → gate fires
         const r1 = stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
-        // After this clock, we're on step 2 which has value 0, so gate = 0
-        // But the executor fires gate when clock rises AND current step value > 0.5
-        // Check the actual behavior:
-        expect(r1.get('step')).toBe(2) // Now on step 2
+        expect(r1.get('step')).toBe(1)
+        expect(r1.get('gate')).toBe(1)
 
         // Release clock
-        stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
+        const held = stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
+        expect(held.get('gate')).toBe(0) // gate is a 1-frame pulse
 
-        // Next clock - advances from step 2 to step 3
+        // Next clock - step 2 (value 0) → no gate
         const r2 = stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
-        expect(r2.get('step')).toBe(3) // Now on step 3 (value 1)
-        expect(r2.get('gate')).toBe(1) // Step 3 value is 1 > 0.5
+        expect(r2.get('step')).toBe(2)
+        expect(r2.get('gate')).toBe(0)
       })
     })
 
@@ -582,8 +608,11 @@ describe('Timing Executors', () => {
         const r = stepSequencerExecutor(createContext(nodeId, {}, { steps: 4, mode: 'Forward', stepValues }))
         expect(r.get('value')).toBe(0.1)
 
-        // Advance
-        stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
+        // Two clocks: play step 1, then step 2
+        for (let i = 0; i < 2; i++) {
+          stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
+          stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
+        }
         const r2 = stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { steps: 4, mode: 'Forward', stepValues }))
         expect(r2.get('value')).toBe(0.5)
       })
@@ -601,7 +630,7 @@ describe('Timing Executors', () => {
         stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
 
         const r = stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { steps: 4, mode: 'Forward', stepValues }))
-        expect(r.get('step')).toBe(2) // Only advanced once
+        expect(r.get('step')).toBe(1) // Only advanced once (armed → step 1)
       })
     })
 
@@ -619,8 +648,8 @@ describe('Timing Executors', () => {
 
         stepSequencerExecutor(createContext(nodeId, {}, { mode: 'Forward', stepValues }))
 
-        // Advance 8 times to wrap
-        for (let i = 0; i < 8; i++) {
+        // 9 clocks: steps 1…8 then wrap to 1
+        for (let i = 0; i < 9; i++) {
           stepSequencerExecutor(createContext(nodeId, { clock: 1 }, { mode: 'Forward', stepValues }))
           stepSequencerExecutor(createContext(nodeId, { clock: 0 }, { mode: 'Forward', stepValues }))
         }

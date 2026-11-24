@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -37,36 +38,42 @@ const definition: NodeDefinition = {
   },
 }
 
-function toCamelCase(str: string): string {
+/**
+ * Split into words on case boundaries ("helloWorld", "HTTPServer"), digits→letters, and any
+ * run of non-alphanumerics. Unicode-aware. The old per-mode regexes lowercased FIRST (so an
+ * existing camelCase input lost its boundaries: "helloWorld" → "helloworld"), capitalised a
+ * leading word after leading spaces ("  foo bar" → "FooBar"), and left trailing separators
+ * ("foo bar " → "foo_bar_").
+ */
+function words(str: string): string[] {
   return str
-    .toLowerCase()
-    .replace(/[^a-zA-Z0-9]+(.)/g, (_, chr) => chr.toUpperCase())
+    .replace(/(\p{Ll}|\p{N})(\p{Lu})/gu, '$1 $2')
+    .replace(/(\p{Lu}+)(\p{Lu}\p{Ll})/gu, '$1 $2')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+}
+
+function toCamelCase(str: string): string {
+  return words(str)
+    .map((w, i) => (i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()))
+    .join('')
 }
 
 function toSnakeCase(str: string): string {
-  return str
-    .replace(/([A-Z])/g, '_$1')
-    .toLowerCase()
-    .replace(/^_/, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/_+/g, '_')
+  return words(str).map((w) => w.toLowerCase()).join('_')
 }
 
 function toKebabCase(str: string): string {
-  return str
-    .replace(/([A-Z])/g, '-$1')
-    .toLowerCase()
-    .replace(/^-/, '')
-    .replace(/[^a-zA-Z0-9]+/g, '-')
-    .replace(/-+/g, '-')
+  return words(str).map((w) => w.toLowerCase()).join('-')
 }
 
+/** Capitalise the first letter of each whitespace-separated word ("it's" → "It's", not "It'S"). */
 function toTitleCase(str: string): string {
-  return str.replace(/\b\w/g, (char) => char.toUpperCase())
+  return str.replace(/(^|\s)(\p{L})/gu, (_, pre: string, ch: string) => pre + ch.toUpperCase())
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
+  const input = toStr(ctx.inputs.get('input'))
   const mode = (ctx.controls.get('mode') as string) ?? 'UPPER'
 
   let result: string

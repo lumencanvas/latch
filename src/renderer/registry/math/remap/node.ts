@@ -38,7 +38,7 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = ctx.num('value', 0)
   const inMin = (ctx.controls.get('inMin') as number) ?? 0
   const inMax = (ctx.controls.get('inMax') as number) ?? 1
   const outMin = (ctx.controls.get('outMin') as number) ?? 0
@@ -54,8 +54,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     t = Math.max(0, Math.min(1, t))
   }
 
-  // Apply easing
-  switch (easing) {
+  // Apply easing. The curves are only defined on [0,1]; with Clamp off, outside that range
+  // extrapolate LINEARLY instead (ease-in squared negative t → positive output, folding the
+  // curve back on itself — a non-monotonic mapping).
+  if (t >= 0 && t <= 1) switch (easing) {
     case 'ease-in':
       t = t * t
       break
@@ -70,7 +72,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   const result = t * (outMax - outMin) + outMin
 
-  return new Map([['result', result]])
+  return new Map([['result', Number.isFinite(result) ? result : outMin]])
 }
 
 export default defineNode({ definition, executor, pure: true })

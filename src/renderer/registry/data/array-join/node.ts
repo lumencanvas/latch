@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr, unescapeSeparator } from '../../string/strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -13,14 +14,15 @@ const definition: NodeDefinition = {
   inputs: [{ id: 'array', type: 'array', label: 'Array' }],
   outputs: [{ id: 'result', type: 'string', label: 'Result' }],
   controls: [
-    { id: 'separator', type: 'text', label: 'Separator', default: ',' },
+    { id: 'separator', type: 'text', label: 'Separator', default: ',', props: { placeholder: '\\n = newline, \\t = tab' } },
   ],
   tags: ['array', 'join', 'concat', 'string'],
   info: {
     overview: 'Joins all elements of an array into a single string using a configurable separator. This is the inverse of splitting a string into an array. Useful for building comma-separated lists, paths, or display text from array data.',
     tips: [
-      'Use a newline character in the separator field to produce multi-line output.',
-      'Filter nulls before joining to avoid "null" or "undefined" appearing in the result string.',
+      'Type \\n in the separator for a newline (\\t for a tab) to produce multi-line output.',
+      'null/undefined elements become empty slots (doubled separators); run Filter Nulls first to drop them.',
+      'Object and array elements are joined as JSON.',
     ],
     pairsWith: ['to-array', 'array-filter-nulls', 'to-string', 'json-stringify'],
   },
@@ -28,13 +30,15 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const array = ctx.inputs.get('array')
-  const separator = (ctx.controls.get('separator') as string) ?? ','
+  const separator = unescapeSeparator((ctx.controls.get('separator') as string) ?? ',')
 
   if (!Array.isArray(array)) {
     return new Map<string, unknown>([['result', '']])
   }
 
-  return new Map<string, unknown>([['result', array.join(separator)]])
+  // Objects/arrays as JSON (Array.join printed "[object Object]"); null/undefined stay empty.
+  const parts = array.map((v) => (v === null || v === undefined ? '' : typeof v === 'object' ? toStr(v) : String(v)))
+  return new Map<string, unknown>([['result', parts.join(separator)]])
 }
 
 export default defineNode({ definition, executor })

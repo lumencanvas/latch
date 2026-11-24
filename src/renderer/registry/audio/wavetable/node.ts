@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { wavetableState } from '../shared'
+import { wavetableState, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'wavetable',
@@ -79,8 +79,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   // Update frequency and volume
-  state.oscillator.frequency.value = frequency
-  state.oscillator.volume.value = Tone.gainToDb(volume)
+  setParam(state.oscillator.frequency, frequency)
+  setParam(state.oscillator.volume, Tone.gainToDb(volume))
 
   // Handle preset change or custom waveform
   if (preset !== 'custom') {

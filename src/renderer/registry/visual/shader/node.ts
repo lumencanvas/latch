@@ -1,10 +1,9 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getPresetById, parseUniformsFromCode, generateInputsFromUniforms, generateControlsFromUniforms, injectUniformDeclarations, type UniformDefinition } from '@/services/visual/ShaderPresets'
 import { getThreeShaderRenderer, type ThreeShaderUniform } from '@/services/visual/ThreeShaderRenderer'
-import { compiledShaderMaterials, lastPreset, cachedUniforms } from '../shared'
+import { compiledShaderMaterials, lastPreset, cachedUniforms, resolveEffectSource } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'shader',
@@ -277,7 +276,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
               Number(value[0]) || 0,
               Number(value[1]) || 0,
               Number(value[2]) || 0,
-              Number(value[3]) ?? 1,
+              // `Number(undefined) ?? 1` is NaN (?? doesn't catch NaN) — default alpha to 1
+              Number.isFinite(Number(value[3])) ? Number(value[3]) : 1,
             ],
           })
         } else {
@@ -293,21 +293,12 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
       case 'samplerCube':
         // Texture uniform - accepts both THREE.Texture and raw WebGLTexture
         // Note: samplerCube treated same as sampler2D for now (cubemaps not fully supported)
-        if (value instanceof THREE.Texture) {
-          uniforms.push({
-            name: def.name,
-            type: 'sampler2D',
-            value: value,
-          })
-        } else if (value instanceof WebGLTexture) {
-          // Convert WebGLTexture to THREE.Texture for compatibility
-          const threeTexture = renderer.createTextureFromWebGL(value, 512, 512)
-          if (threeTexture) {
-            uniforms.push({
-              name: def.name,
-              type: 'sampler2D',
-              value: threeTexture,
-            })
+        {
+          // Canvas/video/WebGL sources resolved like the effect nodes (cached per uniform;
+          // video via canvas so it isn't black). A THREE.Texture passes through unchanged.
+          const resolved = value ? resolveEffectSource(`${ctx.nodeId}::u_${def.name}`, renderer, value) : null
+          if (resolved) {
+            uniforms.push({ name: def.name, type: 'sampler2D', value: resolved.tex })
           }
         }
         break
@@ -320,19 +311,12 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     if (textureInput) {
       // Only add if not already in uniforms from detected uniforms
       if (!uniforms.some(u => u.name === `iChannel${i}`)) {
-        if (textureInput instanceof THREE.Texture) {
-          uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: textureInput })
-        } else if (textureInput instanceof WebGLTexture) {
-          const threeTexture = renderer.createTextureFromWebGL(textureInput, 512, 512)
-          if (threeTexture) {
-            uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: threeTexture })
-          }
-        } else if (textureInput instanceof HTMLCanvasElement || textureInput instanceof HTMLVideoElement) {
-          // Convert canvas/video to THREE.Texture for 3D→Shader and Webcam→Shader pipelines
-          const threeTexture = renderer.createTexture(textureInput)
-          if (threeTexture) {
-            uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: threeTexture })
-          }
+        // Same resolution as the effect nodes: canvas sources reuse one cached texture per
+        // channel (a new THREE.Texture per frame leaked GPU memory), and video sources go
+        // through a canvas (a video-backed texture samples BLACK in this renderer).
+        const resolved = resolveEffectSource(`${ctx.nodeId}::ch${i}`, renderer, textureInput)
+        if (resolved) {
+          uniforms.push({ name: `iChannel${i}`, type: 'sampler2D', value: resolved.tex })
         }
       }
     }

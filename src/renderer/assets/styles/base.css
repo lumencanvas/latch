@@ -109,10 +109,13 @@ button:disabled {
   opacity: 0.5;
 }
 
-input:focus,
-select:focus,
-textarea:focus,
-button:focus {
+/* Suppress the ring only for pointer focus. A plain `:focus { outline: none }` here
+   (specificity 0,1,1) out-specified the global `:focus-visible` ring (0,1,0) below, so
+   keyboard users got no focus ring on any input/button app-wide (WCAG 2.4.7). */
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+button:focus:not(:focus-visible) {
   outline: none;
 }
 

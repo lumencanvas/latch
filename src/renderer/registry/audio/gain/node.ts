@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { audioNodes, getOrCreateNode } from '../shared'
+import { audioNodes, getOrCreateNode, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'gain',
@@ -48,7 +48,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }) as Tone.Gain
 
   // Update gain
-  gainNode.gain.value = gain
+  setParam(gainNode.gain, gain)
 
   // Connect input
   const prevInput = audioNodes.get(`${ctx.nodeId}_input`)

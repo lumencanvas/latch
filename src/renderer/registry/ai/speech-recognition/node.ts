@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
-import { pendingOperations, getCached, setCached, hasTriggerValue, getSTTState, isToneAudioNode } from '../shared'
+import { pendingOperations, getCached, setCached, triggerFired, getSTTState, isToneAudioNode, isNodeDisposed } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'speech-recognition',
@@ -80,7 +80,12 @@ const definition: NodeDefinition = {
 export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
   const audioInput = ctx.inputs.get('audio')
-  const trigger = ctx.inputs.get('trigger')
+  // Edge-deduped, computed every frame before any early return: a held trigger in manual mode
+  // used to re-copy/resample the whole buffer and re-transcribe on every frame.
+  // The request is latched until a transcription actually starts, so a press that lands while
+  // the audio source is still connecting (early return below) isn't lost.
+  const trigPendingKey = `${ctx.nodeId}:sttTrigPending`
+  if (triggerFired(ctx.nodeId, ctx.inputs.get('trigger'))) setCached(trigPendingKey, true)
 
   // Get controls
   const mode = (ctx.controls.get('mode') as string) ?? 'manual'
@@ -174,7 +179,7 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
 
   if (mode === 'manual') {
     // Manual mode: transcribe on trigger
-    if (hasTriggerValue(trigger)) {
+    if (getCached(trigPendingKey, false)) {
       // Get the full buffer (resampled to 16kHz)
       const buffer = state.audioBufferService.getBuffer(bufferDuration * 1000)
       if (buffer.length > 0) {
@@ -183,6 +188,7 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
       }
     }
   } else if (mode === 'continuous') {
+    setCached(trigPendingKey, false) // trigger is a manual-mode concept
     // Continuous mode: transcribe at regular intervals
     if (now - state.lastChunkTime >= chunkInterval) {
       // Get recent audio buffer (resampled to 16kHz)
@@ -224,6 +230,7 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
     return outputs
   }
 
+  setCached(trigPendingKey, false) // the latched manual request is consumed by this op
   setCached(`${ctx.nodeId}:loading`, true)
 
   const audioData = audioToTranscribe // Capture for closure
@@ -231,6 +238,10 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   const operation = (async () => {
     try {
       const text = await aiInference.transcribe(audioData, modelId)
+
+      // The node may have been removed while transcribe() was in flight — don't resurrect its
+      // cache/state after disposal (mirrors depth-estimation and the other async AI ops).
+      if (isNodeDisposed(ctx.nodeId)) return
 
       if (mode === 'continuous') {
         // In continuous mode, update partial and accumulate text

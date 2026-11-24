@@ -33,7 +33,7 @@ const definition: NodeDefinition = {
   ],
   tags: ['counter', 'count', 'increment', 'decrement'],
   info: {
-    overview: 'Maintains an integer count that responds to increment, decrement, and reset triggers. The normalized output gives a 0-1 value based on the min/max range. Wrap mode makes the counter loop back to the opposite bound when it exceeds a limit.',
+    overview: 'Maintains a count that responds to increment, decrement, and reset triggers (rising edges), stepping by Step within Min…Max. Set Value jumps the count whenever the wired value changes (clamped to the range), so increments keep working afterwards. The normalized output gives a 0-1 value based on the min/max range. Wrap mode makes the counter loop back to the opposite bound when it exceeds a limit.',
     tips: [
       'Connect a trigger node to increment for a manual step sequencer.',
       'Enable wrap mode and use normalized output to drive cyclic animations.',

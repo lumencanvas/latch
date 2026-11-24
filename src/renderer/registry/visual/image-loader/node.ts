@@ -4,6 +4,7 @@ import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { assetStorageManager } from '@/services/assets/AssetStorage'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { imageLoaderState, pendingAssetLoads } from '../shared'
+import { risingEdge } from '@/engine/trigger'
 
 const definition: NodeDefinition = {
   id: 'image-loader',
@@ -70,7 +71,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   // Determine the URL to use: asset takes priority over URL input
   let url = ''
-  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
+  // RISING edge: a held-high trigger re-fetched + re-created the texture every frame the
+  // previous load finished (asset branch) / every frame outright. One reload per press.
+  const hasTrigger = risingEdge(ctx.nodeId, 'trigger', trigger)
 
   // If assetId is set, resolve it to a URL
   if (assetId) {
@@ -85,8 +88,11 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
       return outputs
     }
 
-    // Start loading asset URL if not already pending
-    if (!pendingAssetLoads.has(ctx.nodeId) && (!state.loadedUrl?.startsWith('asset:') || hasTrigger)) {
+    // Start loading asset URL if not already pending. Gate on an identity change of THIS asset's
+    // key (not merely "any asset already loaded") — otherwise switching from asset A to asset B
+    // left the old texture forever, since loadedUrl still started with 'asset:'. loadedUrl is set
+    // to assetUrlKey in every branch (success/missing/error), so this still latches per target.
+    if (!pendingAssetLoads.has(ctx.nodeId) && (state.loadedUrl !== assetUrlKey || hasTrigger)) {
       state.loading = true
       state.error = null
 
@@ -183,6 +189,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
       state!.loading = false
       state!.error = 'Failed to load image'
       state!.image = null
+      state!.texture?.dispose()
       state!.texture = null
     }
 

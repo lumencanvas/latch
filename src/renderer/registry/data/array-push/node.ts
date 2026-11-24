@@ -26,9 +26,9 @@ const definition: NodeDefinition = {
   ],
   tags: ['array', 'push', 'add', 'append', 'prepend'],
   info: {
-    overview: 'Adds an element to an array at either the start or end position. Returns a new array with the element included. Use this to build up lists incrementally from individual values.',
+    overview: 'Returns a copy of the input array with one value added at the start or end. It is stateless: every frame it rebuilds the result from the current inputs, so it does not accumulate values over time on its own.',
     tips: [
-      'Set position to "start" when you need a stack-like (LIFO) structure.',
+      'To accumulate values over time, store the list in a Function node with getState/setState.',
       'Chain multiple Array Push nodes together to append several values in sequence.',
     ],
     pairsWith: ['array-length', 'array-unique', 'array-contains', 'to-array'],

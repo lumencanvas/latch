@@ -6,35 +6,40 @@
  * connectivity node's executor can co-locate in its own registry/connectivity/<id>/node.ts. Moved
  * verbatim from engine/executors/connectivity.ts (now deleted). Store-free leaf.
  *
- * NOTE: the httpRequest/websocket/mqtt executors below are DEAD duplicates (no importer — the live
- * websocket/mqtt nodes use engine/executors/{websocket,mqtt}.ts); kept byte-faithful here, to be pruned
- * in a separate cleanup.
+ * The old httpRequest/websocket/mqtt executor duplicates that lived here (no importer — the live
+ * http/websocket/mqtt nodes use engine/executors/{http,websocket,mqtt}.ts) have been removed, along
+ * with their per-node Maps and teardown.
  */
 
-import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { defineLifecycle } from '@/engine/nodeState'
 import { BleAdapter, type BleServiceInfo, type BleCharacteristicProperties } from '@/services/connections/adapters/BleAdapter'
 
-
-
-// Cache for WebSocket connections and state
-export const wsConnections = new Map<string, WebSocket>()
-export const wsState = new Map<string, unknown>()
-
-// Cache for HTTP request state
-export const httpCache = new Map<string, unknown>()
 
 // MIDI state
 export const midiInputs = new Map<string, MIDIInput>()
 export const midiOutputs = new Map<string, MIDIOutput>()
 export const midiState = new Map<string, unknown>()
-export const midiNoteOffTimeouts = new Map<string, ReturnType<typeof setTimeout>[]>()
+/** Scheduled Note Offs per node. `flush` sends the Note Off now — teardown calls it instead of
+ *  just clearing the timer, which left the note STUCK ON at the synth on delete/Stop. */
+export interface PendingNoteOff { id: ReturnType<typeof setTimeout>; flush: () => void }
+export const midiNoteOffTimeouts = new Map<string, PendingNoteOff[]>()
+
+/** Clear each pending Note Off timer and send its Note Off immediately. */
+export function flushNoteOffs(pending: PendingNoteOff[]): void {
+  for (const p of pending) {
+    clearTimeout(p.id)
+    try { p.flush() } catch { /* port may be gone */ }
+  }
+  pending.length = 0
+}
 
 /**
  * Helper to get cached value
  */
 export function getCached<T>(key: string, defaultValue: T): T {
-  const caches = [httpCache, wsState, midiState]
+  // Every cache a node `setCached`s into must be listed here — osc/serial/ble were missing, so
+  // those nodes' outputs (connected/value/text/line/…) always read back their defaults.
+  const caches = [midiState, oscState, serialState, bleState]
   for (const cache of caches) {
     if (cache.has(key)) {
       return cache.get(key) as T
@@ -48,324 +53,6 @@ export function getCached<T>(key: string, defaultValue: T): T {
  */
 export function setCached(cache: Map<string, unknown>, key: string, value: unknown): void {
   cache.set(key, value)
-}
-
-// ============================================================================
-// HTTP Request Node
-// ============================================================================
-
-export const httpRequestExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
-  const url = (ctx.inputs.get('url') as string) ?? (ctx.controls.get('url') as string) ?? ''
-  const method = (ctx.controls.get('method') as string) ?? 'GET'
-  const headers = (ctx.inputs.get('headers') as Record<string, string>) ?? {}
-  const body = ctx.inputs.get('body')
-  const trigger = ctx.inputs.get('trigger') as boolean | undefined
-
-  const outputs = new Map<string, unknown>()
-
-  if (!url.trim()) {
-    outputs.set('response', null)
-    outputs.set('status', 0)
-    outputs.set('error', 'No URL provided')
-    outputs.set('loading', false)
-    return outputs
-  }
-
-  // Only fetch when triggered or URL changed
-  const cacheKey = `${ctx.nodeId}:lastUrl`
-  const lastUrl = getCached<string>(cacheKey, '')
-  const shouldFetch = trigger === true || (trigger === undefined && url !== lastUrl)
-
-  if (!shouldFetch) {
-    outputs.set('response', getCached(`${ctx.nodeId}:response`, null))
-    outputs.set('status', getCached(`${ctx.nodeId}:status`, 0))
-    outputs.set('error', getCached(`${ctx.nodeId}:error`, null))
-    outputs.set('loading', getCached(`${ctx.nodeId}:loading`, false))
-    return outputs
-  }
-
-  setCached(httpCache, cacheKey, url)
-  setCached(httpCache, `${ctx.nodeId}:loading`, true)
-
-  try {
-    const fetchOptions: RequestInit = {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
-    }
-
-    if (body && method !== 'GET' && method !== 'HEAD') {
-      fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body)
-    }
-
-    const response = await fetch(url, fetchOptions)
-    const contentType = response.headers.get('content-type') || ''
-
-    let data: unknown
-    if (contentType.includes('application/json')) {
-      data = await response.json()
-    } else {
-      data = await response.text()
-    }
-
-    setCached(httpCache, `${ctx.nodeId}:response`, data)
-    setCached(httpCache, `${ctx.nodeId}:status`, response.status)
-    setCached(httpCache, `${ctx.nodeId}:error`, null)
-    setCached(httpCache, `${ctx.nodeId}:loading`, false)
-
-    outputs.set('response', data)
-    outputs.set('status', response.status)
-    outputs.set('error', null)
-    outputs.set('loading', false)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    setCached(httpCache, `${ctx.nodeId}:response`, null)
-    setCached(httpCache, `${ctx.nodeId}:status`, 0)
-    setCached(httpCache, `${ctx.nodeId}:error`, errorMsg)
-    setCached(httpCache, `${ctx.nodeId}:loading`, false)
-
-    outputs.set('response', null)
-    outputs.set('status', 0)
-    outputs.set('error', errorMsg)
-    outputs.set('loading', false)
-  }
-
-  return outputs
-}
-
-// ============================================================================
-// WebSocket Node
-// ============================================================================
-
-export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
-  const url = (ctx.inputs.get('url') as string) ?? (ctx.controls.get('url') as string) ?? ''
-  const sendData = ctx.inputs.get('send')
-  const connect = (ctx.inputs.get('connect') as boolean) ?? (ctx.controls.get('autoConnect') as boolean) ?? false
-
-  const outputs = new Map<string, unknown>()
-
-  if (!url.trim()) {
-    outputs.set('message', null)
-    outputs.set('connected', false)
-    outputs.set('error', null)
-    return outputs
-  }
-
-  const wsKey = `${ctx.nodeId}:ws`
-  let ws = wsConnections.get(wsKey)
-
-  // Handle connection
-  if (connect && !ws) {
-    try {
-      ws = new WebSocket(url)
-
-      ws.onopen = () => {
-        setCached(wsState, `${ctx.nodeId}:connected`, true)
-        setCached(wsState, `${ctx.nodeId}:error`, null)
-      }
-
-      ws.onmessage = (event) => {
-        let data = event.data
-        try {
-          data = JSON.parse(event.data)
-        } catch {
-          // Keep as string if not JSON
-        }
-        setCached(wsState, `${ctx.nodeId}:message`, data)
-        setCached(wsState, `${ctx.nodeId}:lastMessageTime`, Date.now())
-      }
-
-      ws.onerror = (event) => {
-        setCached(wsState, `${ctx.nodeId}:error`, 'WebSocket error')
-        console.error('[WebSocket] Error:', event)
-      }
-
-      ws.onclose = () => {
-        setCached(wsState, `${ctx.nodeId}:connected`, false)
-        wsConnections.delete(wsKey)
-      }
-
-      wsConnections.set(wsKey, ws)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      setCached(wsState, `${ctx.nodeId}:error`, errorMsg)
-    }
-  }
-
-  // Handle disconnect
-  if (!connect && ws) {
-    ws.close()
-    wsConnections.delete(wsKey)
-    setCached(wsState, `${ctx.nodeId}:connected`, false)
-  }
-
-  // Send data if connected
-  if (sendData !== undefined && ws && ws.readyState === WebSocket.OPEN) {
-    const dataToSend = typeof sendData === 'string' ? sendData : JSON.stringify(sendData)
-    ws.send(dataToSend)
-  }
-
-  outputs.set('message', getCached(`${ctx.nodeId}:message`, null))
-  outputs.set('connected', getCached(`${ctx.nodeId}:connected`, false))
-  outputs.set('error', getCached(`${ctx.nodeId}:error`, null))
-
-  return outputs
-}
-
-// ============================================================================
-// MQTT Node (uses WebSocket-based MQTT)
-// ============================================================================
-
-export const mqttConnections = new Map<string, { client: WebSocket; subscriptions: Set<string> }>()
-export const mqttState = new Map<string, unknown>()
-
-export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
-  const brokerUrl = (ctx.inputs.get('url') as string) ?? (ctx.controls.get('url') as string) ?? ''
-  const topic = (ctx.inputs.get('topic') as string) ?? (ctx.controls.get('topic') as string) ?? ''
-  const publishData = ctx.inputs.get('publish')
-  const connect = (ctx.controls.get('connect') as boolean) ?? true
-
-  const outputs = new Map<string, unknown>()
-
-  if (!brokerUrl.trim()) {
-    outputs.set('message', null)
-    outputs.set('topic', null)
-    outputs.set('connected', false)
-    outputs.set('error', 'No broker URL provided')
-    return outputs
-  }
-
-  const mqttKey = `${ctx.nodeId}:mqtt`
-  let connection = mqttConnections.get(mqttKey)
-
-  // Handle connection (MQTT over WebSocket)
-  if (connect && !connection) {
-    try {
-      // Convert mqtt:// to ws:// for WebSocket connection
-      let wsUrl = brokerUrl
-      if (brokerUrl.startsWith('mqtt://')) {
-        wsUrl = brokerUrl.replace('mqtt://', 'ws://') + ':8083/mqtt'
-      } else if (brokerUrl.startsWith('mqtts://')) {
-        wsUrl = brokerUrl.replace('mqtts://', 'wss://') + ':8084/mqtt'
-      }
-
-      const ws = new WebSocket(wsUrl, ['mqtt'])
-
-      connection = { client: ws, subscriptions: new Set() }
-      mqttConnections.set(mqttKey, connection)
-
-      ws.onopen = () => {
-        setCached(mqttState, `${ctx.nodeId}:connected`, true)
-        setCached(mqttState, `${ctx.nodeId}:error`, null)
-
-        // Send MQTT CONNECT packet (simplified)
-        const connectPacket = new Uint8Array([
-          0x10, // CONNECT packet type
-          0x12, // Remaining length
-          0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, // Protocol name "MQTT"
-          0x04, // Protocol level 4 (MQTT 3.1.1)
-          0x02, // Connect flags (Clean session)
-          0x00, 0x3c, // Keep alive 60 seconds
-          0x00, 0x06, // Client ID length
-          0x63, 0x6c, 0x61, 0x73, 0x70, 0x31, // Client ID "clasp1"
-        ])
-        ws.send(connectPacket)
-      }
-
-      ws.onmessage = async (event) => {
-        const data = event.data instanceof Blob
-          ? new Uint8Array(await event.data.arrayBuffer())
-          : new Uint8Array(event.data)
-
-        if (data[0] === 0x20) { // CONNACK
-        } else if ((data[0] & 0xf0) === 0x30) { // PUBLISH
-          // Parse PUBLISH packet
-          let offset = 1
-          let remainingLength = data[offset++]
-          if (remainingLength > 127) {
-            remainingLength = (remainingLength & 0x7f) | ((data[offset++] & 0x7f) << 7)
-          }
-
-          const topicLength = (data[offset] << 8) | data[offset + 1]
-          offset += 2
-          const receivedTopic = new TextDecoder().decode(data.slice(offset, offset + topicLength))
-          offset += topicLength
-
-          const payload = new TextDecoder().decode(data.slice(offset))
-
-          let parsedPayload: unknown = payload
-          try {
-            parsedPayload = JSON.parse(payload)
-          } catch {
-            // Keep as string
-          }
-
-          setCached(mqttState, `${ctx.nodeId}:message`, parsedPayload)
-          setCached(mqttState, `${ctx.nodeId}:topic`, receivedTopic)
-        }
-      }
-
-      ws.onerror = () => {
-        setCached(mqttState, `${ctx.nodeId}:error`, 'MQTT connection error')
-        setCached(mqttState, `${ctx.nodeId}:connected`, false)
-      }
-
-      ws.onclose = () => {
-        setCached(mqttState, `${ctx.nodeId}:connected`, false)
-        mqttConnections.delete(mqttKey)
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      setCached(mqttState, `${ctx.nodeId}:error`, errorMsg)
-    }
-  }
-
-  // Handle disconnect
-  if (!connect && connection) {
-    connection.client.close()
-    mqttConnections.delete(mqttKey)
-    setCached(mqttState, `${ctx.nodeId}:connected`, false)
-  }
-
-  // Subscribe to topic
-  if (connection && connection.client.readyState === WebSocket.OPEN && topic && !connection.subscriptions.has(topic)) {
-    const topicBytes = new TextEncoder().encode(topic)
-    const subscribePacket = new Uint8Array([
-      0x82, // SUBSCRIBE packet
-      topicBytes.length + 5, // Remaining length
-      0x00, 0x01, // Packet identifier
-      0x00, topicBytes.length, // Topic length
-      ...topicBytes,
-      0x00, // QoS 0
-    ])
-    connection.client.send(subscribePacket)
-    connection.subscriptions.add(topic)
-  }
-
-  // Publish message
-  if (connection && connection.client.readyState === WebSocket.OPEN && publishData !== undefined && topic) {
-    const topicBytes = new TextEncoder().encode(topic)
-    const payload = typeof publishData === 'string' ? publishData : JSON.stringify(publishData)
-    const payloadBytes = new TextEncoder().encode(payload)
-
-    const publishPacket = new Uint8Array([
-      0x30, // PUBLISH packet (QoS 0)
-      topicBytes.length + payloadBytes.length + 2,
-      0x00, topicBytes.length,
-      ...topicBytes,
-      ...payloadBytes,
-    ])
-    connection.client.send(publishPacket)
-  }
-
-  outputs.set('message', getCached(`${ctx.nodeId}:message`, null))
-  outputs.set('topic', getCached(`${ctx.nodeId}:topic`, null))
-  outputs.set('connected', getCached(`${ctx.nodeId}:connected`, false))
-  outputs.set('error', getCached(`${ctx.nodeId}:error`, null))
-
-  return outputs
 }
 
 // ============================================================================
@@ -520,6 +207,18 @@ export interface WebSerial {
 export const serialPorts = new Map<string, { port: WebSerialPort; reader: ReadableStreamDefaultReader<Uint8Array> | null }>()
 export const serialState = new Map<string, unknown>()
 
+/**
+ * Release a serial connection: cancel the reader (releasing its lock — port.close() rejects while
+ * a reader holds the stream), then close the port. Both promises are caught: they reject once
+ * the device is unplugged, which would otherwise surface as an unhandled rejection.
+ */
+export function closeSerialConnection(conn: { port: WebSerialPort; reader: ReadableStreamDefaultReader<Uint8Array> | null }): void {
+  const reader = conn.reader
+  conn.reader = null
+  const cancelled = reader ? reader.cancel().catch(() => {}).then(() => { try { reader.releaseLock() } catch { /* ignore */ } }) : Promise.resolve()
+  cancelled.then(() => conn.port.close()).catch(() => {})
+}
+
 // ============================================================================
 // BLE Node (Web Bluetooth API)
 // ============================================================================
@@ -572,6 +271,12 @@ export const bleCharacteristicState = new Map<string, {
   boundAttemptId?: string
   /** Last connect() attempt (ms) — the executor owns reconnect (throttled), so a drop re-dials + re-discovers. */
   lastConnectAt: number
+  /** connect()+discoverServices() in flight (run off-frame so a 1–3 s GATT connect doesn't freeze the graph). */
+  connecting?: boolean
+  /** A GATT read is in flight (continuous mode must not queue one read per frame). */
+  reading?: boolean
+  /** Last failed subscribe attempt (ms) — throttles retries instead of a GATT call every frame. */
+  lastSubscribeAttempt?: number
 }>()
 
 /** Called by the BLE Characteristic panel's Read button — the executor reads once next frame. */
@@ -585,30 +290,6 @@ export function requestBleRead(nodeId: string): void {
 // ============================================================================
 
 export function disposeConnectivityNode(nodeId: string): void {
-  // Close WebSocket - nullify handlers first to prevent stale callbacks
-  const wsKey = `${nodeId}:ws`
-  const ws = wsConnections.get(wsKey)
-  if (ws) {
-    ws.onopen = null
-    ws.onmessage = null
-    ws.onerror = null
-    ws.onclose = null
-    ws.close()
-    wsConnections.delete(wsKey)
-  }
-
-  // Close MQTT connection - nullify handlers first
-  const mqttKey = `${nodeId}:mqtt`
-  const mqtt = mqttConnections.get(mqttKey)
-  if (mqtt) {
-    mqtt.client.onopen = null
-    mqtt.client.onmessage = null
-    mqtt.client.onerror = null
-    mqtt.client.onclose = null
-    mqtt.client.close()
-    mqttConnections.delete(mqttKey)
-  }
-
   // Close OSC connection - nullify handlers first
   const oscKey = `${nodeId}:osc`
   const osc = oscConnections.get(oscKey)
@@ -625,15 +306,14 @@ export function disposeConnectivityNode(nodeId: string): void {
   const serialKey = `${nodeId}:serial`
   const serial = serialPorts.get(serialKey)
   if (serial) {
-    serial.reader?.cancel()
-    serial.port.close().catch(() => {})
+    closeSerialConnection(serial)
     serialPorts.delete(serialKey)
   }
 
   // Clear MIDI note-off timeouts
   const midiTimeouts = midiNoteOffTimeouts.get(nodeId)
   if (midiTimeouts) {
-    midiTimeouts.forEach(timeoutId => clearTimeout(timeoutId))
+    flushNoteOffs(midiTimeouts)
     midiNoteOffTimeouts.delete(nodeId)
   }
 
@@ -653,7 +333,9 @@ export function disposeConnectivityNode(nodeId: string): void {
   if (bleCharHandler) {
     try {
       bleCharHandler.characteristic.removeEventListener('characteristicvaluechanged', bleCharHandler.handler)
-      bleCharHandler.characteristic.stopNotifications()
+      // stopNotifications() returns a promise that rejects once the device is gone — the
+      // try/catch alone can't catch that (unhandled rejection on every delete/stop).
+      bleCharHandler.characteristic.stopNotifications().catch(() => {})
     } catch {
       // Ignore errors during cleanup - device may already be disconnected
     }
@@ -686,48 +368,15 @@ export function disposeConnectivityNode(nodeId: string): void {
   bleDeviceState.delete(nodeId)
   bleCharacteristicState.delete(nodeId)
 
-  // Clear caches
-  const keys = [
-    ...Array.from(httpCache.keys()),
-    ...Array.from(wsState.keys()),
-    ...Array.from(midiState.keys()),
-    ...Array.from(mqttState.keys()),
-    ...Array.from(oscState.keys()),
-    ...Array.from(serialState.keys()),
-    ...Array.from(bleState.keys()),
-  ].filter(k => k.startsWith(nodeId))
-  keys.forEach(k => {
-    httpCache.delete(k)
-    wsState.delete(k)
-    midiState.delete(k)
-    mqttState.delete(k)
-    oscState.delete(k)
-    serialState.delete(k)
-    bleState.delete(k)
-  })
+  // Clear caches. Match `${nodeId}:` exactly — a bare startsWith(nodeId) also wiped any OTHER
+  // node whose id merely begins with this one's.
+  const prefix = `${nodeId}:`
+  for (const cache of [midiState, oscState, serialState, bleState]) {
+    for (const k of Array.from(cache.keys())) if (k.startsWith(prefix)) cache.delete(k)
+  }
 }
 
 export function disposeAllConnectivityNodes(): void {
-  // Close all WebSockets - nullify handlers first
-  wsConnections.forEach(ws => {
-    ws.onopen = null
-    ws.onmessage = null
-    ws.onerror = null
-    ws.onclose = null
-    ws.close()
-  })
-  wsConnections.clear()
-
-  // Close all MQTT connections - nullify handlers first
-  mqttConnections.forEach(conn => {
-    conn.client.onopen = null
-    conn.client.onmessage = null
-    conn.client.onerror = null
-    conn.client.onclose = null
-    conn.client.close()
-  })
-  mqttConnections.clear()
-
   // Close all OSC connections - nullify handlers first
   oscConnections.forEach(ws => {
     ws.onopen = null
@@ -739,15 +388,12 @@ export function disposeAllConnectivityNodes(): void {
   oscConnections.clear()
 
   // Close all Serial connections
-  serialPorts.forEach(conn => {
-    conn.reader?.cancel()
-    conn.port.close().catch(() => {})
-  })
+  serialPorts.forEach(conn => closeSerialConnection(conn))
   serialPorts.clear()
 
   // Clear all MIDI note-off timeouts
   midiNoteOffTimeouts.forEach(timeouts => {
-    timeouts.forEach(timeoutId => clearTimeout(timeoutId))
+    flushNoteOffs(timeouts)
   })
   midiNoteOffTimeouts.clear()
 
@@ -762,7 +408,7 @@ export function disposeAllConnectivityNodes(): void {
   bleCharacteristicHandlers.forEach(({ characteristic, handler }) => {
     try {
       characteristic.removeEventListener('characteristicvaluechanged', handler)
-      characteristic.stopNotifications()
+      characteristic.stopNotifications().catch(() => {})
     } catch {
       // Ignore errors during cleanup
     }
@@ -778,10 +424,7 @@ export function disposeAllConnectivityNodes(): void {
   bleAdapters.clear()
 
   // Clear all caches
-  httpCache.clear()
-  wsState.clear()
   midiState.clear()
-  mqttState.clear()
   oscState.clear()
   serialState.clear()
   bleState.clear()
@@ -795,36 +438,6 @@ export function disposeAllConnectivityNodes(): void {
 export function gcConnectivityState(validNodeIds: Set<string>): void {
   // Helper to extract nodeId from keys like "nodeId:suffix"
   const getNodeId = (key: string) => key.split(':')[0]
-
-  // Clean WebSocket connections - nullify handlers first
-  for (const key of wsConnections.keys()) {
-    if (!validNodeIds.has(getNodeId(key))) {
-      const ws = wsConnections.get(key)
-      if (ws) {
-        ws.onopen = null
-        ws.onmessage = null
-        ws.onerror = null
-        ws.onclose = null
-        ws.close()
-      }
-      wsConnections.delete(key)
-    }
-  }
-
-  // Clean MQTT connections - nullify handlers first
-  for (const key of mqttConnections.keys()) {
-    if (!validNodeIds.has(getNodeId(key))) {
-      const conn = mqttConnections.get(key)
-      if (conn) {
-        conn.client.onopen = null
-        conn.client.onmessage = null
-        conn.client.onerror = null
-        conn.client.onclose = null
-        conn.client.close()
-      }
-      mqttConnections.delete(key)
-    }
-  }
 
   // Clean OSC connections - nullify handlers first
   for (const key of oscConnections.keys()) {
@@ -845,10 +458,7 @@ export function gcConnectivityState(validNodeIds: Set<string>): void {
   for (const key of serialPorts.keys()) {
     if (!validNodeIds.has(getNodeId(key))) {
       const conn = serialPorts.get(key)
-      if (conn) {
-        conn.reader?.cancel()
-        conn.port.close().catch(() => {})
-      }
+      if (conn) closeSerialConnection(conn)
       serialPorts.delete(key)
     }
   }
@@ -858,7 +468,7 @@ export function gcConnectivityState(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(nodeId)) {
       const timeouts = midiNoteOffTimeouts.get(nodeId)
       if (timeouts) {
-        timeouts.forEach(timeoutId => clearTimeout(timeoutId))
+        flushNoteOffs(timeouts)
       }
       midiNoteOffTimeouts.delete(nodeId)
     }
@@ -919,7 +529,7 @@ export function gcConnectivityState(validNodeIds: Set<string>): void {
       if (entry) {
         try {
           entry.characteristic.removeEventListener('characteristicvaluechanged', entry.handler)
-          entry.characteristic.stopNotifications()
+          entry.characteristic.stopNotifications().catch(() => {})
         } catch {
           // Ignore errors during cleanup
         }
@@ -938,17 +548,8 @@ export function gcConnectivityState(validNodeIds: Set<string>): void {
   }
 
   // Clean state caches
-  for (const key of httpCache.keys()) {
-    if (!validNodeIds.has(getNodeId(key))) httpCache.delete(key)
-  }
-  for (const key of wsState.keys()) {
-    if (!validNodeIds.has(getNodeId(key))) wsState.delete(key)
-  }
   for (const key of midiState.keys()) {
     if (!validNodeIds.has(getNodeId(key))) midiState.delete(key)
-  }
-  for (const key of mqttState.keys()) {
-    if (!validNodeIds.has(getNodeId(key))) mqttState.delete(key)
   }
   for (const key of oscState.keys()) {
     if (!validNodeIds.has(getNodeId(key))) oscState.delete(key)
@@ -967,12 +568,10 @@ export function gcConnectivityState(validNodeIds: Set<string>): void {
 
 // All connectivity nodes are co-located (registry/connectivity/<id>/node.ts) and import
 // their executors from this module; there is no `connectivityExecutors` map to register.
-// (The old http/websocket/mqtt implementations above are superseded by the
-// ConnectionManager-based http/websocket/mqtt.ts executors and no longer registered.)
 
 // Connectivity state cleanup self-registers with the engine's generic lifecycle loop
 // (was hand-wired as gcConnectivityState / disposeAllConnectivityNodes calls in
-// ExecutionEngine). defineLifecycle-wrap: the OSC/Serial/MIDI/BLE/legacy-WS teardown
+// ExecutionEngine). defineLifecycle-wrap: the OSC/Serial/MIDI/BLE teardown
 // (handler-nulling + close) is unchanged, only invoked generically.
 defineLifecycle({
   label: 'connectivity',

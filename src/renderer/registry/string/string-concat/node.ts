@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -33,10 +34,10 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as string) ?? ''
-  const b = (ctx.inputs.get('b') as string) ?? ''
-  const c = (ctx.inputs.get('c') as string) ?? ''
-  const d = (ctx.inputs.get('d') as string) ?? ''
+  const a = toStr(ctx.inputs.get('a'))
+  const b = toStr(ctx.inputs.get('b'))
+  const c = toStr(ctx.inputs.get('c'))
+  const d = toStr(ctx.inputs.get('d'))
   const separator = (ctx.controls.get('separator') as string) ?? ''
 
   // Filter out empty strings before joining

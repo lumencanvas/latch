@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
-import { getCached, setCached, hasTriggerValue, runModelInference, convertToImageData } from '../shared'
+import { getCached, setCached, triggerFired, runModelInference, imageForInference, isSupportedImageInput } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'object-detection',
@@ -46,20 +46,20 @@ export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const outputs = new Map<string, unknown>()
   const imageInput = ctx.inputs.get('image')
   const trigger = ctx.inputs.get('trigger')
-  const modelId = ctx.controls.get('model') as string | undefined
   const threshold = (ctx.controls.get('threshold') as number) ?? 0.5
 
-  // Defer the (potentially expensive) image conversion until the model is loaded.
-  const imageData = aiInference.isModelLoaded('object-detection', modelId)
-    ? convertToImageData(imageInput)
-    : null
+  // Cheap type check every frame (for the error/clear paths); the expensive pixel readback
+  // happens only on frames that actually start an inference (imageForInference).
+  const supported = isSupportedImageInput(imageInput)
 
   // Run on an explicit trigger or after a frame interval, only with valid image data.
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, 0)
   const interval = (ctx.controls.get('interval') as number) ?? 60
   const intervalElapsed = !lastFrame || (currentFrame - lastFrame) >= interval
-  const shouldRun = !!imageData && (hasTriggerValue(trigger) || intervalElapsed)
+  const fired = triggerFired(ctx.nodeId, trigger) // edge-deduped; a held trigger no longer loops
+  const imageData = imageForInference(ctx, 'object-detection', imageInput, fired || intervalElapsed, fired)
+  const shouldRun = !!imageData
 
   const { result, started, state } = runModelInference<unknown[]>(ctx, outputs, {
     task: 'object-detection',
@@ -71,7 +71,7 @@ export const objectDetectionExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const objects = result ?? []
   outputs.set('objects', objects)
   outputs.set('count', objects.length)
-  if (state !== 'not-loaded' && imageInput && !imageData) {
+  if (state !== 'not-loaded' && imageInput && !supported) {
     outputs.set('error', 'Unsupported image input type. Use Webcam Snapshot or Texture to Data node.')
   }
   return outputs

@@ -422,8 +422,17 @@ export class ExecutionEngine {
         if (sourceOutputs) {
           const value = sourceOutputs.get(edge.sourceHandle)
           if (value !== undefined) {
-            const portType = targetDef?.inputs.find((p) => p.id === edge.targetHandle)?.type
-            inputs.set(edge.targetHandle, coerceToPortType(value, portType))
+            const port = targetDef?.inputs.find((p) => p.id === edge.targetHandle)
+            const coerced = coerceToPortType(value, port?.type)
+            if (port?.multiple) {
+              // A `multiple` input collects every connected wire (e.g. scene-3d
+              // `objects`) instead of the last edge silently winning.
+              const prev = inputs.get(edge.targetHandle) as unknown[] | undefined
+              const items = Array.isArray(coerced) ? coerced : [coerced]
+              inputs.set(edge.targetHandle, prev ? [...prev, ...items] : items)
+            } else {
+              inputs.set(edge.targetHandle, coerced)
+            }
           }
         }
       }

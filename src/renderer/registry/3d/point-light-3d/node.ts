@@ -1,8 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
-import { nodeObjects } from '../shared'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
+import { getOrCreateLight, updateLight } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'point-light-3d',
@@ -55,12 +55,15 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 2
   const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 0
 
-  const color = parseInt(colorHex.replace('#', ''), 16)
-
-  const renderer = getThreeRenderer()
-  const light = renderer.createPointLight(color, intensity, distance, decay, [posX, posY, posZ], castShadow)
-
-  nodeObjects.set(ctx.nodeId, light)
+  // Cached per node and updated in place (was a new light — and shadow cube map — every frame)
+  const light = getOrCreateLight(ctx.nodeId, THREE.PointLight, () =>
+    getThreeRenderer().createPointLight(0xffffff, 1, distance, decay, [posX, posY, posZ], true)
+  )
+  updateLight(light, colorHex, intensity)
+  light.distance = distance
+  light.decay = decay
+  light.position.set(posX, posY, posZ)
+  light.castShadow = castShadow
 
   const outputs = new Map<string, unknown>()
   outputs.set('light', light)

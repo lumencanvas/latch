@@ -16,7 +16,6 @@ import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { defineLifecycle } from '@/engine/nodeState'
 import { getPresetById, injectUniformDeclarations, type UniformDefinition } from '@/services/visual/ShaderPresets'
 import { getShaderRenderer, hasShaderRenderer } from '@/services/visual/ShaderRenderer'
-import { getTextureBridge } from '@/services/visual/TextureBridge'
 import { getThreeShaderRenderer, type CompiledShaderMaterial, type ThreeShaderUniform } from '@/services/visual/ThreeShaderRenderer'
 
 
@@ -63,15 +62,47 @@ export const cachedUniforms = new Map<string, UniformDefinition[]>()
 // v1.2.1 video-texture issue), so the live frame is drawn to a 2D canvas and a
 // canvas-backed texture is sampled instead. Holds a reused canvas + texture per node.
 export const effectVideoState = new Map<string, { canvas: HTMLCanvasElement; texture: THREE.Texture | null }>()
+// Per-node cached texture for a raw <canvas> effect source. coerceInputToTexture used to wrap
+// the canvas in a brand-new THREE.Texture EVERY frame (never disposed → a GPU texture leak per
+// frame per effect node, D2). Reused + re-uploaded via updateTexture instead.
+export const effectCanvasTextures = new Map<string, { source: HTMLCanvasElement; texture: THREE.Texture }>()
+// Per-slot cached DataTexture for a raw WebGLTexture source. createTextureFromWebGL used to
+// allocate a new DataTexture (+ pixel buffer) every frame and never dispose it. `texture` is
+// null when the WebGLTexture belongs to another GL context (can't be read; warned once).
+export const effectWebGLTextures = new Map<string, { source: WebGLTexture; texture: THREE.Texture | null }>()
 
-/** Dispose an image-fx node's video-conversion canvas/texture. */
-export function disposeEffectVideoState(nodeId: string): void {
-  const st = effectVideoState.get(nodeId)
+/** Effect-state keys are `nodeId` or `${nodeId}::<slot>` (e.g. displacement's `::disp` map). */
+function effectKeyOwner(key: string): string {
+  const i = key.indexOf('::')
+  return i < 0 ? key : key.slice(0, i)
+}
+
+function disposeEffectKey(key: string): void {
+  const st = effectVideoState.get(key)
   if (st) {
     if (st.texture) st.texture.dispose()
     st.canvas.width = 0
     st.canvas.height = 0
-    effectVideoState.delete(nodeId)
+    effectVideoState.delete(key)
+  }
+  const ct = effectCanvasTextures.get(key)
+  if (ct) {
+    ct.texture.dispose()
+    effectCanvasTextures.delete(key)
+  }
+  const wt = effectWebGLTextures.get(key)
+  if (wt) {
+    wt.texture?.dispose()
+    effectWebGLTextures.delete(key)
+  }
+}
+
+/** Dispose an image-fx node's video-conversion canvas/texture (all of its slots). */
+export function disposeEffectVideoState(nodeId: string): void {
+  for (const map of [effectVideoState, effectCanvasTextures, effectWebGLTextures]) {
+    for (const key of [...map.keys()]) {
+      if (effectKeyOwner(key) === nodeId) disposeEffectKey(key)
+    }
   }
 }
 
@@ -176,6 +207,8 @@ export function disposeAllVisualNodes(): void {
 
   // Clean up all image loader states
   for (const [, state] of imageLoaderState) {
+    // GPU texture was dropped without dispose on Stop (leaked one per image node per Stop→Play)
+    if (state.texture) state.texture.dispose()
     if (state.image) {
       state.image.src = ''
       state.image.onload = null
@@ -186,6 +219,7 @@ export function disposeAllVisualNodes(): void {
 
   // Clean up all video player states
   for (const [, state] of videoPlayerState) {
+    if (state.texture) state.texture.dispose()
     if (state.video) {
       state.video.pause()
       state.video.src = ''
@@ -214,8 +248,8 @@ export function disposeAllVisualNodes(): void {
   }
 
   // Clean up all image-fx video-conversion states
-  for (const nodeId of effectVideoState.keys()) {
-    disposeEffectVideoState(nodeId)
+  for (const key of [...effectVideoState.keys(), ...effectCanvasTextures.keys(), ...effectWebGLTextures.keys()]) {
+    disposeEffectKey(key)
   }
   if (snapshotScratchCanvas) {
     snapshotScratchCanvas.width = 0
@@ -303,9 +337,9 @@ export function gcVisualState(validNodeIds: Set<string>): void {
   }
 
   // Clean image-fx video-conversion state
-  for (const nodeId of effectVideoState.keys()) {
-    if (!validNodeIds.has(nodeId)) {
-      disposeEffectVideoState(nodeId)
+  for (const key of [...effectVideoState.keys(), ...effectCanvasTextures.keys(), ...effectWebGLTextures.keys()]) {
+    if (!validNodeIds.has(effectKeyOwner(key))) {
+      disposeEffectKey(key)
     }
   }
 
@@ -379,12 +413,9 @@ export function gcVisualState(validNodeIds: Set<string>): void {
     }
   }
 
-  // Clean TextureBridge display sprites
-  try {
-    getTextureBridge().gc(validNodeIds)
-  } catch (e) {
-    // TextureBridge may not be initialized yet
-  }
+  // (TextureBridge display sprites were GC'd here, but nothing ever creates them — the Pixi
+  // bridge is unused. The call only instantiated the bridge, and pulled Pixi into this
+  // module's import graph, on every GC.)
 }
 
 // ============================================================================
@@ -403,7 +434,8 @@ export function coerceInputToTexture(
 ): { tex: THREE.Texture; w: number; h: number } | null {
   let tex: THREE.Texture | null = null
   if (input instanceof THREE.Texture) tex = input
-  else if (input instanceof WebGLTexture) tex = renderer.createTextureFromWebGL(input, 512, 512)
+  // Raw WebGLTexture inputs are handled (cached per slot) by resolveEffectSource, not here —
+  // an uncached createTextureFromWebGL allocates a new DataTexture every frame.
   else if (input instanceof HTMLCanvasElement || input instanceof HTMLVideoElement) {
     tex = renderer.createTexture(input)
   }
@@ -460,6 +492,39 @@ export function resolveEffectSource(
     if (st.texture) renderer.updateTexture(st.texture, st.canvas)
     else st.texture = renderer.createTexture(st.canvas)
     return st.texture ? { tex: st.texture, w, h } : null
+  }
+
+  if (input instanceof HTMLCanvasElement) {
+    let ct = effectCanvasTextures.get(nodeId)
+    if (ct && ct.source !== input) {
+      ct.texture.dispose()
+      ct = undefined
+    }
+    if (!ct) {
+      ct = { source: input, texture: renderer.createTexture(input) }
+      effectCanvasTextures.set(nodeId, ct)
+    } else {
+      renderer.updateTexture(ct.texture, input)
+    }
+    return { tex: ct.texture, w: input.width || 512, h: input.height || 512 }
+  }
+
+  if (typeof WebGLTexture !== 'undefined' && input instanceof WebGLTexture) {
+    let wt = effectWebGLTextures.get(nodeId)
+    if (wt && wt.source !== input) {
+      wt.texture?.dispose()
+      wt = undefined
+    }
+    if (!wt) {
+      const texture = renderer.createTextureFromWebGL(input, 512, 512)
+      if (!texture) console.warn(`[visual] ${nodeId}: WebGLTexture input is from another GL context; ignoring`)
+      wt = { source: input, texture }
+      effectWebGLTextures.set(nodeId, wt)
+    } else if (wt.texture) {
+      // Re-read the current frame into the same DataTexture (no new allocation).
+      renderer.createTextureFromWebGL(input, 512, 512, wt.texture as THREE.DataTexture)
+    }
+    return wt.texture ? { tex: wt.texture, w: 512, h: 512 } : null
   }
 
   return coerceInputToTexture(renderer, input)
@@ -691,6 +756,9 @@ void main() {
     offset = vec2(0.0, disp.g - 0.5);
   } else if (u_channel == 2) {
     offset = vec2(disp.b - 0.5, 0.0);
+  } else if (u_channel == 4) {
+    // rgb: R/G displace X/Y, B scales the displacement per pixel
+    offset = vec2(disp.r - 0.5, disp.g - 0.5) * disp.b;
   } else {
     offset = vec2(disp.r - 0.5, disp.g - 0.5);
   }
@@ -742,7 +810,7 @@ void main() {
 // ============================================================================
 
 // Cache for converted image data per node
-export const textureDataCache = new Map<string, { data: ImageData | string | Blob; width: number; height: number }>()
+export const textureDataCache = new Map<string, { data: ImageData | string | Blob; width: number; height: number; prevTrigger?: boolean }>()
 
 // Temp canvas for reading texture data
 let textureToDataCanvas: HTMLCanvasElement | null = null
@@ -762,16 +830,21 @@ export const textureToDataExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
     return outputs
   }
 
-  // Only capture on trigger or continuous mode
-  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0) || (typeof trigger === 'string' && trigger.length > 0)
+  // Capture only on the trigger's RISING edge (or continuous mode) — a held-high trigger
+  // otherwise forced a full GPU readback (renderToCanvas + getImageData) EVERY frame. prevTrigger
+  // rides in the per-node cache entry so it's gc'd with it.
+  const triggerActive = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0) || (typeof trigger === 'string' && trigger.length > 0)
+  const cachedEntry = textureDataCache.get(ctx.nodeId)
+  const prevTrigger = cachedEntry?.prevTrigger ?? false
+  const shouldCapture = continuous || (triggerActive && !prevTrigger)
+  if (cachedEntry) cachedEntry.prevTrigger = triggerActive // remember the level for next frame's edge
 
-  if (!hasTrigger && !continuous) {
+  if (!shouldCapture) {
     // Return cached data
-    const cached = textureDataCache.get(ctx.nodeId)
-    if (cached) {
-      outputs.set('data', cached.data)
-      outputs.set('width', cached.width)
-      outputs.set('height', cached.height)
+    if (cachedEntry) {
+      outputs.set('data', cachedEntry.data)
+      outputs.set('width', cachedEntry.width)
+      outputs.set('height', cachedEntry.height)
     } else {
       outputs.set('data', null)
       outputs.set('width', 0)
@@ -822,8 +895,8 @@ export const textureToDataExecutor: NodeExecutorFn = (ctx: ExecutionContext) => 
     data = textureToDataCanvas.toDataURL('image/png')
   }
 
-  // Cache the result
-  textureDataCache.set(ctx.nodeId, { data, width, height })
+  // Cache the result (carry prevTrigger so the next frame edge-detects correctly)
+  textureDataCache.set(ctx.nodeId, { data, width, height, prevTrigger: triggerActive })
 
   outputs.set('data', data)
   outputs.set('width', width)
@@ -852,6 +925,8 @@ export const webcamSnapshotState = new Map<
     texture: THREE.Texture | null
     stream: MediaStream | null
     lastCaptureTime: number
+    /** A trigger edge arrived but nothing was captured yet (stream not painting / debounce). */
+    pendingCapture?: boolean
     capturedImageData: ImageData | null
     deviceId: string | null
     resolution: string
@@ -959,6 +1034,7 @@ export function disposeWebcamSnapshotNode(nodeId: string): void {
     if (state.stream) {
       state.stream.getTracks().forEach((track) => track.stop())
     }
+    if (state.video) state.video.srcObject = null
     if (state.texture) {
       state.texture.dispose()
     }

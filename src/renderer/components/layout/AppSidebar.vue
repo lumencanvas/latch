@@ -797,7 +797,7 @@ function onSelectConnection(connectionId: string) {
 
 .category-count {
   font-size: 10px;
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-600); /* WCAG AA: neutral-400 was ~2.3:1 on the neutral-200 pill */
   background: var(--color-neutral-200);
   padding: 1px 6px;
   border-radius: 10px;

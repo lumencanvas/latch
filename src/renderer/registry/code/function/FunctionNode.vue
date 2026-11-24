@@ -8,6 +8,7 @@ import { useFlowsStore } from '@/stores/flows'
 import { useRuntimeStore } from '@/stores/runtime'
 import '@/services/monaco/monacoEnv' // set MonacoEnvironment.getWorker before this node creates its editor
 import * as monaco from 'monaco-editor'
+import { CODE_DISABLED_KEY } from '@/services/security/flowTrust'
 
 const props = defineProps<NodeProps>()
 const flowsStore = useFlowsStore()
@@ -53,6 +54,13 @@ const error = computed(() => {
   const metrics = runtimeStore.nodeMetrics.get(props.id)
   return metrics?.outputValues?.error as string | undefined
 })
+
+// Imported from an untrusted file with its code disabled (import trust prompt).
+const codeDisabled = computed(() => props.data?.[CODE_DISABLED_KEY] === true)
+
+function enableCode() {
+  flowsStore.enableNodeCode(props.id)
+}
 
 function updateCode(newCode: string) {
   flowsStore.updateNodeData(props.id, { code: newCode })
@@ -208,7 +216,21 @@ function toggleCollapse() {
           @touchstart.stop
         />
         <div
-          v-if="error"
+          v-if="codeDisabled"
+          class="disabled-banner"
+          role="status"
+        >
+          <span>Code disabled (imported file). Review it before running.</span>
+          <button
+            type="button"
+            class="enable-btn"
+            @click.stop="enableCode"
+          >
+            Enable code
+          </button>
+        </div>
+        <div
+          v-else-if="error"
           class="error-display"
         >
           {{ error }}
@@ -326,6 +348,39 @@ function toggleCollapse() {
   background: rgba(239, 68, 68, 0.1);
   border-radius: 2px;
   word-break: break-word;
+}
+
+.disabled-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 9px;
+  color: var(--color-neutral-200);
+  background: var(--color-neutral-800);
+  border: 1px dashed var(--color-neutral-500);
+  border-radius: 2px;
+}
+
+.enable-btn {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  color: var(--color-neutral-900);
+  background: var(--color-neutral-200);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.enable-btn:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 1px;
 }
 
 /* Handle columns - positioned at node edges */

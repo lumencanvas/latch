@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { inRangeExecutor } from '@/engine/executors/utility'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
 const definition: NodeDefinition = {
   id: 'in-range',
@@ -29,4 +29,17 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: inRangeExecutor })
+// Co-located (was utility.ts inRangeExecutor): inverted bounds (Min > Max) are normalised —
+// they used to make every value "out of range" — and NaN input is out of range.
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = ctx.num('value', NaN)
+  const a = ctx.num('min', 0)
+  const b = ctx.num('max', 1)
+  const lo = Math.min(a, b)
+  const hi = Math.max(a, b)
+  const inclusive = (ctx.controls.get('inclusive') as boolean) ?? true
+  const result = inclusive ? value >= lo && value <= hi : value > lo && value < hi
+  return new Map([['result', result ? 1 : 0]])
+}
+
+export default defineNode({ definition, executor })

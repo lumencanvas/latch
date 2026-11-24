@@ -241,7 +241,7 @@ onUnmounted(() => {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
-  color: #9ca3af;
+  color: #d1d5db; /* on the dark node header — #9ca3af was low contrast */
   letter-spacing: 0.5px;
 }
 

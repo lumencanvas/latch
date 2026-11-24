@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { routerExecutor } from '@/engine/executors/utility'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
 const definition: NodeDefinition = {
   id: 'router',
@@ -20,10 +20,12 @@ const definition: NodeDefinition = {
     { id: 'out2', type: 'any', label: 'Out 2' },
     { id: 'out3', type: 'any', label: 'Out 3' },
   ],
-  controls: [],
+  controls: [
+    { id: 'route', type: 'number', label: 'Route', default: 0, props: { min: 0, max: 3, step: 1 } },
+  ],
   tags: ['router', 'demux', 'switch', 'route', 'split'],
   info: {
-    overview: 'Routes an input value to one of four outputs based on a numeric route index. Only the selected output receives the value; all others remain inactive. Useful for demultiplexing data streams or directing flow based on state.',
+    overview: 'Routes an input value to one of four outputs based on a numeric route index (the Route input, or the Route control when unwired; clamped to 0-3). Only the selected output receives the value; all others remain inactive. Useful for demultiplexing data streams or directing flow based on state.',
     tips: [
       'Connect a Counter node to the route input to cycle through outputs sequentially.',
       'Use an Expression node to compute the route index dynamically from input data.',
@@ -32,4 +34,12 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: routerExecutor })
+// Co-located (was utility.ts routerExecutor): ctx.num maps NaN/±Infinity routes to the Route
+// control instead of `out${NaN}` (which silenced all four outputs), and adds the control.
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const ctl = Number(ctx.controls.get('route'))
+  const route = Math.max(0, Math.min(3, Math.floor(ctx.num('route', Number.isFinite(ctl) ? ctl : 0))))
+  return new Map<string, unknown>([[`out${route}`, ctx.inputs.get('value')]])
+}
+
+export default defineNode({ definition, executor })

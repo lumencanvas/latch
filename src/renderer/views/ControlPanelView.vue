@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useUIStore, type ControlLayout } from '@/stores/ui'
+import { needsReflow, reflow, exposedControlSize, type LayoutItem } from '@/utils/controlPanelLayout'
+import ControlRenderer from '@/components/controls/ControlRenderer.vue'
+import type { ControlDefinition } from '@/stores/nodes'
+import type { Node } from '@vue-flow/core'
 import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
 import { useRuntimeStore } from '@/stores/runtime'
@@ -26,8 +30,9 @@ const CELL_SIZE = 60
 const containerRef = ref<HTMLElement | null>(null)
 const containerWidth = ref(1200)
 
-// Calculate columns based on container width
-const GRID_COLS = computed(() => Math.max(6, Math.floor(containerWidth.value / CELL_SIZE)))
+// Columns follow the container width. Min 4 (not 6): 6 × 60px = 360px is wider
+// than a phone's content box, which forced a horizontal scroll.
+const GRID_COLS = computed(() => Math.max(4, Math.floor(containerWidth.value / CELL_SIZE)))
 
 // Control node types that should auto-appear
 const controlNodeTypes = ['slider', 'knob', 'trigger', 'xy-pad', 'constant', 'lfo', 'envelope-visual', 'parametric-eq', 'wavetable', 'keyboard', 'synth', 'gamepad-visual']
@@ -36,7 +41,8 @@ const monitorNodeTypes = ['monitor', 'oscilloscope', 'main-output']
 // Edit mode
 const editMode = ref(false)
 
-// Drag state - using local state for performance
+// Drag / resize state - local (not the store) so a drag doesn't write
+// localStorage on every pointermove; committed once on release.
 const dragging = ref<{
   nodeId: string
   startX: number
@@ -47,10 +53,16 @@ const dragging = ref<{
   currentY: number
 } | null>(null)
 
-const resizing = ref<{ nodeId: string; startW: number; startH: number; startX: number; startY: number } | null>(null)
+const resizing = ref<{ nodeId: string; startW: number; startH: number; startX: number; startY: number; currentW: number; currentH: number } | null>(null)
 
 // Fader drag state (separate from control dragging)
 const faderDrag = ref<{ nodeId: string; startY: number; startValue: number } | null>(null)
+
+// XY pad drag state
+const xyDrag = ref<{ nodeId: string; el: HTMLElement } | null>(null)
+
+// Screen-reader announcements for keyboard tile moves.
+const liveAnnounce = ref('')
 
 // Accent colors by control type
 const accentColors: Record<string, string> = {
@@ -69,42 +81,117 @@ const accentColors: Record<string, string> = {
   synth: '#f59e0b',
   'main-output': '#3b82f6',
   'gamepad-visual': '#1A9A7A',
+  'exposed-control': '#a78bfa',
 }
 
-// Get all control-type nodes
-const controlNodes = computed(() => {
-  if (!flowsStore.activeFlow) return []
-  return flowsStore.activeFlow.nodes
-    .filter(node => {
-      const nodeType = node.data?.nodeType as string
-      return controlNodeTypes.includes(nodeType) || monitorNodeTypes.includes(nodeType)
-    })
-    .map(node => {
-      const nodeType = node.data?.nodeType as string
-      const definition = nodesStore.getDefinition(nodeType)
-      const layout = uiStore.getControlLayout(node.id, nodeType)
-      return {
-        node,
-        nodeType,
-        definition,
-        label: (node.data?.label as string) || definition?.name || nodeType,
-        layout,
-        isMonitor: monitorNodeTypes.includes(nodeType),
-        accentColor: accentColors[nodeType] || '#00d4aa',
-      }
-    })
+// O(1) node lookup — getControlValue is called many times per tile per render;
+// the old `nodes.find` per call made a big panel O(n²) per frame.
+const nodeById = computed(() => {
+  const m = new Map<string, Node>()
+  for (const n of flowsStore.activeFlow?.nodes ?? []) m.set(n.id, n)
+  return m
 })
+
+interface TileSource {
+  key: string
+  node: Node
+  nodeType: string
+  label: string
+  isMonitor: boolean
+  accentColor: string
+  /** Set for a single control exposed from the Properties panel. */
+  control?: ControlDefinition
+}
+
+// Tile sources: whole control/monitor nodes, plus individual controls exposed
+// from the Properties panel (the "Expose to Control Panel" toggle). Exposed
+// controls were stored but never rendered here — the toggle did nothing.
+const tileSources = computed<TileSource[]>(() => {
+  const flow = flowsStore.activeFlow
+  if (!flow) return []
+  const out: TileSource[] = []
+  for (const node of flow.nodes) {
+    const nodeType = node.data?.nodeType as string
+    if (!controlNodeTypes.includes(nodeType) && !monitorNodeTypes.includes(nodeType)) continue
+    const definition = nodesStore.getDefinition(nodeType)
+    out.push({
+      key: node.id,
+      node,
+      nodeType,
+      label: (node.data?.label as string) || definition?.name || nodeType,
+      isMonitor: monitorNodeTypes.includes(nodeType),
+      accentColor: accentColors[nodeType] || '#00d4aa',
+    })
+  }
+  for (const exposed of uiStore.exposedControls) {
+    const node = nodeById.value.get(exposed.nodeId)
+    if (!node) continue // belongs to another flow (or a deleted node)
+    const nodeType = node.data?.nodeType as string
+    const definition = nodesStore.getDefinition(nodeType)
+    const dyn = (node.data?._dynamicControls as ControlDefinition[] | undefined) ?? []
+    const control = definition?.controls.find(c => c.id === exposed.controlId) ?? dyn.find(c => c.id === exposed.controlId)
+    if (!control) continue
+    const nodeLabel = (node.data?.label as string) || definition?.name || nodeType
+    out.push({
+      key: exposed.id,
+      node,
+      nodeType: 'exposed-control',
+      label: `${nodeLabel} · ${exposed.label || control.label}`,
+      isMonitor: false,
+      accentColor: accentColors['exposed-control'],
+      control,
+    })
+  }
+  return out
+})
+
+const layoutItems = computed<LayoutItem[]>(() => tileSources.value.map(t => ({
+  key: t.key,
+  nodeType: t.nodeType,
+  size: t.control ? exposedControlSize(t.control.type) : undefined,
+})))
+
+const tileKeys = computed(() => new Set(tileSources.value.map(t => t.key)))
+
+// Create layouts for new tiles OUTSIDE of any computed (the old code mutated
+// the store + wrote localStorage from inside the `controlNodes` getter), packed
+// against this panel's tiles only — other flows' entries no longer block slots.
+// Gated on the first real measurement so new tiles are packed for the actual
+// container width, not a guess (which made a fresh panel open "re-packed").
+const measured = ref(false)
+watch([layoutItems, GRID_COLS, measured], ([items, cols, ready]) => {
+  if (ready) uiStore.ensureControlLayouts(items, cols)
+}, { immediate: true })
+
+// This panel's saved layouts.
+const savedLayouts = computed<ControlLayout[]>(() =>
+  uiStore.controlPanelLayout.filter(l => tileKeys.value.has(l.nodeId)),
+)
+
+// A panel authored on a wide screen is re-packed (transiently, never saved)
+// when the grid is narrower than its layout — e.g. opened on a phone/tablet.
+const isReflowed = computed(() => needsReflow(savedLayouts.value, GRID_COLS.value))
+const displayLayouts = computed(() => {
+  const list = isReflowed.value ? reflow(savedLayouts.value, GRID_COLS.value) : savedLayouts.value
+  return new Map(list.map(l => [l.nodeId, l]))
+})
+
+// Rendered tiles = sources joined with their (display) layout.
+const controlNodes = computed(() => tileSources.value.flatMap(t => {
+  const layout = displayLayouts.value.get(t.key)
+  return layout ? [{ ...t, layout }] : []
+}))
 
 // Calculate grid height based on content
 const gridHeight = computed(() => {
   if (controlNodes.value.length === 0) return 400
-  const maxY = Math.max(...controlNodes.value.map(c => c.layout.y + c.layout.h))
+  const maxY = Math.max(...controlNodes.value.map(c => c.layout.y + getControlSize(c.key, c.layout).h))
   return Math.max(400, (maxY + 2) * CELL_SIZE)
 })
 
 // Get control value
 function getControlValue(nodeId: string, controlId: string, defaultVal: unknown = 0): unknown {
-  const node = flowsStore.activeFlow?.nodes.find(n => n.id === nodeId)
+  const node = nodeById.value.get(nodeId)
   if (!node?.data) return defaultVal
   return node.data[controlId] ?? defaultVal
 }
@@ -136,15 +223,27 @@ function getMonitorValue(nodeId: string): string {
   return String(value)
 }
 
-// Update node label
+// Update node label (committed on change/blur — not per keystroke, which
+// marked the flow dirty on every character)
 function updateNodeLabel(nodeId: string, label: string) {
-  flowsStore.updateNodeData(nodeId, { label })
+  const trimmed = label.trim()
+  if (trimmed) flowsStore.updateNodeData(nodeId, { label: trimmed })
 }
 
-// Drag handlers with local state for performance
-// In edit mode, the entire control item is draggable
-function startDrag(e: MouseEvent, nodeId: string, layout: ControlLayout) {
-  if (!editMode.value) return
+// Entering edit mode on a reflowed (narrower-than-authored) panel adopts the
+// re-packed arrangement as the saved layout for this width, so what you drag
+// is what you see.
+function toggleEditMode() {
+  if (!editMode.value && isReflowed.value) {
+    uiStore.replaceControlLayouts([...displayLayouts.value.values()])
+  }
+  editMode.value = !editMode.value
+}
+
+// Drag handlers (pointer events: mouse, pen and touch). In edit mode the whole
+// tile is the drag handle.
+function startDrag(e: PointerEvent, nodeId: string, layout: ControlLayout) {
+  if (!editMode.value || e.button > 0) return
   e.preventDefault()
   e.stopPropagation()
   dragging.value = {
@@ -158,23 +257,32 @@ function startDrag(e: MouseEvent, nodeId: string, layout: ControlLayout) {
   }
 }
 
-function onMouseMove(e: MouseEvent) {
-  // Handle control dragging (edit mode)
+function setXYFromPointer(nodeId: string, el: HTMLElement, e: PointerEvent) {
+  const rect = el.getBoundingClientRect()
+  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height))
+  flowsStore.updateNodeData(nodeId, { x, y })
+}
+
+function onPointerMove(e: PointerEvent) {
   if (dragging.value) {
-    const dx = Math.round((e.clientX - dragging.value.offsetX) / CELL_SIZE)
-    const dy = Math.round((e.clientY - dragging.value.offsetY) / CELL_SIZE)
-    dragging.value.currentX = Math.max(0, Math.min(GRID_COLS.value - 1, dragging.value.startX + dx))
-    dragging.value.currentY = Math.max(0, dragging.value.startY + dy)
+    const d = dragging.value
+    const layout = displayLayouts.value.get(d.nodeId)
+    const w = layout?.w ?? 1
+    const dx = Math.round((e.clientX - d.offsetX) / CELL_SIZE)
+    const dy = Math.round((e.clientY - d.offsetY) / CELL_SIZE)
+    d.currentX = Math.max(0, Math.min(GRID_COLS.value - w, d.startX + dx))
+    d.currentY = Math.max(0, d.startY + dy)
   }
-  // Handle resizing
   if (resizing.value) {
-    const dx = Math.round((e.clientX - resizing.value.startX) / CELL_SIZE)
-    const dy = Math.round((e.clientY - resizing.value.startY) / CELL_SIZE)
-    const newW = Math.max(2, Math.min(GRID_COLS.value, resizing.value.startW + dx))
-    const newH = Math.max(2, resizing.value.startH + dy)
-    uiStore.updateControlLayout(resizing.value.nodeId, { w: newW, h: newH })
+    const r = resizing.value
+    const layout = displayLayouts.value.get(r.nodeId)
+    const maxW = GRID_COLS.value - (layout?.x ?? 0)
+    const dx = Math.round((e.clientX - r.startX) / CELL_SIZE)
+    const dy = Math.round((e.clientY - r.startY) / CELL_SIZE)
+    r.currentW = Math.max(2, Math.min(maxW, r.startW + dx))
+    r.currentH = Math.max(2, r.startH + dy)
   }
-  // Handle fader dragging
   if (faderDrag.value) {
     const deltaY = faderDrag.value.startY - e.clientY
     const sensitivity = 1 / 150 // 150px for full range
@@ -182,22 +290,33 @@ function onMouseMove(e: MouseEvent) {
     newValue = Math.max(0, Math.min(1, newValue))
     updateControlValue(faderDrag.value.nodeId, 'value', newValue)
   }
+  if (xyDrag.value) setXYFromPointer(xyDrag.value.nodeId, xyDrag.value.el, e)
 }
 
-function onMouseUp() {
+function onPointerUp() {
   if (dragging.value) {
-    // Single store update on drag end
-    uiStore.updateControlLayout(dragging.value.nodeId, {
-      x: dragging.value.currentX,
-      y: dragging.value.currentY,
-    })
+    const d = dragging.value
+    const layout = displayLayouts.value.get(d.nodeId)
+    if (layout && (d.currentX !== layout.x || d.currentY !== layout.y)) {
+      // Lands in the nearest free cell instead of stacking on another tile.
+      uiStore.placeControlTile(d.nodeId, { x: d.currentX, y: d.currentY, w: layout.w, h: layout.h }, GRID_COLS.value, tileKeys.value, 'move')
+    }
     dragging.value = null
   }
-  resizing.value = null
+  if (resizing.value) {
+    const r = resizing.value
+    const layout = displayLayouts.value.get(r.nodeId)
+    if (layout && (r.currentW !== layout.w || r.currentH !== layout.h)) {
+      // A resize that would overlap a neighbour is rejected (keeps the old size).
+      uiStore.placeControlTile(r.nodeId, { x: layout.x, y: layout.y, w: r.currentW, h: r.currentH }, GRID_COLS.value, tileKeys.value, 'resize')
+    }
+    resizing.value = null
+  }
   faderDrag.value = null
+  xyDrag.value = null
 }
 
-function startResize(e: MouseEvent, nodeId: string, layout: ControlLayout) {
+function startResize(e: PointerEvent, nodeId: string, layout: ControlLayout) {
   if (!editMode.value) return
   e.preventDefault()
   e.stopPropagation()
@@ -207,11 +326,30 @@ function startResize(e: MouseEvent, nodeId: string, layout: ControlLayout) {
     startH: layout.h,
     startX: e.clientX,
     startY: e.clientY,
+    currentW: layout.w,
+    currentH: layout.h,
+  }
+}
+
+// Keyboard layout editing (edit mode): arrows move a focused tile one cell,
+// Shift+arrows resize it. Same collision rules as pointer drag/resize.
+function onTileKeydown(e: KeyboardEvent, key: string, label: string, layout: ControlLayout) {
+  if (!editMode.value || e.target !== e.currentTarget) return
+  const dirs: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
+  const dir = dirs[e.key]
+  if (!dir) return
+  e.preventDefault()
+  const [dx, dy] = dir
+  const placed = e.shiftKey
+    ? uiStore.placeControlTile(key, { x: layout.x, y: layout.y, w: layout.w + dx, h: layout.h + dy }, GRID_COLS.value, tileKeys.value, 'resize')
+    : uiStore.placeControlTile(key, { x: layout.x + dx, y: layout.y + dy, w: layout.w, h: layout.h }, GRID_COLS.value, tileKeys.value, 'move')
+  if (placed) {
+    liveAnnounce.value = `${label}: column ${placed.x + 1}, row ${placed.y + 1}, ${placed.w} by ${placed.h}`
   }
 }
 
 // Fader handlers
-function startFaderDrag(e: MouseEvent, nodeId: string) {
+function startFaderDrag(e: PointerEvent, nodeId: string) {
   if (editMode.value) return // Don't interact with controls in edit mode
   e.preventDefault()
   e.stopPropagation()
@@ -223,6 +361,57 @@ function startFaderDrag(e: MouseEvent, nodeId: string) {
   }
 }
 
+// Keyboard: fader is an ARIA slider (arrows ±0.01, Shift ±0.1, Home/End, PageUp/Down ±0.1).
+function onFaderKeydown(e: KeyboardEvent, nodeId: string) {
+  const cur = getControlValue(nodeId, 'value', 0.5) as number
+  const step = e.shiftKey ? 0.1 : 0.01
+  let next: number | null = null
+  switch (e.key) {
+    case 'ArrowUp': case 'ArrowRight': next = cur + step; break
+    case 'ArrowDown': case 'ArrowLeft': next = cur - step; break
+    case 'PageUp': next = cur + 0.1; break
+    case 'PageDown': next = cur - 0.1; break
+    case 'Home': next = 0; break
+    case 'End': next = 1; break
+  }
+  if (next === null) return
+  e.preventDefault()
+  updateControlValue(nodeId, 'value', Math.round(Math.max(0, Math.min(1, next)) * 1000) / 1000)
+}
+
+function startXYDrag(e: PointerEvent, nodeId: string) {
+  if (editMode.value) return
+  const el = e.currentTarget as HTMLElement
+  e.preventDefault()
+  xyDrag.value = { nodeId, el }
+  setXYFromPointer(nodeId, el, e)
+}
+
+function onXYKeydown(e: KeyboardEvent, nodeId: string) {
+  const step = e.shiftKey ? 0.1 : 0.01
+  const x = getControlValue(nodeId, 'x', 0.5) as number
+  const y = getControlValue(nodeId, 'y', 0.5) as number
+  const clamp = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 1000
+  const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }
+  const m = moves[e.key]
+  if (!m) return
+  e.preventDefault()
+  flowsStore.updateNodeData(nodeId, { x: clamp(x + m[0]), y: clamp(y + m[1]) })
+}
+
+// Trigger: pointer press/release + Space/Enter so it works from the keyboard.
+function setTrigger(nodeId: string, on: boolean) {
+  if (editMode.value) return
+  if ((getControlValue(nodeId, 'value', false) as boolean) !== on) updateControlValue(nodeId, 'value', on)
+}
+
+function onTriggerKey(e: KeyboardEvent, nodeId: string, on: boolean) {
+  if (e.key !== ' ' && e.key !== 'Enter') return
+  e.preventDefault()
+  if (on && e.repeat) return
+  setTrigger(nodeId, on)
+}
+
 // Get the visual position for a control (using local drag state if dragging)
 function getControlPosition(nodeId: string, layout: ControlLayout) {
   if (dragging.value?.nodeId === nodeId) {
@@ -232,6 +421,12 @@ function getControlPosition(nodeId: string, layout: ControlLayout) {
     }
   }
   return { x: layout.x, y: layout.y }
+}
+
+// Visual size (live preview while resizing)
+function getControlSize(nodeId: string, layout: ControlLayout) {
+  if (resizing.value?.nodeId === nodeId) return { w: resizing.value.currentW, h: resizing.value.currentH }
+  return { w: layout.w, h: layout.h }
 }
 
 // View switching
@@ -487,21 +682,21 @@ function handleKeyboardNoteOff(nodeId: string, note: number) {
   }
 }
 
-// Auto-layout function
+// Auto-layout function (this panel's tiles only, for the current width)
 function autoLayoutAll() {
-  const nodes = controlNodes.value.map(c => ({
-    id: c.node.id,
-    nodeType: c.nodeType,
-  }))
-  uiStore.autoLayoutAll(nodes, GRID_COLS.value)
+  uiStore.autoLayoutAll(layoutItems.value.map(i => ({ id: i.key, nodeType: i.nodeType, size: i.size })), GRID_COLS.value)
 }
 
 // ResizeObserver to track container width
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointercancel', onPointerUp)
+  // Drop layout entries / exposed controls whose node no longer exists in any
+  // open flow (deleted nodes used to leave tiles in localStorage forever).
+  uiStore.cleanupExposedControls(flowsStore.flows.flatMap(f => f.nodes.map(n => n.id)))
   if (runtimeStore.isRunning) {
     nextTick(() => {
       startScopeLoop()
@@ -514,16 +709,21 @@ onMounted(() => {
     containerWidth.value = containerRef.value.clientWidth - 32 // Account for padding
     resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        containerWidth.value = entry.contentRect.width - 32
+        // contentRect already excludes the 16px padding — subtracting 32 again
+        // (as before) under-counted the width, so the grid lost a column on the
+        // first observer tick and a freshly-packed panel tipped into reflow.
+        containerWidth.value = entry.contentRect.width
       }
     })
     resizeObserver.observe(containerRef.value)
   }
+  measured.value = true
 })
 
 onUnmounted(() => {
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointercancel', onPointerUp)
   stopScopeLoop()
   stopOutputLoop()
   resizeObserver?.disconnect()
@@ -543,9 +743,9 @@ onUnmounted(() => {
       </div>
       <div class="header-right">
         <button
-          v-if="editMode"
+          v-if="editMode || isReflowed"
           class="auto-layout-btn"
-          title="Auto-arrange all controls"
+          :title="isReflowed ? 'Re-pack and save the layout for this screen width' : 'Auto-arrange all controls'"
           @click="autoLayoutAll"
         >
           <LayoutGrid :size="16" />
@@ -554,7 +754,9 @@ onUnmounted(() => {
         <button
           class="edit-mode-btn"
           :class="{ active: editMode }"
-          @click="editMode = !editMode"
+          :aria-pressed="editMode"
+          :title="isReflowed && !editMode ? 'This layout was made on a wider screen and is shown re-packed; editing saves the re-packed layout for this width' : 'Move and resize tiles (keyboard: focus a tile, arrows move, Shift+arrows resize)'"
+          @click="toggleEditMode"
         >
           <Settings :size="16" />
           {{ editMode ? 'Done' : 'Edit Layout' }}
@@ -585,30 +787,39 @@ onUnmounted(() => {
         <!-- Grid dots (subtle alignment reference) -->
         <div class="grid-dots" />
 
+        <span
+          class="sr-only"
+          aria-live="polite"
+        >{{ liveAnnounce }}</span>
+
         <!-- Control Items - Cardless floating controls -->
         <div
-          v-for="{ node, nodeType, label, layout, isMonitor, accentColor } in controlNodes"
-          :key="node.id"
+          v-for="{ key, node, nodeType, label, layout, isMonitor, accentColor, control } in controlNodes"
+          :key="key"
           class="control-item"
           :class="[nodeType, {
-            dragging: dragging?.nodeId === node.id,
-            resizing: resizing?.nodeId === node.id,
+            dragging: dragging?.nodeId === key,
+            resizing: resizing?.nodeId === key,
             'edit-mode-item': editMode
           }]"
           :style="{
-            left: (getControlPosition(node.id, layout).x * CELL_SIZE) + 'px',
-            top: (getControlPosition(node.id, layout).y * CELL_SIZE) + 'px',
-            width: (layout.w * CELL_SIZE - 16) + 'px',
-            height: (layout.h * CELL_SIZE - 16) + 'px',
+            left: (getControlPosition(key, layout).x * CELL_SIZE) + 'px',
+            top: (getControlPosition(key, layout).y * CELL_SIZE) + 'px',
+            width: (getControlSize(key, layout).w * CELL_SIZE - 16) + 'px',
+            height: (getControlSize(key, layout).h * CELL_SIZE - 16) + 'px',
             '--accent-color': accentColor,
           }"
-          @mousedown="editMode ? startDrag($event, node.id, layout) : undefined"
+          role="group"
+          :aria-label="editMode ? `${label} tile, column ${layout.x + 1}, row ${layout.y + 1}, ${layout.w} by ${layout.h}. Arrows move, Shift+arrows resize.` : label"
+          :tabindex="editMode ? 0 : undefined"
+          @pointerdown="editMode ? startDrag($event, key, layout) : undefined"
+          @keydown="onTileKeydown($event, key, label, layout)"
         >
           <!-- Edit mode overlay for dragging -->
           <div
             v-if="editMode"
             class="edit-overlay"
-            @mousedown="startDrag($event, node.id, layout)"
+            aria-hidden="true"
           >
             <GripVertical :size="20" />
             <span class="edit-hint">Drag to move</span>
@@ -617,30 +828,57 @@ onUnmounted(() => {
           <!-- Label -->
           <div
             class="control-label"
-            @mousedown.stop
+            @pointerdown.stop
           >
             <input
-              v-if="editMode"
+              v-if="editMode && !control"
               type="text"
               class="label-input"
               :value="label"
-              @input="updateNodeLabel(node.id, ($event.target as HTMLInputElement).value)"
-              @mousedown.stop
+              :aria-label="`Rename ${label}`"
+              @change="updateNodeLabel(node.id, ($event.target as HTMLInputElement).value)"
+              @pointerdown.stop
             >
-            <span v-else>{{ label }}</span>
+            <span
+              v-else
+              :title="label"
+            >{{ label }}</span>
           </div>
 
           <!-- Control Widget -->
           <div
             class="control-widget"
-            @mousedown.stop
+            @pointerdown.stop
           >
+            <!-- A single control exposed from the Properties panel -->
+            <template v-if="control">
+              <div
+                class="exposed-control"
+                data-theme="dark"
+              >
+                <ControlRenderer
+                  :control="control"
+                  :model-value="getControlValue(node.id, control.id, control.default)"
+                  context="panel"
+                  @update="(v: unknown) => updateControlValue(node.id, control.id, v)"
+                />
+              </div>
+            </template>
+
             <!-- Slider as Fader -->
-            <template v-if="nodeType === 'slider'">
+            <template v-else-if="nodeType === 'slider'">
               <div class="fader-container">
                 <div
                   class="fader-track"
-                  @mousedown="startFaderDrag($event, node.id)"
+                  role="slider"
+                  tabindex="0"
+                  :aria-label="label"
+                  aria-valuemin="0"
+                  aria-valuemax="1"
+                  :aria-valuenow="(getControlValue(node.id, 'value', 0.5) as number)"
+                  :aria-valuetext="(getControlValue(node.id, 'value', 0.5) as number).toFixed(2)"
+                  @pointerdown="startFaderDrag($event, node.id)"
+                  @keydown="onFaderKeydown($event, node.id)"
                 >
                   <div
                     class="fader-fill"
@@ -675,9 +913,15 @@ onUnmounted(() => {
               <button
                 class="trigger-btn"
                 :class="{ active: getControlValue(node.id, 'value', false) }"
-                @mousedown="updateControlValue(node.id, 'value', true)"
-                @mouseup="updateControlValue(node.id, 'value', false)"
-                @mouseleave="updateControlValue(node.id, 'value', false)"
+                :aria-label="`${label} (hold)`"
+                :aria-pressed="!!getControlValue(node.id, 'value', false)"
+                @pointerdown="setTrigger(node.id, true)"
+                @pointerup="setTrigger(node.id, false)"
+                @pointerleave="setTrigger(node.id, false)"
+                @pointercancel="setTrigger(node.id, false)"
+                @keydown="onTriggerKey($event, node.id, true)"
+                @keyup="onTriggerKey($event, node.id, false)"
+                @blur="setTrigger(node.id, false)"
               >
                 <Zap :size="24" />
               </button>
@@ -687,13 +931,11 @@ onUnmounted(() => {
             <template v-else-if="nodeType === 'xy-pad'">
               <div
                 class="xy-pad"
-                @mousedown="(e) => {
-                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-                  const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height))
-                  updateControlValue(node.id, 'x', x)
-                  updateControlValue(node.id, 'y', y)
-                }"
+                tabindex="0"
+                role="application"
+                :aria-label="`${label} XY pad: X ${(getControlValue(node.id, 'x', 0.5) as number).toFixed(2)}, Y ${(getControlValue(node.id, 'y', 0.5) as number).toFixed(2)}. Arrow keys move.`"
+                @pointerdown="startXYDrag($event, node.id)"
+                @keydown="onXYKeydown($event, node.id)"
               >
                 <div
                   class="xy-cursor"
@@ -980,7 +1222,8 @@ onUnmounted(() => {
           <div
             v-if="editMode"
             class="resize-handle"
-            @mousedown.stop="startResize($event, node.id, layout)"
+            aria-hidden="true"
+            @pointerdown.stop="startResize($event, key, layout)"
           />
         </div>
       </div>
@@ -1001,6 +1244,7 @@ onUnmounted(() => {
           <li>Keyboard, Synth, Wavetable, Envelope</li>
           <li>Monitor, Oscilloscope, Main Output</li>
         </ul>
+        <p>Or expose any single control from a node's Properties panel (the crosshair button).</p>
         <button
           class="back-btn"
           @click="goToEditor"
@@ -1031,6 +1275,10 @@ onUnmounted(() => {
       </div>
       <div class="flow-info">
         <span>{{ controlNodes.length }} controls</span>
+        <span
+          v-if="isReflowed"
+          class="reflow-note"
+        > · re-packed for this screen</span>
       </div>
     </footer>
   </div>
@@ -1237,6 +1485,10 @@ onUnmounted(() => {
   margin-bottom: 4px;
   text-align: center;
   z-index: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .label-input {
@@ -1477,6 +1729,45 @@ onUnmounted(() => {
   border-radius: 2px;
   margin-top: 4px;
   z-index: 1;
+}
+
+/* Touch: pointer drags must not scroll/zoom the page. */
+.control-item.edit-mode-item,
+.fader-track,
+.xy-pad,
+.resize-handle {
+  touch-action: none;
+}
+
+.control-item:focus-visible,
+.fader-track:focus-visible,
+.xy-pad:focus-visible,
+.trigger-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Exposed single control (ControlRenderer, panel context, dark tokens) */
+.exposed-control {
+  width: 100%;
+  padding: 4px 2px;
+  background: transparent;
+}
+
+.reflow-note {
+  color: #f59e0b;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Resize Handle */

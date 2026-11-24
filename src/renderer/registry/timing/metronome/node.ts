@@ -37,10 +37,10 @@ const definition: NodeDefinition = {
   ],
   tags: ['metronome', 'tempo', 'bpm', 'clock', 'beat', 'pulse', 'timing'],
   info: {
-    overview: 'A musical clock that emits beat and bar triggers at a given BPM. It outputs the current beat number, bar number, and a phase value from 0 to 1 within each beat. Subdivision and swing controls let you dial in rhythmic feel.',
+    overview: 'A musical clock that emits beat and bar triggers at a given BPM. Beat fires on every tick of the chosen Subdivision (1/4 = four ticks per beat), while Beat # counts musical beats within the bar (1…Beats/Bar) and Bar # counts bars. Phase runs 0→1 between ticks. Tempo changes are smooth (no jumps), and Swing delays every second tick.',
     tips: [
       'Use the phase output with a map-range node to create smooth animations that lock to the beat.',
-      'Swing only affects subdivided beats, so set subdivision to 1/8 or 1/16 to hear its effect.',
+      'Swing delays every second tick (the off-beat); with subdivision 1/2 or 1/4 that gives classic swung eighths / sixteenths.',
       'Feed the bar trigger into a step-sequencer reset input to keep patterns aligned across changes.',
     ],
     pairsWith: ['step-sequencer', 'beat-detect', 'envelope', 'counter', 'lfo'],

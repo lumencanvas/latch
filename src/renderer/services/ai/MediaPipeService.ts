@@ -307,6 +307,15 @@ export function extractBlendshapeValues(
 // MediaPipe Service
 // ============================================================================
 
+/**
+ * Installed `@mediapipe/tasks-{vision,audio}` versions. The JS glue is bundled from node_modules,
+ * the WASM is fetched from the CDN, and they MUST be the same release. Bump these together with
+ * the packages (the packages' `exports` map blocks importing their package.json; a unit test
+ * asserts these match node_modules so an upgrade can't silently skew them).
+ */
+export const MEDIAPIPE_VISION_VERSION = '0.10.32'
+export const MEDIAPIPE_AUDIO_VERSION = '0.10.32'
+
 class MediaPipeServiceImpl {
   private filesetResolver: Awaited<ReturnType<FilesetResolver['forVisionTasks']>> | null = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -325,9 +334,10 @@ class MediaPipeServiceImpl {
   // MediaPipe requires monotonically increasing timestamps
   private lastTimestamp: Map<string, number> = new Map()
 
-  // CDN URLs for MediaPipe WASM files
-  private readonly WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-  private readonly AUDIO_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@latest/wasm'
+  // CDN URLs for MediaPipe WASM files — PINNED to the installed JS package version. `@latest`
+  // served a newer WASM (e.g. 1.x) to the bundled 0.10.x JS glue: the two must match exactly.
+  private readonly WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VISION_VERSION}/wasm`
+  private readonly AUDIO_WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@${MEDIAPIPE_AUDIO_VERSION}/wasm`
   private readonly MODEL_BASE = 'https://storage.googleapis.com/mediapipe-models'
 
   // =========================================================================

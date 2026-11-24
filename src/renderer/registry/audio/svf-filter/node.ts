@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { svfState } from '../shared'
+import { svfState, setParam, setProp } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'svf-filter',
@@ -94,14 +94,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }
 
   // Update filter parameters
-  state.lowpass.frequency.value = cutoff
-  state.lowpass.Q.value = Q
-  state.highpass.frequency.value = cutoff
-  state.highpass.Q.value = Q
-  state.bandpass.frequency.value = cutoff
-  state.bandpass.Q.value = Q
-  state.notch.frequency.value = cutoff
-  state.notch.Q.value = Q
+  for (const f of [state.lowpass, state.highpass, state.bandpass, state.notch]) {
+    setParam(f.frequency, cutoff)
+    setParam(f.Q, Q)
+  }
 
   // Handle drive
   const hadDrive = state.drive !== null
@@ -109,7 +105,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     if (!state.drive) {
       state.drive = new Tone.Distortion(driveAmount)
     }
-    state.drive.distortion = driveAmount
+    setProp(state.drive, 'distortion', driveAmount)
   } else if (state.drive) {
     // Drive was disabled - disconnect and dispose old drive node
     try {
@@ -124,15 +120,15 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Connect input to all filters (via drive if enabled)
   // Also reconnect if drive state changed
   if (state.prevInput !== audio || driveStateChanged) {
-    // Disconnect previous input based on PREVIOUS drive state (hadDrive)
+    // Disconnect previous input based on PREVIOUS drive state (hadDrive). When drive was — and
+    // still is — enabled, prevInput fed the DRIVE node, not the filters, so disconnect it from
+    // drive. Disconnecting from the filters instead (a no-op) left prevInput→drive dangling: a
+    // stale connection leak on every input change while drive stays on. When drive was just
+    // disposed (state.drive === null) its connections are already gone, so fall through to filters.
     if (state.prevInput) {
       try {
-        if (hadDrive) {
-          // Was connected via drive - but drive may have been disposed, so just disconnect from filters
-          state.prevInput.disconnect(state.lowpass)
-          state.prevInput.disconnect(state.highpass)
-          state.prevInput.disconnect(state.bandpass)
-          state.prevInput.disconnect(state.notch)
+        if (hadDrive && state.drive) {
+          state.prevInput.disconnect(state.drive)
         } else {
           state.prevInput.disconnect(state.lowpass)
           state.prevInput.disconnect(state.highpass)

@@ -23,7 +23,7 @@ const definition: NodeDefinition = {
   ],
   tags: ['convert', 'boolean', 'truthy', 'cast'],
   info: {
-    overview: 'Converts any value to a boolean. In truthy mode, standard JavaScript truthiness rules apply. In strict mode, only the values true and "true" produce true. Useful for normalizing toggle states from various data sources.',
+    overview: 'Converts any value to a boolean. In truthy mode, standard JavaScript truthiness rules apply. In strict mode, only true, 1 and the strings "true", "1", "yes" and "on" (any case, trimmed) produce true; everything else is false. Useful for normalizing toggle states from various data sources.',
     tips: [
       'Use strict mode when parsing string-based boolean values from JSON or query parameters.',
       'Connect the output to a Gate node to open or close data flow based on the converted value.',
@@ -32,6 +32,8 @@ const definition: NodeDefinition = {
   },
 }
 
+const STRICT_TRUE = new Set(['true', '1', 'yes', 'on'])
+
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
   const mode = (ctx.controls.get('mode') as string) ?? 'truthy'
@@ -39,14 +41,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   let result: boolean
 
   if (mode === 'strict') {
-    // Only accept true/false/"true"/"false"/1/0
-    if (value === true || value === 'true' || value === 1) {
-      result = true
-    } else if (value === false || value === 'false' || value === 0) {
-      result = false
-    } else {
-      result = false
-    }
+    // Explicit truthy tokens only (matches what users type into JSON / query strings).
+    result = typeof value === 'string'
+      ? STRICT_TRUE.has(value.trim().toLowerCase())
+      : value === true || value === 1
   } else {
     // Truthy conversion
     result = Boolean(value)

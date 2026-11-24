@@ -255,9 +255,14 @@ class AssetStorageManager {
 
     let url: string
 
-    if (isElectron() && asset.path) {
-      // Electron: Use file:// URL
-      url = `file://${asset.path}`
+    if (isElectron() && asset.path && window.electronAPI?.assets) {
+      // Electron: the renderer is served from app:// (cross-origin isolated), which
+      // can't load file:// URLs — read the bytes over IPC and hand out a blob URL.
+      const filename = asset.path.split(/[\\/]/).pop() || asset.path
+      const result = await window.electronAPI.assets.readFile(filename)
+      if (!result.success || !result.data) return null
+      url = URL.createObjectURL(new Blob([new Uint8Array(result.data)], { type: asset.mimeType }))
+      urlCache.set(assetId, url)
     } else if (asset.data) {
       // Web: Create blob URL
       url = URL.createObjectURL(asset.data)

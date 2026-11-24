@@ -27,9 +27,10 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? 0
-  return new Map([['result', a - b]])
+  const a = ctx.num('a', 0)
+  const b = ctx.num('b', 0)
+  const r = a - b
+  return new Map([['result', Number.isFinite(r) ? r : 0]])
 }
 
 export default defineNode({ definition, executor, pure: true })

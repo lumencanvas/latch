@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -34,13 +35,9 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
-  const startInput = ctx.inputs.get('start') as number | undefined
-  const endInput = ctx.inputs.get('end') as number | undefined
-
-  const start = startInput ?? (ctx.controls.get('start') as number) ?? 0
-  const endControl = (ctx.controls.get('end') as number) ?? -1
-  const end = endInput ?? endControl
+  const input = toStr(ctx.inputs.get('input'))
+  const start = Math.trunc(ctx.num('start', 0))
+  const end = Math.trunc(ctx.num('end', -1))
 
   const outputs = new Map<string, unknown>()
 
@@ -50,7 +47,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Handle -1 as "end of string"
+  // End -1 means "through the last element"; other negatives follow JS slice (-2 drops the
+  // last two). Kept as-is so saved flows don't shift by one.
   const result = end === -1 ? input.slice(start) : input.slice(start, end)
 
   outputs.set('result', result)

@@ -1,8 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
-import { nodeObjects, nodeMaterials } from '../shared'
+import { THREE } from '@/services/visual/ThreeRenderer'
+import { updatePrimitiveMesh } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'cylinder-3d',
@@ -48,35 +48,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const radiusBottom = (ctx.inputs.get('radiusBottom') as number) ?? (ctx.controls.get('radiusBottom') as number) ?? 0.5
   const height = (ctx.inputs.get('height') as number) ?? (ctx.controls.get('height') as number) ?? 1
   const radialSegments = (ctx.controls.get('radialSegments') as number) ?? 32
-  const material = ctx.inputs.get('material') as THREE.Material | undefined
 
-  const colorHex = (ctx.controls.get('color') as string) ?? '#808080'
-
-  const renderer = getThreeRenderer()
-
-  let mesh = nodeObjects.get(ctx.nodeId) as THREE.Mesh | undefined
-
-  if (!mesh) {
-    const defaultMat = renderer.createMaterial({ color: parseInt(colorHex.replace('#', ''), 16) })
-    mesh = renderer.createCylinder(radiusTop, radiusBottom, height, radialSegments, material ?? defaultMat)
-    nodeObjects.set(ctx.nodeId, mesh)
-  } else {
-    mesh.geometry.dispose()
-    mesh.geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, radialSegments)
-
-    if (material && mesh.material !== material) {
-      const oldMat = mesh.material as THREE.Material
-      if (oldMat && !nodeMaterials.has(ctx.nodeId)) {
-        oldMat.dispose()
-      }
-      mesh.material = material
-    }
-  }
-
-  const posX = (ctx.inputs.get('posX') as number) ?? 0
-  const posY = (ctx.inputs.get('posY') as number) ?? 0
-  const posZ = (ctx.inputs.get('posZ') as number) ?? 0
-  mesh.position.set(posX, posY, posZ)
+  // Geometry is rebuilt only when its params change; color/material/position update in place.
+  const mesh = updatePrimitiveMesh(ctx, `${radiusTop}|${radiusBottom}|${height}|${radialSegments}`, () => new THREE.CylinderGeometry(radiusTop, radiusBottom, height, radialSegments))
 
   const outputs = new Map<string, unknown>()
   outputs.set('object', mesh)

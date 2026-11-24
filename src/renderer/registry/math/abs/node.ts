@@ -24,7 +24,7 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = ctx.num('value', 0)
   return new Map([['result', Math.abs(value)]])
 }
 

@@ -8,7 +8,8 @@ import {
   Loader2,
   AlertTriangle,
 } from 'lucide-vue-next'
-import { categoryMeta, dataTypeMeta, type NodeDefinition, type WhenSchema, useNodesStore } from '@/stores/nodes'
+import { categoryMeta, type NodeDefinition, type WhenSchema, useNodesStore } from '@/stores/nodes'
+import { portTypeColor, portTypeGlyph, portHandleStyle as sharedHandleStyle, portLineClass as sharedLineClass, portSemanticLabel } from '@/utils/portMeta'
 import { evaluateWhen } from '@/composables/useControlHelpers'
 import { getCategoryIcon, fallbackCategoryIcon } from '@/utils/categoryIcons'
 import { resolveNodeRequirement } from '@/utils/platform'
@@ -78,7 +79,14 @@ function portValue(portId: string): string {
   return formatPortValue(runtimeStore.getNodeMetrics(props.id)?.outputValues?.[portId])
 }
 
-const isCollapsed = ref(false)
+// Collapsed state lives in node data (`_collapsed`) so it survives remounts
+// (off-screen virtualization, tab switches), save/load and undo — it used to be
+// a component-local ref that silently reset.
+const isCollapsed = computed(() => props.data?._collapsed === true)
+// Inline controls beyond this many are left to the Properties panel so a
+// many-control node (shader uniforms, xy-pad, 3D lights…) doesn't become a
+// screen-tall column on the canvas.
+const MAX_INLINE_CONTROLS = 8
 const hoveredPort = ref<string | null>(null)
 const isEditingLabel = ref(false)
 const editedLabel = ref('')
@@ -268,6 +276,9 @@ const inlineControls = computed(() => {
   })
 })
 
+const shownInlineControls = computed(() => inlineControls.value.slice(0, MAX_INLINE_CONTROLS))
+const hiddenControlCount = computed(() => Math.max(0, inlineControls.value.length - MAX_INLINE_CONTROLS))
+
 // A node with a declarative `ui` schema renders <NodeView> in its body (Phase 3 bullet 2).
 const hasUi = computed(() => !!definition.value?.ui)
 
@@ -319,64 +330,13 @@ const controlValues = computed(() => {
 const maxPorts = computed(() => Math.max(inputs.value.length, outputs.value.length, 1))
 const portSpacing = 20 // pixels between ports
 
-function getTypeColor(type: string): string {
-  return dataTypeMeta[type as keyof typeof dataTypeMeta]?.color ?? 'var(--color-neutral-400)'
-}
-
-// Non-colour type cues (WCAG 1.4.1). The glyph is revealed with the port label on
-// hover/select/wire; the line-style class turns the dotted/dashed types' dots into
-// a hollow ring so type is never conveyed by hue alone. Solid types (the majority)
-// are untouched — they keep the filled dot. `--port-color` feeds the ring colour.
-function getTypeGlyph(type: string): string {
-  return dataTypeMeta[type as keyof typeof dataTypeMeta]?.glyph ?? '*'
-}
-
-function portHandleStyle(type: string): Record<string, string> {
-  const color = getTypeColor(type)
-  return { background: color, '--port-color': color }
-}
-
-function portLineClass(type: string): Record<string, boolean> {
-  const lineStyle = dataTypeMeta[type as keyof typeof dataTypeMeta]?.lineStyle
-  return {
-    'port-line-dotted': lineStyle === 'dotted',
-    'port-line-dashed': lineStyle === 'dashed',
-  }
-}
-
-function getSemanticLabel(portId: string, type: string): string {
-  if (portId.includes('norm') || portId.includes('Norm') || portId.startsWith('0-1') || portId.includes('normalized')) {
-    return '0→1'
-  }
-  if (portId.includes('raw') || portId.includes('Raw')) {
-    return 'raw'
-  }
-  if (portId === 'pass' || portId.includes('through') || portId === 'passthrough') {
-    return 'pass'
-  }
-
-  const typeLabels: Record<string, string> = {
-    boolean: 'bool',
-    trigger: 'pulse',
-    any: 'any',
-    number: 'float',
-    string: 'str',
-    texture: 'tex',
-    audio: 'audio',
-    data: 'data',
-    scene3d: 'scene',
-    object3d: 'obj3d',
-    geometry3d: 'geo',
-    material3d: 'mat',
-    camera3d: 'cam',
-    light3d: 'light',
-    transform3d: 'xfm',
-    video: 'video',
-  }
-
-  return typeLabels[type] ?? type
-}
-
+// Port presentation is shared with NodePorts (custom-component nodes) via
+// utils/portMeta so the two renderers can't drift.
+const getTypeColor = portTypeColor
+const getTypeGlyph = portTypeGlyph
+const portHandleStyle = sharedHandleStyle
+const portLineClass = sharedLineClass
+const getSemanticLabel = portSemanticLabel
 
 function updateControl(controlId: string, value: unknown) {
   recordParamEdit(props.id, `Change ${nodeLabel.value}`, () => {
@@ -387,7 +347,14 @@ function updateControl(controlId: string, value: unknown) {
 }
 
 function toggleCollapse() {
-  isCollapsed.value = !isCollapsed.value
+  flowsStore.updateNodeData(props.id, { _collapsed: !isCollapsed.value })
+}
+
+// Open this node in the Properties panel (the "+N more" overflow affordance).
+function openInProperties() {
+  uiStore.selectNodes([props.id])
+  uiStore.setInspectedNode(props.id)
+  uiStore.openPropertiesPanel()
 }
 
 function startEditingLabel() {
@@ -547,7 +514,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         <span
           v-else
           class="node-title"
-          title="Double-click to edit label"
+          :title="`${nodeLabel} — double-click to edit label`"
           @dblclick.stop.prevent="startEditingLabel"
         >{{ nodeLabel }}</span>
         <Loader2
@@ -673,11 +640,14 @@ function onLabelKeydown(e: KeyboardEvent) {
           class="node-controls"
         >
           <div
-            v-for="control in inlineControls"
+            v-for="control in shownInlineControls"
             :key="control.id"
             class="inline-control"
           >
-            <label class="control-label">{{ control.label }}</label>
+            <label
+              class="control-label"
+              :title="control.label"
+            >{{ control.label }}</label>
 
             <ControlRenderer
               :control="control"
@@ -686,6 +656,15 @@ function onLabelKeydown(e: KeyboardEvent) {
               @update="(v) => updateControl(control.id, v)"
             />
           </div>
+          <button
+            v-if="hiddenControlCount > 0"
+            type="button"
+            class="more-controls-btn nodrag"
+            :aria-label="`${hiddenControlCount} more controls — open ${nodeLabel} in the Properties panel`"
+            @click.stop="openInProperties"
+          >
+            +{{ hiddenControlCount }} more in Properties
+          </button>
         </div>
       </div>
     </div>
@@ -697,8 +676,13 @@ function onLabelKeydown(e: KeyboardEvent) {
   position: relative;
   min-width: 100px;
   font-family: var(--font-mono);
-  /* Dynamic min-height based on port count */
-  min-height: calc(32px + (var(--port-count, 1) * var(--port-spacing, 20px)));
+  /* Dynamic min-height based on port count. The handle column starts 16px down
+     and each slot is --port-spacing + a 2px gap, so past ~5 ports the old
+     32px + n*20px under-sized the node and the last ports hung off its bottom. */
+  min-height: max(
+    calc(32px + (var(--port-count, 1) * var(--port-spacing, 20px))),
+    calc(24px + (var(--port-count, 1) * (var(--port-spacing, 20px) + 2px)))
+  );
   display: flex;
   flex-direction: column;
 }
@@ -808,6 +792,11 @@ function onLabelKeydown(e: KeyboardEvent) {
 
 .node-title {
   flex: 1;
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
@@ -936,12 +925,43 @@ function onLabelKeydown(e: KeyboardEvent) {
 }
 
 .control-label {
+  flex-shrink: 0;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 9px;
   font-weight: var(--font-weight-medium);
   color: var(--color-neutral-500);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   min-width: 40px;
+}
+
+/* "+N more" overflow → Properties panel */
+.more-controls-btn {
+  align-self: stretch;
+  padding: 3px var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-neutral-600);
+  background: var(--color-neutral-50);
+  border: 1px dashed var(--color-neutral-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.more-controls-btn:hover {
+  color: var(--color-primary-600);
+  border-color: var(--color-primary-400);
+}
+
+.more-controls-btn:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 1px;
 }
 
 /* Handle columns - positioned at node edges */

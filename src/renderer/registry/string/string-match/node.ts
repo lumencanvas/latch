@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { cachedRegExp, toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -32,14 +33,17 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
+  const input = toStr(ctx.inputs.get('input'))
   const pattern = (ctx.controls.get('pattern') as string) ?? '.*'
   const flags = (ctx.controls.get('flags') as string) ?? ''
 
   const outputs = new Map<string, unknown>()
 
   try {
-    const regex = new RegExp(pattern, flags)
+    // Strip the `g` flag for the match: with `g`, String.match returns an array of full-match
+    // strings and DROPS capture groups, so `groups`/`fullMatch` were garbage. This node reports a
+    // single match + its groups, so global has no meaning here. (Other flags — i, m, s — kept.)
+    const regex = cachedRegExp(pattern, flags.replace(/g/g, ''))
     const match = input.match(regex)
 
     if (match) {

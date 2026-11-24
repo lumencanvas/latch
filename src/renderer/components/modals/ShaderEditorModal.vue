@@ -16,10 +16,12 @@ import {
 } from '@/services/visual/ShaderPresets'
 import MonacoEditor from '@/components/editors/MonacoEditor.vue'
 import { useDialogA11y } from '@/composables/useDialogA11y'
+import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
+const { recordParamEdit } = useFlowHistory()
 
 const dialogRef = ref<HTMLElement | null>(null)
 const { onKeydown } = useDialogA11y({
@@ -194,11 +196,15 @@ function save() {
     const dynamicInputs = generateInputsFromUniforms(uniforms)
     const dynamicControls = generateControlsFromUniforms(uniforms)
 
-    // Update node with code and dynamic ports
-    flowsStore.updateNodeData(editingNode.value.id, {
-      code: code.value,
-      _dynamicInputs: dynamicInputs,
-      _dynamicControls: dynamicControls,
+    // Update node with code and dynamic ports — through history so the shader edit is
+    // undoable (Ctrl-Z), consistent with every other control edit.
+    const id = editingNode.value.id
+    recordParamEdit(id, 'Edit shader', () => {
+      flowsStore.updateNodeData(id, {
+        code: code.value,
+        _dynamicInputs: dynamicInputs,
+        _dynamicControls: dynamicControls,
+      })
     })
     originalCode.value = code.value
   }

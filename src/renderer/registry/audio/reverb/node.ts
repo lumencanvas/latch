@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { audioNodes, getOrCreateNode } from '../shared'
+import { audioNodes, getOrCreateNode, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'reverb',
@@ -56,10 +56,14 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     })
   }) as Tone.Reverb
 
-  // Update parameters
-  reverb.decay = decay
-  reverb.wet.value = wet
-  reverb.preDelay = preDelay
+  // Update parameters. IMPORTANT: `decay` and `preDelay` are Tone.Reverb SETTERS that each call
+  // generate() — building a fresh OfflineContext and rendering a seconds-long impulse response.
+  // Assigning them every frame triggered ~120 IR renders/sec (heavy CPU + audible glitches as the
+  // convolver buffer is continuously swapped). Only assign on an actual change. `wet` goes through
+  // setParam (also change-only).
+  if (reverb.decay !== decay) reverb.decay = decay
+  if (reverb.preDelay !== preDelay) reverb.preDelay = preDelay
+  setParam(reverb.wet, wet)
 
   // Connect input
   const prevInput = audioNodes.get(`${ctx.nodeId}_input`)

@@ -1,0 +1,8 @@
+{
+  "name": "sharp",
+  "version": "0.34.5-latch-stub",
+  "description": "Empty stand-in for sharp. LATCH only uses the browser build of @huggingface/transformers, which never loads sharp; the real package is a native binary that fails to install on unsupported platforms (e.g. Android/Termux, GitHub issue #1) and adds hundreds of MB to installs.",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true
+}

@@ -7,7 +7,7 @@
  */
 import { ref } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
-import { dataTypeMeta } from '@/stores/nodes'
+import { portTypeColor, portTypeGlyph, portHandleStyle, portLineClass, portSemanticLabel } from '@/utils/portMeta'
 
 interface Port { id: string; type: string; label: string }
 withDefaults(
@@ -16,23 +16,12 @@ withDefaults(
 )
 
 const hovered = ref<string | null>(null)
-const meta = (t: string) => dataTypeMeta[t as keyof typeof dataTypeMeta] as { color?: string; glyph?: string; lineStyle?: string } | undefined
-const typeColor = (t: string) => meta(t)?.color ?? 'var(--color-neutral-400)'
-const typeGlyph = (t: string) => meta(t)?.glyph ?? '*'
-const handleStyle = (t: string) => { const c = typeColor(t); return { background: c, '--port-color': c } }
-const lineClass = (t: string) => { const ls = meta(t)?.lineStyle; return { 'port-line-dotted': ls === 'dotted', 'port-line-dashed': ls === 'dashed' } }
-// Semantic type label — mirrors BaseNode.getSemanticLabel so the "float / cam / pulse …" chips match.
-function semantic(portId: string, type: string): string {
-  if (portId.includes('norm') || portId.includes('Norm') || portId.startsWith('0-1') || portId.includes('normalized')) return '0→1'
-  if (portId.includes('raw') || portId.includes('Raw')) return 'raw'
-  if (portId === 'pass' || portId.includes('through') || portId === 'passthrough') return 'pass'
-  const labels: Record<string, string> = {
-    boolean: 'bool', trigger: 'pulse', any: 'any', number: 'float', string: 'str', texture: 'tex',
-    audio: 'audio', data: 'data', scene3d: 'scene', object3d: 'obj3d', geometry3d: 'geo',
-    material3d: 'mat', camera3d: 'cam', light3d: 'light', transform3d: 'xfm', video: 'video',
-  }
-  return labels[type] ?? type
-}
+// Shared with BaseNode (utils/portMeta) so the two port renderers can't drift.
+const typeColor = portTypeColor
+const typeGlyph = portTypeGlyph
+const handleStyle = portHandleStyle
+const lineClass = portLineClass
+const semantic = portSemanticLabel
 </script>
 
 <template>
@@ -130,7 +119,8 @@ function semantic(portId: string, type: string): string {
 .np-right { right: 0; }
 .np-slot {
   position: relative;
-  height: 22px;
+  /* Same row pitch as BaseNode's .handle-slot so custom nodes line up with standard ones. */
+  height: var(--port-spacing, 20px);
   display: flex;
   align-items: center;
   pointer-events: auto;
@@ -170,8 +160,8 @@ function semantic(portId: string, type: string): string {
   top: 50% !important;
   transform: translateY(-50%) !important;
 }
-:deep(.np-handle.np-in) { left: -5px !important; }
-:deep(.np-handle.np-out) { right: -5px !important; }
+:deep(.np-handle.np-in) { left: calc(var(--node-port-size, 10px) / -2) !important; }
+:deep(.np-handle.np-out) { right: calc(var(--node-port-size, 10px) / -2) !important; }
 :deep(.np-handle:hover) { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1); }
 :deep(.np-handle.port-line-dotted) {
   background: var(--color-neutral-0) !important;

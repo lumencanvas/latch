@@ -34,8 +34,13 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))?.tex ?? null
+  const source = resolveEffectSource(ctx.nodeId, getThreeShaderRenderer(), ctx.inputs.get('texture'))
+  const texture = source?.tex ?? null
   const radius = (ctx.inputs.get('radius') as number) ?? (ctx.controls.get('radius') as number) ?? 1
+  // `passes` repeats the separable H+V blur (was declared but never read). Clamped to the
+  // control's 1..10 range so a wild value can't stall the frame.
+  const rawPasses = Number(ctx.controls.get('passes') ?? 2)
+  const passes = Math.max(1, Math.min(10, Math.round(Number.isFinite(rawPasses) ? rawPasses : 2)))
 
   const outputs = new Map<string, unknown>()
 
@@ -65,27 +70,33 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const width = 512
-  const height = 512
+  // Texel size must match the render size, which follows the input's resolution (render()
+  // sizes its target from u_texture) — a fixed 512 made the radius scale with the source size.
+  const width = source?.w ?? 512
+  const height = source?.h ?? 512
 
-  // Horizontal pass
-  uniforms.u_texture.value = texture
   uniforms.u_resolution.value.set(width, height)
   uniforms.u_radius.value = radius
-  uniforms.u_direction.value = 0
 
-  const horizontalTexture = renderer.render(shader, [], `${ctx.nodeId}_h`)
-
-  // Vertical pass
-  if (horizontalTexture) {
+  // Ping-pong between two targets: H pass reads `src` → `${id}_h`, V pass reads `_h` → `id`.
+  // Pass N+1's H reads pass N's `id` output while writing `_h`, so no target is ever both
+  // sampled and written in the same draw.
+  let src: unknown = texture
+  let resultTexture: unknown = null
+  for (let p = 0; p < passes; p++) {
+    uniforms.u_texture.value = src
+    uniforms.u_direction.value = 0
+    const horizontalTexture = renderer.render(shader, [], `${ctx.nodeId}_h`)
+    if (!horizontalTexture) {
+      resultTexture = null
+      break
+    }
     uniforms.u_texture.value = horizontalTexture
     uniforms.u_direction.value = 1
-
-    const resultTexture = renderer.render(shader, [], ctx.nodeId)
-    outputs.set('texture', resultTexture)
-  } else {
-    outputs.set('texture', null)
+    resultTexture = renderer.render(shader, [], ctx.nodeId)
+    src = resultTexture
   }
+  outputs.set('texture', resultTexture)
 
   return outputs
 }

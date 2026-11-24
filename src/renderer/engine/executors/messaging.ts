@@ -6,11 +6,16 @@
 
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState, defineLifecycle } from '../nodeState'
+import { risingEdge } from '../trigger'
 import { messageBus } from '@/services/messaging/MessageBus'
 
 // Per-node state (nodeId-keyed) — auto-cleaned via defineNodeState.
 export const sendPrevValues = defineNodeState<unknown>({ label: 'send' })
 export const activeReceiveNodes = defineNodeState<true>({ label: 'receive-active' })
+// Last channel value each Receive node observed — lets `changed` fire on the NEXT frame when
+// the receiver happened to execute before the sender (unwired, so topo order is arbitrary)
+// and the bus's per-frame change flag was cleared before the receiver ever saw it.
+export const receiveLastSeen = defineNodeState<{ v: unknown }>({ label: 'receive-last-seen' })
 
 // Channel-keyed (NOT nodeId-keyed), so it can't be a defineNodeState; its cleanup
 // + the message-bus side effects + the end-of-frame flush ride the generic loop
@@ -51,6 +56,7 @@ defineLifecycle({
 export function disposeAllMessagingState(): void {
   sendPrevValues.disposeAll()
   activeReceiveNodes.disposeAll()
+  receiveLastSeen.disposeAll()
   receiveProcessed.clear()
   messageBus.clear()
 }
@@ -59,6 +65,7 @@ export function disposeAllMessagingState(): void {
 export function gcMessagingState(validNodeIds: Set<string>): void {
   sendPrevValues.gc(validNodeIds)
   activeReceiveNodes.gc(validNodeIds)
+  receiveLastSeen.gc(validNodeIds)
   gcReceiveProcessed(validNodeIds)
 }
 
@@ -68,12 +75,11 @@ export function gcMessagingState(validNodeIds: Set<string>): void {
 
 export const sendExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const value = ctx.inputs.get('value')
-  const trigger = ctx.inputs.get('trigger')
   const channel = (ctx.controls.get('channel') as string) ?? 'default'
   const sendOnChange = (ctx.controls.get('sendOnChange') as boolean) ?? true
 
-  // Check for trigger
-  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
+  // Rising edge only — a level test re-sent on every frame the trigger was held high.
+  const hasTrigger = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
 
   // Check for value change
   const prevValue = sendPrevValues.get(ctx.nodeId)
@@ -115,8 +121,13 @@ export const receiveExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
   const hasChanged = messageBus.hasChanged(channel)
   const alreadyProcessed = nodeProcessed.get(ctx.nodeId) ?? false
+  const last = receiveLastSeen.get(ctx.nodeId)
+  receiveLastSeen.set(ctx.nodeId, { v: value })
+  // A value that moved since this receiver last looked also counts (covers receiver-before-
+  // sender ordering, where the flag set this frame is cleared before we run next frame).
+  const missedChange = last !== undefined && last.v !== value
 
-  if (hasChanged && !alreadyProcessed) {
+  if ((hasChanged && !alreadyProcessed) || missedChange) {
     outputs.set('changed', 1)
     nodeProcessed.set(ctx.nodeId, true)
   } else {

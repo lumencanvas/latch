@@ -1,9 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
-import { BLEND_FRAGMENT_THREE } from '../shared'
+import { BLEND_FRAGMENT_THREE, resolveEffectSource } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'blend',
@@ -36,8 +35,13 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const texture0 = ctx.inputs.get('a') as THREE.Texture | null
-  const texture1 = ctx.inputs.get('b') as THREE.Texture | null
+  // Resolve like the other effect nodes: canvas sources cached per slot, video via canvas
+  // (a raw video texture samples black; a raw <canvas> wasn't a sampler at all).
+  const renderer = getThreeShaderRenderer()
+  const srcA = ctx.inputs.get('a') ? resolveEffectSource(ctx.nodeId, renderer, ctx.inputs.get('a')) : null
+  const srcB = ctx.inputs.get('b') ? resolveEffectSource(`${ctx.nodeId}::b`, renderer, ctx.inputs.get('b')) : null
+  const texture0 = srcA?.tex ?? null
+  const texture1 = srcB?.tex ?? null
   const mixAmount = (ctx.inputs.get('mix') as number) ?? (ctx.controls.get('mix') as number) ?? 0.5
   const modeStr = (ctx.controls.get('mode') as string) ?? 'normal'
 
@@ -57,7 +61,13 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const renderer = getThreeShaderRenderer()
+  // One input only: pass it through. The `_blend` shader (and its uniforms) is SHARED by every
+  // Blend node, so an unset sampler kept whatever texture the previous Blend node bound —
+  // another node's image bled into this one.
+  if (!texture0 || !texture1) {
+    outputs.set('texture', texture0 ?? texture1)
+    return outputs
+  }
 
   // Get or compile blend shader
   let shader = renderer.getEffectShader('_blend')
@@ -82,15 +92,12 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   uniforms.u_mix.value = mixAmount
   uniforms.u_mode.value = mode
 
-  if (texture0) {
-    uniforms.u_texture0.value = texture0
-  }
-  if (texture1) {
-    uniforms.u_texture1.value = texture1
-  }
+  uniforms.u_texture0.value = texture0
+  uniforms.u_texture1.value = texture1
 
-  // Render to per-node render target
-  const resultTexture = renderer.render(shader, [], ctx.nodeId)
+  // Render to per-node render target at A's resolution (the shader has no u_texture, so the
+  // renderer would otherwise fall back to a square 512² target and squash the aspect)
+  const resultTexture = renderer.render(shader, [], ctx.nodeId, srcA?.w, srcA?.h)
   outputs.set('texture', resultTexture)
   return outputs
 }

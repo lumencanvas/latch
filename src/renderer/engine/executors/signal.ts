@@ -34,17 +34,31 @@ function isReset(v: unknown): boolean {
   return v === true || v === 1 || (typeof v === 'number' && v > 0)
 }
 
+/**
+ * Coerce a wire value to a finite number, else `fallback`. One NaN (or a string/object) used
+ * to poison the running state permanently — NaN + anything stays NaN.
+ */
+export function finiteOr(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v
+    : typeof v === 'boolean' ? (v ? 1 : 0)
+    : typeof v === 'string' && v.trim() !== '' ? Number(v)
+    : NaN
+  return Number.isFinite(n) ? n : fallback
+}
+
 function clampDt(dt: number): number {
   return Math.min(Math.max(dt, 0), MAX_DT)
 }
 
 /** Slew limiter: cap how fast the output can rise/fall toward the input (units/sec). */
 export const slewLimiterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const target = (ctx.inputs.get('value') as number) ?? (ctx.inputs.get('target') as number) ?? 0
-  const rise = Math.max(0, (ctx.controls.get('rise') as number) ?? 1)
-  const fall = Math.max(0, (ctx.controls.get('fall') as number) ?? 1)
+  const prev = signalState.get(ctx.nodeId)?.current ?? 0
+  const target = finiteOr(ctx.inputs.get('value') ?? ctx.inputs.get('target'), prev)
+  const rise = Math.max(0, finiteOr(ctx.controls.get('rise'), 1))
+  const fall = Math.max(0, finiteOr(ctx.controls.get('fall'), 1))
   const dt = clampDt(ctx.deltaTime)
   const state = getState(ctx.nodeId, target)
+  if (!Number.isFinite(state.current)) state.current = target
 
   if (isReset(ctx.inputs.get('reset'))) {
     state.current = target
@@ -59,7 +73,7 @@ export const slewLimiterExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
 /** Derivative: rate of change of the input per second. */
 export const derivativeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = finiteOr(ctx.inputs.get('value'), signalState.get(ctx.nodeId)?.last ?? 0)
   const dt = clampDt(ctx.deltaTime)
   const state = getState(ctx.nodeId, value)
 
@@ -73,7 +87,7 @@ export const derivativeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 
 /** Integral: time-accumulated sum of the input (optionally clamped). */
 export const integralExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = finiteOr(ctx.inputs.get('value'), 0)
   const dt = clampDt(ctx.deltaTime)
   const min = ctx.controls.get('min') as number
   const max = ctx.controls.get('max') as number
@@ -94,10 +108,12 @@ export const integralExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
 /** Tween to target: frame-rate-independent exponential approach to a moving target. */
 const TWEEN_EPS = 0.0001
 export const tweenToTargetExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const target = (ctx.inputs.get('target') as number) ?? (ctx.controls.get('target') as number) ?? 0
-  const speed = Math.max(0, (ctx.controls.get('speed') as number) ?? 5)
+  const prev = signalState.get(ctx.nodeId)?.current ?? 0
+  const target = finiteOr(ctx.inputs.get('target') ?? ctx.controls.get('target'), prev)
+  const speed = Math.max(0, finiteOr(ctx.controls.get('speed'), 5))
   const dt = clampDt(ctx.deltaTime)
   const state = getState(ctx.nodeId, target)
+  if (!Number.isFinite(state.current)) state.current = target
 
   if (isReset(ctx.inputs.get('reset'))) {
     state.current = target

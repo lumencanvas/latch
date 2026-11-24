@@ -2,6 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { BleAdapter } from '@/services/connections/adapters/BleAdapter'
+import { risingEdge } from '@/engine/trigger'
 import { bleScannerState } from '../shared'
 
 const definition: NodeDefinition = {
@@ -81,7 +82,9 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
-  const trigger = ctx.inputs.get('trigger')
+  // Rising edge, computed every frame before any early return. Level-testing re-opened the
+  // device chooser again right after each pick/cancel while the trigger was held high.
+  const scanEdge = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
   const serviceFilter = (ctx.controls.get('serviceFilter') as string) ?? 'any'
   const customServiceUUID = (ctx.controls.get('customServiceUUID') as string) ?? ''
   const nameFilter = (ctx.controls.get('nameFilter') as string) ?? ''
@@ -147,9 +150,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   // the next frame). A timer/autoplay-driven trigger with no recent click throws
   // NotAllowedError (caught below as an error). The bound-device path above is the
   // gesture-free route — prefer "Add Bluetooth Device" for a pre-bound device.
-  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
-
-  if (hasTrigger && !state.scanning) {
+  if (scanEdge && !state.scanning) {
     state.scanning = true
     state.status = 'scanning'
     state.error = null

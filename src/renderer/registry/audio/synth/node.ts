@@ -3,7 +3,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { synthState, getOrCreateNode } from '../shared'
+import { synthState, getOrCreateNode, setParam } from '../shared'
 import SynthNode from './SynthNode.vue'
 
 const definition: NodeDefinition = {
@@ -112,7 +112,6 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const note = (ctx.inputs.get('note') as number) ?? (ctx.controls.get('note') as number) ?? 60
   const velocity = (ctx.inputs.get('velocity') as number) ?? (ctx.controls.get('velocity') as number) ?? 100
   const gate = (ctx.inputs.get('gate') as boolean) ?? (ctx.controls.get('gate') as boolean) ?? false
-  const trigger = ctx.inputs.get('trigger')
 
   // Get control settings
   const instrument = (ctx.controls.get('instrument') as string) ?? 'sine'
@@ -153,12 +152,15 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }) as Tone.Gain
 
   // Update volume
-  outputGain.gain.value = Tone.dbToGain(volume)
+  setParam(outputGain.gain, Tone.dbToGain(volume))
 
   // Handle gate changes (note on/off)
   const gateRising = gate && !state.prevGate
   const gateFalling = !gate && state.prevGate
-  const hasTrigger = trigger === true || trigger === 1 || (typeof trigger === 'number' && trigger > 0)
+  // RISING edge only — a held-high trigger must not create a new Tone.Synth + triggerAttack
+  // every frame (~60/s create/dispose churn, unbounded if the note also changes). Matches
+  // bellows-instrument / poly-voice, which already use ctx.trig('trigger').
+  const hasTrigger = ctx.trig('trigger')
 
   // Note on
   if (gateRising || hasTrigger) {

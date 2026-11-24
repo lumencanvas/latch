@@ -1,8 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
-import { nodeObjects } from '../shared'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
+import { getOrCreateLight, updateLight } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'ambient-light-3d',
@@ -39,13 +39,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const colorHex = (ctx.controls.get('color') as string) ?? '#ffffff'
   const intensity = (ctx.inputs.get('intensity') as number) ?? (ctx.controls.get('intensity') as number) ?? 0.5
 
-  const color = parseInt(colorHex.replace('#', ''), 16)
-
-  const renderer = getThreeRenderer()
-  const light = renderer.createAmbientLight(color, intensity)
-
-  // Store reference
-  nodeObjects.set(ctx.nodeId, light)
+  // Cached per node and updated in place (was a new light every frame)
+  const light = getOrCreateLight(ctx.nodeId, THREE.AmbientLight, () => getThreeRenderer().createAmbientLight())
+  updateLight(light, colorHex, intensity)
 
   const outputs = new Map<string, unknown>()
   outputs.set('light', light)

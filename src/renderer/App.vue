@@ -17,6 +17,8 @@ import ConnectionManagerModal from './components/connections/ConnectionManagerMo
 import NodeExplorerModal from './components/modals/NodeExplorerModal.vue'
 import BluetoothDeviceManagerModal from './components/modals/BluetoothDeviceManagerModal.vue'
 import HelpModal from './components/modals/HelpModal.vue'
+import ImportTrustModal from './components/modals/ImportTrustModal.vue'
+import ElectronDeviceChooser from './components/modals/ElectronDeviceChooser.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
 import NotificationToasts from './components/layout/NotificationToasts.vue'
 import { usePersistence } from './composables/usePersistence'
@@ -129,6 +131,9 @@ onUnmounted(() => {
     <!-- Transient toast notifications (import results, etc.) -->
     <NotificationToasts />
 
+    <!-- Electron-only Web Bluetooth / Web Serial device picker -->
+    <ElectronDeviceChooser />
+
     <!-- Old loading overlay for data loading -->
     <div
       v-if="!isInitialized || isLoading"
@@ -195,6 +200,7 @@ onUnmounted(() => {
       <NodeExplorerModal />
       <BluetoothDeviceManagerModal />
       <HelpModal />
+      <ImportTrustModal />
     </template>
   </div>
 </template>

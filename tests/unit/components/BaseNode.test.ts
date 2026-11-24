@@ -354,3 +354,63 @@ describe('BaseNode error badge', () => {
   })
 })
 
+
+describe('BaseNode in-node control auto-layout', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function manyControlsDef(n: number): NodeDefinition {
+    return {
+      id: 'test-many',
+      name: 'Test Many',
+      version: '1.0.0',
+      category: 'data', // not compact → inline controls render
+      description: '',
+      icon: 'box',
+      platforms: ['web', 'electron'],
+      inputs: [],
+      outputs: [],
+      controls: Array.from({ length: n }, (_, i) => ({ id: `c${i}`, type: 'number', label: `Control ${i}`, default: 0 })),
+    }
+  }
+
+  function mountMany(n: number, data: Record<string, unknown> = {}) {
+    useNodesStore().register(manyControlsDef(n))
+    return mount(BaseNode as unknown as Record<string, unknown>, {
+      props: {
+        id: 'node-many', type: 'test-many', data: { nodeType: 'test-many', ...data },
+        selected: false, connectable: true, position: { x: 0, y: 0 }, dimensions: { width: 100, height: 50 },
+        dragging: false, resizing: false, zIndex: 0, events: {},
+      },
+      global: { stubs: { Handle: true, NodeConnectionStatus: true } },
+    })
+  }
+
+  it('caps inline controls and offers the rest in the Properties panel', async () => {
+    const wrapper = mountMany(20)
+    expect(wrapper.findAll('.inline-control')).toHaveLength(8)
+    const more = wrapper.find('.more-controls-btn')
+    expect(more.text()).toContain('+12')
+    const { useUIStore } = await import('@/stores/ui')
+    const ui = useUIStore()
+    ui.propertiesPanelOpen = false
+    await more.trigger('click')
+    expect(ui.inspectedNode).toBe('node-many')
+    expect(ui.propertiesPanelOpen).toBe(true)
+  })
+
+  it('shows no overflow affordance when everything fits', () => {
+    const wrapper = mountMany(3)
+    expect(wrapper.findAll('.inline-control')).toHaveLength(3)
+    expect(wrapper.find('.more-controls-btn').exists()).toBe(false)
+  })
+
+  it('collapsed state comes from node data (survives remounts / save / undo)', async () => {
+    const flows = useFlowsStore()
+    flows.createFlow('T')
+    const collapsed = mountMany(3, { _collapsed: true })
+    expect(collapsed.classes()).toContain('collapsed')
+    expect(collapsed.find('.node-body').exists()).toBe(false)
+  })
+})

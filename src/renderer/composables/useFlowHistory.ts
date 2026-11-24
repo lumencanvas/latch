@@ -167,6 +167,9 @@ export function useFlowHistory() {
     try {
       flowsStore.activeFlow.nodes = JSON.parse(JSON.stringify(snapshot.nodes))
       flowsStore.activeFlow.edges = JSON.parse(JSON.stringify(snapshot.edges))
+      // Mark dirty so autosave/persistence picks up the reverted graph — undo/redo mutate the
+      // nodes/edges directly and otherwise left `dirty` false, silently dropping the change on reload.
+      flowsStore.activeFlow.dirty = true
     } finally {
       historyStore.setUndoingOrRedoing(false)
     }
@@ -190,6 +193,9 @@ export function useFlowHistory() {
     try {
       flowsStore.activeFlow.nodes = JSON.parse(JSON.stringify(snapshot.nodes))
       flowsStore.activeFlow.edges = JSON.parse(JSON.stringify(snapshot.edges))
+      // Mark dirty so autosave/persistence picks up the reverted graph — undo/redo mutate the
+      // nodes/edges directly and otherwise left `dirty` false, silently dropping the change on reload.
+      flowsStore.activeFlow.dirty = true
     } finally {
       historyStore.setUndoingOrRedoing(false)
     }

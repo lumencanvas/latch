@@ -101,7 +101,7 @@ const controlCount = computed(() => props.definition.controls.length)
 }
 
 .meta-badge {
-  font-size: 9px;
+  font-size: 10px; /* 9px was at the legibility floor for the IN/OUT/CTRL counts */
   padding: 1px 4px;
   background: var(--color-neutral-100);
   color: var(--color-neutral-600);

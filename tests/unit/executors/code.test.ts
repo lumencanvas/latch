@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 import { functionExecutor, expressionExecutor, counterExecutor, toggleExecutor, valueDelayExecutor, templateExecutor } from '@/engine/executors/code'
 
 function ctx(
@@ -8,15 +8,15 @@ function ctx(
   nodeId = 'code-test',
   controlKey: 'code' | 'expression' = 'code'
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
     inputs: new Map(Object.entries(inputs)),
     controls: new Map([[controlKey, code]]),
-    getInputNode: () => null,
     deltaTime: 0.016,
     totalTime: 1,
     frameCount: 0,
-  } as unknown as ExecutionContext
+    definition: {} as never,
+  })
 }
 
 const run = (code: string, inputs: Record<string, unknown> = {}, nodeId?: string) =>
@@ -94,14 +94,15 @@ describe('expressionExecutor', () => {
 
 // ── Stateful edge-triggered code nodes (counter / toggle / value-delay) — previously untested ──
 function stCtx(nodeId: string, inputs: Record<string, unknown> = {}, controls: Record<string, unknown> = {}): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
     deltaTime: 0.016,
     totalTime: 1,
     frameCount: 0,
-  } as unknown as ExecutionContext
+    definition: {} as never,
+  })
 }
 
 describe('counterExecutor — edge-triggered counting', () => {
@@ -186,16 +187,20 @@ describe('templateExecutor — {{key}} interpolation', () => {
   it('substitutes input placeholders', () => {
     expect(out('hello {{name}}', { name: 'world' })).toBe('hello world')
   })
-  it('formats numeric inputs to 2 decimals', () => {
-    expect(out('x={{x}}', { x: 3 })).toBe('x=3.00')
+  it('formats fractional numbers to 2 decimals and integers as-is', () => {
+    expect(out('x={{x}}', { x: 3 })).toBe('x=3')
     expect(out('x={{x}}', { x: 1.2345 })).toBe('x=1.23')
+  })
+  it('disconnected a–d resolve to an empty string (as documented); objects print as JSON', () => {
+    expect(out('[{{a}}]', {})).toBe('[]')
+    expect(out('{{a}}', { a: { k: 1 } })).toBe('{"k":1}')
   })
   it('leaves an unknown placeholder untouched (not blank)', () => {
     expect(out('{{missing}}', {})).toBe('{{missing}}')
   })
-  it('exposes built-in time (2dp) and frame (numbers are 2dp-formatted)', () => {
-    // time is pre-stringified ("1.00"); frame is a NUMBER (0) so the executor formats it to 2dp.
-    expect(out('t={{time}} f={{frame}}')).toBe('t=1.00 f=0.00') // stCtx: totalTime 1, frame 0
+  it('exposes built-in time (2dp) and frame (an integer, so no decimals)', () => {
+    // time is pre-stringified ("1.00"); frame is an integer and prints as one (was "0.00").
+    expect(out('t={{time}} f={{frame}}')).toBe('t=1.00 f=0') // stCtx: totalTime 1, frame 0
   })
   it('empty template yields an empty string', () => {
     expect(out('')).toBe('')

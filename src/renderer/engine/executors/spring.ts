@@ -8,6 +8,7 @@
  */
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState } from '../nodeState'
+import { finiteOr } from './signal'
 
 interface SpringState {
   pos: number
@@ -21,18 +22,24 @@ const MAX_DT = 1 / 30
 const REST_EPS = 0.001
 
 export const springExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const target = (ctx.inputs.get('target') as number) ?? 0
+  let state = springState.get(ctx.nodeId)
+  // A NaN / non-numeric target holds the current position instead of poisoning the state.
+  const target = finiteOr(ctx.inputs.get('target'), state?.pos ?? 0)
   const reset = ctx.inputs.get('reset')
-  const tension = Math.max(0, (ctx.controls.get('tension') as number) ?? 120)
-  const friction = Math.max(0, (ctx.controls.get('friction') as number) ?? 14)
-  const mass = Math.max(0.01, (ctx.controls.get('mass') as number) ?? 1)
+  const tension = Math.max(0, finiteOr(ctx.controls.get('tension'), 120))
+  const friction = Math.max(0, finiteOr(ctx.controls.get('friction'), 14))
+  const mass = Math.max(0.01, finiteOr(ctx.controls.get('mass'), 1))
   const dt = Math.min(Math.max(ctx.deltaTime, 0), MAX_DT)
 
-  let state = springState.get(ctx.nodeId)
   // Initialise at the target so there's no startup lurch on the first frame.
   if (!state) {
     state = { pos: target, vel: 0 }
     springState.set(ctx.nodeId, state)
+  }
+  // Self-heal if the integrator ever went non-finite (e.g. extreme tension/mass).
+  if (!Number.isFinite(state.pos) || !Number.isFinite(state.vel)) {
+    state.pos = target
+    state.vel = 0
   }
 
   const resetting = reset === true || reset === 1 || (typeof reset === 'number' && reset > 0)

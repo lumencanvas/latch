@@ -6,10 +6,12 @@ import { useFlowsStore } from '@/stores/flows'
 import { useNodesStore } from '@/stores/nodes'
 import MonacoEditor from '@/components/editors/MonacoEditor.vue'
 import { useDialogA11y } from '@/composables/useDialogA11y'
+import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
+const { recordParamEdit } = useFlowHistory()
 
 const dialogRef = ref<HTMLElement | null>(null)
 const { onKeydown } = useDialogA11y({
@@ -59,8 +61,11 @@ return inputs.a + inputs.b;`
 
 function saveCode() {
   if (editingNode.value) {
-    flowsStore.updateNodeData(editingNode.value.id, {
-      code: code.value,
+    // Route through history so the code edit is undoable (Ctrl-Z), like every other control
+    // edit — a direct updateNodeData bypassed the undo stack.
+    const id = editingNode.value.id
+    recordParamEdit(id, 'Edit code', () => {
+      flowsStore.updateNodeData(id, { code: code.value })
     })
     originalCode.value = code.value
   }
@@ -208,7 +213,7 @@ return newSmooth;</pre>
               v-model="code"
               language="javascript"
               theme="vs-dark"
-              :minimap="true"
+              :minimap="false"
               line-numbers="on"
             />
           </div>
@@ -225,7 +230,7 @@ return newSmooth;</pre>
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.92); /* was 0.8 — sidebar/properties ghosted through beside the modal */
   display: flex;
   align-items: center;
   justify-content: center;

@@ -31,8 +31,8 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const a = (ctx.inputs.get('a') as number) ?? (ctx.controls.get('a') as number) ?? 0
-  const b = (ctx.inputs.get('b') as number) ?? (ctx.controls.get('b') as number) ?? 0
+  const a = ctx.num('a', 0)
+  const b = ctx.num('b', 0)
   const operator = (ctx.controls.get('operator') as string) ?? '=='
 
   let result: boolean

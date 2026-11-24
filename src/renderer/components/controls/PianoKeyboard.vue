@@ -414,7 +414,7 @@ onUnmounted(() => {
   font-family: var(--font-mono, 'SF Mono', Monaco, monospace);
   font-size: 9px;
   font-weight: 600;
-  color: #9ca3af;
+  color: #4b5563; /* WCAG AA on the white key (#9ca3af was ~2.5:1 → the key map was unreadable) */
   text-transform: uppercase;
 }
 
@@ -426,7 +426,7 @@ onUnmounted(() => {
   font-family: var(--font-mono, 'SF Mono', Monaco, monospace);
   font-size: 8px;
   font-weight: 600;
-  color: #9ca3af;
+  color: #4b5563; /* WCAG AA on the white key */
   background: rgba(0, 0, 0, 0.05);
   padding: 1px 4px;
   min-width: 14px;
@@ -440,7 +440,7 @@ onUnmounted(() => {
 
 .black-key-label {
   font-size: 7px;
-  color: #9ca3af;
+  color: #e5e7eb; /* light text on the dark black key (was mid-grey #9ca3af, low contrast) */
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -484,11 +484,11 @@ onUnmounted(() => {
 }
 
 .dark-mode .note-label {
-  color: #6b7280;
+  color: #d1d5db; /* light on the dark key (was #6b7280, low contrast) */
 }
 
 .dark-mode .computer-key-label {
-  color: #6b7280;
+  color: #d1d5db;
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -498,7 +498,7 @@ onUnmounted(() => {
 }
 
 .dark-mode .black-key-label {
-  color: #4b5563;
+  color: #b0b5bd; /* readable on the dark black key (was #4b5563) */
   background: transparent;
 }
 </style>

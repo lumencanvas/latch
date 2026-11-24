@@ -62,22 +62,22 @@ const parseIntExecutor = parseIntNode.executor
 const parseFloatExecutor = parseFloatNode.executor
 const toArrayExecutor = toArrayNode.executor
 const formatNumberExecutor = formatNumberNode.executor
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
 // Helper to create a mock execution context
 function createContext(
   inputs: Record<string, unknown> = {},
   controls: Record<string, unknown> = {}
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId: 'test-node',
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
-    getInputNode: () => null,
     deltaTime: 0.016,
     totalTime: 0,
     frameCount: 0,
-  }
+    definition: {} as never,
+  })
 }
 
 describe('Data Executors', () => {

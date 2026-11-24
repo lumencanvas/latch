@@ -3,7 +3,7 @@ import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
-import { pendingOperations, isNodeDisposed, getCached, setCached, hasTriggerValue, convertToImageData, depthEstimateState, depthColor, type DepthResult } from '../shared'
+import { pendingOperations, isNodeDisposed, getCached, setCached, triggerFired, convertToImageData, isSupportedImageInput, depthEstimateState, depthColor, type DepthResult } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'depth-estimation',
@@ -70,8 +70,12 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   // unsupported-source status stays on the internal `_error` channel.
   const depthError = getCached<string | null>(`${ctx.nodeId}:depthError`, null) ?? ''
 
-  const imageData = convertToImageData(source)
-  if (!imageData) {
+  // Edge state must advance every frame, before any early return (triggerFired's contract) —
+  // otherwise a press made while the source is unsupported/absent is missed or misread later.
+  const hasTrigger = triggerFired(ctx.nodeId, trigger) // edge-deduped (a held trigger no longer loops)
+
+  // Cheap type check every frame; the pixel readback happens only when an estimate starts.
+  if (!isSupportedImageInput(source)) {
     outputs.set('texture', state.texture)
     outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
     outputs.set('error', depthError)
@@ -80,11 +84,11 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   }
 
   // Throttle the async inference by frame interval (or run on trigger).
-  const hasTrigger = hasTriggerValue(trigger)
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, -1)
   const due = hasTrigger || lastFrame < 0 || currentFrame - lastFrame >= interval
-  if (due && !pendingOperations.has(ctx.nodeId)) {
+  const imageData = due && !pendingOperations.has(ctx.nodeId) ? convertToImageData(source) : null
+  if (imageData) {
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
     setCached(`${ctx.nodeId}:loading`, true)
     const operation = (async () => {
@@ -105,9 +109,12 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
     pendingOperations.set(ctx.nodeId, operation)
   }
 
-  // Rebuild the depth texture from the last result each frame (grayscale or colorized).
+  // Rebuild the depth texture only when a NEW result lands or the colorize mode flips — it used
+  // to re-run the per-pixel loop + a texture upload every frame for an unchanged result.
   const depth = getCached<DepthResult | null>(`${ctx.nodeId}:depth`, null)
-  if (depth && depth.width > 0 && depth.data.length > 0) {
+  if (depth && depth.width > 0 && depth.data.length > 0 && (state.builtFrom !== depth || state.builtColorize !== colorize)) {
+    state.builtFrom = depth
+    state.builtColorize = colorize
     const { width, height, channels, data } = depth
     const rgba = new Uint8ClampedArray(width * height * 4)
     for (let i = 0; i < width * height; i++) {

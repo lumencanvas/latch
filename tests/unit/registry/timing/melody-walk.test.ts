@@ -50,6 +50,17 @@ describe('melody-walk definition', () => {
 })
 
 describe('melody-walk executor', () => {
+  it('the first clock edge plays the start note (tonic), later edges walk', () => {
+    // Same first-edge semantics as the arpeggiator and progression.
+    const controls = { root: 'D', scaleName: 'dorian', seed: 1 }
+    const tonic = new bellows.Scale('D', 'dorian').degreeToMidi(0, 4)
+    const [first] = sequence('first', 1, controls)
+    expect(first).toBe(tonic)
+    frame('first', false, controls, { reset: true })
+    frame('first', false, controls)
+    expect(sequence('first', 1, controls)[0]).toBe(tonic) // and again after Reset
+  })
+
   it('emits only in-key notes on repeated clocks', () => {
     const controls = { root: 'C', scaleName: 'major', seed: 3 }
     const notes = sequence('key1', 16, controls)

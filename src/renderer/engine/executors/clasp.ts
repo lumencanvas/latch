@@ -27,8 +27,9 @@
  *      '@/engine/executors/clasp')`); inlining the bodies would force a store value-import that
  *      the `node-import-hygiene` guard forbids and that would re-close the cycle.
  *   2. `tests/contracts/public-exports.ts` pins the FILE PATH `@/engine/executors/clasp` as
- *      exporting `disposeAllClaspConnections`/`gcClaspState`; `executors/index.ts` imports from
- *      `./clasp`; clasp tests import `stopVideoElement` from here.
+ *      exporting `disposeAllClaspConnections`/`gcClaspState`; `executors/index.ts` re-exports the
+ *      cleanup helpers via the eager `./claspRuntime` facade (NOT a static `./clasp` import, which
+ *      defeated the lazy imports); clasp tests import `stopVideoElement` from here.
  * These executors are store-coupled shared infrastructure by nature, so this file IS the
  * category's shared module. Leave it here (maintainer decision, 2026-07-12).
  */
@@ -36,7 +37,8 @@
 import { Clasp, ClaspBuilder, type Value } from '@clasp-to/core'
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
-import { defineLifecycle } from '../nodeState'
+import { _setClaspModule } from './claspRuntime'
+import { risingEdge } from '../trigger'
 import { useConnectionsStore } from '@/stores/connections'
 import type { ClaspConnectionConfig } from '@/services/connections/types'
 import {
@@ -67,6 +69,12 @@ interface ClaspConnection {
   subscribers: Set<string>
   reconnectTimer: ReturnType<typeof setTimeout> | null
   reconnectAttempts: number
+  /** Set by an explicit Disconnect; suppresses auto-(re)connect until the next Connect. */
+  manuallyDisconnected: boolean
+  /** In-flight connect, shared so concurrent callers don't dial twice. */
+  connecting?: Promise<void> | null
+  /** Bumped by disconnect(); a connect that resolves under an older epoch closes its socket. */
+  epoch?: number
 }
 
 // Global connection manager
@@ -75,8 +83,10 @@ const claspConnections = new Map<string, ClaspConnection>()
 // State cache for subscribed values
 const claspState = new Map<string, unknown>()
 
-// Track active subscriptions per node
-const nodeSubscriptions = new Map<string, { connectionId: string; unsubscribe: () => void; pattern: string }>()
+// Track active subscriptions per node. `client` is the Clasp instance the handler was
+// registered on: a reconnect creates a NEW client, so a subscription bound to the old one
+// is dead and must be re-established (comparing connectionId/pattern alone never re-subscribed).
+const nodeSubscriptions = new Map<string, { connectionId: string; unsubscribe: () => void; pattern: string; client: Clasp }>()
 
 /**
  * Get or create a connection.
@@ -118,14 +128,25 @@ function getConnection(connectionId: string): ClaspConnection | undefined {
 /**
  * Get or create a connection and auto-connect if needed
  */
-async function getOrConnectConnection(connectionId: string): Promise<ClaspConnection | undefined> {
+async function getOrConnectConnection(connectionId: string, nodeId: string): Promise<ClaspConnection | undefined> {
   const connection = getConnection(connectionId)
   if (!connection) {
     return undefined
   }
 
+  // Every node using the connection is a subscriber: it keeps auto-reconnect alive
+  // (scheduleReconnect bails at 0 subscribers) and lets disposeClaspNode release the
+  // connection only once its LAST user is gone.
+  releaseNodeFromOtherConnections(nodeId, connectionId)
+  connection.subscribers.add(nodeId)
+
   // Auto-connect if disconnected and autoConnect is enabled
-  if (connection.status === 'disconnected' && connection.config.autoConnect) {
+  if (
+    connection.status === 'disconnected' &&
+    connection.config.autoConnect &&
+    !connection.manuallyDisconnected &&
+    !connection.reconnectTimer
+  ) {
     try {
       await connect(connection, connectionId)
     } catch (e) {
@@ -134,6 +155,20 @@ async function getOrConnectConnection(connectionId: string): Promise<ClaspConnec
   }
 
   return connection
+}
+
+/**
+ * A node that switched its connectionId must stop holding the old connection open (and
+ * keeping its auto-reconnect alive). Closes any connection left with no users.
+ */
+function releaseNodeFromOtherConnections(nodeId: string, keepId: string): void {
+  for (const [id, conn] of claspConnections) {
+    if (id === keepId || !conn.subscribers.delete(nodeId)) continue
+    if (conn.subscribers.size === 0) {
+      disconnect(conn)
+      claspConnections.delete(id)
+    }
+  }
 }
 
 /**
@@ -148,12 +183,13 @@ function createConnection(connectionId: string, config: ClaspConnection['config'
     subscribers: new Set(),
     reconnectTimer: null,
     reconnectAttempts: 0,
+    manuallyDisconnected: false,
   }
   claspConnections.set(connectionId, connection)
   return connection
 }
 
-/** Maximum reconnection attempts */
+/** Attempts after which the backoff stops growing (retries continue at the cap). */
 const MAX_RECONNECT_ATTEMPTS = 10
 
 /** Connection timeout in milliseconds */
@@ -166,6 +202,18 @@ async function connect(connection: ClaspConnection, connectionId: string): Promi
   if (connection.client?.connected) {
     return
   }
+  if (connection.connecting) return connection.connecting
+  const p = doConnect(connection, connectionId)
+  connection.connecting = p
+  try {
+    await p
+  } finally {
+    if (connection.connecting === p) connection.connecting = null
+  }
+}
+
+async function doConnect(connection: ClaspConnection, connectionId: string): Promise<void> {
+  const epoch = connection.epoch ?? 0
 
   connection.status = 'connecting'
   connection.error = null
@@ -181,16 +229,37 @@ async function connect(connection: ClaspConnection, connectionId: string): Promi
 
     // Create connection with timeout
     const connectPromise = builder.connect()
+    let timedOut = false
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Connection timeout')), CONNECTION_TIMEOUT)
+      timeoutId = setTimeout(() => {
+        timedOut = true
+        reject(new Error('Connection timeout'))
+      }, CONNECTION_TIMEOUT)
     })
+    // A connect that resolves AFTER the timeout would otherwise leave an orphan open socket.
+    connectPromise.then((late) => { if (timedOut) late.close() }, () => {})
 
-    connection.client = await Promise.race([connectPromise, timeoutPromise])
+    let fresh: Clasp
+    try {
+      fresh = await Promise.race([connectPromise, timeoutPromise])
+    } finally {
+      clearTimeout(timeoutId)
+    }
+    // Torn down (Stop / delete / Disconnect) while the handshake was pending: don't
+    // resurrect the connection — close the late socket and bail.
+    if ((connection.epoch ?? 0) !== epoch || claspConnections.get(connectionId) !== connection) {
+      try { fresh.close() } catch { /* already closed */ }
+      return
+    }
+    connection.client = fresh
     connection.status = 'connected'
     connection.reconnectAttempts = 0
 
-    // Listen for disconnection
-    connection.client.onDisconnect(() => {
+    // Listen for disconnection. Ignore a late event from a client we've already replaced.
+    const client = connection.client
+    client.onDisconnect(() => {
+      if (connection.client !== client) return
       connection.status = 'disconnected'
       connection.client = null
       scheduleReconnect(connection, connectionId)
@@ -201,6 +270,7 @@ async function connect(connection: ClaspConnection, connectionId: string): Promi
       connection.error = error.message
     })
   } catch (e) {
+    if ((connection.epoch ?? 0) !== epoch) return
     connection.status = 'error'
     connection.error = e instanceof Error ? e.message : String(e)
     connection.client = null
@@ -216,24 +286,26 @@ async function connect(connection: ClaspConnection, connectionId: string): Promi
  * Schedule reconnection with exponential backoff
  */
 function scheduleReconnect(connection: ClaspConnection, connectionId: string): void {
-  if (!connection.config.autoReconnect) return
+  if (!connection.config.autoReconnect || connection.manuallyDisconnected) return
   if (connection.subscribers.size === 0) return
-  if (connection.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.log(`[CLASP] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached for ${connectionId}`)
-    connection.error = 'Max reconnection attempts reached'
-    return
-  }
+  if (connection.reconnectTimer) return
 
-  // Exponential backoff: delay * 2^(attempts), capped at 30 seconds
+  // Exponential backoff: delay * 2^(attempts), capped at 30 seconds. Past
+  // MAX_RECONNECT_ATTEMPTS we keep retrying at the cap rather than giving up for good — a
+  // relay that comes back after a few minutes (venue Wi-Fi, laptop sleep) must reconnect
+  // without the user having to rebuild the graph.
   const backoffDelay = Math.min(
-    connection.config.reconnectDelay * Math.pow(2, connection.reconnectAttempts),
+    connection.config.reconnectDelay * Math.pow(2, Math.min(connection.reconnectAttempts, MAX_RECONNECT_ATTEMPTS)),
     30000
   )
   connection.reconnectAttempts++
 
-  console.log(`[CLASP] Reconnecting in ${backoffDelay}ms (attempt ${connection.reconnectAttempts})`)
+  console.log(`[CLASP] Reconnecting ${connectionId} in ${backoffDelay}ms (attempt ${connection.reconnectAttempts})`)
 
   connection.reconnectTimer = setTimeout(() => {
+    // Clear the handle so a later disconnect can schedule again and the executors'
+    // `!reconnectTimer` auto-connect guard isn't stuck on a fired timer forever.
+    connection.reconnectTimer = null
     connect(connection, connectionId).catch(() => {})
   }, backoffDelay)
 }
@@ -246,7 +318,9 @@ function disconnect(connection: ClaspConnection): void {
     clearTimeout(connection.reconnectTimer)
     connection.reconnectTimer = null
   }
-  connection.config.autoReconnect = false
+  connection.manuallyDisconnected = true
+  connection.epoch = (connection.epoch ?? 0) + 1
+  connection.connecting = null
 
   if (connection.client) {
     connection.client.close()
@@ -268,8 +342,10 @@ export const claspConnectionExecutor: NodeExecutorFn = async (ctx: ExecutionCont
   const autoReconnect = (ctx.controls.get('autoReconnect') as boolean) ?? true
   const reconnectDelay = (ctx.controls.get('reconnectDelay') as number) ?? 5000
 
-  const connectTrigger = ctx.inputs.get('connect') as boolean
-  const disconnectTrigger = ctx.inputs.get('disconnect') as boolean
+  // Edge-detect (before any early return) so a held Connect doesn't re-await connect()
+  // every frame and a held Disconnect doesn't tear the link down 60x/s.
+  const connectTrigger = risingEdge(ctx.nodeId, 'connect', ctx.inputs.get('connect'))
+  const disconnectTrigger = risingEdge(ctx.nodeId, 'disconnect', ctx.inputs.get('disconnect'))
 
   const outputs = new Map<string, unknown>()
 
@@ -291,10 +367,17 @@ export const claspConnectionExecutor: NodeExecutorFn = async (ctx: ExecutionCont
   }
 
   // Track this node as a subscriber
+  releaseNodeFromOtherConnections(ctx.nodeId, connectionId)
   connection.subscribers.add(ctx.nodeId)
 
+  // An explicit Connect re-arms auto-connect after a manual Disconnect.
+  if (connectTrigger) connection.manuallyDisconnected = false
+
   // Handle connect trigger
-  if (connectTrigger || (autoConnect && connection.status === 'disconnected' && !connection.reconnectTimer)) {
+  if (
+    connectTrigger ||
+    (autoConnect && connection.status === 'disconnected' && !connection.reconnectTimer && !connection.manuallyDisconnected)
+  ) {
     try {
       await connect(connection, connectionId)
     } catch (e) {
@@ -336,7 +419,7 @@ export const claspSubscribeExecutor: NodeExecutorFn = async (ctx: ExecutionConte
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('value', null)
@@ -349,7 +432,12 @@ export const claspSubscribeExecutor: NodeExecutorFn = async (ctx: ExecutionConte
 
   // Check if we need to update subscription
   const existingSub = nodeSubscriptions.get(ctx.nodeId)
-  if (!existingSub || existingSub.connectionId !== connectionId || existingSub.pattern !== pattern) {
+  if (
+    !existingSub ||
+    existingSub.connectionId !== connectionId ||
+    existingSub.pattern !== pattern ||
+    existingSub.client !== connection.client
+  ) {
     // Unsubscribe from old
     if (existingSub) {
       existingSub.unsubscribe()
@@ -364,7 +452,7 @@ export const claspSubscribeExecutor: NodeExecutorFn = async (ctx: ExecutionConte
       claspState.set(`${ctx.nodeId}:_lastType`, 'param')
     })
 
-    nodeSubscriptions.set(ctx.nodeId, { connectionId, unsubscribe, pattern })
+    nodeSubscriptions.set(ctx.nodeId, { connectionId, unsubscribe, pattern, client: connection.client })
   }
 
   // Get latest value from state cache
@@ -405,7 +493,7 @@ export const claspSetExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =>
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('sent', false)
@@ -439,7 +527,10 @@ export const claspEmitExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
   const address = (ctx.inputs.get('address') as string) ?? (ctx.controls.get('address') as string) ?? '/event'
   const payload = ctx.inputs.get('payload')
-  const trigger = ctx.inputs.get('trigger') as boolean
+  // Edge state must update EVERY frame — computed before the no-connection early returns,
+  // otherwise a trigger held while disconnected leaves wasHigh stale and the first press
+  // after (re)connect is lost.
+  const fire = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
 
   const outputs = new Map<string, unknown>()
 
@@ -449,7 +540,7 @@ export const claspEmitExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('sent', false)
@@ -457,8 +548,10 @@ export const claspEmitExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
     return outputs
   }
 
-  // Only send when triggered
-  if (trigger) {
+  // Emit on the trigger's RISING edge only. An emit is a discrete EVENT, so a held-high
+  // trigger must not fire it 60×/s (the storm the later-128 audit flagged as inconsistent
+  // with http/messaging). `set` stays continuous by design; events edge-detect.
+  if (fire) {
     try {
       connection.client.emit(address, (payload ?? null) as Value | undefined)
       outputs.set('sent', true)
@@ -482,7 +575,9 @@ export const claspEmitExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
 export const claspGetExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
   const address = (ctx.inputs.get('address') as string) ?? (ctx.controls.get('address') as string) ?? '/param'
-  const trigger = ctx.inputs.get('trigger') as boolean
+  // Rising edge, computed before the early returns (see emit). A held trigger used to
+  // re-await a network round-trip every frame, stalling the frame loop.
+  const fire = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
 
   const outputs = new Map<string, unknown>()
 
@@ -492,7 +587,7 @@ export const claspGetExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =>
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('value', null)
@@ -508,20 +603,28 @@ export const claspGetExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =>
     return outputs
   }
 
-  // Request from server when triggered
-  if (trigger) {
-    try {
-      const value = await connection.client.get(address)
-      outputs.set('value', value)
-      outputs.set('error', null)
-    } catch (e) {
-      outputs.set('value', null)
-      outputs.set('error', e instanceof Error ? e.message : 'Failed to get')
-    }
-  } else {
-    outputs.set('value', null)
-    outputs.set('error', null)
+  // Request from server on the trigger edge WITHOUT awaiting it in the frame; the reply is
+  // held in claspState and output (sticky) until the next fetch.
+  const valueKey = `${ctx.nodeId}:_getValue`
+  const errorKey = `${ctx.nodeId}:_getError`
+  if (fire) {
+    const nodeId = ctx.nodeId
+    const askedClient = connection.client
+    const live = () => connection.client === askedClient && connection.subscribers.has(nodeId)
+    connection.client.get(address).then(
+      (value) => {
+        if (!live()) return
+        claspState.set(`${nodeId}:_getValue`, value)
+        claspState.set(`${nodeId}:_getError`, null)
+      },
+      (e: unknown) => {
+        if (!live()) return
+        claspState.set(`${nodeId}:_getError`, e instanceof Error ? e.message : 'Failed to get')
+      },
+    )
   }
+  outputs.set('value', claspState.get(valueKey) ?? null)
+  outputs.set('error', claspState.get(errorKey) ?? null)
 
   return outputs
 }
@@ -543,7 +646,7 @@ export const claspStreamExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('sent', false)
@@ -572,7 +675,7 @@ export const claspStreamExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
 export const claspBundleExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
   const messages = ctx.inputs.get('messages') as Array<{ set?: [string, unknown]; emit?: [string, unknown] }> | undefined
-  const trigger = ctx.inputs.get('trigger') as boolean
+  const fire = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
   const scheduledTime = ctx.inputs.get('at') as number | undefined
 
   const outputs = new Map<string, unknown>()
@@ -583,7 +686,7 @@ export const claspBundleExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('sent', false)
@@ -591,8 +694,9 @@ export const claspBundleExecutor: NodeExecutorFn = async (ctx: ExecutionContext)
     return outputs
   }
 
-  // Only send when triggered
-  if (trigger && messages && messages.length > 0) {
+  // Send the bundle on the trigger's RISING edge only (a bundle dispatch is a discrete event;
+  // a held trigger must not resend it every frame).
+  if (fire && messages && messages.length > 0) {
     try {
       const opts = scheduledTime ? { at: scheduledTime } : undefined
       connection.client.bundle(messages as Array<{ set?: [string, Value]; emit?: [string, Value] }>, opts)
@@ -630,6 +734,8 @@ interface VideoReceiveNodeState {
   currentRoom: string
   currentPeerId: string
   currentConnectionId: string
+  /** Client the subscriptions were registered on — a reconnect replaces it (subs go dead). */
+  currentClient: Clasp | null
   videoMode: string
   currentAddress: string
   fpsCounter: { frames: number; lastReset: number; fps: number }
@@ -716,7 +822,7 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('texture', null)
@@ -751,6 +857,7 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
       currentRoom: '',
       currentPeerId: '',
       currentConnectionId: '',
+      currentClient: null,
       videoMode: '',
       currentAddress: '',
       fpsCounter: { frames: 0, lastReset: Date.now(), fps: 0 },
@@ -763,6 +870,7 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
   const needsResubscribe =
     state.currentRoom !== room ||
     state.currentConnectionId !== connectionId ||
+    state.currentClient !== connection.client ||
     state.videoMode !== videoMode ||
     (videoMode === 'direct' && state.currentAddress !== directAddress)
 
@@ -782,6 +890,7 @@ export const claspVideoReceiveExecutor: NodeExecutorFn = async (ctx: ExecutionCo
     state.receiving = false
     state.currentRoom = room
     state.currentConnectionId = connectionId
+    state.currentClient = connection.client
     state.currentPeerId = ''
     state.videoMode = videoMode
     state.currentAddress = ''
@@ -1070,7 +1179,7 @@ export const claspVideoSendExecutor: NodeExecutorFn = async (ctx: ExecutionConte
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('broadcasting', false)
@@ -1359,6 +1468,8 @@ function stopVideoSend(nodeId: string, _connection?: ClaspConnection): void {
 // ============================================================================
 
 interface GestureNodeState {
+  /** Client the subscription was registered on — a reconnect replaces it (sub goes dead). */
+  currentClient?: Clasp | null
   unsub: (() => void) | null
   currentConnectionId: string
   currentPattern: string
@@ -1389,7 +1500,7 @@ export const claspGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext
     return outputs
   }
 
-  const connection = await getOrConnectConnection(connectionId)
+  const connection = await getOrConnectConnection(connectionId, ctx.nodeId)
 
   if (!connection || connection.status !== 'connected' || !connection.client) {
     outputs.set('x', 0)
@@ -1415,7 +1526,11 @@ export const claspGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext
   }
 
   // Resubscribe if connection or pattern changed
-  if (state.currentConnectionId !== connectionId || state.currentPattern !== pattern) {
+  if (
+    state.currentConnectionId !== connectionId ||
+    state.currentPattern !== pattern ||
+    state.currentClient !== connection.client
+  ) {
     if (state.unsub) { state.unsub(); state.unsub = null }
 
     const nodeId = ctx.nodeId
@@ -1433,6 +1548,7 @@ export const claspGestureExecutor: NodeExecutorFn = async (ctx: ExecutionContext
     })
 
     state.currentConnectionId = connectionId
+    state.currentClient = connection.client
     state.currentPattern = pattern
   }
 
@@ -1509,19 +1625,20 @@ export function disposeClaspNode(nodeId: string): void {
   // Clean up subscriptions
   const sub = nodeSubscriptions.get(nodeId)
   if (sub) {
-    sub.unsubscribe()
-
-    const connection = claspConnections.get(sub.connectionId)
-    if (connection) {
-      connection.subscribers.delete(nodeId)
-
-      // If no more subscribers, disconnect
-      if (connection.subscribers.size === 0) {
-        disconnect(connection)
-        claspConnections.delete(sub.connectionId)
-      }
-    }
+    try { sub.unsubscribe() } catch { /* client may already be closed */ }
     nodeSubscriptions.delete(nodeId)
+  }
+
+  // Release this node from EVERY connection it used (connection nodes and send/get/video
+  // nodes register too, not just subscribers). A connection is closed only when its last
+  // user goes — previously a connection node was never released (it has no subscription
+  // entry), and deleting one subscribe node closed a link other nodes were still using.
+  for (const [connectionId, connection] of claspConnections) {
+    if (!connection.subscribers.delete(nodeId)) continue
+    if (connection.subscribers.size === 0) {
+      disconnect(connection)
+      claspConnections.delete(connectionId)
+    }
   }
 
   // Clean up state cache entries for this node
@@ -1545,6 +1662,9 @@ export function disposeClaspNode(nodeId: string): void {
  * Dispose all CLASP connections
  */
 export function disposeAllClaspConnections(): void {
+  for (const sub of nodeSubscriptions.values()) {
+    try { sub.unsubscribe() } catch { /* ignore */ }
+  }
   // Dispose all video/gesture state
   for (const nodeId of videoReceiveState.keys()) {
     disposeClaspVideoReceiveNode(nodeId)
@@ -1584,6 +1704,9 @@ export function gcClaspState(validNodeIds: Set<string>): void {
   ])
   // claspState keys are `${nodeId}:...`; recover the node ids.
   for (const key of claspState.keys()) ids.add(key.split(':')[0])
+  for (const connection of claspConnections.values()) {
+    for (const id of connection.subscribers) ids.add(id)
+  }
   for (const id of ids) if (!validNodeIds.has(id)) disposeClaspNode(id)
 }
 
@@ -1606,13 +1729,12 @@ export function getClaspConnectionStatus(): Map<string, { status: string; sessio
 // Export all executors
 // ============================================================================
 
-// CLASP state cleanup self-registers with the engine's generic lifecycle loop
-// (was hand-wired as gcClaspState / disposeAllClaspConnections calls in
-// ExecutionEngine). defineLifecycle-wrap: the connection + video/gesture media
-// teardown is unchanged, only invoked generically. disposeClaspNode /
-// getClaspConnectionStatus stay exported for external/engine use.
-defineLifecycle({
-  label: 'clasp',
-  gc: gcClaspState,
-  disposeAll: disposeAllClaspConnections,
+// CLASP state cleanup is registered with the engine's lifecycle loop by the eager
+// `./claspRuntime` facade (so this heavy module can stay lazily loaded); hand it the real
+// functions now that we're loaded.
+_setClaspModule({
+  disposeClaspNode,
+  disposeAllClaspConnections,
+  gcClaspState,
+  getClaspConnectionStatus,
 })

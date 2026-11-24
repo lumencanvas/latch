@@ -51,6 +51,22 @@ export function isDeviceOptions(options: DeviceOption[] | string[]): options is 
 }
 
 /**
+ * Coerce the raw string a native `<select>` emits back to the TYPE of the matching option.
+ * A `<select>` value is always a string, so a numeric-option select (e.g. MQTT QoS `[0,1,2]`,
+ * Serial baud `[9600,…]`) would store the number as a default but a string once edited — and
+ * executors that read it `as number` then hand a string to the adapter API. This restores the
+ * option's original value (number stays number). Unmatched → the raw string (device options,
+ * free values). Pure. `options` is the resolved list (string[] or DeviceOption[]).
+ */
+export function coerceSelectValue(raw: string, options: DeviceOption[] | string[]): unknown {
+  for (const opt of options) {
+    const native = typeof opt === 'object' ? (opt as DeviceOption).value : opt
+    if (String(native) === raw) return native
+  }
+  return raw
+}
+
+/**
  * Parse + clamp a number-control input. `fallback` is used when the raw value isn't finite
  * (the caller supplies it from its own current value / default). Pure — returns the value;
  * the caller commits it however it persists.

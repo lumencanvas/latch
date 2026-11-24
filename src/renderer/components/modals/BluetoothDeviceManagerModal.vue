@@ -735,7 +735,7 @@ function bindToTarget() {
 }
 .card-vendor {
   font-size: var(--font-size-xs);
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-500); /* AA: vendor label (INTERAXON/NEOSENSORY) was 3.36:1 on white */
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wider);
 }

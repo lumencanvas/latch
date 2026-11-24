@@ -1,17 +1,27 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join, resolve, sep } from 'path'
 import { readdir, readFile, stat, writeFile, unlink, mkdir } from 'fs/promises'
 import { watch, type FSWatcher, existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { APP_ENTRY_URL, handleAppScheme, registerAppScheme } from './protocol'
+import {
+  handleTrusted,
+  installNavigationGuards,
+  installPermissionPolicy,
+  isHttpUrl,
+  setDevRendererUrl,
+} from './security'
+import { attachDeviceChooser, registerDeviceChooserIpc } from './deviceChooser'
+import { migrateFileOriginStorage } from './storageMigration'
 
 let mainWindow: BrowserWindow | null = null
 let customNodesWatcher: FSWatcher | null = null
-let assetsBasePath: string | null = null
 
-/** Only allow opening external http(s) URLs (not file://, custom schemes, etc.). */
-function isHttpUrl(url: string): boolean {
-  return typeof url === 'string' && /^https?:\/\//i.test(url)
-}
+const devRendererUrl = is.dev ? process.env['ELECTRON_RENDERER_URL'] : undefined
+setDevRendererUrl(devRendererUrl)
+
+// Must happen before the 'ready' event.
+registerAppScheme()
 
 /**
  * Resolve `userPath` under `base` and refuse anything that escapes it (path
@@ -39,53 +49,49 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false, // Required for some native modules
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      spellcheck: false,
     },
   })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
   })
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    // Only hand http(s) links to the OS; never file:// or custom schemes.
-    if (isHttpUrl(details.url)) shell.openExternal(details.url)
-    return { action: 'deny' }
+  mainWindow.on('closed', () => {
+    mainWindow = null
   })
 
-  // Web Bluetooth pairing bridge. The BLE nodes + the 'ble' connection call
-  // navigator.bluetooth.requestDevice(); Electron CANCELS every such request unless a
-  // 'select-bluetooth-device' listener exists (electronjs.org/docs → web-contents), so
-  // without this the desktop build's BLE — which we advertise as electron-supported —
-  // silently never pairs. Each request is already scoped by service UUID in the
-  // renderer, so pick the first matching device. The event re-fires as devices are
-  // discovered, so wait for a non-empty list rather than cancelling early.
-  // TODO(ble-ux): forward deviceList to a renderer picker so the user chooses among matches.
-  mainWindow.webContents.on('select-bluetooth-device', (event, deviceList, callback) => {
-    event.preventDefault()
-    const device = deviceList[0]
-    if (device) callback(device.deviceId)
-    // else: no match yet — don't cancel; the event fires again as more are found.
-  })
+  // Web Bluetooth / Web Serial: route Chromium's device pick to the renderer chooser.
+  attachDeviceChooser(mainWindow.webContents)
 
-  // Load the app
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  if (devRendererUrl) {
+    void mainWindow.loadURL(devRendererUrl)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadURL(APP_ENTRY_URL)
   }
 }
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for Windows
   electronApp.setAppUserModelId('com.lumencanvas.latch')
+
+  handleAppScheme(join(__dirname, '../renderer'))
+  installNavigationGuards()
+  installPermissionPolicy()
+  registerDeviceChooserIpc()
 
   // Default open or close DevTools by F12 in dev mode
   // and ignore CommandOrControl + R in production
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  // Packaged builds only: carry saved flows/prefs over from the pre-app:// (file://) origin.
+  if (!devRendererUrl) await migrateFileOriginStorage()
 
   createWindow()
 
@@ -102,56 +108,57 @@ app.on('window-all-closed', () => {
   }
 })
 
-// IPC Handlers
+// ============================================================================
+// IPC Handlers — every channel is sender-validated (top-level frame of our
+// renderer origin only). Keep this surface minimal: it is what a compromised
+// renderer could reach.
+// ============================================================================
 
-// File dialogs
-ipcMain.handle('dialog:openFile', async (_, options) => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
+type FileFilter = { name: string; extensions: string[] }
+
+function sanitizeFilters(filters: unknown): FileFilter[] | undefined {
+  if (!Array.isArray(filters)) return undefined
+  return filters
+    .filter((f): f is FileFilter => !!f && typeof f.name === 'string' && Array.isArray(f.extensions))
+    .map((f) => ({ name: f.name, extensions: f.extensions.filter((e) => typeof e === 'string') }))
+}
+
+// File dialogs (parented to the requesting window)
+handleTrusted('dialog:openFile', async (event, options?: { filters?: unknown }) => {
+  return dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
     properties: ['openFile'],
-    filters: options?.filters ?? [
+    filters: sanitizeFilters(options?.filters) ?? [
       { name: 'CLASP Flow', extensions: ['cfp', 'json'] },
       { name: 'All Files', extensions: ['*'] },
     ],
   })
-  return result
 })
 
-ipcMain.handle('dialog:saveFile', async (_, options) => {
-  const result = await dialog.showSaveDialog(mainWindow!, {
-    filters: options?.filters ?? [
+handleTrusted('dialog:saveFile', async (event, options?: { filters?: unknown }) => {
+  return dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender)!, {
+    filters: sanitizeFilters(options?.filters) ?? [
       { name: 'CLASP Flow', extensions: ['cfp'] },
       { name: 'JSON', extensions: ['json'] },
     ],
   })
-  return result
 })
 
-ipcMain.handle('dialog:openDirectory', async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
+handleTrusted('dialog:openDirectory', async (event) => {
+  return dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender)!, {
     properties: ['openDirectory'],
   })
-  return result
 })
 
 // App info
-ipcMain.handle('app:getVersion', () => {
-  return app.getVersion()
-})
-
-ipcMain.handle('app:getPlatform', () => {
-  return process.platform
-})
-
-ipcMain.handle('app:getPath', (_, name: string) => {
-  return app.getPath(name as any)
-})
+handleTrusted('app:getVersion', () => app.getVersion())
+handleTrusted('app:getPlatform', () => process.platform)
 
 // Window controls
-ipcMain.handle('window:minimize', () => {
+handleTrusted('window:minimize', () => {
   mainWindow?.minimize()
 })
 
-ipcMain.handle('window:maximize', () => {
+handleTrusted('window:maximize', () => {
   if (mainWindow?.isMaximized()) {
     mainWindow.unmaximize()
   } else {
@@ -159,44 +166,35 @@ ipcMain.handle('window:maximize', () => {
   }
 })
 
-ipcMain.handle('window:close', () => {
+handleTrusted('window:close', () => {
   mainWindow?.close()
 })
 
-ipcMain.handle('window:isMaximized', () => {
-  return mainWindow?.isMaximized()
-})
+handleTrusted('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
-// Shell operations
-ipcMain.handle('shell:openExternal', (_, url: string) => {
+// Shell: http(s) only — never file://, custom schemes or OS handlers.
+handleTrusted('shell:openExternal', (_, url: unknown) => {
   if (!isHttpUrl(url)) return Promise.resolve()
   return shell.openExternal(url)
 })
 
-ipcMain.handle('shell:openPath', (_, path: string) => {
-  return shell.openPath(path)
-})
+// ============================================================================
+// Custom Nodes
+// ============================================================================
 
-ipcMain.handle('shell:showItemInFolder', (_, path: string) => {
-  shell.showItemInFolder(path)
-})
+function customNodesDir(): string {
+  // In development, use the project root; in production, the user data folder.
+  return is.dev ? join(process.cwd(), 'custom-nodes') : join(app.getPath('userData'), 'custom-nodes')
+}
 
-// Custom Nodes IPC Handlers
-
-// Get the path to custom-nodes folder
-ipcMain.handle('customNodes:getPath', () => {
-  // In development, use the project root; in production, use app resources
-  if (is.dev) {
-    return join(process.cwd(), 'custom-nodes')
-  }
-  return join(app.getPath('userData'), 'custom-nodes')
-})
+handleTrusted('customNodes:getPath', () => customNodesDir())
 
 // Scan custom-nodes directory for node packages
-ipcMain.handle('customNodes:scanDirectory', async () => {
-  const customNodesPath = is.dev
-    ? join(process.cwd(), 'custom-nodes')
-    : join(app.getPath('userData'), 'custom-nodes')
+handleTrusted('customNodes:scanDirectory', async () => {
+  const customNodesPath = customNodesDir()
+  // First run: create the folder so users can drop packages in (and the scan/watch don't log
+  // ENOENT errors on every launch).
+  await mkdir(customNodesPath, { recursive: true }).catch(() => {})
 
   try {
     const entries = await readdir(customNodesPath, { withFileTypes: true })
@@ -222,12 +220,8 @@ ipcMain.handle('customNodes:scanDirectory', async () => {
 })
 
 // Read a node's definition.json
-ipcMain.handle('customNodes:readDefinition', async (_, packageName: string) => {
-  const customNodesPath = is.dev
-    ? join(process.cwd(), 'custom-nodes')
-    : join(app.getPath('userData'), 'custom-nodes')
-
-  const pkgDir = containedPath(customNodesPath, packageName)
+handleTrusted('customNodes:readDefinition', async (_, packageName: string) => {
+  const pkgDir = containedPath(customNodesDir(), packageName)
   if (!pkgDir) return { success: false, error: 'Invalid package name' }
   const defPath = join(pkgDir, 'definition.json')
 
@@ -241,12 +235,8 @@ ipcMain.handle('customNodes:readDefinition', async (_, packageName: string) => {
 })
 
 // Read a node's executor.js
-ipcMain.handle('customNodes:readExecutor', async (_, packageName: string) => {
-  const customNodesPath = is.dev
-    ? join(process.cwd(), 'custom-nodes')
-    : join(app.getPath('userData'), 'custom-nodes')
-
-  const pkgDir = containedPath(customNodesPath, packageName)
+handleTrusted('customNodes:readExecutor', async (_, packageName: string) => {
+  const pkgDir = containedPath(customNodesDir(), packageName)
   if (!pkgDir) return { success: false, error: 'Invalid package name' }
   const execPath = join(pkgDir, 'executor.js')
 
@@ -259,10 +249,8 @@ ipcMain.handle('customNodes:readExecutor', async (_, packageName: string) => {
 })
 
 // Start watching custom-nodes directory for changes
-ipcMain.handle('customNodes:watchDirectory', () => {
-  const customNodesPath = is.dev
-    ? join(process.cwd(), 'custom-nodes')
-    : join(app.getPath('userData'), 'custom-nodes')
+handleTrusted('customNodes:watchDirectory', () => {
+  const customNodesPath = customNodesDir()
 
   // Stop existing watcher if any
   if (customNodesWatcher) {
@@ -293,7 +281,7 @@ ipcMain.handle('customNodes:watchDirectory', () => {
 })
 
 // Stop watching
-ipcMain.handle('customNodes:stopWatching', () => {
+handleTrusted('customNodes:stopWatching', () => {
   if (customNodesWatcher) {
     customNodesWatcher.close()
     customNodesWatcher = null
@@ -301,19 +289,19 @@ ipcMain.handle('customNodes:stopWatching', () => {
   return { success: true }
 })
 
+app.on('will-quit', () => {
+  customNodesWatcher?.close()
+  customNodesWatcher = null
+})
+
 // ============================================================================
-// Assets IPC Handlers
+// Assets — confined to <userData>/assets (the renderer can no longer move it).
 // ============================================================================
 
-// Get the default assets path
 function getAssetsPath(): string {
-  if (assetsBasePath) {
-    return assetsBasePath
-  }
   return join(app.getPath('userData'), 'assets')
 }
 
-// Ensure assets directory exists
 async function ensureAssetsDir(): Promise<void> {
   const path = getAssetsPath()
   if (!existsSync(path)) {
@@ -321,28 +309,12 @@ async function ensureAssetsDir(): Promise<void> {
   }
 }
 
-// Get assets base path
-ipcMain.handle('assets:getBasePath', () => {
-  return getAssetsPath()
-})
-
-// Set custom assets base path
-ipcMain.handle('assets:setBasePath', async (_, path: string) => {
-  try {
-    // Verify path exists or can be created
-    if (!existsSync(path)) {
-      await mkdir(path, { recursive: true })
-    }
-    assetsBasePath = path
-    return { success: true }
-  } catch (error) {
-    return { success: false, error: String(error) }
-  }
-})
+handleTrusted('assets:getBasePath', () => getAssetsPath())
 
 // Save file to assets directory
-ipcMain.handle('assets:saveFile', async (_, data: Uint8Array, filename: string) => {
+handleTrusted('assets:saveFile', async (_, data: Uint8Array, filename: string) => {
   try {
+    if (!(data instanceof Uint8Array)) return { success: false, error: 'Invalid data' }
     await ensureAssetsDir()
     const filePath = containedPath(getAssetsPath(), filename)
     if (!filePath) return { success: false, error: 'Invalid filename' }
@@ -354,7 +326,7 @@ ipcMain.handle('assets:saveFile', async (_, data: Uint8Array, filename: string) 
 })
 
 // Read file from assets directory
-ipcMain.handle('assets:readFile', async (_, filename: string) => {
+handleTrusted('assets:readFile', async (_, filename: string) => {
   try {
     const filePath = containedPath(getAssetsPath(), filename)
     if (!filePath) return { success: false, error: 'Invalid filename' }
@@ -366,7 +338,7 @@ ipcMain.handle('assets:readFile', async (_, filename: string) => {
 })
 
 // Delete file from assets directory
-ipcMain.handle('assets:deleteFile', async (_, filename: string) => {
+handleTrusted('assets:deleteFile', async (_, filename: string) => {
   try {
     const filePath = containedPath(getAssetsPath(), filename)
     if (!filePath) return { success: false, error: 'Invalid filename' }
@@ -378,7 +350,7 @@ ipcMain.handle('assets:deleteFile', async (_, filename: string) => {
 })
 
 // List files in assets directory
-ipcMain.handle('assets:listFiles', async () => {
+handleTrusted('assets:listFiles', async () => {
   try {
     await ensureAssetsDir()
     const files = await readdir(getAssetsPath())

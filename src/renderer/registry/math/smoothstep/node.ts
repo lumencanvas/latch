@@ -10,11 +10,15 @@ const definition: NodeDefinition = {
   description: 'Hermite interpolation between 0 and 1',
   icon: 'wave',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'value', type: 'number', label: 'Value' }],
+  inputs: [
+    { id: 'value', type: 'number', label: 'Value' },
+    { id: 'edge0', type: 'number', label: 'Edge 0' },
+    { id: 'edge1', type: 'number', label: 'Edge 1' },
+  ],
   outputs: [{ id: 'result', type: 'number', label: 'Result' }],
   controls: [
-    { id: 'edge0', type: 'number', label: 'Edge 0', default: 0 },
-    { id: 'edge1', type: 'number', label: 'Edge 1', default: 1 },
+    { id: 'edge0', type: 'number', label: 'Edge 0', default: 0, props: { step: 0.01 } },
+    { id: 'edge1', type: 'number', label: 'Edge 1', default: 1, props: { step: 0.01 } },
   ],
   tags: ['smoothstep', 'ease', 'hermite', 'smooth'],
   info: {
@@ -28,12 +32,14 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
-  const edge0 = (ctx.controls.get('edge0') as number) ?? 0
-  const edge1 = (ctx.controls.get('edge1') as number) ?? 1
+  const value = ctx.num('value', 0)
+  const edge0 = ctx.num('edge0', 0)
+  const edge1 = ctx.num('edge1', 1)
 
-  // Clamp to 0-1 range
-  let t = (value - edge0) / (edge1 - edge0)
+  // Clamp to 0-1 range. Guard the degenerate edge0 === edge1 (division by zero → NaN):
+  // behave like a hard step at the shared edge.
+  const denom = edge1 - edge0
+  let t = denom !== 0 ? (value - edge0) / denom : (value < edge0 ? 0 : 1)
   t = Math.max(0, Math.min(1, t))
 
   // Hermite interpolation

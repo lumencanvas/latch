@@ -32,22 +32,22 @@ const stringTrimExecutor = stringTrimNode.executor
 const stringPadExecutor = stringPadNode.executor
 const stringTemplateExecutor = stringTemplateNode.executor
 const stringMatchExecutor = stringMatchNode.executor
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
 // Helper to create a mock execution context
 function createContext(
   inputs: Record<string, unknown> = {},
   controls: Record<string, unknown> = {}
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId: 'test-node',
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
-    getInputNode: () => null,
     deltaTime: 0.016,
     totalTime: 0,
     frameCount: 0,
-  }
+    definition: {} as never,
+  })
 }
 
 describe('String Executors', () => {
@@ -635,7 +635,7 @@ describe('String Executors', () => {
     it('handles unicode correctly', () => {
       const ctx = createContext({ input: '你好🌍' })
       const result = stringLengthExecutor(ctx)
-      expect(result.get('length')).toBe(4) // 2 chinese chars + 1 emoji (2 code units)
+      expect(result.get('length')).toBe(3) // 2 chinese chars + 1 emoji — counts characters (code points), not UTF-16 units
     })
   })
 

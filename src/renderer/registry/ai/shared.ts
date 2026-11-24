@@ -66,6 +66,36 @@ export function hasTriggerValue(trigger: unknown): boolean {
   return trigger !== undefined && trigger !== null && trigger !== false && trigger !== 0 && trigger !== ''
 }
 
+/**
+ * Edge-deduped trigger for model-backed nodes. `hasTriggerValue` is a LEVEL test, so a held
+ * trigger (a toggle, a Constant 1, or a string trigger such as a persisting transcript) re-ran
+ * inference every time the previous op finished — a continuous LLM/vision loop. This fires when
+ * the trigger goes high OR its value changes while high (a new string / timestamp is a new
+ * request); an unchanged held value fires once. A fire that lands while an op is in flight is
+ * queued (not lost) and released on the first frame the node is idle again.
+ *
+ * State lives in `nodeCache` under `${nodeId}:_trig*` so the existing disposeAINode/gcAIState
+ * cleanup covers it. Call exactly once per frame per node (before any early return).
+ */
+export function triggerFired(nodeId: string, trigger: unknown): boolean {
+  const prevKey = `${nodeId}:_trigPrev`
+  const queuedKey = `${nodeId}:_trigQueued`
+  const prev = nodeCache.get(prevKey)
+  nodeCache.set(prevKey, trigger)
+  const fired = hasTriggerValue(trigger) && (!hasTriggerValue(prev) || prev !== trigger)
+  const busy = pendingOperations.has(nodeId)
+  if (fired && busy) {
+    nodeCache.set(queuedKey, true)
+    return false
+  }
+  if (fired) return true
+  if (!busy && nodeCache.get(queuedKey)) {
+    nodeCache.delete(queuedKey)
+    return true
+  }
+  return false
+}
+
 /** Coarse lifecycle state of a model-backed node, for callers that branch on it. */
 export type InferenceState = 'not-loaded' | 'idle' | 'running' | 'ready'
 
@@ -259,6 +289,25 @@ export function webglTextureToImageData(texture: WebGLTexture): ImageData | null
   }
 }
 
+// One reusable detached scratch canvas for texture/video → ImageData readback. Each call used to
+// allocate a fresh canvas (+ 2D context); getImageData() returns a COPY, so sharing is safe.
+let scratch2D: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null = null
+
+/** The shared scratch canvas, sized (and thereby cleared) to `width`×`height`. */
+export function getScratchCanvas(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  if (!scratch2D) {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return null
+    scratch2D = { canvas, ctx }
+  }
+  // Assigning width/height always clears the bitmap, so a skipped draw can't leak the previous
+  // conversion's pixels into this one.
+  scratch2D.canvas.width = width
+  scratch2D.canvas.height = height
+  return scratch2D
+}
+
 /**
  * Convert THREE.Texture to ImageData
  */
@@ -277,19 +326,13 @@ export function threeTextureToImageData(texture: THREE.Texture): ImageData | nul
     const width = image?.width || image?.videoWidth || 512
     const height = image?.height || image?.videoHeight || 512
 
-    // Create a temporary canvas to render the texture
-    const tempCanvas = document.createElement('canvas')
-    tempCanvas.width = width
-    tempCanvas.height = height
+    const target = getScratchCanvas(width, height)
+    if (!target) return null
 
     // Use ThreeShaderRenderer to render the texture to canvas
-    renderer.renderToCanvas(texture, tempCanvas)
+    renderer.renderToCanvas(texture, target.canvas)
 
-    // Extract ImageData from the canvas
-    const ctx = tempCanvas.getContext('2d')
-    if (!ctx) return null
-
-    return ctx.getImageData(0, 0, width, height)
+    return target.ctx.getImageData(0, 0, width, height)
   } catch (err) {
     console.error('[AI] Failed to convert THREE.Texture to ImageData:', err)
     return null
@@ -304,15 +347,11 @@ export function videoElementToImageData(video: HTMLVideoElement): ImageData | nu
     const width = video.videoWidth || video.width || 640
     const height = video.videoHeight || video.height || 480
 
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
+    const target = getScratchCanvas(width, height)
+    if (!target) return null
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-
-    ctx.drawImage(video, 0, 0, width, height)
-    return ctx.getImageData(0, 0, width, height)
+    target.ctx.drawImage(video, 0, 0, width, height)
+    return target.ctx.getImageData(0, 0, width, height)
   } catch (err) {
     console.error('[AI] Failed to convert HTMLVideoElement to ImageData:', err)
     return null
@@ -331,6 +370,42 @@ export function canvasElementToImageData(canvas: HTMLCanvasElement): ImageData |
     console.error('[AI] Failed to convert HTMLCanvasElement to ImageData:', err)
     return null
   }
+}
+
+/** Cheap type check (no pixel readback): is `input` something convertToImageData accepts? */
+export function isSupportedImageInput(input: unknown): boolean {
+  if (!input) return false
+  return (
+    isImageData(input) ||
+    isHTMLCanvasElement(input) ||
+    isHTMLVideoElement(input) ||
+    isThreeTexture(input) ||
+    isWebGLTexture(input)
+  )
+}
+
+/**
+ * For interval/trigger-gated vision nodes: the ImageData to infer on THIS frame, or null.
+ * Conversion (a GPU→CPU readback of up to several MB) happens only when an op will actually
+ * start — due (fired or interval elapsed), model loaded, nothing in flight. Previously every
+ * vision node converted its input EVERY frame and then mostly discarded it.
+ */
+export function imageForInference(
+  ctx: ExecutionContext,
+  task: string,
+  imageInput: unknown,
+  due: boolean,
+  /** This frame's triggerFired() result — a press that lands before the model is loaded is
+   *  re-queued (the same `_trigQueued` flag triggerFired drains) instead of being lost. */
+  fired = false,
+): ImageData | null {
+  if (!due || !imageInput) return null
+  if (pendingOperations.has(ctx.nodeId)) return null
+  if (!aiInference.isModelLoaded(task, ctx.controls.get('model') as string | undefined)) {
+    if (fired) nodeCache.set(`${ctx.nodeId}:_trigQueued`, true)
+    return null
+  }
+  return convertToImageData(imageInput)
 }
 
 /**
@@ -679,6 +754,9 @@ export function overlayOptions(ctx: ExecutionContext, defaultInterval: number): 
 export interface DepthState {
   canvas: HTMLCanvasElement
   texture: THREE.Texture | null
+  /** The depth result + colorize mode the texture was last built from (rebuild only on change). */
+  builtFrom?: unknown
+  builtColorize?: boolean
 }
 export const depthEstimateState = new Map<string, DepthState>()
 

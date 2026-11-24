@@ -43,6 +43,10 @@ const definition: NodeDefinition = {
   },
 }
 
+/** Last failed webcam start (shared capture singleton), for retry back-off. */
+let startFailure: { deviceId: string; at: number } | null = null
+const START_RETRY_MS = 3000
+
 const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const enabled = (ctx.controls.get('enabled') as boolean) ?? true
   const deviceId = ctx.controls.get('device') as string | undefined
@@ -54,11 +58,22 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Start webcam if not already
+  // Start webcam if not already. A failed start (denied / no device) used to be retried — and
+  // awaited, stalling the frame — EVERY frame. Back off per device instead.
   if (!webcamCapture.isCapturing) {
+    const now = Date.now()
+    if (startFailure && startFailure.deviceId === (deviceId ?? '') && now - startFailure.at < START_RETRY_MS) {
+      const outputs = new Map<string, unknown>()
+      outputs.set('texture', null)
+      outputs.set('video', null)
+      outputs.set('_error', 'Webcam access denied')
+      return outputs
+    }
     try {
       await webcamCapture.start(deviceId)
+      startFailure = null
     } catch {
+      startFailure = { deviceId: deviceId ?? '', at: Date.now() }
       const outputs = new Map<string, unknown>()
       outputs.set('texture', null)
       outputs.set('video', null)

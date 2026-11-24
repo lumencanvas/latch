@@ -22,22 +22,25 @@ const definition: NodeDefinition = {
     { id: 'x', type: 'number', label: 'X' },
   ],
   outputs: [{ id: 'result', type: 'number', label: 'Angle' }],
-  controls: [],
+  controls: [
+    { id: 'degrees', type: 'toggle', label: 'Output Degrees', default: false },
+  ],
   info: {
     overview:
       'Computes atan2(Y, X) — the angle of the vector (X, Y) measured from the positive X axis, in radians from −π to π. Unlike a plain arctangent it uses the signs of both inputs to return the correct quadrant, so it never loses direction.',
     tips: [
       'Feed a delta (target − current) on each axis to get the heading toward a point.',
-      'Pipe the result into sin/cos (Trig) or a degrees conversion for rotation values.',
+      'Pipe the result into sin/cos (Trig), or enable Output Degrees (−180…180) for degree-based rotations such as Transform 2D.',
     ],
     pairsWith: ['trig', 'vector-math', 'subtract', 'multiply'],
   },
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const y = (ctx.inputs.get('y') as number) ?? 0
-  const x = (ctx.inputs.get('x') as number) ?? 0
-  return new Map([['result', Math.atan2(y, x)]])
+  const y = ctx.num('y', 0)
+  const x = ctx.num('x', 0)
+  const deg = (ctx.controls.get('degrees') as boolean) ?? false
+  return new Map([['result', Math.atan2(y, x) * (deg ? 180 / Math.PI : 1)]])
 }
 
 export default defineNode({ definition, executor, pure: true })

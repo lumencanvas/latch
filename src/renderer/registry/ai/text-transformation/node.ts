@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
-import { hasTriggerValue, runModelInference } from '../shared'
+import { triggerFired, runModelInference } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'text-transformation',
@@ -78,7 +78,7 @@ export const textTransformationExecutor: NodeExecutorFn = (ctx: ExecutionContext
   }
 
   // Transform only on an explicit trigger carrying non-empty text.
-  const triggered = hasTriggerValue(trigger)
+  const triggered = triggerFired(ctx.nodeId, trigger)
   const shouldRun = triggered && !!text.trim()
   const { result } = runModelInference<string>(ctx, outputs, {
     task: 'text2text-generation',

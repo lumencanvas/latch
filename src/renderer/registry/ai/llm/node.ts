@@ -13,12 +13,9 @@ import { deriveWebllmCatalog } from '../../../services/ai/models/webllm/derive'
  * unchanged. Mobile-class GPUs realistically handle the ≤2 GB tier; 7-8B needs a
  * desktop GPU. Adding a model = drop one `*.model.ts` + append its id to `order.ts`.
  *
- * NOTE (co-location, Phase 6): `webllm.ts` (the executor module) imports
- * `DEFAULT_WEBLLM_MODEL` from here — a node.ts ⇄ webllm.ts cycle. It is harmless: this
- * module reads `llmExecutor` only as a reference passed to `defineNode` (not at init),
- * and `webllm.ts` reads `DEFAULT_WEBLLM_MODEL` only inside the executor body (runtime),
- * so neither touches the other's export during module evaluation. Do NOT add a
- * top-level use of `llmExecutor` here or of `DEFAULT_WEBLLM_MODEL` in webllm.ts.
+ * NOTE: imports between this module and `engine/executors/webllm.ts` are one-directional —
+ * this file imports `llmExecutor`; webllm.ts takes its default model from
+ * `models/webllm/order.ts` (the same head-of-list id), never from here.
  */
 export const WEBLLM_MODELS = deriveWebllmCatalog()
 

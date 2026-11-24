@@ -11,6 +11,7 @@
 import * as Tone from 'tone'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { defineLifecycle } from '@/engine/nodeState'
+import { risingEdge } from '@/engine/trigger'
 
 // Store for persistent audio nodes (oscillators, effects, etc.)
 export const audioNodes = new Map<string, Tone.ToneAudioNode>()
@@ -51,6 +52,32 @@ export function getOrCreateNode<T extends Tone.ToneAudioNode>(
     audioNodes.set(nodeId, node)
   }
   return node
+}
+
+// Last value written through setParam/setProp, keyed by the target object. Executors run every
+// frame; assigning a Tone Param's `.value` is NOT free — the setter does cancelScheduledValues +
+// setValueAtTime (timeline churn + an AudioParam automation event per frame, and it stomps any
+// ramp in flight), and some plain setters (Distortion.distortion → rebuilds a 4096-pt WaveShaper
+// curve) are expensive. Only write on an actual change. WeakMap: entries vanish with the Tone node,
+// and a recreated node (after dispose / Stop→Play) is a new key, so its first write always lands.
+const lastWritten = new WeakMap<object, Map<string, unknown>>()
+
+/** Write `target[key] = value` only when it differs from what this helper last wrote. */
+export function setProp<T extends object, K extends keyof T>(target: T, key: K, value: T[K]): void {
+  let m = lastWritten.get(target)
+  if (!m) {
+    m = new Map()
+    lastWritten.set(target, m)
+  }
+  const k = key as string
+  if (m.has(k) && Object.is(m.get(k), value)) return
+  m.set(k, value)
+  target[key] = value
+}
+
+/** Write a Tone Param/Signal's `.value` only when it changed (see `lastWritten`). */
+export function setParam<P extends { value: unknown }>(param: P, value: P['value']): void {
+  setProp(param, 'value', value)
 }
 
 /**
@@ -110,6 +137,7 @@ export function disposeAllAudioNodes(): void {
   svfState.clear()
 
   // Clean up pitch detection state
+  for (const state of pitchState.values()) releasePitchState(state)
   pitchState.clear()
 
   // Clean up parametric EQ state
@@ -152,6 +180,8 @@ export const playerState = new Map<string, {
   player: Tone.Player | null
   loading: boolean
   error: string | null
+  /** A Play edge that arrived before the buffer loaded — honoured once it is. */
+  pendingPlay?: boolean
 }>()
 
 // ============================================================================
@@ -159,12 +189,16 @@ export const playerState = new Map<string, {
 // ============================================================================
 
 export const envelopeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const trigger = ctx.inputs.get('trigger') as boolean | undefined
-  const release = ctx.inputs.get('release') as boolean | undefined
   const attack = (ctx.controls.get('attack') as number) ?? 0.01
   const decay = (ctx.controls.get('decay') as number) ?? 0.1
   const sustain = (ctx.controls.get('sustain') as number) ?? 0.5
   const releaseTime = (ctx.controls.get('release') as number) ?? 0.3
+  // RISING edges only: a held-high trigger (a gate, a `true` toggle) used to call
+  // triggerAttack() EVERY frame, restarting the attack ~60×/s so the envelope never reached
+  // decay/sustain. Read the INPUT ports directly (not ctx.trig) — `release` is also a control id
+  // (the release time), so `input ?? control` would read the number 0.3 as a high trigger.
+  const attackEdge = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
+  const releaseEdge = risingEdge(ctx.nodeId, 'releaseTrigger', ctx.inputs.get('release'))
 
   // Get or create envelope
   const envelope = getOrCreateNode(ctx.nodeId, () => {
@@ -176,18 +210,18 @@ export const envelopeExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     })
   }) as Tone.AmplitudeEnvelope
 
-  // Update parameters
-  envelope.attack = attack
-  envelope.decay = decay
-  envelope.sustain = sustain
-  envelope.release = releaseTime
+  // Update parameters (plain props, but only write on change like the Params)
+  setProp(envelope, 'attack', attack)
+  setProp(envelope, 'decay', decay)
+  setProp(envelope, 'sustain', sustain)
+  setProp(envelope, 'release', releaseTime)
 
   // Handle triggers
-  if (trigger) {
+  if (attackEdge) {
     envelope.triggerAttack()
   }
 
-  if (release) {
+  if (releaseEdge) {
     envelope.triggerRelease()
   }
 
@@ -225,7 +259,20 @@ export function disposeSvfFilter(nodeId: string): void {
   }
 }
 
+/** Disconnect a pitch detector's raw AnalyserNode from its source (it was left wired on delete). */
+function releasePitchState(state: { analyser: AnalyserNode | null; prevInput: Tone.ToneAudioNode | null }): void {
+  if (!state.analyser) return
+  try {
+    if (state.prevInput) {
+      (state.prevInput as unknown as { disconnect: (node: AudioNode) => void }).disconnect(state.analyser)
+    }
+  } catch { /* ignore - source may already be disposed */ }
+  try { state.analyser.disconnect() } catch { /* ignore */ }
+}
+
 export function disposePitchDetect(nodeId: string): void {
+  const state = pitchState.get(nodeId)
+  if (state) releasePitchState(state)
   pitchState.delete(nodeId)
 }
 
@@ -246,16 +293,32 @@ export function audioNodeBaseId(key: string): string {
  * Call this with the set of currently valid node IDs.
  */
 export function gcAudioState(validNodeIds: Set<string>): void {
-  // Clean audioNodes
+  // Clean audioNodes. `${id}_input` entries are NOT owned by this node — they reference the
+  // UPSTREAM node's Tone object (for reconnect detection). Disposing them killed a live upstream
+  // oscillator/player whenever a downstream effect was deleted (it re-created next frame: an
+  // audible restart + every other consumer reconnecting). Just unwire them from the dying node.
+  const dead: string[] = []
   for (const key of audioNodes.keys()) {
+    if (!validNodeIds.has(audioNodeBaseId(key))) dead.push(key)
+  }
+  for (const key of dead) {
+    if (!key.endsWith('_input')) continue
+    const upstream = audioNodes.get(key)
     const baseId = audioNodeBaseId(key)
-    if (!validNodeIds.has(baseId)) {
-      const node = audioNodes.get(key)
-      if (node) {
-        try { node.dispose() } catch { /* ignore */ }
+    for (const ownKey of [baseId, `${baseId}_fft`, `${baseId}_meter`, `${baseId}_gain`]) {
+      const own = audioNodes.get(ownKey)
+      if (upstream && own) {
+        try { upstream.disconnect(own) } catch { /* ignore - not connected */ }
       }
-      audioNodes.delete(key)
     }
+    audioNodes.delete(key)
+  }
+  for (const key of dead) {
+    const node = audioNodes.get(key)
+    if (node) {
+      try { node.dispose() } catch { /* ignore */ }
+    }
+    audioNodes.delete(key)
   }
 
   // Clean beatState
@@ -296,7 +359,7 @@ export function gcAudioState(validNodeIds: Set<string>): void {
   // Clean pitchState
   for (const nodeId of pitchState.keys()) {
     if (!validNodeIds.has(nodeId)) {
-      pitchState.delete(nodeId)
+      disposePitchDetect(nodeId)
     }
   }
 

@@ -9,11 +9,13 @@ import { flowSnippets } from '@/data/flow-snippets'
 import { snippetToInsertableNodes } from '@/utils/snippets'
 import NodeExplorer from '@/components/node-explorer/NodeExplorer.vue'
 import { useDialogA11y } from '@/composables/useDialogA11y'
+import { useFlowHistory } from '@/composables/useFlowHistory'
 
 const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const explorerStore = useNodeExplorerStore()
+const { startBatch, endBatch } = useFlowHistory()
 
 const dialogRef = ref<HTMLElement | null>(null)
 const { onKeydown } = useDialogA11y({
@@ -47,8 +49,13 @@ function handleInsertSnippet(snippetId: string) {
   // remaps the snippet's internal ids to the freshly-created node ids.
   const nodes = snippetToInsertableNodes(snippet, (type) => nodesStore.getDefinition(type))
 
+  // One undo step for the whole snippet (matches the empty-canvas starter cards).
+  const before = startBatch()
   const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, { x: 400, y: 300 })
-  if (nodeIds.length > 0) uiStore.selectNodes(nodeIds)
+  if (nodeIds.length > 0) {
+    endBatch(before, `Insert ${snippet.name}`)
+    uiStore.selectNodes(nodeIds)
+  }
   close()
 }
 </script>

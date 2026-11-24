@@ -8,6 +8,7 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import type { MqttHandle } from '@/services/connections/ConnectionHandle'
 import { defineNodeState } from '../nodeState'
+import { risingEdge } from '../trigger'
 
 // State cache for subscribed values per node. Auto-gc'd via the generic lifecycle loop.
 export const mqttState = defineNodeState<{
@@ -44,7 +45,10 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
   const topic = (ctx.inputs.get('topic') as string) ?? (ctx.controls.get('topic') as string) ?? ''
   const publishData = ctx.inputs.get('publish')
-  const trigger = ctx.inputs.get('trigger') as boolean | undefined
+  // Edge state updates EVERY frame, before the not-connected early returns — otherwise a
+  // trigger held across a disconnect leaves wasHigh stale and the first publish after
+  // reconnect is swallowed (or a press made while offline fires late on reconnect).
+  const fire = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
   const qos = (ctx.controls.get('qos') as 0 | 1 | 2) ?? 0
 
   const outputs = new Map<string, unknown>()
@@ -130,8 +134,9 @@ export const mqttExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     nodeSubscriptions.delete(ctx.nodeId)
   }
 
-  // Publish message when triggered
-  if (trigger && publishData !== undefined && topic && isConnected) {
+  // Publish on the trigger's RISING edge only — a held-high trigger must not republish
+  // 60×/s (an MQTT publish is a discrete event, not continuous state). Mirrors http.ts.
+  if (fire && publishData !== undefined && topic && isConnected) {
     try {
       conn.publish(topic, publishData, { qos })
     } catch (e) {

@@ -3,6 +3,7 @@ import type { NodeDefinition } from '@/stores/nodes'
 import * as THREE from 'three'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
+import { defineNodeState } from '@/engine/nodeState'
 
 const definition: NodeDefinition = {
   id: 'texture-display',
@@ -27,6 +28,15 @@ const definition: NodeDefinition = {
   },
 }
 
+/** Per-node display canvas + last refresh time; freed on delete / Stop. */
+const displayState = defineNodeState<{ canvas: HTMLCanvasElement; at: number }>({
+  label: 'texture-display',
+  dispose: (st) => {
+    st.canvas.width = 0
+    st.canvas.height = 0
+  },
+})
+
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const texture = ctx.inputs.get('texture') as THREE.Texture | null
 
@@ -37,12 +47,34 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const renderer = getThreeShaderRenderer()
+  // A raw canvas (e.g. Render 3D's output) displays as-is
+  const raw = texture as unknown
+  if (raw instanceof HTMLCanvasElement) {
+    outputs.set('_display', raw)
+    return outputs
+  }
+  if (!(raw instanceof THREE.Texture)) {
+    outputs.set('_display', null)
+    return outputs
+  }
 
-  // Render texture to internal canvas for display
-  renderer.renderToCanvas(texture, renderer.getCanvas())
+  // Render into a per-node 2D canvas. This used to target the renderer's own internal WebGL
+  // canvas: renderToCanvas needs a 2D context, which a WebGL canvas can't give, so it bailed and
+  // `_display` showed whatever the shared canvas last held (another node's frame, or nothing).
+  const st = displayState.getOrCreate(ctx.nodeId, () => ({ canvas: document.createElement('canvas'), at: -Infinity }))
+  const now = performance.now()
+  // Preview only: cap the (GPU-readback) refresh like the on-screen previews do.
+  if (now - st.at >= 1000 / 30) {
+    st.at = now
+    const img = texture.image as { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | null
+    const w = img?.videoWidth || img?.width || 512
+    const h = img?.videoHeight || img?.height || 512
+    if (st.canvas.width !== w) st.canvas.width = w
+    if (st.canvas.height !== h) st.canvas.height = h
+    getThreeShaderRenderer().renderToCanvas(texture, st.canvas)
+  }
 
-  outputs.set('_display', renderer.getCanvas())
+  outputs.set('_display', st.canvas)
   return outputs
 }
 

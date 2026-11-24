@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { smoothExecutor, smoothState } from '@/engine/executors'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 
 // smooth state migrated to defineNodeState; reset the store between tests.
 const disposeAllInputState = () => smoothState.disposeAll()
@@ -12,7 +12,7 @@ const disposeAllInputState = () => smoothState.disposeAll()
  * tracked the input. These tests pin real smoothing via per-node module state.
  */
 function frame(nodeId: string, value: number, factor = 0.3, deltaTime = 1 / 60): number {
-  const ctx: ExecutionContext = {
+  const ctx: ExecutionContext = createExecutionContext({
     nodeId,
     inputs: new Map<string, unknown>([['value', value]]),
     controls: new Map<string, unknown>([['factor', factor]]),
@@ -20,7 +20,7 @@ function frame(nodeId: string, value: number, factor = 0.3, deltaTime = 1 / 60):
     deltaTime,
     totalTime: 0,
     frameCount: 0,
-  }
+  })
   return (smoothExecutor(ctx) as Map<string, unknown>).get('result') as number
 }
 

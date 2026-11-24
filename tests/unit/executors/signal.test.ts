@@ -143,3 +143,25 @@ describe('tapTempoExecutor — BPM from tap intervals', () => {
     expect(r.get('taps')).toBe(0)
   })
 })
+
+describe('signal nodes — one NaN never latches (audit 2026-11)', () => {
+  it('slew / tween hold through a NaN and keep tracking; integral ignores it', () => {
+    const s = 'nan-slew'
+    slewLimiterExecutor(ctx(s, { value: 1 }, { rise: 10, fall: 10 }))
+    slewLimiterExecutor(ctx(s, { value: NaN }, { rise: 10, fall: 10 }))
+    expect(Number.isFinite(out(slewLimiterExecutor(ctx(s, { value: 2 }, { rise: 10, fall: 10 })), 'value') as number)).toBe(true)
+
+    const t = 'nan-tween'
+    tweenToTargetExecutor(ctx(t, { target: 1 }, { speed: 5 }))
+    tweenToTargetExecutor(ctx(t, { target: NaN }, { speed: 5 }))
+    expect(Number.isFinite(out(tweenToTargetExecutor(ctx(t, { target: 3 }, { speed: 5 })), 'value') as number)).toBe(true)
+
+    const i = 'nan-int'
+    integralExecutor(ctx(i, { value: NaN }, {}))
+    expect(out(integralExecutor(ctx(i, { value: 1 }, {})), 'integral')).toBeGreaterThan(0)
+
+    const d = 'nan-der'
+    derivativeExecutor(ctx(d, { value: 1 }, {}))
+    expect(Number.isFinite(out(derivativeExecutor(ctx(d, { value: NaN }, {})), 'derivative') as number)).toBe(true)
+  })
+})

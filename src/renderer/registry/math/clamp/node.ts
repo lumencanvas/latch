@@ -13,8 +13,8 @@ const definition: NodeDefinition = {
   inputs: [{ id: 'value', type: 'number', label: 'Value' }],
   outputs: [{ id: 'result', type: 'number', label: 'Result' }],
   controls: [
-    { id: 'min', type: 'number', label: 'Min', default: 0 },
-    { id: 'max', type: 'number', label: 'Max', default: 1 },
+    { id: 'min', type: 'number', label: 'Min', default: 0, props: { step: 0.01 } },
+    { id: 'max', type: 'number', label: 'Max', default: 1, props: { step: 0.01 } },
   ],
   info: {
     overview: 'Constrains a value to stay within a minimum and maximum range. Values below the minimum are raised to the minimum, and values above the maximum are lowered to the maximum. Values already within range pass through unchanged.',
@@ -27,10 +27,16 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
-  const min = (ctx.controls.get('min') as number) ?? 0
-  const max = (ctx.controls.get('max') as number) ?? 1
-  return new Map([['result', Math.min(max, Math.max(min, value))]])
+  const a = ctx.num('min', 0)
+  const b = ctx.num('max', 1)
+  // Normalise inverted bounds: Min > Max used to output a constant (Max) for every input.
+  const lo = Math.min(a, b)
+  const hi = Math.max(a, b)
+  // NaN input → the lower bound (the safety node must never emit NaN); ±Infinity still
+  // clamps correctly against the finite bounds.
+  const raw = ctx.inputs.get('value')
+  const v = typeof raw === 'number' && !Number.isNaN(raw) ? raw : ctx.num('value', lo)
+  return new Map([['result', Math.min(hi, Math.max(lo, v))]])
 }
 
 export default defineNode({ definition, executor, pure: true })

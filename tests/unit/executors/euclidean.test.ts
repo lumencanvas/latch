@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { ExecutionContext } from '@/engine/ExecutionEngine'
+import { createExecutionContext, type ExecutionContext } from '@/engine/ExecutionEngine'
 import { euclideanExecutor, bjorklund } from '@/engine/executors/euclidean'
 
 function createContext(
@@ -7,15 +7,15 @@ function createContext(
   controls: Record<string, unknown> = {},
   nodeId = 'euclid-test'
 ): ExecutionContext {
-  return {
+  return createExecutionContext({
     nodeId,
     inputs: new Map(Object.entries(inputs)),
     controls: new Map(Object.entries(controls)),
-    getInputNode: () => null,
     deltaTime: 0.016,
     totalTime: 0,
     frameCount: 0,
-  } as unknown as ExecutionContext
+    definition: {} as never,
+  })
 }
 
 const sum = (a: number[]) => a.reduce((x, y) => x + y, 0)
@@ -95,5 +95,20 @@ describe('euclideanExecutor', () => {
     const out = run({ step: 0 }, { steps: 4, pulses: 99 })
     expect((out.get('pattern') as number[])).toHaveLength(4)
     expect(out.get('pulses')).toBe(4) // clamped to steps
+  })
+
+  it('memoizes the pattern across frames (stable content) but outputs a mutation-safe copy', () => {
+    const ctrls = { steps: 8, pulses: 5, rotation: 2 }
+    const p1 = run({ step: 0 }, ctrls).get('pattern') as number[]
+    const p2 = run({ step: 3 }, ctrls).get('pattern') as number[] // different step, same params
+    expect(p2).toEqual(p1) // stable content (memo hit — no Bjorklund recompute)
+    expect(p2).not.toBe(p1) // but a fresh copy each frame, so it's safe to mutate
+    // Mutating the output must not corrupt the shared memo for the next frame.
+    ;(p2 as number[])[0] = 999
+    const p3 = run({ step: 0 }, ctrls).get('pattern') as number[]
+    expect(p3[0]).not.toBe(999)
+    // A different pattern param yields a different pattern.
+    const p4 = run({ step: 0 }, { ...ctrls, rotation: 3 }).get('pattern')
+    expect(p4).not.toEqual(p1)
   })
 })

@@ -280,10 +280,20 @@ export class TextureBridge {
    */
   gc(validNodeIds: Set<string>): void {
     // Clean up display sprites for removed nodes
-    for (const [id, sprite] of this.displaySprites.entries()) {
-      // Extract node ID from sprite ID (format: "node_<nodeId>_...")
-      const nodeId = id.split('_')[1]
-      if (nodeId && !validNodeIds.has(nodeId)) {
+    // Sprite ids are "node_<nodeId>[_...]". Don't split on '_' — nanoid ids contain '_'
+    // (~26%), so split('_')[1] truncated the id and destroyed LIVE nodes' sprites. Keep a
+    // sprite if any valid id owns it by exact/prefix match instead.
+    for (const [id, sprite] of [...this.displaySprites.entries()]) {
+      if (!id.startsWith('node_')) continue
+      const rest = id.slice('node_'.length)
+      let owned = false
+      for (const nodeId of validNodeIds) {
+        if (rest === nodeId || rest.startsWith(`${nodeId}_`)) {
+          owned = true
+          break
+        }
+      }
+      if (!owned) {
         sprite.destroy()
         this.displaySprites.delete(id)
       }

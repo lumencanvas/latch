@@ -39,7 +39,7 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
+  const value = ctx.num('value', 0)
   const fn = (ctx.controls.get('function') as string) ?? 'sin'
   const useDegrees = (ctx.controls.get('degrees') as boolean) ?? false
 
@@ -82,7 +82,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
       result = Math.sin(input)
   }
 
-  return new Map([['result', result]])
+  // asin/acos outside [-1, 1] are NaN and tan at ±π/2 blows up; never emit non-finite.
+  return new Map([['result', Number.isFinite(result) ? result : 0]])
 }
 
 export default defineNode({ definition, executor, pure: true })

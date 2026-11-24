@@ -275,7 +275,7 @@ watch(() => runtimeStore.isRunning, (running) => {
 .node-status {
   margin-left: auto;
   font-size: var(--font-size-xs);
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-300); /* idle status on the dark node header — neutral-400 was ~4.1:1; lighter reads clearer */
   text-transform: uppercase;
 }
 .node-status[data-status='connected'] { color: var(--color-success); }

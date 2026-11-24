@@ -222,7 +222,7 @@ const isMacElectron = computed(() => {
       <div class="playback-controls">
         <button
           class="btn btn-icon"
-          :class="isRunning ? 'btn-primary' : 'btn-secondary'"
+          :class="isRunning ? 'btn-primary' : canRun ? 'btn-play' : 'btn-secondary'"
           :disabled="!isRunning && !canRun"
           :title="isRunning ? 'Pause' : canRun ? 'Play' : 'Add nodes to run'"
           :aria-label="isRunning ? 'Pause' : canRun ? 'Play' : 'Play (add nodes to run)'"
@@ -478,6 +478,16 @@ const isMacElectron = computed(() => {
   gap: var(--space-2);
 }
 
+/* Stopped-but-ready Play reads as the obvious "go live" action (was a neutral grey btn-secondary). */
+.playback-controls .btn-play {
+  background: var(--color-success-700); /* white icon needs ≥3:1 — #22C55E was 2.3:1 */
+  color: #fff;
+  border-color: var(--color-success-700);
+}
+.playback-controls .btn-play:hover {
+  filter: brightness(1.08);
+}
+
 .history-controls {
   display: flex;
   gap: var(--space-1);
@@ -559,7 +569,7 @@ const isMacElectron = computed(() => {
 
 .header-version {
   font-size: var(--font-size-xs);
-  color: var(--color-neutral-500);
+  color: var(--color-neutral-300); /* on the dark header, lighter = higher contrast (neutral-500 was ~2.6:1) */
   margin-left: var(--space-1);
 }
 

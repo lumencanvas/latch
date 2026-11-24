@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { toStr } from '../strHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -35,8 +36,9 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const input = (ctx.inputs.get('input') as string) ?? ''
-  const length = (ctx.controls.get('length') as number) ?? 10
+  const input = toStr(ctx.inputs.get('input'))
+  // Clamp: a huge / NaN length threw "Invalid string length" (or allocated gigabytes) per frame.
+  const length = Math.max(0, Math.min(10000, Math.floor(ctx.num('length', 10))))
   const char = (ctx.controls.get('char') as string) ?? ' '
   const mode = (ctx.controls.get('mode') as string) ?? 'start'
 

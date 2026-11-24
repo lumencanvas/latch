@@ -1,4 +1,5 @@
 import { defineNode } from '@/engine/defineNode'
+import { parseLooseJson, sameValue } from '../valueHelpers'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
@@ -18,12 +19,15 @@ const definition: NodeDefinition = {
     { id: 'result', type: 'boolean', label: 'Result' },
     { id: 'index', type: 'number', label: 'Index' },
   ],
-  controls: [],
+  controls: [
+    { id: 'value', type: 'text', label: 'Value (if unwired)', default: '', props: { placeholder: 'JSON or text' } },
+  ],
   tags: ['array', 'contains', 'includes', 'find', 'search'],
   info: {
     overview: 'Checks whether a given value exists in an array. Returns a boolean result and the index where the value was found, or -1 if it was not found.',
     tips: [
-      'Use the index output to feed directly into Array Get when you need the matched element.',
+      'Index is -1 when the value is not found (and Array Get treats -1 as the LAST element), so gate any Array Get lookup with the Result output.',
+      'Matching is structural: NaN finds NaN and plain objects/arrays match by content; 1 and "1" are different.',
       'Connect the boolean result to a Gate node to conditionally pass data based on membership.',
     ],
     pairsWith: ['array-get', 'array-filter-nulls', 'gate', 'compare'],
@@ -32,7 +36,7 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const array = ctx.inputs.get('array')
-  const value = ctx.inputs.get('value')
+  const value = ctx.inputs.get('value') ?? parseLooseJson(ctx.controls.get('value'))
   const outputs = new Map<string, unknown>()
 
   if (!Array.isArray(array)) {
@@ -41,13 +45,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  // Use JSON stringify for object comparison
-  const index = array.findIndex((item) => {
-    if (typeof item === 'object' && typeof value === 'object') {
-      return JSON.stringify(item) === JSON.stringify(value)
-    }
-    return item === value
-  })
+  const index = array.findIndex((item) => sameValue(item, value))
 
   outputs.set('result', index !== -1 ? 1 : 0)
   outputs.set('index', index)

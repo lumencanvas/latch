@@ -40,10 +40,8 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const base = (ctx.inputs.get('base') as number) ?? 0
-  const exponentInput = ctx.inputs.get('exponent') as number | undefined
-  const exponentControl = (ctx.controls.get('exponent') as number) ?? 2
-  const exponent = exponentInput ?? exponentControl
+  const base = ctx.num('base', 0)
+  const exponent = ctx.num('exponent', 2)
   const operation = (ctx.controls.get('operation') as string) ?? 'Power'
 
   let result: number

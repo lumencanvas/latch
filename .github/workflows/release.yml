@@ -5,15 +5,16 @@ on:
     tags:
       - 'v*'
 
+# Default to read-only; only the job that publishes the GitHub Release can write.
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 jobs:
   build-electron:
     name: Build Electron (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     environment: ${{ startsWith(matrix.os, 'macos') && 'Prod' || '' }}
     strategy:
       fail-fast: false
@@ -34,12 +35,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -72,7 +75,6 @@ jobs:
       - name: Build & Make
         run: npm run make -- --arch=${{ matrix.arch }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -80,66 +82,77 @@ jobs:
       # macOS arm64: Upload zip and dmg
       - name: Upload macOS arm64 zip
         if: matrix.name == 'mac-arm64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-mac-arm64
           path: out/make/zip/darwin/arm64/*.zip
+          if-no-files-found: error
 
       - name: Upload macOS arm64 dmg
         if: matrix.name == 'mac-arm64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-mac-arm64-dmg
-          path: out/make/*.dmg
+          path: out/make/dmg/arm64/*.dmg
+          if-no-files-found: error
 
       # macOS x64: Upload zip and dmg
       - name: Upload macOS x64 zip
         if: matrix.name == 'mac-x64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-mac-x64
           path: out/make/zip/darwin/x64/*.zip
+          if-no-files-found: error
 
       - name: Upload macOS x64 dmg
         if: matrix.name == 'mac-x64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-mac-x64-dmg
-          path: out/make/*.dmg
+          path: out/make/dmg/x64/*.dmg
+          if-no-files-found: error
 
       # Windows: Upload zip
       - name: Upload Windows artifact
         if: matrix.name == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-win
           path: out/make/zip/win32/**/*.zip
+          if-no-files-found: error
 
       # Linux: Upload deb and zip
       - name: Upload Linux deb
         if: matrix.name == 'linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-linux-deb
           path: out/make/deb/x64/*.deb
+          if-no-files-found: error
 
       - name: Upload Linux zip
         if: matrix.name == 'linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latch-linux-zip
           path: out/make/zip/linux/**/*.zip
+          if-no-files-found: error
 
   create-release:
     name: Create Release
     needs: build-electron
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -166,7 +179,7 @@ jobs:
           ls -la release/
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           generate_release_notes: true
@@ -174,29 +187,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  deploy-web:
-    name: Deploy Web
-    needs: build-electron
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Web
-        run: npm run build:web
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist/web

@@ -1,10 +1,19 @@
 import { defineStore } from 'pinia'
 import { nanoid } from 'nanoid'
 import type { Node, Edge, XYPosition } from '@vue-flow/core'
+import type { Raw } from 'vue'
 import { isCustomNodeTypeId } from '@/registry/nodeTypeIds'
 import { useHistoryStore } from './history'
 import { useNodesStore, type NodeDefinition } from './nodes'
 import * as fileFormat from '@/services/fileFormat'
+import {
+  CODE_DISABLED_KEY,
+  CODE_NODE_TYPES,
+  isCodeNodeType,
+  needsTrustPrompt,
+  requestImportTrust,
+  summarizeFlowTrust,
+} from '@/services/security/flowTrust'
 
 /**
  * Resolve the Vue Flow node `type`: a node whose nodeType has a dedicated custom
@@ -27,10 +36,34 @@ export interface ImportReport {
   droppedEdges?: number
   /** Non-fatal structural problems surfaced during a best-effort import. */
   warnings?: string[]
+  /** Code (Function/Expression) nodes imported with their code disabled. */
+  disabledCode?: number
 }
 
 /** Resolve a node definition by type (the nodes store getter). */
 type GetDef = (type: string) => NodeDefinition | undefined
+
+/**
+ * What an import does with code-bearing (Function/Expression) nodes:
+ * `disable` stamps them `_codeDisabled` so their executor refuses to run the source;
+ * `trust` imports them live. Defaults to `disable` — an import is external input.
+ */
+export type ImportCodePolicy = 'trust' | 'disable'
+
+/** Stamp every code node in the flows as disabled (the "open with code disabled" choice). */
+function disableCodeNodes(flows: FlowState[]): number {
+  let n = 0
+  for (const flow of flows) {
+    for (const node of flow.nodes) {
+      const type = (node.data as Record<string, unknown> | undefined)?.nodeType
+      if (typeof type === 'string' && isCodeNodeType(type)) {
+        node.data = { ...node.data, [CODE_DISABLED_KEY]: true }
+        n++
+      }
+    }
+  }
+  return n
+}
 
 // `data` keys that are NOT persisted control state. `nodeType`/`label` are
 // structural; `definition` is the stale embedded copy (resolved from the registry
@@ -156,8 +189,13 @@ function docToFlowState(doc: fileFormat.LatchFlowDoc, getDef: GetDef): DocImport
   const nodes: Node[] = migrated.flow.nodes.map((nr) => {
     const def = getDef(nr.type)
     const ln = doc.layout.nodes[nr.id] ?? { x: 0, y: 0 }
-    const data: Record<string, unknown> = { nodeType: nr.type, ...nr.controls }
-    delete data._unknownType // never trust a persisted placeholder flag; re-derive below
+    // Reserved keys (nodeType/label/definition/_unknownType) are never taken from a file's
+    // controls — a `controls.nodeType` would otherwise override the declared type and slip a
+    // code node past the import trust summary (which reads `nr.type`).
+    const data: Record<string, unknown> = { nodeType: nr.type }
+    for (const [k, v] of Object.entries(nr.controls ?? {})) {
+      if (!RESERVED_DATA_KEYS.has(k)) data[k] = v
+    }
     data.label = ln.label ?? def?.name ?? `Unknown: ${nr.type}`
     if (!def) {
       data._unknownType = true
@@ -212,8 +250,11 @@ export interface FlowState {
   id: string
   name: string
   description: string
-  nodes: Node[]
-  edges: Edge[]
+  // `Raw<>` is type-only here (nothing is markRaw'd): it stops Pinia's UnwrapRef from
+  // recursing into Vue Flow's Node/Edge generics, which hits TS2589 ("excessively deep")
+  // on Vue >= 3.5.4x. A Raw<Node> is still a Node everywhere it's read.
+  nodes: Raw<Node>[]
+  edges: Raw<Edge>[]
   createdAt: Date
   updatedAt: Date
   dirty: boolean
@@ -350,27 +391,46 @@ export const useFlowsStore = defineStore('flows', {
       }
     },
 
-    duplicateFlow(flowId: string): FlowState | null {
+    /**
+     * Copy a flow with fresh node/edge ids. `onRemap` receives old→new node ids so the
+     * caller can carry over per-node UI state (e.g. uiStore.cloneControlPanelForNodes) —
+     * passed in rather than imported to keep this store free of a ui-store cycle.
+     */
+    duplicateFlow(flowId: string, onRemap?: (idMap: ReadonlyMap<string, string>) => void): FlowState | null {
       const source = this.flows.find((f) => f.id === flowId)
       if (!source) return null
+
+      // Fresh node/edge ids: node ids key executor state, Control Panel tiles and exposed
+      // controls, so a copy that reused them shared all of that with the original.
+      const idMap = new Map<string, string>()
+      for (const n of source.nodes) idMap.set(n.id, nanoid())
+      const nodes: Node[] = JSON.parse(JSON.stringify(source.nodes)).map((n: Node) => ({ ...n, id: idMap.get(n.id)! }))
+      const edges: Edge[] = JSON.parse(JSON.stringify(source.edges)).map((e: Edge) => {
+        const sourceId = idMap.get(e.source) ?? e.source
+        const targetId = idMap.get(e.target) ?? e.target
+        return { ...e, id: nanoid(), source: sourceId, target: targetId }
+      })
+      const remapPorts = (ports: SubflowPort[]) =>
+        (JSON.parse(JSON.stringify(ports)) as SubflowPort[]).map((p) => ({ ...p, nodeId: idMap.get(p.nodeId) ?? p.nodeId }))
 
       const now = new Date()
       const flow: FlowState = {
         id: nanoid(),
         name: `${source.name} (Copy)`,
         description: source.description,
-        nodes: JSON.parse(JSON.stringify(source.nodes)),
-        edges: JSON.parse(JSON.stringify(source.edges)),
+        nodes,
+        edges,
         createdAt: now,
         updatedAt: now,
         dirty: false,
         isSubflow: source.isSubflow,
-        subflowInputs: JSON.parse(JSON.stringify(source.subflowInputs)),
-        subflowOutputs: JSON.parse(JSON.stringify(source.subflowOutputs)),
+        subflowInputs: remapPorts(source.subflowInputs),
+        subflowOutputs: remapPorts(source.subflowOutputs),
         icon: source.icon,
         category: source.category,
       }
       this.flows.push(flow)
+      onRemap?.(idMap)
       return flow
     },
 
@@ -447,7 +507,19 @@ export const useFlowsStore = defineStore('flows', {
 
       const node = this.activeFlow.nodes.find((n) => n.id === nodeId)
       if (node) {
-        node.data = { ...node.data, ...data }
+        const next = { ...node.data, ...data }
+        // A user who EDITS a disabled code node's source has seen it: editing re-enables it.
+        // Only a real change counts (an editor echoing the same text back must not).
+        const code = typeof next.nodeType === 'string' && isCodeNodeType(next.nodeType)
+          ? CODE_NODE_TYPES[next.nodeType].codeKey
+          : null
+        if (
+          code && next[CODE_DISABLED_KEY] && !(CODE_DISABLED_KEY in data) &&
+          code in data && data[code] !== (node.data as Record<string, unknown>)?.[code]
+        ) {
+          delete next[CODE_DISABLED_KEY]
+        }
+        node.data = next
         this.activeFlow.updatedAt = new Date()
         this.activeFlow.dirty = true
       }
@@ -697,7 +769,7 @@ export const useFlowsStore = defineStore('flows', {
       return fileFormat.serializeDocument(flowStateToDoc(flow, getDef))
     },
 
-    importFlow(json: string): FlowState | null {
+    importFlow(json: string, options: { codePolicy?: ImportCodePolicy } = {}): FlowState | null {
       try {
         const raw = JSON.parse(json)
         if (!fileFormat.looksLikeLatchFile(raw)) {
@@ -709,6 +781,7 @@ export const useFlowsStore = defineStore('flows', {
         if (!doc) return null
         const getDef = useNodesStore().getDefinition
         const { flow } = docToFlowState(doc, getDef)
+        if ((options.codePolicy ?? 'disable') === 'disable') disableCodeNodes([flow])
         flow.id = nanoid() // single-flow import always gets a fresh id
         this.flows.push(flow)
         this.activeFlowId = flow.id
@@ -1193,7 +1266,10 @@ export const useFlowsStore = defineStore('flows', {
     /**
      * Import flows from a JSON file
      */
-    importFlows(jsonString: string, options: { replace?: boolean } = {}): ImportReport {
+    importFlows(
+      jsonString: string,
+      options: { replace?: boolean; codePolicy?: ImportCodePolicy } = {}
+    ): ImportReport {
       try {
         const raw = JSON.parse(jsonString)
         if (!fileFormat.looksLikeLatchFile(raw)) {
@@ -1207,6 +1283,8 @@ export const useFlowsStore = defineStore('flows', {
         const getDef = useNodesStore().getDefinition
         const results = exported.exportedFlows.map((doc) => docToFlowState(doc, getDef))
         const importedFlows = results.map((r) => r.flow)
+        const disabledCode =
+          (options.codePolicy ?? 'disable') === 'disable' ? disableCodeNodes(importedFlows) : 0
 
         if (options.replace) {
           this.flows = importedFlows
@@ -1240,6 +1318,7 @@ export const useFlowsStore = defineStore('flows', {
         if (totals.migrated) parts.push(`migrated ${plural(totals.migrated, 'node')}`)
         if (totals.unknown) parts.push(`${plural(totals.unknown, 'unknown node')} kept as ${totals.unknown === 1 ? 'a placeholder' : 'placeholders'}`)
         if (totals.dropped) parts.push(`dropped ${plural(totals.dropped, 'dangling edge')}`)
+        if (disabledCode) parts.push(`${plural(disabledCode, 'code node')} disabled until you enable ${disabledCode === 1 ? 'it' : 'them'}`)
         if (warnings.length) parts.push(`${plural(warnings.length, 'warning')}`)
 
         console.log(`[Flows] ${parts.join(', ')}`)
@@ -1251,6 +1330,7 @@ export const useFlowsStore = defineStore('flows', {
           migrated: totals.migrated,
           unknownNodes: totals.unknown,
           droppedEdges: totals.dropped,
+          ...(disabledCode ? { disabledCode } : {}),
           ...(warnings.length ? { warnings } : {}),
         }
       } catch (error) {
@@ -1272,7 +1352,8 @@ export const useFlowsStore = defineStore('flows', {
         }
 
         const text = await response.text()
-        const result = this.importFlows(text, { replace: true })
+        // The bundled sample is first-party (shipped with the app), not external input.
+        const result = this.importFlows(text, { replace: true, codePolicy: 'trust' })
 
         if (result.success) {
           console.log('[Flows] Loaded sample flow')
@@ -1309,6 +1390,54 @@ export const useFlowsStore = defineStore('flows', {
     },
 
     /**
+     * Import EXTERNAL flow JSON (a file the user picked / dropped) behind the trust prompt.
+     * When the file carries executable code (Function/Expression nodes) the user is shown
+     * what it contains and chooses: open with code disabled (default), trust and run, or
+     * cancel. Files without code import silently. See services/security/flowTrust.ts.
+     */
+    async importFlowsWithTrustPrompt(
+      jsonString: string,
+      options: { replace?: boolean } = {}
+    ): Promise<ImportReport> {
+      let docs: fileFormat.LatchFlowDoc[] = []
+      try {
+        const raw = JSON.parse(jsonString)
+        if (fileFormat.looksLikeLatchFile(raw)) docs = fileFormat.migrateToExport(raw).exportedFlows
+      } catch {
+        // Malformed input: fall through — importFlows produces the proper error report.
+      }
+      const summary = summarizeFlowTrust(docs, useNodesStore().getDefinition)
+      // Fail closed: with no prompt shown the policy is still 'disable' — a no-op when the file
+      // truly has no code nodes, and a backstop for anything the summary failed to see.
+      let codePolicy: ImportCodePolicy = 'disable'
+      if (needsTrustPrompt(summary)) {
+        const decision = await requestImportTrust(summary)
+        if (decision === 'cancel') return { success: false, message: 'Import cancelled', count: 0 }
+        codePolicy = decision
+      }
+      return this.importFlows(jsonString, { ...options, codePolicy })
+    },
+
+    /**
+     * Re-enable a code node that was imported with its code disabled (an explicit user
+     * action — the Function node's "Enable code" button).
+     */
+    enableNodeCode(nodeId: string) {
+      for (const flow of this.flows) {
+        const node = flow.nodes.find((n) => n.id === nodeId)
+        if (node && (node.data as Record<string, unknown>)?.[CODE_DISABLED_KEY]) {
+          const data = { ...node.data }
+          delete data[CODE_DISABLED_KEY]
+          node.data = data
+          flow.updatedAt = new Date()
+          flow.dirty = true
+          return true
+        }
+      }
+      return false
+    },
+
+    /**
      * Trigger file picker for import
      */
     async promptImport(options: { replace?: boolean } = {}): Promise<ImportReport> {
@@ -1326,8 +1455,7 @@ export const useFlowsStore = defineStore('flows', {
 
           try {
             const text = await file.text()
-            const result = this.importFlows(text, options)
-            resolve(result)
+            resolve(await this.importFlowsWithTrustPrompt(text, options))
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error'
             resolve({ success: false, message: `Failed to read file: ${message}`, count: 0 })

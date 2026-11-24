@@ -6,7 +6,13 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import { defineNodeState, defineLifecycle } from '../nodeState'
 import { webLLMService } from '../../services/ai/WebLLMService'
-import { DEFAULT_WEBLLM_MODEL } from '../../registry/ai/llm/node'
+// The default model is the head of the curated order list (a dependency-free leaf) — NOT
+// `DEFAULT_WEBLLM_MODEL` from registry/ai/llm/node.ts, which imports THIS module for its
+// executor (that was a node.ts ⇄ webllm.ts import cycle). derive.ts keeps the catalog in this
+// exact order, so `WEBLLM_MODEL_ORDER[0] === DEFAULT_WEBLLM_MODEL` (pinned by a unit test).
+import { WEBLLM_MODEL_ORDER } from '../../services/ai/models/webllm/order'
+
+const DEFAULT_WEBLLM_MODEL = WEBLLM_MODEL_ORDER[0]
 
 /**
  * LLM node: stream text from a local WebGPU model via {@link webLLMService}. On a

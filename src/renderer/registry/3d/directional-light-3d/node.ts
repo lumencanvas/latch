@@ -1,8 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import { getThreeRenderer } from '@/services/visual/ThreeRenderer'
-import { nodeObjects } from '../shared'
+import { getThreeRenderer, THREE } from '@/services/visual/ThreeRenderer'
+import { getOrCreateLight, updateLight } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'directional-light-3d',
@@ -51,12 +51,15 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const posY = (ctx.inputs.get('posY') as number) ?? (ctx.controls.get('posY') as number) ?? 5
   const posZ = (ctx.inputs.get('posZ') as number) ?? (ctx.controls.get('posZ') as number) ?? 5
 
-  const color = parseInt(colorHex.replace('#', ''), 16)
-
-  const renderer = getThreeRenderer()
-  const light = renderer.createDirectionalLight(color, intensity, [posX, posY, posZ], castShadow)
-
-  nodeObjects.set(ctx.nodeId, light)
+  // Cached per node and updated in place. A new light per frame allocated a fresh 1024²
+  // shadow map each frame that was never disposed. Shadow camera is always configured, so
+  // toggling Cast Shadow later gets the same frustum.
+  const light = getOrCreateLight(ctx.nodeId, THREE.DirectionalLight, () =>
+    getThreeRenderer().createDirectionalLight(0xffffff, 1, [posX, posY, posZ], true)
+  )
+  updateLight(light, colorHex, intensity)
+  light.position.set(posX, posY, posZ)
+  light.castShadow = castShadow
 
   const outputs = new Map<string, unknown>()
   outputs.set('light', light)

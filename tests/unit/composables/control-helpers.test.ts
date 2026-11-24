@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampControlNumber, isDeviceOptions, evaluateWhen } from '@/composables/useControlHelpers'
+import { clampControlNumber, isDeviceOptions, evaluateWhen, coerceSelectValue } from '@/composables/useControlHelpers'
 
 /**
  * The pure control-rendering helpers shared by BaseNode + PropertiesPanel (Phase 3 dedup).
@@ -31,6 +31,35 @@ describe('isDeviceOptions', () => {
     expect(isDeviceOptions([{ value: 'a', label: 'A' }])).toBe(true)
     expect(isDeviceOptions(['a', 'b'])).toBe(false)
     expect(isDeviceOptions([])).toBe(false)
+  })
+})
+
+/**
+ * A native <select> emits a string. `coerceSelectValue` restores the matching option's TYPE so
+ * a numeric-option select (MQTT QoS `[0,1,2]`, Serial baud `[9600,…]`) stores a number after an
+ * edit instead of silently flipping to a string — the round-trip bug the 2026-07-23 audit found.
+ */
+describe('coerceSelectValue', () => {
+  it('restores a numeric option value from the emitted string', () => {
+    // number[] options reach the DOM as numbers cast into the string union at runtime.
+    const opts = [0, 1, 2] as unknown as string[]
+    expect(coerceSelectValue('1', opts)).toBe(1)
+    expect(coerceSelectValue('0', opts)).toBe(0)
+    expect(typeof coerceSelectValue('2', opts)).toBe('number')
+  })
+
+  it('restores a numeric {value,label} option', () => {
+    const opts = [{ value: 9600, label: '9600' }, { value: 115200, label: '115200' }] as unknown as never
+    expect(coerceSelectValue('115200', opts)).toBe(115200)
+  })
+
+  it('leaves string options as strings', () => {
+    expect(coerceSelectValue('va', ['va', 'fm'])).toBe('va')
+  })
+
+  it('returns the raw value when no option matches (device / free values)', () => {
+    expect(coerceSelectValue('unknown-id', ['a', 'b'])).toBe('unknown-id')
+    expect(coerceSelectValue('dev-123', [{ value: 'dev-123', label: 'Mic' }])).toBe('dev-123')
   })
 })
 

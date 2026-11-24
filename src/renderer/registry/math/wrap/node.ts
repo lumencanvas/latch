@@ -28,9 +28,9 @@ const definition: NodeDefinition = {
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  const value = (ctx.inputs.get('value') as number) ?? 0
-  const min = (ctx.controls.get('min') as number) ?? 0
-  const max = (ctx.controls.get('max') as number) ?? 1
+  const value = ctx.num('value', 0)
+  const min = ctx.num('min', 0)
+  const max = ctx.num('max', 1)
 
   const range = max - min
 
@@ -41,7 +41,8 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Proper wrap that handles negatives correctly
   const result = ((value - min) % range + range) % range + min
 
-  return new Map([['result', result]])
+  // Finite-guard: a non-finite input value must not emit NaN (same pattern as power).
+  return new Map([['result', Number.isFinite(result) ? result : min]])
 }
 
 export default defineNode({ definition, executor, pure: true })

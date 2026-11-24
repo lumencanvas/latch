@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { getOrCreateNode, connectEffectInput } from '../shared'
+import { getOrCreateNode, connectEffectInput, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-compressor',
@@ -58,11 +58,11 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     ctx.nodeId,
     () => new Tone.Compressor({ threshold, ratio, attack, release, knee })
   ) as Tone.Compressor
-  comp.threshold.value = threshold
-  comp.ratio.value = ratio
-  comp.attack.value = attack
-  comp.release.value = release
-  comp.knee.value = knee
+  setParam(comp.threshold, threshold)
+  setParam(comp.ratio, ratio)
+  setParam(comp.attack, attack)
+  setParam(comp.release, release)
+  setParam(comp.knee, knee)
   connectEffectInput(ctx.nodeId, audio, comp)
 
   outputs.set('audio', comp)

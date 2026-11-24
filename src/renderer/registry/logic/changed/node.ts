@@ -1,6 +1,8 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { changedExecutor } from '@/engine/executors/utility'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { defineNodeState } from '@/engine/nodeState'
+import { sameValue } from '../../data/valueHelpers'
 
 const definition: NodeDefinition = {
   id: 'changed',
@@ -27,4 +29,20 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: changedExecutor })
+// Co-located (was utility.ts changedExecutor): the per-frame JSON.stringify compare threw on
+// cyclic values and serialized textures every frame; sameValue never throws and treats
+// NaN === NaN (a NaN-holding source no longer reads as "changed" every frame).
+const changedPrev = defineNodeState<{ value: unknown }>({ label: 'changed' })
+
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = ctx.inputs.get('value')
+  const prev = changedPrev.get(ctx.nodeId)
+  const hasChanged = prev === undefined ? value !== undefined : !sameValue(value, prev.value)
+  changedPrev.set(ctx.nodeId, { value })
+  return new Map<string, unknown>([
+    ['result', hasChanged ? value : undefined],
+    ['changed', hasChanged ? 1 : 0],
+  ])
+}
+
+export default defineNode({ definition, executor })

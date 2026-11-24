@@ -93,6 +93,12 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     buzzState.set(ctx.nodeId, state)
   }
 
+  // Edge-detect Pulse every frame, before the early returns, so a trigger held while
+  // unsupported/unbound can't leave lastPulseHigh stale and fire on the first connected frame.
+  const pulseHigh = pulseTrig === true || pulseTrig === 1 || (typeof pulseTrig === 'number' && pulseTrig > 0)
+  const pulseEdge = pulseHigh && !state.lastPulseHigh
+  state.lastPulseHigh = pulseHigh
+
   // Web Bluetooth is Chromium-only — feature-detect so the node reports "unsupported" with
   // guidance instead of a confusing adapter connect error on Safari/Firefox.
   if (!('bluetooth' in navigator)) {
@@ -106,6 +112,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     if (state.adapter) {
       disposeBuzz(ctx.nodeId)
       state = newBuzzState(closedLoop, 'no device', 'No device — click "Pair device…" to connect a Buzz')
+      state.lastPulseHigh = pulseHigh
       buzzState.set(ctx.nodeId, state)
     } else {
       state.status = 'no device'
@@ -167,9 +174,7 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   }
 
   // Pulse: a rising edge (or the panel's Test button, via requestTestBuzz) holds all motors at full.
-  const pulseHigh = pulseTrig === true || pulseTrig === 1 || (typeof pulseTrig === 'number' && pulseTrig > 0)
-  if (pulseHigh && !state.lastPulseHigh) state.pulseUntil = Math.max(state.pulseUntil, now + PULSE_MS)
-  state.lastPulseHigh = pulseHigh
+  if (pulseEdge) state.pulseUntil = Math.max(state.pulseUntil, now + PULSE_MS)
   if (now < state.pulseUntil) {
     const p = master > 0 ? master : 1
     frame[0] = frame[1] = frame[2] = frame[3] = p

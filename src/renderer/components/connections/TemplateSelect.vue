@@ -438,8 +438,8 @@ onUnmounted(() => {
 .template-path {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-neutral-400);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-500); /* AA: the endpoint path (distinguishes API calls) was 3.36:1 */
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -489,7 +489,7 @@ onUnmounted(() => {
   padding: var(--space-3);
   text-align: center;
   font-size: var(--font-size-sm);
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-500); /* AA */
 }
 
 .add-template-btn {

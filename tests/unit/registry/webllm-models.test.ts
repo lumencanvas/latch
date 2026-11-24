@@ -108,3 +108,14 @@ describe('WEBLLM_MODELS catalog', () => {
     expect(options[0].value).toBe(DEFAULT_WEBLLM_MODEL)
   })
 })
+
+describe('webllm executor ⇄ llm node import direction', () => {
+  it('the executor does not import the llm node module (no cycle); defaults agree', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const src = readFileSync(resolve(__dirname, '../../../src/renderer/engine/executors/webllm.ts'), 'utf8')
+    expect(src).not.toMatch(/from '[^']*registry\/ai\/llm\/node'/)
+    const { WEBLLM_MODEL_ORDER } = await import('@/services/ai/models/webllm/order')
+    expect(WEBLLM_MODEL_ORDER[0]).toBe(DEFAULT_WEBLLM_MODEL)
+  })
+})

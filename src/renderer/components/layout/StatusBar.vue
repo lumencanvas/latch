@@ -118,7 +118,7 @@ const isElectron = computed(() => {
   background: var(--color-neutral-200);
   border-top: 1px solid var(--color-neutral-300);
   font-size: var(--font-size-xs);
-  color: var(--color-neutral-500);
+  color: var(--color-neutral-700); /* WCAG AA: neutral-500 was 3.6:1 on the neutral-200 bar */
   flex-shrink: 0;
 }
 
@@ -131,7 +131,7 @@ const isElectron = computed(() => {
   padding: 2px var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-warning-ink, #1a1300);
+  color: var(--color-warning-ink);
   background: var(--color-warning);
   border: 1px solid var(--color-warning);
   border-radius: var(--radius-sm);
@@ -160,7 +160,7 @@ const isElectron = computed(() => {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
-  background: var(--color-neutral-400);
+  background: var(--color-neutral-600); /* stopped dot: neutral-400 was 2.3:1, below the 3:1 UI floor */
 }
 
 .status-indicator.status-running {
@@ -183,7 +183,8 @@ const isElectron = computed(() => {
 }
 
 .status-value {
-  color: var(--color-primary-400);
+  /* primary-400 is a light-on-dark accent (1.9:1 on the light bar); primary-700 clears AA. */
+  color: var(--color-primary-700);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -202,6 +203,6 @@ const isElectron = computed(() => {
 .status-platform {
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wide);
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-600); /* was neutral-400 = 2.3:1 on the bar */
 }
 </style>

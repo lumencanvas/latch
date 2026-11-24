@@ -2,6 +2,7 @@ import { markRaw } from 'vue'
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
+import { risingEdge } from '@/engine/trigger'
 import { parseCharacteristicValue } from '@/services/ble/BleProfileRegistry'
 import { BleAdapter, type BleDataFormat } from '@/services/connections/adapters/BleAdapter'
 import { bleAdapters, bleCharacteristicState } from '../shared'
@@ -114,6 +115,12 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   const outputs = new Map<string, unknown>()
 
+  // Edge state must update EVERY frame — before the unsupported/no-device/not-connected early
+  // returns — or a trigger held across a disconnect leaves wasHigh stale and the first
+  // press after reconnect is lost.
+  const readEdge = risingEdge(ctx.nodeId, 'read', readTrigger)
+  const writeEdge = risingEdge(ctx.nodeId, 'write', writeTrigger)
+
   // Initialize state
   let state = bleCharacteristicState.get(ctx.nodeId)
   if (!state) {
@@ -135,7 +142,10 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     bleCharacteristicState.set(ctx.nodeId, state)
   }
 
-  // Reset notified flag each frame
+  // Latch-and-clear the notified flag: report a notification that arrived since the last
+  // frame, then re-arm. (Clearing it BEFORE emitting — as before — meant `notified` never
+  // read true, since notifications land between frames.)
+  const notified = state.notified
   state.notified = false
 
   const emit = (status: string) => {
@@ -143,14 +153,14 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     outputs.set('rawValue', state!.rawValue)
     outputs.set('text', state!.text)
     outputs.set('formatted', state!.formatted)
-    outputs.set('notified', state!.notified)
+    outputs.set('notified', notified)
     outputs.set('properties', state!.properties)
     outputs.set('error', state!.error)
     // Internal: the panel reads the discovered services + live value + status each frame.
     outputs.set('_services', state!.services)
     outputs.set('_status', status)
     outputs.set('_formatted', state!.formatted)
-    outputs.set('_notified', state!.notified)
+    outputs.set('_notified', notified)
     outputs.set('_error', state!.error)
     return outputs
   }
@@ -220,26 +230,41 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     state.subscribedChar = ''
     state.services = []
     state.lastConnectAt = 0
+    state.connecting = false
+    state.reading = false
+    state.lastSubscribeAttempt = 0
   }
 
   // Ensure connected. A dropped GATT link invalidates the subscription, so re-arm it so
   // notifications resubscribe after a reconnect (else they go silent). Throttled + canConnect()-
   // guarded: fires the initial connect AND retries a failed/dropped one every ~2s, without storming.
-  if (!adapter.isConnected()) {
-    state.subscribed = false
+  // The connect + discovery run OFF the frame (not awaited): a GATT connect takes 1–3 s, and
+  // awaiting it here froze the whole graph for that long on every (re)connect.
+  if (!adapter.isConnected() || state.connecting) {
+    if (!adapter.isConnected()) state.subscribed = false
     const nowC = Date.now()
-    if (adapter.canConnect() && nowC - state.lastConnectAt >= 2000) {
+    if (!state.connecting && adapter.canConnect() && nowC - state.lastConnectAt >= 2000) {
       state.lastConnectAt = nowC
-      try {
-        await adapter.connect()
-        state.services = await adapter.discoverServices()
-      } catch (error) {
-        state.error = error instanceof Error ? error.message : 'Connection failed'
-      }
+      state.connecting = true
+      const a = adapter
+      const nodeId = ctx.nodeId
+      const live = () => (bleAdapters.get(adapterKey) === a ? bleCharacteristicState.get(nodeId) : undefined)
+      a.connect()
+        .then(() => a.discoverServices())
+        .then((services) => {
+          const s = live()
+          if (s) { s.services = services; s.error = null }
+        })
+        .catch((error: unknown) => {
+          const s = live()
+          if (s) s.error = error instanceof Error ? error.message : 'Connection failed'
+        })
+        .finally(() => {
+          const s = live()
+          if (s) s.connecting = false
+        })
     }
-    if (!adapter.isConnected()) {
-      return emit(adapter.status)
-    }
+    return emit(state.connecting ? 'connecting' : adapter.status)
   }
 
   // Determine actual data format
@@ -253,7 +278,9 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   }
 
   // Subscribe to notifications if enabled, a characteristic is chosen, and not yet subscribed.
-  if (enableNotifications && characteristicUUID && !state.subscribed) {
+  const nowS = Date.now()
+  if (enableNotifications && characteristicUUID && !state.subscribed && nowS - (state.lastSubscribeAttempt ?? 0) >= 2000) {
+    state.lastSubscribeAttempt = nowS
     try {
       await adapter.subscribeToNotifications(
         characteristicUUID,
@@ -278,32 +305,52 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
     }
   }
 
-  // Handle read trigger / continuous / the panel's Read button.
-  const hasReadTrigger =
-    readTrigger === true || readTrigger === 1 || (typeof readTrigger === 'number' && readTrigger > 0) || continuous || state.readRequested
+  // Handle read trigger / continuous / the panel's Read button. Edge-detect the wired
+  // `readTrigger` (a held-high trigger must not issue a GATT read every frame); `continuous`
+  // and the one-shot panel request stay per-frame by design.
+  const hasReadTrigger = readEdge || continuous || state.readRequested
 
-  if (hasReadTrigger && characteristicUUID) {
+  if (hasReadTrigger && characteristicUUID && !state.reading) {
     state.readRequested = false // drain the one-shot request
-    try {
-      // Decode via the SAME profile parser the notification path uses, so a read and a
-      // notification of the same characteristic agree.
-      const raw = await adapter.readCharacteristicRaw(characteristicUUID)
-      const parsed = parseCharacteristicValue(characteristicUUID, raw)
-      state.value = parsed.value
-      state.rawValue = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength)
-      state.text = typeof parsed.value === 'string' ? parsed.value : JSON.stringify(parsed.value)
-      state.formatted = parsed.formatted
-      state.error = null
-    } catch (error) {
-      state.error = error instanceof Error ? error.message : 'Read failed'
-    }
+    // Off-frame (not awaited) with an in-flight guard: `continuous` used to block every frame
+    // on a GATT round-trip (~10–50 ms), dragging the whole graph down to BLE latency.
+    state.reading = true
+    const uuid = characteristicUUID
+    // Same staleness guard as the connect path: if the adapter was swapped (device changed) or
+    // the node disposed while this read was in flight, drop the result — and don't clear the
+    // NEW adapter's `reading` flag.
+    const a = adapter
+    const nodeId = ctx.nodeId
+    const live = () => (bleAdapters.get(adapterKey) === a ? bleCharacteristicState.get(nodeId) : undefined)
+    a.readCharacteristicRaw(uuid)
+      .then((raw) => {
+        const s = live()
+        if (!s) return
+        // Decode via the SAME profile parser the notification path uses, so a read and a
+        // notification of the same characteristic agree.
+        const parsed = parseCharacteristicValue(uuid, raw)
+        s.value = parsed.value
+        s.rawValue = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength)
+        s.text = typeof parsed.value === 'string' ? parsed.value : JSON.stringify(parsed.value)
+        s.formatted = parsed.formatted
+        s.error = null
+      })
+      .catch((error: unknown) => {
+        const s = live()
+        if (s) s.error = error instanceof Error ? error.message : 'Read failed'
+      })
+      .finally(() => {
+        const s = live()
+        if (s) s.reading = false
+      })
   } else if (state.readRequested) {
     // Requested a read with no characteristic selected — clear it so it doesn't linger.
     state.readRequested = false
   }
 
-  // Handle write trigger.
-  const hasWriteTrigger = writeTrigger === true || writeTrigger === 1 || (typeof writeTrigger === 'number' && writeTrigger > 0)
+  // Handle write trigger — RISING edge only (a held-high trigger must not write to the
+  // GATT characteristic 60×/s; that floods the device and drains its battery).
+  const hasWriteTrigger = writeEdge
 
   if (hasWriteTrigger && characteristicUUID && writeData !== undefined) {
     try {

@@ -3,7 +3,7 @@ import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
 import { audioManager } from '@/services/audio/AudioManager'
-import { audioNodes, getOrCreateNode } from '../shared'
+import { audioNodes, getOrCreateNode, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-output',
@@ -43,7 +43,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   })
 
   // Update volume
-  gain.gain.value = mute ? 0 : Tone.dbToGain(volume)
+  setParam(gain.gain, mute ? 0 : Tone.dbToGain(volume))
 
   // Connect input to gain if available
   if (audio && 'connect' in audio) {

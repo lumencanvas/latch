@@ -1,6 +1,6 @@
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
-import { matchValueExecutor } from '@/engine/executors/utility'
+import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 
 const definition: NodeDefinition = {
   id: 'match-value',
@@ -32,4 +32,48 @@ const definition: NodeDefinition = {
   },
 }
 
-export default defineNode({ definition, executor: matchValueExecutor })
+// Co-located (was utility.ts matchValueExecutor). Fixes: boolean comparisons used
+// Boolean(value), so the STRING "false" matched target "true"; number mode treated null/''
+// as 0 (matching target "0").
+function toBool(v: unknown): boolean {
+  if (typeof v === 'string') return ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase())
+  return v === true || (typeof v === 'number' && v !== 0)
+}
+function toNum(v: unknown): number {
+  if (v === null || v === undefined) return NaN
+  if (typeof v === 'string' && v.trim() === '') return NaN
+  return Number(v)
+}
+
+const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
+  const value = ctx.inputs.get('value')
+  const target = String(ctx.controls.get('target') ?? '')
+  const compareType = (ctx.controls.get('type') as string) ?? 'auto'
+
+  if (target === '') {
+    return new Map<string, unknown>([['result', 0], ['value', value]])
+  }
+
+  let result: boolean
+  switch (compareType) {
+    case 'number':
+      result = toNum(value) === toNum(target)
+      break
+    case 'string':
+      result = String(value ?? '') === target
+      break
+    case 'boolean':
+      result = toBool(value) === toBool(target)
+      break
+    case 'auto':
+    default: {
+      const t = target.trim()
+      if (t !== '' && Number.isFinite(Number(t))) result = toNum(value) === Number(t)
+      else if (t === 'true' || t === 'false') result = toBool(value) === (t === 'true')
+      else result = String(value ?? '') === target
+    }
+  }
+  return new Map<string, unknown>([['result', result ? 1 : 0], ['value', value]])
+}
+
+export default defineNode({ definition, executor })

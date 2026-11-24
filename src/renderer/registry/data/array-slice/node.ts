@@ -10,7 +10,11 @@ const definition: NodeDefinition = {
   description: 'Get subset of array',
   icon: 'scissors',
   platforms: ['web', 'electron'],
-  inputs: [{ id: 'array', type: 'array', label: 'Array' }],
+  inputs: [
+    { id: 'array', type: 'array', label: 'Array' },
+    { id: 'start', type: 'number', label: 'Start' },
+    { id: 'end', type: 'number', label: 'End' },
+  ],
   outputs: [{ id: 'result', type: 'array', label: 'Result' }],
   controls: [
     { id: 'start', type: 'number', label: 'Start', default: 0 },
@@ -18,10 +22,10 @@ const definition: NodeDefinition = {
   ],
   tags: ['array', 'slice', 'subset', 'range'],
   info: {
-    overview: 'Extracts a portion of an array from a start index to an end index. Returns a new array containing only the selected elements. Negative indices count from the end of the array.',
+    overview: 'Extracts a portion of an array from Start (inclusive) to End (exclusive). A negative Start counts from the end. End -1 means through the last element; other negative values count from the end (-2 drops the last two).',
     tips: [
-      'Set end to -1 to slice from the start index through the last element.',
-      'Use this to implement pagination by adjusting start and end based on page size.',
+      'Leave End at -1 to slice from Start through the last element.',
+      'Wire Start/End (e.g. page * size and page * size + size) to implement pagination.',
     ],
     pairsWith: ['array-length', 'array-range', 'counter', 'array-reverse'],
   },
@@ -29,13 +33,15 @@ const definition: NodeDefinition = {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const array = ctx.inputs.get('array')
-  const start = (ctx.controls.get('start') as number) ?? 0
-  const end = (ctx.controls.get('end') as number) ?? -1
+  const start = Math.trunc(ctx.num('start', 0))
+  const end = Math.trunc(ctx.num('end', -1))
 
   if (!Array.isArray(array)) {
     return new Map<string, unknown>([['result', []]])
   }
 
+  // End -1 means "through the last element"; other negatives follow JS slice (-2 drops the
+  // last two). Kept as-is so saved flows don't shift by one.
   const result = end === -1 ? array.slice(start) : array.slice(start, end)
   return new Map<string, unknown>([['result', result]])
 }

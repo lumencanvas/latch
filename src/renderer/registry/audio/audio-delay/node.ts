@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { audioNodes, getOrCreateNode } from '../shared'
+import { audioNodes, getOrCreateNode, setParam } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-delay',
@@ -56,9 +56,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   }) as Tone.FeedbackDelay
 
   // Update parameters
-  delay.delayTime.value = delayTime
-  delay.feedback.value = feedback
-  delay.wet.value = wet
+  setParam(delay.delayTime, delayTime)
+  setParam(delay.feedback, feedback)
+  setParam(delay.wet, wet)
 
   // Connect input
   const prevInput = audioNodes.get(`${ctx.nodeId}_input`)

@@ -76,30 +76,46 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     newInputIds.some((id, i) => id !== state.inputIds[i])
 
   if (inputsChanged) {
-    // Dispose old clones properly (dispose materials but geometry is shared)
+    // Drop old clones. Object3D.clone() SHARES geometry and material with the source, so they
+    // must NOT be disposed here — doing so disposed the upstream node's live material (forcing
+    // a recompile, and blanking it if that material was otherwise idle). Only light clones own
+    // something of their own: a separate shadow map.
     for (const clone of state.clones) {
       group.remove(clone)
-      if (clone instanceof THREE.Mesh) {
-        // Don't dispose geometry (it's shared with the original)
-        // But do dispose materials if they were cloned
-        if (Array.isArray(clone.material)) {
-          clone.material.forEach(m => m.dispose())
-        } else if (clone.material) {
-          clone.material.dispose()
-        }
-      }
+      clone.traverse((o) => {
+        if (o instanceof THREE.Light) o.dispose()
+      })
     }
 
     // Create new clones with shared geometry
     state.clones = []
     for (const obj of inputObjects) {
-      // Clone with shared geometry - Three.js clone() already shares geometry
       const clone = obj.clone()
       group.add(clone)
       state.clones.push(clone)
     }
 
     state.inputIds = newInputIds
+  }
+
+  // Keep clones in sync with their sources: the source's transform, geometry (primitives swap
+  // it on a param change) and material are live, but a one-time clone froze them.
+  for (let i = 0; i < state.clones.length; i++) {
+    const src = inputObjects[i]
+    const clone = state.clones[i]
+    if (!src || !clone) continue
+    clone.position.copy(src.position)
+    clone.quaternion.copy(src.quaternion)
+    clone.scale.copy(src.scale)
+    clone.visible = src.visible
+    if (src instanceof THREE.Mesh && clone instanceof THREE.Mesh) {
+      if (clone.geometry !== src.geometry) clone.geometry = src.geometry
+      if (clone.material !== src.material) clone.material = src.material
+    } else if (src instanceof THREE.Light && clone instanceof THREE.Light) {
+      clone.color.copy(src.color)
+      clone.intensity = src.intensity
+      clone.castShadow = src.castShadow
+    }
   }
 
   // Apply group transform

@@ -317,7 +317,7 @@ function handleCreate() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: var(--color-neutral-400);
+  color: var(--color-neutral-500); /* AA: empty-state guidance was 3.36:1 on white */
   text-align: center;
   padding: var(--space-6);
 }

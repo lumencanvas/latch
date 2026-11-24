@@ -271,6 +271,17 @@ export class BleAdapter extends BaseAdapter {
       this.boundDisconnectHandler = null
     }
 
+    // Swapping to a DIFFERENT physical device must release our hold on the old one's shared GATT
+    // link (and drop the radio if we were its last holder). Previously the ref + `this.server`
+    // were simply orphaned: the old device stayed connected until reload and its refcount never
+    // reached zero, so a sibling's later release never disconnected it either. A same-id swap
+    // (getDevices() handing back a fresh object for the same device on reconnect) keeps the hold.
+    const prevId = this.device?.id
+    if (prevId && prevId !== device?.id && (this.server || this.gattRefId)) {
+      this.releaseCurrentLink()
+      if (this.status === 'connected') this.handleUnexpectedDisconnect('BLE device changed')
+    }
+
     this.device = device
 
     if (device) {
@@ -637,8 +648,13 @@ export class BleAdapter extends BaseAdapter {
         const char = await service.getCharacteristic(uuid)
         this.characteristics.set(uuid, char)
         return char
-      } catch {
-        // Not in this service, continue
+      } catch (e) {
+        // Only "not in this service" (NotFoundError) means keep looking. Anything else — the GATT
+        // link dropped (NetworkError), a blocklisted / not-permitted UUID (SecurityError), a bad
+        // UUID (TypeError) — is the REAL cause; swallowing it surfaced a misleading
+        // "Characteristic … not found" instead.
+        if ((e as { name?: string } | null)?.name === 'NotFoundError') continue
+        throw e
       }
     }
 
@@ -786,6 +802,31 @@ export class BleAdapter extends BaseAdapter {
     return false
   }
 
+  /**
+   * Synchronously release this adapter's GATT resources: detach notification listeners, release
+   * the shared-link hold, and either drop the radio (last holder) or — when a sibling adapter
+   * still shares the link — stop OUR notifications on it so the device doesn't keep streaming
+   * them. Leaves the device ref alone. Safe to call repeatedly.
+   */
+  private releaseCurrentLink(): void {
+    this.detachNotificationListeners()
+    const server = this.server
+    const subscribed = [...this.characteristics].filter(([uuid]) => this.notificationHandlers.has(uuid))
+    try {
+      if (this.releaseGattRef()) {
+        if (server?.connected) server.disconnect()
+      } else if (server?.connected) {
+        for (const [, c] of subscribed) c.stopNotifications().catch(() => { /* link may be dropping */ })
+      }
+    } catch {
+      // Device already gone.
+    }
+    this.server = null
+    this.services.clear()
+    this.characteristics.clear()
+    this.notificationHandlers.clear()
+  }
+
   override dispose(): void {
     // Remove gattserverdisconnected event listener
     if (this.device && this.boundDisconnectHandler) {
@@ -793,30 +834,17 @@ export class BleAdapter extends BaseAdapter {
       this.boundDisconnectHandler = null
     }
 
-    // Detach notification listeners before dropping the characteristic refs.
-    this.detachNotificationListeners()
-
-    // Drop the physical GATT link SYNCHRONOUSLY. super.dispose() fires a fire-and-forget
-    // disconnect(), but we null `this.server` right after it returns — so the async
-    // doDisconnect body would find `server` already null and never disconnect the radio,
-    // leaving the device connected until page reload. gatt.disconnect() is synchronous,
-    // and the disconnect listener was already removed above so this won't re-enter
-    // handleBleDisconnect.
-    try {
-      // Release our hold; only physically drop the radio if we were the last holder (a sibling
-      // adapter bound to the same deviceId keeps it alive). releaseGattRef reads the captured
-      // gattRefId, so it's correct even though this runs before the async doDisconnect from super.dispose().
-      if (this.releaseGattRef() && this.server?.connected) this.server.disconnect()
-    } catch {
-      // Device already gone.
-    }
+    // Release everything SYNCHRONOUSLY and BEFORE super.dispose(). super.dispose() fires a
+    // fire-and-forget disconnect() whose doDisconnect awaits stopNotifications() per
+    // characteristic — previously the maps were cleared right after super.dispose() returned,
+    // i.e. mid-way through that loop, so only the first characteristic was ever stopped (and on
+    // the last holder it ran against an already-dropped link). Now doDisconnect finds empty maps
+    // and a null server and is a no-op; the disconnect listener is already gone, so the
+    // synchronous gatt.disconnect() can't re-enter handleBleDisconnect.
+    this.releaseCurrentLink()
 
     super.dispose()
     this.device = null
-    this.server = null
-    this.services.clear()
-    this.characteristics.clear()
-    this.notificationHandlers.clear()
   }
 }
 

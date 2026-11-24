@@ -37,7 +37,7 @@ const definition: NodeDefinition = {
   ],
   tags: ['sequencer', 'step sequencer', 'pattern', 'steps', 'gate', 'rhythm', 'trigger'],
   info: {
-    overview: 'A pattern sequencer that advances through a configurable number of steps on each incoming clock trigger. Each step holds a value and a gate state. Supports forward, backward, ping-pong, and random playback modes.',
+    overview: 'A pattern sequencer that advances through a configurable number of steps on each incoming clock trigger; the first clock after start or Reset plays step 1. Each step holds a value (above 0.5 opens the gate). Supports forward, backward, ping-pong, and random playback modes.',
     tips: [
       'Feed the clock input from a metronome beat output to keep the sequence locked to tempo.',
       'Use the value output to drive shader uniforms or color parameters for rhythmic visual changes.',

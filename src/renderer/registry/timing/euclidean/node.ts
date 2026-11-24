@@ -15,6 +15,7 @@ const definition: NodeDefinition = {
   ],
   outputs: [
     { id: 'gate', type: 'boolean', label: 'Gate' },
+    { id: 'trigger', type: 'trigger', label: 'Onset' },
     { id: 'value', type: 'number', label: 'Value' },
     { id: 'pattern', type: 'array', label: 'Pattern' },
     { id: 'pulses', type: 'number', label: 'Pulses' },
@@ -32,7 +33,7 @@ const definition: NodeDefinition = {
       'Drive Step with a Counter clocked by a Metronome to play the rhythm in time.',
       'Try E(3,8), E(5,8), E(7,16) — small pulse counts over larger step counts give classic grooves.',
       'Use Rotation to shift where the pattern starts without changing its shape.',
-      'Wire Gate into a trigger-driven node (sampler, flash, envelope) to sound or light each onset.',
+      'Wire Onset into a trigger-driven node (sampler, flash, envelope) to sound or light each onset — it pulses once per step that lands on a pulse, even when pulses are adjacent (Gate stays high across them).',
     ],
     pairsWith: ['metronome', 'counter', 'trigger', 'envelope', 'step-sequencer'],
   },

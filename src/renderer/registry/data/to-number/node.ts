@@ -16,11 +16,11 @@ const definition: NodeDefinition = {
     { id: 'valid', type: 'boolean', label: 'Valid' },
   ],
   controls: [
-    { id: 'default', type: 'number', label: 'Default', default: 0 },
+    { id: 'default', type: 'number', label: 'Default', default: 0, props: { step: 0.01 } },
   ],
   tags: ['convert', 'number', 'parse', 'cast'],
   info: {
-    overview: 'Converts any value to a number. Strings are parsed, booleans become 0 or 1, and invalid values fall back to the configurable default. The valid output indicates whether the conversion succeeded.',
+    overview: 'Converts any value to a number. Strings are parsed strictly (the whole string must be numeric; empty strings are invalid), booleans become 0 or 1, and invalid or infinite values fall back to the configurable default. The valid output indicates whether the conversion succeeded.',
     tips: [
       'Set a sensible default to prevent NaN from propagating through math operations.',
       'Use Parse Int or Parse Float instead when you need more control over the parsing behavior.',
@@ -40,9 +40,12 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     return outputs
   }
 
-  const num = Number(value)
+  // Number('') / Number('  ') is 0 — an empty field is not a valid number. Infinity isn't
+  // usable downstream either.
+  const blank = typeof value === 'string' && value.trim() === ''
+  const num = blank ? NaN : Number(value)
 
-  if (isNaN(num)) {
+  if (!Number.isFinite(num)) {
     outputs.set('result', defaultVal)
     outputs.set('valid', 0)
     return outputs

@@ -8,6 +8,7 @@
 import type { ExecutionContext, NodeExecutorFn } from '../ExecutionEngine'
 import type { WebSocketHandle } from '@/services/connections/ConnectionHandle'
 import { defineNodeState } from '../nodeState'
+import { risingEdge } from '../trigger'
 
 // Per-node received-message cache. Auto-gc'd via the engine's generic lifecycle loop.
 export const wsState = defineNodeState<{
@@ -27,7 +28,8 @@ export const nodeListeners = defineNodeState<{
 export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const connectionId = (ctx.inputs.get('connectionId') as string) ?? (ctx.controls.get('connectionId') as string) ?? ''
   const sendData = ctx.inputs.get('send')
-  const trigger = ctx.inputs.get('trigger') as boolean | undefined
+  // Edge state updates EVERY frame, before the not-connected early returns (see mqtt.ts).
+  const fire = risingEdge(ctx.nodeId, 'trigger', ctx.inputs.get('trigger'))
 
   const outputs = new Map<string, unknown>()
 
@@ -86,8 +88,9 @@ export const websocketExecutor: NodeExecutorFn = async (ctx: ExecutionContext) =
     nodeListeners.set(ctx.nodeId, { connectionId, unsubscribe })
   }
 
-  // Send data when triggered
-  if (trigger && sendData !== undefined && isConnected) {
+  // Send on the trigger's RISING edge only — a held-high trigger must not resend 60×/s
+  // (a WebSocket send is a discrete event, not continuous state). Mirrors http.ts.
+  if (fire && sendData !== undefined && isConnected) {
     try {
       await conn.send(sendData)
     } catch (e) {

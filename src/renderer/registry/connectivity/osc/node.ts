@@ -52,18 +52,36 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
   const outputs = new Map<string, unknown>()
 
   const oscKey = `${ctx.nodeId}:osc`
+  const sendKey = `${ctx.nodeId}:lastSend`
+  const urlKey = `${ctx.nodeId}:url`
+  const attemptKey = `${ctx.nodeId}:lastAttempt`
+  const url = `ws://${host}:${port}`
   let ws = oscConnections.get(oscKey)
 
-  // Handle connection (OSC over WebSocket)
-  if (connect && !ws) {
+  // Host/port changed → drop the old socket so the block below dials the new endpoint.
+  if (ws && oscState.get(urlKey) !== url) {
+    ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
+    ws.close()
+    oscConnections.delete(oscKey)
+    setCached(oscState, `${ctx.nodeId}:connected`, false)
+    ws = undefined
+  }
+
+  // Handle connection (OSC over WebSocket). Throttled to one dial per 2 s: onclose deletes the
+  // socket, so with the bridge down this used to construct a new WebSocket nearly every frame.
+  const now = Date.now()
+  if (connect && !ws && now - ((oscState.get(attemptKey) as number) ?? 0) >= 2000) {
+    oscState.set(attemptKey, now)
     try {
-      ws = new WebSocket(`ws://${host}:${port}`)
+      ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
       oscConnections.set(oscKey, ws)
+      oscState.set(urlKey, url)
 
       ws.onopen = () => {
         setCached(oscState, `${ctx.nodeId}:connected`, true)
         setCached(oscState, `${ctx.nodeId}:error`, null)
+        oscState.delete(sendKey) // fresh link — re-send the current value
       }
 
       ws.onmessage = (event) => {
@@ -93,16 +111,26 @@ const executor: NodeExecutorFn = async (ctx: ExecutionContext) => {
 
   // Handle disconnect
   if (!connect && ws) {
+    ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null
     ws.close()
     oscConnections.delete(oscKey)
     setCached(oscState, `${ctx.nodeId}:connected`, false)
+    oscState.delete(sendKey)
+    oscState.delete(attemptKey) // toggling Connect back on dials immediately
+    ws = undefined
   }
 
-  // Send OSC message
+  // Send OSC message — SEND-ON-CHANGE (there's no trigger port, so gating on a value change is
+  // the correct guard; sending every frame flooded the socket ~60×/s). OSC receivers hold the
+  // last value, so re-sending an unchanged value is redundant. A disconnected input re-arms it.
+  if (sendValue === undefined || sendValue === null) oscState.delete(sendKey)
   if (ws && ws.readyState === WebSocket.OPEN && sendValue !== undefined) {
     const args = Array.isArray(sendValue) ? sendValue : [sendValue]
-    const message = encodeOSCMessage(address, args)
-    ws.send(message)
+    const serialized = JSON.stringify([address, args])
+    if (oscState.get(sendKey) !== serialized) {
+      ws.send(encodeOSCMessage(address, args))
+      oscState.set(sendKey, serialized)
+    }
   }
 
   outputs.set('address', getCached(`${ctx.nodeId}:address`, address))

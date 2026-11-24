@@ -1,10 +1,13 @@
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
 export default defineConfig({
+  // electron-vite 5 externalizes package.json `dependencies` by default
+  // (build.externalizeDeps). Main/preload only import `electron`, node builtins and
+  // the devDependency @electron-toolkit/utils (bundled), so the packaged app ships
+  // no node_modules at all (see forge.config.ts `ignore`).
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'dist-electron/main',
       rollupOptions: {
@@ -15,7 +18,7 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // Sandboxed preloads must be a single CommonJS file that only requires 'electron'.
     build: {
       outDir: 'dist-electron/preload',
       rollupOptions: {
@@ -30,9 +33,18 @@ export default defineConfig({
     },
   },
   renderer: {
+    optimizeDeps: { exclude: ['bellows-voice'] }, // see vite.config.ts
     root: resolve(__dirname, 'src/renderer'),
     publicDir: resolve(__dirname, 'public'),
     plugins: [vue()],
+    // Same cross-origin isolation as vite.config.ts / netlify.toml (and the app://
+    // protocol in production) so `electron-vite dev` matches the packaged app.
+    server: {
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'credentialless',
+      },
+    },
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src/renderer'),

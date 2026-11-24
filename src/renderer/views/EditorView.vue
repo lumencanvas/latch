@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, markRaw, nextTick } from 
 import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
-import { Eye } from 'lucide-vue-next'
+import { Eye, Network } from 'lucide-vue-next'
 import { MiniMap } from '@vue-flow/minimap'
 import type { Connection, NodeChange, XYPosition } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
@@ -18,8 +18,8 @@ defineOptions({ name: 'EditorView' })
 import { useFlowsStore } from '@/stores/flows'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, dataTypeMeta } from '@/stores/nodes'
-import { flowSnippets } from '@/data/flow-snippets'
-import { snippetToInsertableNodes } from '@/utils/snippets'
+import { flowSnippets, STARTER_FLOW_IDS, REQUIREMENT_LABELS } from '@/data/flow-snippets'
+import { snippetToInsertableNodes, snippetOffsetToCenter } from '@/utils/snippets'
 import { nodeTypeColor } from '@/utils/nodeColor'
 import { suggestNodesForPort } from '@/utils/nodeSuggestions'
 import FlowPreview from '@/components/preview/FlowPreview.vue'
@@ -28,6 +28,7 @@ import WireSuggestionPopover, { type SuggestionItem } from '@/components/canvas/
 import { validateConnection, getPortType, areTypesCompatible } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
 import { useCanvasKeyboard } from '@/composables/useCanvasKeyboard'
+import { useAutoArrange } from '@/composables/useAutoArrange'
 import { useDialogA11y } from '@/composables/useDialogA11y'
 import { getCustomNodeLoader } from '@/services/customNodes'
 
@@ -78,6 +79,14 @@ const {
 const { canvasAnnounce, onCanvasKeydown, onCanvasFocus, onCanvasBlur } = useCanvasKeyboard({
   setCenter, getViewport, flowToScreenCoordinate, addEdges, startBatch, endBatch, showConnectionError,
   suggestNodeFromWire: openWireSuggestionsForNode,
+})
+
+// Tidy graph (layered auto-arrange; one undo step). Uses Vue Flow's measured
+// node sizes where available; reframes the canvas after a whole-flow tidy.
+const { arrange: tidyGraph } = useAutoArrange({
+  getDimensions: (id) => vueFlow.findNode(id)?.dimensions,
+  // Vue Flow syncs v-model positions a tick later; frame after it has them.
+  onArranged: (_ids, scope) => { if (scope === 'all') setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 60) },
 })
 
 // Track drag state for undo/redo
@@ -382,27 +391,37 @@ watch(
 
 // A handful of beginner-friendly starter flows offered on the empty canvas so a
 // blank document is an actionable starting point, not a dead end. Curated by id
-// with a fallback to the first few snippets if any id is renamed.
-const STARTER_TEMPLATE_IDS = ['webcam-kaleidoscope', 'hand-tracking', 'keyboard-synth', 'audio-reactive']
+// (STARTER_FLOW_IDS, pinned by tests/unit/data/starter-flows.test.ts) with a
+// fallback to the first few snippets if any id is renamed.
 const starterTemplates = computed(() => {
-  const picked = STARTER_TEMPLATE_IDS
+  const picked = STARTER_FLOW_IDS
     .map(id => flowSnippets.find(s => s.id === id))
     .filter((s): s is (typeof flowSnippets)[number] => s !== undefined)
-  return picked.length > 0 ? picked : flowSnippets.slice(0, 4)
+  return picked.length > 0 ? picked : flowSnippets.slice(0, 6)
 })
 
 // Colour a preview node by its category, for the starter-template thumbnails.
 const templateNodeColor = (nodeType: string) =>
   nodeTypeColor(nodeType, (t) => nodesStore.getDefinition(t)?.category)
 
+// Card hint for what a starter needs (camera / mic / hardware / network / model).
+const starterRequirements = (template: (typeof flowSnippets)[number]) =>
+  (template.requires ?? []).map(r => REQUIREMENT_LABELS[r]).join(' · ')
+
 // Insert a starter flow onto the empty canvas — reuses the same subgraph-insertion
-// path as the node explorer's snippet insertion, then frames the result.
+// path as the node explorer's snippet insertion, centred on the current viewport,
+// as ONE undoable step, then frames the result.
 function insertStarterTemplate(snippetId: string) {
   const snippet = flowSnippets.find(s => s.id === snippetId)
   if (!snippet || !flowsStore.activeFlow) return
   const nodes = snippetToInsertableNodes(snippet, (type) => nodesStore.getDefinition(type))
-  const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, { x: 400, y: 300 })
+  const pane = document.querySelector('.vue-flow__pane') as HTMLElement | null
+  const rect = pane?.getBoundingClientRect()
+  const center = project(rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 400, y: 300 })
+  const before = startBatch()
+  const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, snippetOffsetToCenter(snippet, center))
   if (nodeIds.length === 0) return
+  endBatch(before, `Insert ${snippet.name}`)
   uiStore.selectNodes(nodeIds)
   // The nodes are inserted at world coordinates that may fall outside the empty
   // canvas's viewport, so frame them — but only once Vue Flow has ingested the
@@ -421,7 +440,8 @@ async function openStarterFlow() {
   try {
     const response = await fetch('./sample-flow.json')
     if (!response.ok) return
-    const result = flowsStore.importFlows(await response.text(), { replace: false })
+    // First-party bundled file — same trust as loadSampleFlow.
+    const result = flowsStore.importFlows(await response.text(), { replace: false, codePolicy: 'trust' })
     if (!result.success) return
     const stop = vueFlow.onNodesInitialized(() => {
       fitView({ padding: 0.2 })
@@ -597,6 +617,13 @@ function handleKeyDown(event: KeyboardEvent) {
     return
   }
 
+  // Tidy graph: Shift + Alt + L (selection if 2+ selected, else the whole flow)
+  if (event.shiftKey && event.altKey && !modifier && event.code === 'KeyL') {
+    event.preventDefault()
+    tidyGraph()
+    return
+  }
+
   // Delete selected nodes/edges: Delete or Backspace
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault()
@@ -620,9 +647,9 @@ function deleteSelected() {
   if (selectedNodeIds.length > 0) {
     flowsStore.removeNodes(selectedNodeIds)
 
-    // Clean up exposed controls for deleted nodes
-    const remainingNodeIds = flowsStore.activeNodes.map(n => n.id)
-    uiStore.cleanupExposedControls(remainingNodeIds)
+    // Exposed controls + tile positions are NOT pruned here, so Undo brings a deleted node's
+    // panel tile back where it was. The Control Panel skips tiles whose node is gone and
+    // prunes them (across all flows) when it mounts.
 
     // Clear selection
     uiStore.clearSelection()
@@ -985,6 +1012,15 @@ onUnmounted(() => {
         >
           <Eye :size="14" />
         </ControlButton>
+        <!-- Tidy graph: layered auto-arrange (selection if 2+ selected, else all). -->
+        <ControlButton
+          class="tidy-graph-btn"
+          title="Tidy graph (Shift+Alt+L)"
+          aria-label="Tidy graph: auto-arrange the selection, or the whole flow"
+          @click="tidyGraph()"
+        >
+          <Network :size="14" />
+        </ControlButton>
       </Controls>
 
       <MiniMap
@@ -1032,6 +1068,10 @@ onUnmounted(() => {
           />
           <span class="starter-name">{{ template.name }}</span>
           <span class="starter-desc">{{ template.description }}</span>
+          <span
+            v-if="template.requires?.length"
+            class="starter-needs"
+          >Needs: {{ starterRequirements(template) }}</span>
         </button>
       </div>
       <div class="empty-actions">
@@ -1039,7 +1079,7 @@ onUnmounted(() => {
           class="open-starter-flow"
           @click="openStarterFlow()"
         >
-          ✨ Open the full Starter Flow — 3D · synth · MediaPipe
+          ✨ Open the full demo — live 3D, a playable synth, and hand tracking
         </button>
         <button
           class="browse-library"
@@ -1236,7 +1276,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   gap: var(--space-3);
-  width: min(560px, 80vw);
+  width: min(720px, 90vw);
   text-align: center;
   color: var(--color-neutral-400);
   font-size: var(--font-size-base);
@@ -1262,7 +1302,7 @@ onUnmounted(() => {
 
 .starter-templates {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
   width: 100%;
 }
@@ -1304,6 +1344,20 @@ onUnmounted(() => {
   font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   line-height: 1.3;
+}
+
+/* Permission / hardware hint, so a camera or mic prompt is never a surprise. */
+.starter-needs {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-neutral-600);
+}
+
+@media (max-width: 640px) {
+  .starter-templates {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .browse-library {

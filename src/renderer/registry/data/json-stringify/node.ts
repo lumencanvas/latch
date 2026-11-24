@@ -11,7 +11,8 @@ const definition: NodeDefinition = {
   icon: 'braces',
   platforms: ['web', 'electron'],
   inputs: [
-    { id: 'input', type: 'data', label: 'Object' },
+    // 'any' (was 'data'): numbers / strings / booleans / arrays are valid JSON too.
+    { id: 'input', type: 'any', label: 'Value' },
   ],
   outputs: [
     { id: 'output', type: 'string', label: 'JSON String' },
@@ -44,7 +45,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     const result = pretty ? JSON.stringify(input, null, 2) : JSON.stringify(input)
     outputs.set('output', result)
   } catch {
+    // Cyclic / BigInt values aren't serializable: surface it instead of failing silently.
     outputs.set('output', String(input))
+    outputs.set('_error', 'Value is not JSON-serializable (circular reference or BigInt)')
   }
 
   return outputs

@@ -2,7 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import * as Tone from 'tone'
-import { getOrCreateNode, connectEffectInput } from '../shared'
+import { getOrCreateNode, connectEffectInput, setParam, setProp } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'audio-distortion',
@@ -48,8 +48,9 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     ctx.nodeId,
     () => new Tone.Distortion({ distortion: amount, wet })
   ) as Tone.Distortion
-  dist.distortion = amount
-  dist.wet.value = wet
+  // `distortion` is a setter that rebuilds the WaveShaper curve — only on change.
+  setProp(dist, 'distortion', amount)
+  setParam(dist.wet, wet)
   connectEffectInput(ctx.nodeId, audio, dist)
 
   outputs.set('audio', dist)
