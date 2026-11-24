@@ -2,7 +2,6 @@ import type { ForgeConfig } from '@electron-forge/shared-types'
 import { MakerSquirrel } from '@electron-forge/maker-squirrel'
 import { MakerZIP } from '@electron-forge/maker-zip'
 import { MakerDeb } from '@electron-forge/maker-deb'
-import { MakerRpm } from '@electron-forge/maker-rpm'
 import { MakerDMG } from '@electron-forge/maker-dmg'
 import { FusesPlugin } from '@electron-forge/plugin-fuses'
 import { FuseV1Options, FuseVersion } from '@electron/fuses'
@@ -101,13 +100,8 @@ const config: ForgeConfig = {
         homepage: 'https://github.com/lumencanvas/latch',
       },
     }),
-    new MakerRpm({
-      options: {
-        name: 'latch',
-        productName: 'LATCH',
-        homepage: 'https://github.com/lumencanvas/latch',
-      },
-    }),
+    // No RPM maker: electron-installer-redhat's spec breaks on rpm >= 4.20 (CI's ubuntu runner:
+    // "cp: cannot stat 'usr/*'" in %install), and the release never published an .rpm anyway.
   ],
   plugins: [
     // Flipped at package time, before signing.

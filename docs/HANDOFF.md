@@ -9,6 +9,9 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 ## 2026-11-24 (later 137) — Maintainer test fixes + 1.3.0 release
 
 Fixed from live testing of the packaged app, then committed, merged to `main` and tagged `v1.3.0`.
+- **Release run #1 failed:** macOS notarization → Apple 403 "required agreement is missing or has expired"
+  (maintainer must accept the agreement at developer.apple.com, then re-run failed jobs); Linux `.rpm`
+  maker broke on the runner's rpm 4.20 (`cp: cannot stat 'usr/*'`) → MakerRpm removed (never published).
 - **Bellows-only flows were silent** (Chords & Arpeggio; Generative Melody played because it uses a Tone
   synth). Tone's standardized-audio-context keeps a node *natively* disconnected from the destination until
   it sees an active SAC input; bellows feeds LATCH master from its native analyser (outside SAC), so master
