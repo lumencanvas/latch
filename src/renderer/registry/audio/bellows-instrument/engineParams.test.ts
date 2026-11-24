@@ -149,7 +149,7 @@ describe('engineParams — control generation', () => {
     const ids = buildVoiceControls('va').map((c) => c.id)
     expect(ids[0]).toBe('preset')
     expect(ids[1]).toBe('engine')
-    expect(ids.slice(-3)).toEqual(['sendLevel', 'gain', 'pan'])
+    expect(ids.slice(-2)).toEqual(['gain', 'pan'])
     const fxp = buildVoiceControls('va').find((c) => c.id === 'fxParams')!
     expect(fxp.when).toEqual({ preset: '', insertFx: { ne: '' } })
   })

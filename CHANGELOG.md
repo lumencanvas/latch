@@ -1,14 +1,19 @@
 # Changelog
 
-## Unreleased (1.4.0): bellows as a node family
+## 1.4.0: bellows as a node family
 
-Needs bellowsjs 0.5.2 (direct inputs/outputs and the filter effect). Existing flows behave as
-before: a bellows node whose new Audio output is left unwired still plays straight to the speakers.
+Needs bellowsjs 0.5.2 (direct inputs/outputs and the filter effect).
+
+**Breaking for bellows flows:** bellows nodes are now heard only through their Audio output, like
+every other LATCH sound source. A flow saved with 1.3.0 is silent until each bellows node's Audio is
+wired to an Audio Output (muting that output now silences it). The Reverb Send control is gone (its
+shared reverb played past the wire); put a Bellows Reverb in the chain instead. The Chords & Arpeggio
+and MIDI Keyboard starters are wired this way.
 
 ### New
 - **Audio out on every bellows sound node** (Instrument, Chord/Poly Voice, Singer, Speak and all the
-  new ones). Unwired it plays to the speakers as before; wired, its sound goes only down the wire, so
-  bellows can run through any LATCH audio node, analyzer or Audio Output.
+  new ones). Its sound goes only down the wire, so bellows runs through any LATCH audio node,
+  analyzer or Audio Output.
 - **Bellows effects as nodes:** Filter (low/high/band-pass, notch, shelves, bell, Moog-style ladder),
   Reverb (hall, plate), Delay (stereo, tape, multitap), Dynamics (compressor, limiter, gate, transient
   shaper), Modulation (chorus, flanger, phaser, tremolo, auto-pan, ring mod, frequency shifter),
@@ -26,6 +31,10 @@ before: a bellows node whose new Audio output is left unwired still plays straig
 - **Bellows Tuning:** retune all bellows sound to N-EDO, 12-note just intonation or a Scala file.
 - **Chord Detect**, **Cellular Rhythm** (Rule 30/90/110 drum patterns) and **L-System Melody**.
 - Singer and Speak pronounce words with the CMU dictionary by default (shipped in 1.3.0).
+
+### Fixed
+- Dragging a node from the sidebar onto an empty canvas did nothing: the starter-flow picker
+  covering the canvas refused the drop. It now accepts it.
 
 ## 1.3.0
 

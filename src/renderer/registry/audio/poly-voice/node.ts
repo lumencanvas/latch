@@ -24,7 +24,7 @@ const definition: NodeDefinition = {
     { id: 'gate', type: 'boolean', label: 'Gate' },
     { id: 'trigger', type: 'trigger', label: 'Trigger' },
   ],
-  // Like bellows-instrument, the shared kernel routes to master — no wireable audio out.
+  // Like bellows-instrument: heard only through its Audio out (see bellowsManager routeChannel).
   outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }],
   controls: buildVoiceControls('additive'),
   info: {
@@ -52,7 +52,7 @@ function readNotes(raw: unknown): number[] {
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const wired = !!ctx.connectedOutputs?.has('audio')
   const cfg = resolveVoiceConfig(ctx.controls)
-  configureVoice(ctx.nodeId, wired ? { ...cfg, send: 0 } : cfg) // wired: sound only down the wire
+  configureVoice(ctx.nodeId, { ...cfg, send: 0 }) // wired: sound only down the wire
 
   const notes = readNotes(ctx.inputs.get('notes'))
   const velRaw = ctx.num('velocity', 100)

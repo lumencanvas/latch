@@ -43,13 +43,12 @@ const definition: NodeDefinition = {
     { id: 'preset', type: 'number', label: 'Preset #', default: 0, description: 'Which instrument in the font, in bank / program order. The Preset Name output shows what you picked.', props: { min: 0, max: 1023, step: 1 } },
     { id: 'attack', type: 'number', label: 'Attack (s)', default: 0.002, props: { min: 0, max: 10, step: 0.001 } },
     { id: 'release', type: 'number', label: 'Release (s)', default: 0.25, props: { min: 0, max: 10, step: 0.01 } },
-    { id: 'sendLevel', type: 'number', label: 'Reverb Send', default: 0, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'gain', type: 'number', label: 'Level', default: 0.8, props: { min: 0, max: 2, step: 0.01 } },
     { id: 'pan', type: 'number', label: 'Pan (L ← → R)', default: 0, props: { min: -1, max: 1, step: 0.01 } },
   ],
   info: {
     overview:
-      'Turns any SoundFont 2 file into a playable instrument. SoundFonts are free sample libraries (pianos, strings, guitars, full General MIDI sets, drum kits) in one .sf2 file. Upload one in the asset picker (or paste a URL), choose a Preset # (the Preset Name output tells you which instrument that is), and play it from Note + Trigger, hold notes with Gate, or send a whole chord to Notes. It plays straight to your speakers; wire Audio to take it through effects.',
+      'Turns any SoundFont 2 file into a playable instrument. SoundFonts are free sample libraries (pianos, strings, guitars, full General MIDI sets, drum kits) in one .sf2 file. Upload one in the asset picker (or paste a URL), choose a Preset # (the Preset Name output tells you which instrument that is), and play it from Note + Trigger, hold notes with Gate, or send a whole chord to Notes. Wire Audio to an Audio Output to hear it, through any effects on the way.',
     tips: [
       'Free, high-quality General MIDI fonts include GeneralUser GS and MuseScore General; in a GM font, Preset # 0 is the piano and the drum kits sit in bank 128 at the end of the list.',
       'Wire a Counter or Slider into Preset # to flip through instruments live; the All Presets output lists every name.',
@@ -73,7 +72,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     preset: ctx.num('preset', 0),
     gain: Math.max(0, Math.min(2, ctx.num('gain', 0.8))),
     pan: Math.max(-1, Math.min(1, ctx.num('pan', 0))),
-    send: wired ? 0 : clamp01(ctx.num('sendLevel', 0)),
+    send: 0,
     attack: Math.max(0, Math.min(10, ctx.num('attack', 0.002))),
     release: Math.max(0, Math.min(10, ctx.num('release', 0.25))),
   }

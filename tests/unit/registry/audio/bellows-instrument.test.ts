@@ -39,7 +39,7 @@ describe('bellows-instrument definition', () => {
     expect(def.outputs).toEqual([{ id: 'audio', type: 'audio', label: 'Audio' }])
   })
 
-  it('exposes preset, engine, per-engine params, fx, send, gain and pan controls', () => {
+  it('exposes preset, engine, per-engine params, fx, gain and pan controls (no reverb send)', () => {
     const byId = (id: string) => def.controls.find((c) => c.id === id)
     expect(byId('preset')?.type).toBe('select')
     const engine = byId('engine')
@@ -49,7 +49,8 @@ describe('bellows-instrument definition', () => {
     // A representative per-engine param control, gated to its engine + manual mode.
     const cutoff = byId('p_va_cutoff')
     expect(cutoff?.when).toEqual({ engine: 'va', preset: '' })
-    for (const id of ['insertFx', 'sendLevel', 'gain', 'pan']) expect(byId(id)).toBeDefined()
+    for (const id of ['insertFx', 'gain', 'pan']) expect(byId(id)).toBeDefined()
+    expect(byId('sendLevel')).toBeUndefined()
   })
 })
 

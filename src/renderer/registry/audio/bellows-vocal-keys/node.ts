@@ -120,7 +120,7 @@ const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const wired = !!ctx.connectedOutputs?.has('audio')
   const cfg = resolveSingerConfig(ctx.controls, DEFAULT_VOICE)
-  if (wired) cfg.send = 0
+  cfg.send = 0
   configureSinger(ctx.nodeId, cfg)
 
   const st = keyState.getOrCreate(ctx.nodeId, freshKeys)

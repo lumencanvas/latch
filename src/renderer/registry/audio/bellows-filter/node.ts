@@ -13,7 +13,7 @@ export default makeFxNode({
     tips: [
       "Wire an LFO or Envelope into Cutoff for a filter sweep; Resonance adds the whistle at the cutoff.",
       "Slope 24 dB cuts twice as steeply as 12 dB; the Ladder is always 24 dB.",
-      "Leave Audio out unwired to hear it straight away, or wire it on into more effects and an Audio Output.",
+      "Wire Audio out on to an Audio Output (through more effects if you like) to hear it.",
     ],
     pairsWith: ['bellows-instrument', 'oscillator', 'lfo', 'envelope', 'audio-output'],
   },

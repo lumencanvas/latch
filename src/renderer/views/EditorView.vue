@@ -335,8 +335,10 @@ function onDrop(event: DragEvent) {
   const definition = nodesStore.getDefinition(nodeType)
   if (!definition) return
 
-  // Get drop position in flow coordinates
-  const { left, top } = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  // Get drop position in flow coordinates. Measured from the canvas itself, not currentTarget:
+  // the empty-state overlay forwards its drops here too.
+  const canvas = document.querySelector('.flow-canvas') ?? (event.currentTarget as HTMLElement)
+  const { left, top } = canvas.getBoundingClientRect()
   const position = project({
     x: event.clientX - left,
     y: event.clientY - top,
@@ -1046,6 +1048,8 @@ onUnmounted(() => {
     <div
       v-if="flowsStore.activeNodes.length === 0"
       class="empty-state"
+      @dragover="onDragOver"
+      @drop="onDrop"
     >
       <h2 class="empty-title">
         Start from a template

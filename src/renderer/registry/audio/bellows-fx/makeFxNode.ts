@@ -18,8 +18,8 @@ export interface FxNodeSpec {
 }
 
 /**
- * A bellows effect node: Audio in → one bellows insert effect → Audio out. Unwired, its output
- * plays into master like every bellows node; wired, it is a normal LATCH audio source.
+ * A bellows effect node: Audio in → one bellows insert effect → Audio out, a normal LATCH audio
+ * source (silent until Audio out is wired, like every bellows node).
  */
 export function makeFxNode(spec: FxNodeSpec) {
   const definition: NodeDefinition = {

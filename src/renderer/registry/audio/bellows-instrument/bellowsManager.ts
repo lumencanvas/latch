@@ -512,6 +512,11 @@ export function setPolyGate(nodeId: string, high: boolean, notes: number[], vel:
 // ── Direct outputs / inputs (wireable per-node audio) ────────────────────────
 /** Direct outputs and inputs asked of the kernel (bellowsjs MAX_DIRECT_IO). */
 const DIRECT_PORTS = 16
+/**
+ * The last direct output is never connected: an unwired node routes its channel there, so a bellows
+ * node is heard only through its Audio out, like every other LATCH sound source.
+ */
+const SILENT_OUTPUT = DIRECT_PORTS
 
 interface DirectPort {
   k: number
@@ -560,7 +565,7 @@ function acquireOutputPort(nodeId: string, b: Bellows): DirectPort | null {
   const have = outPorts.get(nodeId)
   if (have && have.gen === kernelGen) return have
   if (have) { disposePort(have); outPorts.delete(nodeId) }
-  const max = Math.min(DIRECT_PORTS, b.outputs ?? 0)
+  const max = Math.min(SILENT_OUTPUT - 1, b.outputs ?? 0)
   const k = freeSlot(outPorts, max)
   if (!k) return null
   const tone = new Tone.Gain(1)
@@ -584,19 +589,20 @@ function releaseOutputPort(nodeId: string): void {
   outPorts.delete(nodeId)
 }
 
-/** Output a channel is routed to (0 = master), per live Instrument handle. */
+/** Output a channel is routed to (0 = master, SILENT_OUTPUT = nowhere), per live Instrument handle. */
 const routed = new WeakMap<Instrument, number>()
 
 /**
- * Route a node's channel to its wired Audio output, or back to master when unwired. Returns
- * the Tone node to emit on the `audio` port (null when unwired or no output is free).
+ * Route a node's channel to its wired Audio output, or to the silent output when unwired (or when
+ * no output is free). Returns the Tone node to emit on the `audio` port (null when unwired or no
+ * output is free). A kernel without direct outputs (a plugin kernel) keeps everything in master.
  * Idempotent per frame; a fresh Instrument (preset/engine swap) is routed again.
  */
 export function routeChannel(nodeId: string, inst: Instrument | null, wired: boolean): Tone.Gain | null {
   const b = bellowsInstance
   if (!b || !inst) return wired ? (outPorts.get(nodeId)?.tone ?? null) : null
   const port = wired ? acquireOutputPort(nodeId, b) : null
-  const want = port ? port.k : 0
+  const want = port ? port.k : (b.outputs ?? 0) >= SILENT_OUTPUT ? SILENT_OUTPUT : 0
   if ((routed.get(inst) ?? 0) !== want) {
     try {
       inst.route(want)

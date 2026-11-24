@@ -29,7 +29,7 @@ const definition: NodeDefinition = {
     { id: 'trigger', type: 'trigger', label: 'Sing' },
     { id: 'stop', type: 'trigger', label: 'Stop' },
   ],
-  // Like every bellows voice, audio plays through the shared kernel into LATCH master.
+  // Like every bellows voice, heard only through its Audio out (see bellowsManager routeChannel).
   outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }, ...LINE_OUTPUTS, ...MOUTH_OUTPUTS],
   controls: [
     ...voiceControls(DEFAULT_VOICE),
@@ -58,7 +58,7 @@ const definition: NodeDefinition = {
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const cfg = resolveSingerConfig(ctx.controls, DEFAULT_VOICE)
   const wired = !!ctx.connectedOutputs?.has('audio')
-  if (wired) cfg.send = 0 // wired: sound only down the wire (the shared reverb returns into master)
+  cfg.send = 0 // sound only down the wire (the shared reverb bus returns into master)
   configureSinger(ctx.nodeId, cfg)
 
   if (ctx.trig('stop')) stopLine(ctx.nodeId, cfg)

@@ -18,15 +18,15 @@ const definition: NodeDefinition = {
     { id: 'gate', type: 'boolean', label: 'Gate' },
     { id: 'trigger', type: 'trigger', label: 'Trigger' },
   ],
-  // Unwired: plays straight into LATCH's master through the shared kernel. Wired: the kernel
-  // routes this voice to its own direct output instead (see bellowsManager routeChannel).
+  // The kernel routes this voice to its own direct output, heard only when Audio is wired on to an
+  // Audio Output (see bellowsManager routeChannel), like every LATCH sound source.
   outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }],
   // Layered surface: Preset (casual) → Manual engine + core params → Show All / Raw params
   // (power). Only the active engine's params are ever visible (see buildVoiceControls).
   controls: buildVoiceControls('va'),
   info: {
     overview:
-      'A bellowsjs synthesizer voice with a layered surface. Pick one of fifty ready-to-play presets (guitars, strings, winds, brass, keys, mallets, voices, synths) for instant sound — or switch Preset to “Manual” and build a sound on any of seventeen engines (virtual analog, FM, additive, wavetable, plucked and bowed strings, wind tube, modal mallets, west-coast, formant, drums…). Manual mode opens on each engine’s core controls; “Show All Parameters” reveals the rest. Add an insert effect and a shared reverb send. Play it from LATCH note / gate / trigger inputs: the trigger fires a one-shot eighth note; the gate sustains a note while it stays high. It plays straight to your speakers with no wire needed; wire its Audio output to take it through effects (Bellows Filter, Reverb, Delay…, or any LATCH audio node) and on to an Audio Output instead.',
+      'A bellowsjs synthesizer voice with a layered surface. Pick one of fifty ready-to-play presets (guitars, strings, winds, brass, keys, mallets, voices, synths) for instant sound — or switch Preset to “Manual” and build a sound on any of seventeen engines (virtual analog, FM, additive, wavetable, plucked and bowed strings, wind tube, modal mallets, west-coast, formant, drums…). Manual mode opens on each engine’s core controls; “Show All Parameters” reveals the rest. Add an insert effect, and a Bellows Reverb after it for space. Play it from LATCH note / gate / trigger inputs: the trigger fires a one-shot eighth note; the gate sustains a note while it stays high. Wire its Audio output to an Audio Output to hear it, through any effects on the way (Bellows Filter, Reverb, Delay…, or any LATCH audio node).',
     tips: [
       'Start with a Preset — 50 curated instruments, zero theory required. Choose “Manual” to pick an engine and shape it yourself.',
       'Changing Preset or Engine starts that sound fresh from its defaults — the previous sound rings out instead of cutting off.',
@@ -45,11 +45,11 @@ const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Idempotent boot/voice acquisition + config push (async kernel boot applies it on boot).
-  // Wired, the node's sound goes ONLY down its Audio wire: the shared reverb (which returns into
-  // master) is off then; put a Bellows Reverb downstream instead.
+  // The sound goes ONLY down the Audio wire, so the shared reverb send (which returns into master)
+  // stays off; a Bellows Reverb downstream replaces it.
   const wired = !!ctx.connectedOutputs?.has('audio')
   const cfg = resolveVoiceConfig(ctx.controls)
-  configureVoice(ctx.nodeId, wired ? { ...cfg, send: 0 } : cfg)
+  configureVoice(ctx.nodeId, { ...cfg, send: 0 })
 
   // Note value is a MIDI number (bellows resolves it through the active tuning);
   // velocity accepts 0–1 directly or 0–127 (normalized like the synth node).
@@ -64,7 +64,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   // Gate is LEVEL-based (self-heals through the boot window): manager holds the note id.
   setMonoGate(ctx.nodeId, ctx.level('gate'), note, vel)
 
-  // Unwired: plays straight into master (as always). Wired: its own output, out of master.
+  // Wired: its own direct output. Unwired: the silent output.
   const audio = routeChannel(ctx.nodeId, getVoice(ctx.nodeId)?.instrument ?? null, wired)
   return new Map<string, unknown>([['audio', audio]])
 }

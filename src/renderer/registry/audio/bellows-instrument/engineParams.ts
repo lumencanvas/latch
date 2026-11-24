@@ -458,7 +458,6 @@ export function buildVoiceControls(defaultEngine: string): ControlDefinition[] {
     // Power escape: reach array-expanded params (FM ratio1.., additive partial1..) by name.
     { id: 'params', type: 'text', label: 'Raw Engine Params (k=v)', default: '', when: { preset: '' }, props: { placeholder: 'ratio2=3.5, level2=0.7' } },
     // Mix trims — apply in BOTH modes (on a preset, Level scales the preset's own level).
-    { id: 'sendLevel', type: 'number', label: 'Reverb Send', default: 0, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'gain', type: 'number', label: 'Level', default: 0.8, props: { min: 0, max: 2, step: 0.01 } },
     { id: 'pan', type: 'number', label: 'Pan (L ← → R)', default: 0, props: { min: -1, max: 1, step: 0.01 } },
   ]
@@ -475,7 +474,7 @@ export interface VoiceConfig {
   insertFx: string | null
   /** Insert fx param overrides (name → value), applied on top of the effect's defaults. */
   fxParams: Record<string, number>
-  /** Shared reverb send level 0..1 (applies in both modes). */
+  /** Shared reverb send level 0..1. Nodes pass 0: the bus returns into master, past the wire. */
   send: number
   gain: number
   pan: number

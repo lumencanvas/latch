@@ -65,7 +65,7 @@ const definition: NodeDefinition = {
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const cfg = resolveSingerConfig(ctx.controls, DEFAULT_VOICE)
   const wired = !!ctx.connectedOutputs?.has('audio')
-  if (wired) cfg.send = 0 // wired: sound only down the wire (the shared reverb returns into master)
+  cfg.send = 0 // sound only down the wire (the shared reverb bus returns into master)
   configureSinger(ctx.nodeId, cfg)
 
   if (ctx.trig('stop')) stopLine(ctx.nodeId, cfg)

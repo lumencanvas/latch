@@ -8,7 +8,7 @@
  *
  * Every node in the family is one direct-input channel on the shared kernel (b.inputChannel)
  * with one insert effect: upstream LATCH audio plays through it into the node's Audio output
- * (or into master while the output is unwired).
+ * (silent while the output is unwired).
  */
 
 import type { ControlDefinition, PortDefinition } from '@/stores/nodes'

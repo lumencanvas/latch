@@ -48,7 +48,6 @@ export function voiceControls(defaultVoice: string): ControlDefinition[] {
 export function mixControls(): ControlDefinition[] {
   return [
     { id: 'mouth', type: 'toggle', label: 'Mouth Outputs', default: true, description: 'Read the jaw / lips / tongue as it plays (up to 8 voices at once).' },
-    { id: 'sendLevel', type: 'number', label: 'Reverb Send', default: 0, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'gain', type: 'number', label: 'Level', default: 0.8, props: { min: 0, max: 2, step: 0.01 } },
     { id: 'pan', type: 'number', label: 'Pan (L ← → R)', default: 0, props: { min: -1, max: 1, step: 0.01 } },
   ]

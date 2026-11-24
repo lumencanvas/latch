@@ -57,7 +57,6 @@ const definition: NodeDefinition = {
       id: p.name, type: 'number' as const, label: p.label, default: p.default, props: { min: p.min, max: p.max, step: p.step },
     })),
     { id: 'length', type: 'number', label: 'Trigger Note Length (s)', default: 1, props: { min: 0.05, max: 30, step: 0.01 } },
-    { id: 'sendLevel', type: 'number', label: 'Reverb Send', default: 0, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'gain', type: 'number', label: 'Level', default: 0.8, props: { min: 0, max: 2, step: 0.01 } },
     { id: 'pan', type: 'number', label: 'Pan (L ← → R)', default: 0, props: { min: -1, max: 1, step: 0.01 } },
   ],
@@ -89,7 +88,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     params,
     gain: Math.max(0, Math.min(2, ctx.num('gain', 0.8))),
     pan: Math.max(-1, Math.min(1, ctx.num('pan', 0))),
-    send: wired ? 0 : clamp01(ctx.num('sendLevel', 0)),
+    send: 0,
   })
 
   const chord = ctx.inputs.get('notes')

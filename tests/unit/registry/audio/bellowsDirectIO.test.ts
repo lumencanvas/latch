@@ -88,7 +88,33 @@ beforeEach(() => {
 const inst = (id: string) => getVoice(id)!.instrument as unknown as ReturnType<typeof makeInstrument>
 
 describe('direct outputs', () => {
-  it('an unwired node stays on master: no route call, no port, null audio', () => {
+  it('on the real 16-output kernel an unwired node is silent: routed to the unconnected last output', () => {
+    k = makeKernel(16, 16)
+    __setKernelForTest(k)
+    configureVoice('a', cfg())
+    expect(routeChannel('a', getVoice('a')!.instrument, false)).toBeNull()
+    expect(inst('a').route).toHaveBeenCalledWith(16)
+    expect(k.outputNode).not.toHaveBeenCalled()
+    // wiring moves it to a real output, unwiring back to the silent one
+    expect(routeChannel('a', getVoice('a')!.instrument, true)).not.toBeNull()
+    expect(inst('a').route).toHaveBeenLastCalledWith(1)
+    routeChannel('a', getVoice('a')!.instrument, false)
+    expect(inst('a').route).toHaveBeenLastCalledWith(16)
+  })
+
+  it('the silent output is never handed to a wired node', () => {
+    k = makeKernel(16, 16)
+    __setKernelForTest(k)
+    for (let n = 0; n < 16; n++) {
+      configureVoice('v' + n, cfg())
+      routeChannel('v' + n, getVoice('v' + n)!.instrument, true)
+    }
+    expect(inst('v14').route).toHaveBeenCalledWith(15)
+    expect(inst('v15').route).toHaveBeenCalledWith(16) // no free output: silent, not master
+    expect(k.outputNode).not.toHaveBeenCalledWith(16)
+  })
+
+  it('a kernel without a silent output (fewer outputs) leaves an unwired node in master', () => {
     configureVoice('a', cfg())
     expect(routeChannel('a', getVoice('a')!.instrument, false)).toBeNull()
     expect(inst('a').route).not.toHaveBeenCalled()

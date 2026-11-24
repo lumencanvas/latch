@@ -6,7 +6,28 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
-## 2026-11-24 (later 138): bellows as a LATCH node family (branch `bellows-nodes`, uncommitted)
+## 2026-11-24 (later 139): bellows heard only via Audio Output, sidebar drop fix, 1.4.0
+
+Maintainer testing: a Singer played with no Audio Output and muting the output didn't silence it;
+dragging a node from the sidebar onto the canvas failed.
+- **Bellows follows the LATCH rule (only Audio Output reaches the speakers).** `routeChannel` routes an
+  unwired channel to `SILENT_OUTPUT` (direct output 16, never connected); wired ports allocate 1..15;
+  no free port = silent, not master. Send forced 0 on every bellows node and the **Reverb Send control
+  removed** (the FDN bus returns into master, past the wire). Help text updated; Chords & Arpeggio and
+  MIDI Keyboard starters now go bellows → Bellows Reverb → Audio Output (an audio input takes one
+  wire, last edge wins, so the two starter voices get one Audio Output each). **Breaking:** 1.3.0 flows
+  with bellows nodes are silent until wired (CHANGELOG says so). Possible follow-up: a load-time
+  migration that adds an Audio Output to unwired bellows nodes (needs a graph-level hook; per-node
+  `migrate()` only sees node data).
+  - Chrome speaker tap: Singer unwired 0, wired+muted 0, wired 0.131; starter 0.154.
+- **Sidebar drag-drop:** on an empty canvas the starter-template overlay (outside `<VueFlow>`) refused
+  `dragover`, so drops never fired. `.empty-state` now forwards `dragover`/`drop` to the canvas handlers;
+  `onDrop` measures from `.flow-canvas`, not `currentTarget`. Verified empty and non-empty canvas.
+  No freeze reproduced under Playwright; ask the maintainer if it recurs with nodes present.
+- bellowsjs published as **0.5.2** (not 0.6.0: bellows-voice/bellows-wasm peer on `<0.6.0`).
+- Released as 1.4.0 (tag `v1.4.0`); desktop jobs still need the Apple agreement.
+
+## 2026-11-24 (later 138): bellows as a LATCH node family (branch `bellows-nodes`)
 
 Asked: bellows nodes should have an audio out; then "more bellows nodes … soundfonts … singer as an
 instrument … bellows can do a ton". Built bellowsjs-side foundation + 13 LATCH nodes.
@@ -20,7 +41,7 @@ instrument … bellows can do a ton". Built bellowsjs-side foundation + 13 LATCH
   - `ExecutionContext.connectedOutputs` (engine fills it from edges) so a source knows its port is wired.
   - bellowsManager: boots with 16 outputs/16 inputs; `routeChannel()` slot allocator (Tone.Gain per
     port + its own SAC keep-alive Signal: same passive-node trap as master); `acquireInputPort/
-    feedInputPort`. Wired nodes get send=0 (the shared reverb returns into master).
+    feedInputPort`. Send forced 0 (the shared reverb returns into master); see later 139.
   - New: bellows-filter/reverb/delay/dynamics/modulation/saturator/eq/spectral (shared `bellows-fx/`
     factory + catalog-generated param table with drift test), bellows-soundfont, bellows-vocal-keys
     (singerManager `vocalKeyDown/Up/Bend`, syllables via `lyricsToSyllables` → phoneme indices,
@@ -32,7 +53,7 @@ instrument … bellows can do a ton". Built bellowsjs-side foundation + 13 LATCH
     IPA/jaw outputs; Beatbox loops; Granular 0.063 (no file → 0).
   - Gates: typecheck 0 · lint 0 errors · vitest 203 files / 3033 · build:web OK.
 - Open: MIDI-file player node, SFZ/sample-kit node, analysis nodes (key/LUFS), per-node custom
-  `defEffect`; the 16-port cap per kernel is a soft limit (nodes past it play to master + say so).
+  `defEffect`; 15 wired outputs / 16 inputs per kernel (past that a node is silent).
 - 1.3.0 release still blocked only on the Apple developer agreement (re-run failed jobs of run 45369471437).
 
 ## 2026-11-24 (later 137) — Maintainer test fixes + 1.3.0 release
