@@ -9,7 +9,9 @@ preferences move to the new app storage automatically on first launch.
 ### New
 - **Voice nodes (bellows-voice):** `Bellows Singer` sings lyrics to notes (with accents) and
   `Bellows Speak` turns text into speech. Both can output mouth shapes (jaw, lips, tongue…)
-  to drive visuals.
+  to drive visuals. Words are pronounced with the CMU Pronouncing Dictionary by default
+  (Dictionary Pronunciation toggle), so vowels, stress and irregular words sound right;
+  `/IPA/` between slashes sets a word's sounds directly.
 - **12 new starter flows** (20 in total), grouped by who they're for: Spinning Kaleidoscope,
   Audio-Reactive VJ Loop, Webcam Edge Detection, Generative Melody, Chords & Arpeggio,
   Mic Scope & Tempo, Face-Controlled Glitch, Local LLM Poem, Spinning 3D Torus, Fetch Live

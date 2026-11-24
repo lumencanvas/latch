@@ -20,6 +20,13 @@ Fixed from live testing of the packaged app, then committed, merged to `main` an
   `postPackage` re-signs deep ad-hoc, then the outer bundle as `com.lumencanvas.latch` with the
   entitlements (skipped when `APPLE_TEAM_ID` is set — CI's Developer ID signing handles it).
 - `customNodes:scanDirectory` creates the folder first (ENOENT console noise on fresh installs).
+- **Singer/Speak pronunciation:** we never passed bellows-voice a pronouncing dictionary, so lyrics went
+  through letter-to-sound rules only (~77% of words exact; unstressed vowels not reduced: "listen" →
+  ˈlɪ.stɛn, "island" → ˈɪ.slænd, "beautiful" → ˈbju.ɾaɪ.fʌɫ). New shared `dictionary` toggle (default
+  ON, with a note) lazy-imports `bellows-voice/dict` → `cmudict()` once (own 576 KB-gz chunk, ~70 ms
+  build), sets `singer.dictionary`, and passes it to `toIPA` for the IPA output. A line triggered
+  while the dictionary loads is held (not sung by the rules) and flushed on load/failure. Tests in
+  bellows-voice.test.ts. Needs ears.
 
 ## 2026-11-24 (later 136) — Release prep for 1.3.0 (compat-first)
 

@@ -38,6 +38,10 @@ export function voiceControls(defaultVoice: string): ControlDefinition[] {
     { id: 'voice', type: 'select', label: 'Voice', default: defaultVoice, props: { options: VOICE_PRESET_OPTIONS } },
     { id: 'accent', type: 'select', label: 'Accent', default: 'general-american', props: { options: ACCENT_OPTIONS } },
     { id: 'shape', type: 'select', label: 'Mouth Posture', default: 'neutral', props: { options: SHAPE_OPTIONS } },
+    {
+      id: 'dictionary', type: 'toggle', label: 'Dictionary Pronunciation', default: true,
+      description: 'Pronounce words with the CMU Pronouncing Dictionary (124k words) so vowels, stress and irregular words sound right — e.g. "beautiful", "island", the schwa in "listen". Loads ~570 KB once. Off: letter-to-sound rules only (~77% of words exact). Tip: write /IPA/ between slashes to set any word\'s sounds directly.',
+    },
   ]
 }
 
@@ -65,6 +69,7 @@ export function resolveSingerConfig(controls: Map<string, unknown>, defaultVoice
     pan: clamp(num(controls.get('pan'), 0), -1, 1),
     send: clamp(num(controls.get('sendLevel'), 0), 0, 1),
     mouth: controls.get('mouth') !== false,
+    dictionary: controls.get('dictionary') !== false,
   }
 }
 

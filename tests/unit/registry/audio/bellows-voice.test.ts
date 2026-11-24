@@ -27,6 +27,15 @@ import singerNode from '@/registry/audio/bellows-singer/node'
 import speakNode from '@/registry/audio/bellows-speak/node'
 import { resetNodeState } from '../../../helpers/testNode'
 
+// The CMU dictionary entry (lazy chunk): a tiny stand-in that records it was built.
+const DICT = new Map([['island', 'AY1 L AH0 N D']])
+vi.mock('bellows-voice/dict', () => ({ cmudict: vi.fn(() => DICT) }))
+
+/** Let the dynamic import of the dictionary settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0))
+}
+
 // ── Fakes: a bellows kernel + the bellows-voice module surface the manager uses ──
 function makeVoiceModule() {
   const singers: ReturnType<typeof makeSinger>[] = []
@@ -72,7 +81,7 @@ function makeVoiceModule() {
 const b = { ctx: { currentTime: 0 }, bus: vi.fn(() => ({ id: 9 })), dispose: vi.fn() }
 
 const cfg = (over: Partial<SingerConfig> = {}): SingerConfig => ({
-  voice: 'soprano', accent: 'scottish', shape: 'neutral', gain: 0.8, pan: 0, send: 0, mouth: true, ...over,
+  voice: 'soprano', accent: 'scottish', shape: 'neutral', gain: 0.8, pan: 0, send: 0, mouth: true, dictionary: false, ...over,
 })
 
 let voice: ReturnType<typeof makeVoiceModule>
@@ -87,6 +96,29 @@ beforeEach(() => {
 })
 
 describe('singerManager', () => {
+  it('pronouncing dictionary: a line waits for it, then sings with it (and the IPA readout uses it)', async () => {
+    configureSinger('s', cfg({ dictionary: true }))
+    performLine('s', { kind: 'sing', lyrics: 'island', notes: [60] })
+    // Held back: singing now would use the letter-to-sound rules ("ɪ.slænd").
+    expect(voice.singers[0].sing).not.toHaveBeenCalled()
+    await settle()
+    expect(voice.singers[0].sing).toHaveBeenCalledTimes(1)
+    expect((voice.singers[0] as unknown as { dictionary: unknown }).dictionary).toBe(DICT)
+    expect(voice.mod.toIPA).toHaveBeenCalledWith('island', expect.objectContaining({ dictionary: DICT }))
+    // Turning it off reads by the rules again, in place.
+    configureSinger('s', cfg({ dictionary: false }))
+    expect((voice.singers[0] as unknown as { dictionary: unknown }).dictionary).toBeNull()
+    expect(voice.mod.singer).toHaveBeenCalledTimes(1)
+  })
+
+  it('dictionary control defaults on (existing flows get it without re-saving)', () => {
+    expect(resolveSingerConfig(new Map(), 'tenor').dictionary).toBe(true)
+    expect(resolveSingerConfig(new Map([['dictionary', false]]), 'tenor').dictionary).toBe(false)
+    const ctl = singerNode.definition.controls.find((c) => c.id === 'dictionary')
+    expect(ctl).toMatchObject({ type: 'toggle', default: true })
+    expect(speakNode.definition.controls.some((c) => c.id === 'dictionary')).toBe(true)
+  })
+
   it('builds one singer per node on the requested voice + accent, with a probe', () => {
     configureSinger('s', cfg())
     configureSinger('s', cfg())
@@ -252,9 +284,11 @@ describe('voice node helpers', () => {
 })
 
 describe('bellows-singer / bellows-speak nodes', () => {
-  it('singer sings typed lyrics on the typed melody on the Sing edge', () => {
+  it('singer sings typed lyrics on the typed melody on the Sing edge (dictionary on by default)', async () => {
     const ctrl = { voice: 'tenor', lyrics: 'hel-lo', notes: 'C4 E4', noteLength: 1, bpm: 120 }
     singerNode.executor(makeContext({ trigger: false }, ctrl, { nodeId: 'sn' }))
+    singerNode.executor(makeContext({ trigger: true }, ctrl, { nodeId: 'sn' }))
+    await settle() // the line waits for the pronouncing dictionary
     const out = singerNode.executor(makeContext({ trigger: true }, ctrl, { nodeId: 'sn' })) as Map<string, unknown>
     expect(voice.singers[0].sing).toHaveBeenCalledWith(
       'hel-lo',
@@ -266,14 +300,14 @@ describe('bellows-singer / bellows-speak nodes', () => {
   })
 
   it('a wired melody array wins over the typed one', () => {
-    const ctrl = { lyrics: 'la la', notes: 'C4 C4' }
+    const ctrl = { lyrics: 'la la', notes: 'C4 C4', dictionary: false }
     singerNode.executor(makeContext({ trigger: true, notes: [67, 69] }, ctrl, { nodeId: 'sn2' }))
     const sung = voice.singers[0].sing.mock.calls[0] as unknown[]
     expect((sung[1] as { note: unknown }[]).map((n) => n.note)).toEqual([67, 69])
   })
 
   it('speak says wired text with rate / pitch / breath', () => {
-    const ctrl = { voice: 'narrator-male', accent: 'australian', rate: 1.5, pitch: 120, breath: 'none' }
+    const ctrl = { voice: 'narrator-male', accent: 'australian', rate: 1.5, pitch: 120, breath: 'none', dictionary: false }
     speakNode.executor(makeContext({ trigger: true, text: 'G’day?' }, ctrl, { nodeId: 'sp' }))
     expect(voice.singers[0].speak).toHaveBeenCalledWith('G’day?', { accent: 'australian', rate: 1.5, hz: 120, breath: 'none' })
   })

@@ -16,6 +16,7 @@
 
 import type { Bellows, BusHandle } from 'bellowsjs'
 import type { Singer, ArticulatorProbe, ArticulatorFrame, SingNote, SingResult } from 'bellows-voice'
+import type { PronouncingDictionary } from 'bellows-voice/text'
 import { defineLifecycle } from '@/engine/nodeState'
 import {
   loadVoicePlugin,
@@ -45,6 +46,12 @@ export interface SingerConfig {
   send: number
   /** Run an articulator probe (max 8 per context) for the mouth outputs. */
   mouth: boolean
+  /**
+   * Read words through the CMU Pronouncing Dictionary (bellows-voice/dict) instead of only the
+   * letter-to-sound rules (~77% of common words exact): reduced vowels (schwa), stress and
+   * irregular words ("island", "colonel", "beautiful") come out right. Loaded once, on demand.
+   */
+  dictionary: boolean
 }
 
 export type VoiceLine =
@@ -60,6 +67,8 @@ interface SingerRec {
   shape: string
   mix: { gain: number; pan: number; send: number } | null
   mouth: boolean
+  /** This node wants the pronouncing dictionary (its `dictionary` control). */
+  wantDict: boolean
   loading: boolean
   error: string | null
   probeError: string | null
@@ -77,6 +86,49 @@ interface SingerRec {
 
 let handle: VoicePluginHandle | null = null
 const recs = new Map<string, SingerRec>()
+
+// ── Pronouncing dictionary (shared, loaded once on first use) ─────────────────
+// ~570 KB gzipped, its own chunk: a flow that never sings — or turns the toggle off — never
+// fetches it. Kernel-independent (plain data), so it survives Stop/Play.
+let dict: PronouncingDictionary | null = null
+let dictLoading = false
+let dictFailed = false
+
+function ensureDictionary(): void {
+  if (dict || dictLoading || dictFailed) return
+  dictLoading = true
+  import('bellows-voice/dict')
+    .then((m) => {
+      dict = m.cmudict()
+    })
+    .catch((e) => {
+      dictFailed = true
+      console.warn('[bellows-voice] pronouncing dictionary failed to load; using letter-to-sound rules:', e)
+    })
+    .finally(() => {
+      dictLoading = false
+      // Lines held back for the dictionary go out now (with it, or with the rules on failure).
+      const h = currentHandle()
+      if (!h) return
+      for (const rec of recs.values()) {
+        if (rec.singer) rec.singer.dictionary = rec.wantDict ? dict : null
+        flushPending(rec, h)
+      }
+    })
+}
+
+/** True while a line should wait for the dictionary instead of being read by the rules. */
+function waitingForDict(rec: SingerRec): boolean {
+  return rec.wantDict && !dict && !dictFailed
+}
+
+/** Perform a held line once the singer is built and (if wanted) the dictionary is ready. */
+function flushPending(rec: SingerRec, h: VoicePluginHandle): void {
+  if (!rec.pendingLine || !rec.singer || waitingForDict(rec)) return
+  const line = rec.pendingLine
+  rec.pendingLine = null
+  perform(rec, h, line)
+}
 
 registerKernelClient('bellows-voice', () => recs.size)
 
@@ -159,6 +211,9 @@ function applyConfig(rec: SingerRec, h: VoicePluginHandle, cfg: SingerConfig): v
   if (!s) return
 
   s.accent = cfg.accent
+  rec.wantDict = cfg.dictionary
+  if (cfg.dictionary) ensureDictionary()
+  s.dictionary = cfg.dictionary ? dict : null
   if (rec.shape !== cfg.shape) {
     try { s.shape(cfg.shape) } catch { /* ignore */ }
     rec.shape = cfg.shape
@@ -194,7 +249,10 @@ function perform(rec: SingerRec, h: VoicePluginHandle, line: VoiceLine): void {
     rec.lineEnd = Math.max(rec.lineEnd, lineEndOf(result))
     const text = line.kind === 'sing' ? line.lyrics : line.text
     try {
-      rec.ipa = h.mod.toIPA(text, { accent: typeof s.accent === 'string' ? s.accent : undefined })
+      rec.ipa = h.mod.toIPA(text, {
+        accent: typeof s.accent === 'string' ? s.accent : undefined,
+        dictionary: s.dictionary ?? undefined,
+      })
     } catch {
       rec.ipa = ''
     }
@@ -208,7 +266,7 @@ function ensureRec(nodeId: string): SingerRec {
   let rec = recs.get(nodeId)
   if (!rec) {
     rec = {
-      singer: null, probe: null, gen: -1, voice: '', shape: '', mix: null, mouth: true,
+      singer: null, probe: null, gen: -1, voice: '', shape: '', mix: null, mouth: true, wantDict: false,
       loading: false, error: null, probeError: null, pendingLine: null,
       lineEnd: 0, wasBusy: false, ipa: '', frame: null,
     }
@@ -228,10 +286,7 @@ function kickLoad(nodeId: string, rec: SingerRec, cfg: SingerConfig): void {
       handle = h
       applyConfig(rec, h, rec.pendingCfg ?? cfg)
       rec.pendingCfg = undefined
-      if (rec.pendingLine) {
-        perform(rec, h, rec.pendingLine)
-        rec.pendingLine = null
-      }
+      flushPending(rec, h)
     })
     .catch((e) => {
       if (recs.get(nodeId) !== rec) return
@@ -260,7 +315,7 @@ export function performLine(nodeId: string, line: VoiceLine): void {
   const rec = recs.get(nodeId)
   if (!rec) return
   const h = currentHandle()
-  if (h && rec.singer) perform(rec, h, line)
+  if (h && rec.singer && !waitingForDict(rec)) perform(rec, h, line)
   else if (!rec.error) rec.pendingLine = line
 }
 
@@ -339,6 +394,9 @@ export function __setVoiceHandleForTest(h: { b: unknown; mod: unknown } | null):
 export function __resetSingersForTest(): void {
   recs.clear()
   handle = null
+  dict = null
+  dictLoading = false
+  dictFailed = false
   registerKernelClient('bellows-voice', () => recs.size)
 }
 
