@@ -1,12 +1,24 @@
 # Changelog
 
-## 1.4.1: new tracking nodes, example flows, drag fix
+## 1.4.1: Synth on bellows, tracking nodes, example flows, drag fix
 
 ### Fixed
 - **Dragging a node from the sidebar could lock up the editor** (grab cursor stuck, no clicks until a
   reload). The sidebar no longer uses the browser's drag and drop: the drag is tracked with pointer
   events, shows the node's name under the cursor, and drops where you release over the canvas.
   Releasing anywhere else, or pressing Escape, cancels it. Tap or click still adds at the center.
+- **Keyboard to Synth notes could sustain forever.** Holding two keys and letting go left the first
+  note ringing: the Synth released only the latest note, its clean-up timer could drop a newer note,
+  and the Synth panel ran a second copy of every note straight to the speakers. The keyboard now
+  releases everything when the window loses focus, frees the exact note a computer key started, and
+  falls back to the key still held when you let go of one.
+
+### Changed
+- **Synth now plays bellows underneath.** Same simple panel and the same six instruments, plus twelve
+  modelled ones (electric piano, organ, nylon guitar, harp, cello, flute, brass, marimba, kalimba, FM
+  bell, choir, analog lead, acid bass, motion pad). Sine, Moog Bass, Warm Pad and Pluck still follow
+  the envelope and filter knobs. The Pad's Voices knob is gone (detune sets the width).
+- Bellows Instrument and Synth move to the new note when it changes while the gate is held (legato).
 
 ### New nodes
 - **Blob Tracker:** the blob-tracking look. Boxes, ids, coordinates and connecting lines snap onto

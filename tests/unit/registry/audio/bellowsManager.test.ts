@@ -233,6 +233,18 @@ describe('bellowsManager — gates + one-shots', () => {
     expect(inst.off).toHaveBeenCalledWith(1062)
   })
 
+  it('mono gate moves to a new note while held, and releases that one on the falling edge', () => {
+    const { created } = booted()
+    configureVoice('lg', cfg())
+    const inst = created[0].inst
+    setMonoGate('lg', true, 60, 0.8)
+    setMonoGate('lg', true, 64, 0.8) // second key, gate never dropped
+    expect(inst.off).toHaveBeenCalledWith(1060)
+    expect(inst.on).toHaveBeenLastCalledWith(64, 0.8)
+    setMonoGate('lg', false, 64, 0.8)
+    expect(inst.off).toHaveBeenLastCalledWith(1064)
+  })
+
   it('poly gate holds the whole chord and releases every voice', () => {
     const { created } = booted()
     configureVoice('p', cfg({ engine: 'additive' }))

@@ -2,17 +2,50 @@ import { markRaw } from 'vue'
 import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
-import * as Tone from 'tone'
-import { synthState, getOrCreateNode, setParam } from '../shared'
+import { configureVoice, queueNote, setMonoGate, routeChannel, getVoice } from '../bellows-instrument/bellowsManager'
+import type { VoiceConfig } from '../bellows-instrument/engineParams'
 import SynthNode from './SynthNode.vue'
+
+/**
+ * The simple, friendly synth: one Instrument menu and a few knobs, played by bellows underneath.
+ * "Shaped" sounds are built on a bellows engine and follow the envelope and filter knobs; the rest
+ * are bellows presets (real modelled instruments) where only Volume applies. For the full engine
+ * surface use Bellows Instrument.
+ */
+export interface SynthSound { value: string; label: string; preset?: string; knobs: string[] }
+
+const ADSR = ['volume', 'attack', 'decay', 'sustain', 'release']
+
+export const SYNTH_SOUNDS: SynthSound[] = [
+  { value: 'sine', label: 'Sine', knobs: ADSR },
+  { value: 'moog', label: 'Moog Bass', knobs: [...ADSR, 'cutoff', 'resonance', 'filterEnv'] },
+  { value: 'pad', label: 'Warm Pad', knobs: [...ADSR, 'cutoff', 'detune'] },
+  { value: 'pluck', label: 'Pluck', knobs: ['volume', 'brightness', 'damping'] },
+  { value: 'piano', label: 'Electric Piano', preset: 'dx-epiano', knobs: ['volume'] },
+  { value: 'organ', label: 'Organ', preset: 'drawbar-organ', knobs: ['volume'] },
+  { value: 'guitar', label: 'Nylon Guitar', preset: 'nylon-guitar', knobs: ['volume'] },
+  { value: 'harp', label: 'Harp', preset: 'harp', knobs: ['volume'] },
+  { value: 'strings', label: 'Cello', preset: 'cello', knobs: ['volume'] },
+  { value: 'flute', label: 'Flute', preset: 'concert-flute', knobs: ['volume'] },
+  { value: 'brass', label: 'Brass', preset: 'brass-section', knobs: ['volume'] },
+  { value: 'marimba', label: 'Marimba', preset: 'marimba', knobs: ['volume'] },
+  { value: 'kalimba', label: 'Kalimba', preset: 'kalimba', knobs: ['volume'] },
+  { value: 'bell', label: 'FM Bell', preset: 'fm-bell-lead', knobs: ['volume'] },
+  { value: 'choir', label: 'Choir', preset: 'choir-aah', knobs: ['volume'] },
+  { value: 'lead', label: 'Analog Lead', preset: 'analog-lead', knobs: ['volume'] },
+  { value: 'acid', label: 'Acid Bass', preset: 'acid-bass', knobs: ['volume'] },
+  { value: 'motion', label: 'Motion Pad', preset: 'motion-pad', knobs: ['volume'] },
+]
+
+const SOUND_BY_VALUE = new Map(SYNTH_SOUNDS.map((s) => [s.value, s]))
 
 const definition: NodeDefinition = {
   id: 'synth',
   component: markRaw(SynthNode),
   name: 'Synth',
-  version: '1.0.0',
+  version: '2.0.0',
   category: 'audio',
-  description: 'Synthesizer that plays MIDI notes with different instrument sounds',
+  description: 'Easy synthesizer: pick an instrument and play it with notes (bellows engine)',
   icon: 'music',
   platforms: ['web', 'electron'],
   inputs: [
@@ -21,197 +54,100 @@ const definition: NodeDefinition = {
     { id: 'gate', type: 'boolean', label: 'Gate' },
     { id: 'trigger', type: 'trigger', label: 'Trigger' },
   ],
-  outputs: [
-    { id: 'audio', type: 'audio', label: 'Audio' },
-  ],
+  outputs: [{ id: 'audio', type: 'audio', label: 'Audio' }],
   controls: [
     {
-      id: 'instrument',
-      type: 'select',
-      label: 'Instrument',
-      default: 'sine',
-      props: {
-        options: ['sine', 'moog', 'piano', 'organ', 'pluck', 'pad'],
-      },
+      id: 'instrument', type: 'select', label: 'Instrument', default: 'sine',
+      props: { options: SYNTH_SOUNDS.map((s) => ({ value: s.value, label: s.label })) },
     },
-    { id: 'volume', type: 'number', label: 'Volume', default: -6, props: { min: -60, max: 0, step: 1 } },
-    // Envelope (shared)
-    { id: 'attack', type: 'number', label: 'Attack', default: 0.01, props: { min: 0.001, max: 2, step: 0.001 } },
-    { id: 'decay', type: 'number', label: 'Decay', default: 0.1, props: { min: 0.001, max: 2, step: 0.001 } },
-    { id: 'sustain', type: 'number', label: 'Sustain', default: 0.01, props: { min: 0, max: 1, step: 0.01 } },
-    { id: 'release', type: 'number', label: 'Release', default: 0.3, props: { min: 0.001, max: 5, step: 0.001 } },
-    // Moog-specific
+    { id: 'volume', type: 'number', label: 'Volume', default: -6, props: { min: -60, max: 6, step: 1 } },
+    { id: 'attack', type: 'number', label: 'Attack', default: 0.01, props: { min: 0.001, max: 4, step: 0.001 } },
+    { id: 'decay', type: 'number', label: 'Decay', default: 0.2, props: { min: 0.001, max: 4, step: 0.001 } },
+    { id: 'sustain', type: 'number', label: 'Sustain', default: 0.7, props: { min: 0, max: 1, step: 0.01 } },
+    { id: 'release', type: 'number', label: 'Release', default: 0.4, props: { min: 0.001, max: 8, step: 0.001 } },
     { id: 'cutoff', type: 'number', label: 'Cutoff', default: 2000, props: { min: 20, max: 20000, step: 1 } },
     { id: 'resonance', type: 'number', label: 'Resonance', default: 1, props: { min: 0.1, max: 30, step: 0.1 } },
     { id: 'filterEnv', type: 'number', label: 'Filter Env', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
-    // Pluck-specific
     { id: 'brightness', type: 'number', label: 'Brightness', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'damping', type: 'number', label: 'Damping', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
-    // Pad-specific
     { id: 'detune', type: 'number', label: 'Detune', default: 10, props: { min: 0, max: 50, step: 1 } },
-    { id: 'voices', type: 'number', label: 'Voices', default: 3, props: { min: 1, max: 8, step: 1 } },
   ],
   info: {
-    overview: 'An all-in-one synthesizer that responds to MIDI note, velocity, and gate inputs. Includes six instrument presets ranging from simple sine to moog bass, piano, organ, pluck, and pad. Each preset exposes relevant parameters like filter cutoff, brightness, and voice count.',
+    overview:
+      'The easy synthesizer. Pick an instrument and play it from a Keyboard, MIDI, a sequencer or any note source: Gate holds a note while high, Trigger plays a short one. Sine, Moog Bass, Warm Pad and Pluck follow the envelope and filter knobs; the rest (electric piano, organ, guitar, harp, cello, flute, brass, mallets, bell, choir, leads) are modelled bellows instruments that sound right as they are. Wire Audio to an Audio Output to hear it. For every engine and parameter, use Bellows Instrument.',
     tips: [
-      'Use the gate input for held notes and the trigger input for one-shot percussive hits.',
-      'Switch to the moog preset and lower the cutoff for classic acid bass lines.',
-      'Increase voices and detune on the pad preset for wide, lush chord textures.',
+      'Changing notes while the gate stays high glides the voice to the new note, so legato playing never leaves a note hanging.',
+      'Moog Bass: lower Cutoff and raise Resonance and Filter Env for acid squelch.',
+      'Add Bellows Reverb between Synth and Audio Output for space.',
     ],
-    pairsWith: ['midi-input', 'envelope', 'audio-output', 'reverb', 'gain'],
+    pairsWith: ['keyboard', 'midi-input', 'step-sequencer', 'audio-output', 'bellows-reverb', 'bellows-instrument'],
   },
+  tags: ['synth', 'instrument', 'keyboard', 'bellows', 'piano', 'bass', 'pad'],
 }
 
-function createSynthForInstrument(instrument: string): Tone.Synth | Tone.MonoSynth | Tone.FMSynth | Tone.AMSynth {
-  switch (instrument) {
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v)
+
+/** Control map → bellows voice config. Pure (tested). */
+export function synthVoiceConfig(controls: Map<string, unknown>): VoiceConfig {
+  const n = (id: string, d: number) => {
+    const v = controls.get(id)
+    return typeof v === 'number' && Number.isFinite(v) ? v : d
+  }
+  const sound = SOUND_BY_VALUE.get(String(controls.get('instrument') ?? 'sine')) ?? SYNTH_SOUNDS[0]
+  // -6 dB (the old default) lands near bellows' usual 0.8 level.
+  const gain = clamp(1.6 * Math.pow(10, n('volume', -6) / 20), 0, 2)
+  const base = { insertFx: null, fxParams: {}, send: 0, gain, pan: 0 }
+  if (sound.preset) return { ...base, preset: sound.preset, engine: 'va', params: {} }
+
+  const env = {
+    attack: clamp(n('attack', 0.01), 0.001, 10),
+    decay: clamp(n('decay', 0.2), 0.001, 10),
+    sustain: clamp(n('sustain', 0.7), 0, 1),
+    release: clamp(n('release', 0.4), 0.001, 10),
+  }
+  const cutoff = clamp(n('cutoff', 2000), 20, 20000)
+  // The old knob was a filter Q (0.1–30); bellows wants 0–1.
+  const resonance = clamp(n('resonance', 1) / 12, 0, 0.95)
+  switch (sound.value) {
     case 'moog':
-      return new Tone.MonoSynth({
-        oscillator: { type: 'sawtooth' },
-        filter: { type: 'lowpass', rolloff: -24 },
-        envelope: { attack: 0.01, decay: 0.3, sustain: 0.4, release: 0.3 },
-        filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.3, baseFrequency: 200, octaves: 4 },
-      })
-    case 'piano':
-      return new Tone.Synth({
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.005, decay: 0.5, sustain: 0.1, release: 1.5 },
-      })
-    case 'organ':
-      return new Tone.AMSynth({
-        harmonicity: 2,
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.01, decay: 0.1, sustain: 1, release: 0.5 },
-        modulation: { type: 'sine' },
-        modulationEnvelope: { attack: 0.5, decay: 0, sustain: 1, release: 0.5 },
-      })
-    case 'pluck':
-      return new Tone.Synth({
-        oscillator: { type: 'triangle' },
-        envelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.1 },
-      })
+      return { ...base, preset: '', engine: 'va', params: {
+        shape: 0, detune: 4, sub: 0.35, filterType: 0, cutoff: Math.min(cutoff, 8000), resonance,
+        envAmount: n('filterEnv', 0.5) * 4, fAttack: 0.002, fDecay: Math.max(0.05, env.decay), fSustain: 0.2, fRelease: env.release,
+        ...env, velFilter: 1,
+      } }
     case 'pad':
-      return new Tone.FMSynth({
-        harmonicity: 3,
-        modulationIndex: 10,
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.5, decay: 0.3, sustain: 0.8, release: 2 },
-        modulation: { type: 'triangle' },
-        modulationEnvelope: { attack: 0.5, decay: 0.1, sustain: 0.5, release: 0.5 },
-      })
-    case 'sine':
-    default:
-      return new Tone.Synth({
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.3 },
-      })
+      return { ...base, preset: '', engine: 'va', params: {
+        shape: 0, detune: clamp(n('detune', 10) * 2, 0, 100), sub: 0.15, filterType: 1, cutoff, resonance: 0.1,
+        envAmount: 0.6, fAttack: Math.max(0.2, env.attack), fDecay: 1, fSustain: 0.6, fRelease: env.release,
+        drift: 0.4, ...env,
+      } }
+    case 'pluck':
+      return { ...base, preset: '', engine: 'pluck', params: {
+        damp: clamp(1 - n('brightness', 0.5), 0, 1), pickPos: 0.22, exciteType: 0,
+        decay: clamp(0.4 + (1 - n('damping', 0.5)) * 5, 0.05, 20), level: 0.9,
+      } }
+    default: // sine
+      return { ...base, preset: '', engine: 'va', params: {
+        shape: 3, detune: 0, sub: 0, filterType: 1, cutoff: 16000, resonance: 0, envAmount: 0, ...env, velLevel: 0.6,
+      } }
   }
 }
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
-  // Get inputs from connected nodes
-  const note = (ctx.inputs.get('note') as number) ?? (ctx.controls.get('note') as number) ?? 60
-  const velocity = (ctx.inputs.get('velocity') as number) ?? (ctx.controls.get('velocity') as number) ?? 100
-  const gate = (ctx.inputs.get('gate') as boolean) ?? (ctx.controls.get('gate') as boolean) ?? false
+  const wired = !!ctx.connectedOutputs?.has('audio')
+  configureVoice(ctx.nodeId, synthVoiceConfig(ctx.controls))
 
-  // Get control settings
-  const instrument = (ctx.controls.get('instrument') as string) ?? 'sine'
-  const volume = (ctx.controls.get('volume') as number) ?? -6
-  const attack = (ctx.controls.get('attack') as number) ?? 0.01
-  const decay = (ctx.controls.get('decay') as number) ?? 0.1
-  const sustain = (ctx.controls.get('sustain') as number) ?? 0.7
-  const release = (ctx.controls.get('release') as number) ?? 0.3
+  const note = ctx.num('note', 60)
+  const velRaw = ctx.num('velocity', 100)
+  const vel = clamp(velRaw > 1 ? velRaw / 127 : velRaw, 0, 1)
 
-  // Initialize state
-  let state = synthState.get(ctx.nodeId)
-  if (!state) {
-    state = {
-      voices: new Map(),
-      instrument,
-      prevGate: false,
-      prevNote: 0,
-    }
-    synthState.set(ctx.nodeId, state)
-  }
+  if (ctx.trig('trigger')) queueNote(ctx.nodeId, note, vel)
+  // Level-based gate in the shared manager: holds exactly one note id, follows note changes while
+  // held, and always releases the note it is actually holding.
+  setMonoGate(ctx.nodeId, ctx.level('gate'), note, vel)
 
-  // Check if instrument changed - dispose old voices
-  if (state.instrument !== instrument) {
-    for (const voice of state.voices.values()) {
-      voice.synth.dispose()
-    }
-    state.voices.clear()
-    state.instrument = instrument
-  }
-
-  // Convert MIDI note to frequency
-  const freq = Tone.Frequency(note, 'midi').toFrequency()
-
-  // Get or create main output gain
-  const outputGain = getOrCreateNode(`${ctx.nodeId}_output`, () => {
-    const gain = new Tone.Gain(Tone.dbToGain(volume))
-    return gain
-  }) as Tone.Gain
-
-  // Update volume
-  setParam(outputGain.gain, Tone.dbToGain(volume))
-
-  // Handle gate changes (note on/off)
-  const gateRising = gate && !state.prevGate
-  const gateFalling = !gate && state.prevGate
-  // RISING edge only — a held-high trigger must not create a new Tone.Synth + triggerAttack
-  // every frame (~60/s create/dispose churn, unbounded if the note also changes). Matches
-  // bellows-instrument / poly-voice, which already use ctx.trig('trigger').
-  const hasTrigger = ctx.trig('trigger')
-
-  // Note on
-  if (gateRising || hasTrigger) {
-    // Stop any existing voice for this note
-    const existingVoice = state.voices.get(note)
-    if (existingVoice) {
-      existingVoice.synth.triggerRelease()
-      existingVoice.synth.dispose()
-      state.voices.delete(note)
-    }
-
-    // Create new voice
-    const synth = createSynthForInstrument(instrument)
-
-    // Update envelope if accessible
-    if ('envelope' in synth) {
-      synth.envelope.attack = attack
-      synth.envelope.decay = decay
-      synth.envelope.sustain = sustain
-      synth.envelope.release = release
-    }
-
-    synth.volume.value = -6 // Individual voice volume
-    synth.connect(outputGain)
-
-    // Calculate velocity (0-127 to 0-1)
-    const vel = Math.min(1, Math.max(0, velocity / 127))
-    synth.triggerAttack(freq, Tone.now(), vel)
-
-    state.voices.set(note, { synth, note })
-  }
-
-  // Note off
-  if (gateFalling) {
-    const voice = state.voices.get(state.prevNote)
-    if (voice) {
-      voice.synth.triggerRelease()
-      // Schedule cleanup after release
-      setTimeout(() => {
-        voice.synth.dispose()
-        state!.voices.delete(state!.prevNote)
-      }, (release + 0.1) * 1000)
-    }
-  }
-
-  state.prevGate = gate
-  state.prevNote = note
-
-  const outputs = new Map<string, unknown>()
-  outputs.set('audio', outputGain)
-  return outputs
+  const audio = routeChannel(ctx.nodeId, getVoice(ctx.nodeId)?.instrument ?? null, wired)
+  return new Map<string, unknown>([['audio', audio]])
 }
 
 export default defineNode({ definition, executor })

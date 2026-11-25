@@ -100,6 +100,8 @@ interface NodeVoice {
   engine: string
   /** Mono gate held-note id (bellows-instrument), or null. */
   heldId: number | null
+  /** Note the mono gate is holding, so a note change while held moves the voice (legato). */
+  heldNote?: number
   /** Poly gate held-note ids (poly-voice). */
   polyHeld: number[]
   /** Last config pushed to the kernel; null until the first apply. */
@@ -489,8 +491,15 @@ export function queueNote(nodeId: string, note: number, vel: number, dur = '8n')
 export function setMonoGate(nodeId: string, high: boolean, note: number, vel: number): void {
   const rec = getVoice(nodeId)
   if (!rec?.instrument) return
+  if (high && rec.heldId != null && rec.heldNote !== note) {
+    // A new key while the gate stays high (legato playing): move to the new note. Holding the first
+    // note instead left it sounding after the gate dropped if anything else released it.
+    try { rec.instrument.off(rec.heldId) } catch { /* ignore */ }
+    rec.heldId = null
+  }
   if (high && rec.heldId == null) {
     rec.heldId = rec.instrument.on(note, vel)
+    rec.heldNote = note
   } else if (!high && rec.heldId != null) {
     try { rec.instrument.off(rec.heldId) } catch { /* ignore */ }
     rec.heldId = null
