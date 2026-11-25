@@ -6,6 +6,82 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 145): WebMCP audit + fixes, agent-built flows, four app bugs found by driving it
+
+- **Audit (independent review of the agent layer, 13 findings), fixed:**
+  - `registry.execute` re-checks mode, pause and the caller's AbortSignal after consent and queueing.
+  - The consent prompt gets the signal and withdraws when the agent gives up. Verified live: a 60 s
+    relay timeout came back as "Cancelled by the agent".
+  - The queue waits on the tool's own promise (`settling`), so a timeout can't overlap the next call.
+  - `waitsForPerson` tools have no timeout.
+  - `import_flow` uses `importText(json, { untrusted: true })`: code policy is always disable, and
+    there's no Trust-and-run path.
+  - `assertSecretStaysHome`: an agent can't change a url/host/server/broker control or wire on a node
+    that holds a saved secret.
+  - Writing `REDACTED_SECRET` back is a no-op.
+  - Numbers snap only to a declared step (`snapClamp(c, v, true)`). Without that, 0.25 s became 0 and
+    analyser smoothing 0.85 became 1.
+  - Checkpoints are kept only when a call actually changed the flow (`touchesGraph: false` on flow-tab
+    tools), and they survive turning agents Off.
+  - Relay start/stop race (generation counter). `set_transport` never leaves a pending start (checks
+    `navigator.userActivation`).
+  - `schema.ts` uses hasOwnProperty.
+  - `untrustedOutput` on get_app_info and validate_flow.
+  - "Allow for this session" also answers matching prompts already queued.
+  - Tests: 4 new regression tests plus `reg.resetRateLimits()`; 19 agent tests, 3235 total.
+  - **Not fixed:**
+    - Desktop and in-browser calls are indistinguishable (both arrive via `document.modelContext`), so
+      the consent text says "An AI agent".
+    - `auto_arrange` is still labelled "Tidy graph".
+- **Agent tools now install in App.vue** (they used to install only in EditorView). The editor lends
+  `viewCenter`, `frame` and `dimensions` through `setAgentEditorEnv`. `initializeNodeRegistry()` is
+  idempotent and also runs in App.vue.
+- **Shader uniforms:** custom Shader code set by an agent derives `_dynamicInputs` at once
+  (`shaderPortsFor`, the same as the shader editor's save), so build_graph can wire `u_*`.
+- **Smaller agent fixes:**
+  - `auto_arrange` and build_graph get measured sizes.
+  - `get_runtime_state` reports `pageHidden` (the engine pauses on hidden tabs, so values freeze).
+- **App bugs found by driving LATCH through MCP (all fixed):**
+  1. Autosave saved only the active flow when its 2 s debounce fired. An edit followed by a tab switch
+     within 2 s was lost on reload (this happened to an agent-built flow). It now saves every dirty
+     flow, and saves the outgoing flow on switch, with live connections only for that flow.
+  2. Controls-view PLAY/STOP called `runtimeStore.start()/stop()` (a label flip: LIVE at 0 fps).
+     They now use the injected executionControls.
+  3. A direct `/controls` load had no node registry (all types "unknown").
+  4. Audio Analyzer smoothing 1 froze the FFT forever. It is now capped at 0.99 in the definition and
+     the executor.
+- **Still open:**
+  - With zero exposed controls, the Controls view shows only its empty state and hides Main Output.
+- **UI and content:**
+  - Agent dropdown restyled in the app's language: teal header bar, mode cards, switch, terminal
+    command block, offset-shadow buttons.
+  - Frutiger Aero rebuilt:
+    - The 3D bubble mask is blurred into domes and lensed over the sky (`AERO_BUBBLE_GLSL`).
+    - Lake, flare, bokeh, and aurora driven by the pad's level.
+    - 49 fps, up from 17.
+  - `play-the-room` replaces `blob-cam` in `STARTER_FLOW_IDS`, using blob-track `style: 'invert'`.
+- **Flows built by an agent over MCP, verified playing:**
+  - Setup: a real MCP client through the relay against `npm run dev`. They are in the local library
+    only, not in the repo.
+  - **Generative Festival:** 71 nodes, 84 wires, built in one `build_graph` call.
+    - Euclidean drums; progression pad, arp and bell lead; an L-system acid bass.
+    - Voronoi→kaleidoscope with the mirror count per bar; a 32-sphere spectrum ring and a torus.
+    - Kick→RGB split, clap→glitch, chord→hue, chord HUD.
+  - **Art:** Airports (after Eno: seven incommensurable loops), Current (after Riley: op-art shader
+    with uniforms), Test Pattern (after Ikeda).
+  - **Enterprise:**
+    - Line 1 Machine Monitor: MQTT live path with a simulation fallback, threshold alarm, and a webhook
+      behind an "arm" gate.
+    - Store Signage Rotator.
+    - Customer Sentiment Wall: on-device model, which LATCH asks before loading.
+  - All six built first try with zero validate problems. Fixes the agent made while tuning:
+    smoothing, an empty-string coalesce, too much bend, a dark backdrop.
+- **Open:**
+  - Release PR: GitHub kept failing earlier, so `more-examples` has no PR yet.
+  - `capture_output` end to end (needs a person to approve).
+  - Electron.
+  - Better WebGPU/vision models (look at github.com/hackbuild libraries; the user asked for this next).
+
 ## 2026-11-25 (later 144): 1.5.0: WebMCP agent tools + relay, 14 example flows
 
 - **Examples** (commit d4fa667): `data/flow-snippets-gallery.ts` (14 flows), nine personas, interest chips in

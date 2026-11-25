@@ -48,8 +48,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = vec4(mix(env, env * iri * 1.4, u_tint), 1.0);
 }`
 
-const AERO_SKY_GLSL = `// Frutiger Aero sky: azure gradient, soft clouds, sun glow and rays, aurora ribbons, glossy hill.
+const AERO_SKY_GLSL = `// Frutiger Aero sky: azure gradient, drifting clouds, sun with rays and lens flare, aurora
+// ribbons that swell with the music (u_pulse), a glossy hill over a mirror lake, foreground bokeh.
 uniform float u_glow;
+uniform float u_pulse;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
@@ -65,38 +67,106 @@ float fbm(vec2 p) {
   return v;
 }
 
+vec3 skyAt(vec2 uv, vec2 p, float ar) {
+  vec3 sky = mix(vec3(0.72, 0.93, 1.0), vec3(0.02, 0.36, 0.86), pow(uv.y, 0.75));
+  float c = fbm(vec2(p.x * 1.4 + iTime * 0.025, p.y * 2.6));
+  float cl = smoothstep(0.5, 0.82, c) * smoothstep(0.3, 0.95, uv.y);
+  sky = mix(sky, vec3(1.0), cl * 0.85);
+  sky += vec3(0.25, 0.5, 0.7) * cl * (1.0 - smoothstep(0.62, 0.85, c)) * 0.3;
+  vec2 sun = vec2(0.8 * ar, 0.84);
+  float d = length(p - sun);
+  float glow = clamp(u_glow, 0.0, 2.0);
+  sky += vec3(1.0, 0.97, 0.88) * (0.05 / (d + 0.02)) * 0.4 * glow;
+  float ang = atan(p.y - sun.y, p.x - sun.x);
+  sky += pow(max(0.0, sin(ang * 14.0 + iTime * 0.15)), 10.0) * smoothstep(1.0, 0.0, d) * 0.14 * glow;
+  float pulse = 0.9 + 0.9 * clamp(u_pulse, 0.0, 1.0);
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    float y = 0.5 + 0.07 * fi + 0.06 * sin(p.x * (1.3 + 0.2 * fi) + iTime * (0.22 + 0.07 * fi) + fi * 2.0);
+    float w = 0.01 + 0.008 * fi;
+    float band = exp(-pow((uv.y - y) / w, 2.0));
+    float sheen = 0.6 + 0.4 * sin(p.x * 6.0 - iTime * 0.8 + fi);
+    sky += mix(vec3(0.35, 1.0, 0.65), vec3(0.45, 0.85, 1.0), fi / 3.0) * band * sheen * pulse * 0.6;
+  }
+  return sky;
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 uv = fragCoord / iResolution.xy;
   float ar = iResolution.x / iResolution.y;
   vec2 p = vec2(uv.x * ar, uv.y);
 
-  vec3 sky = mix(vec3(0.66, 0.9, 1.0), vec3(0.04, 0.4, 0.85), pow(uv.y, 0.8));
-  float c = fbm(vec2(p.x * 1.6 + iTime * 0.02, p.y * 3.0));
-  sky = mix(sky, vec3(1.0), smoothstep(0.55, 0.85, c) * smoothstep(0.35, 0.9, uv.y) * 0.8);
-
-  vec2 sun = vec2(0.78 * ar, 0.82);
-  float d = length(p - sun);
-  sky += vec3(1.0, 0.98, 0.9) * (0.05 / (d + 0.02)) * 0.35 * u_glow;
-  float ang = atan(p.y - sun.y, p.x - sun.x);
-  sky += vec3(1.0) * pow(max(0.0, sin(ang * 12.0 + iTime * 0.2)), 8.0) * smoothstep(0.9, 0.0, d) * 0.12 * u_glow;
-
-  for (int i = 0; i < 3; i++) {
-    float fi = float(i);
-    float y = 0.45 + 0.08 * fi + 0.07 * sin(p.x * 1.5 + iTime * (0.25 + 0.1 * fi) + fi * 2.0);
-    float w = 0.012 + 0.01 * fi;
-    float band = exp(-pow((uv.y - y) / w, 2.0));
-    sky += mix(vec3(0.3, 1.0, 0.6), vec3(0.4, 0.8, 1.0), fi / 2.0) * band * 0.55;
+  float horizon = 0.2;
+  vec3 col;
+  if (uv.y > horizon) {
+    col = skyAt(uv, p, ar);
+  } else {
+    // Mirror lake: the sky reflected, rippled, darkened toward the viewer.
+    float depth = (horizon - uv.y) / horizon;
+    vec2 r = vec2(uv.x + 0.004 * sin(uv.y * 160.0 + iTime * 2.0) * depth, 2.0 * horizon - uv.y);
+    col = skyAt(r, vec2(r.x * ar, r.y), ar) * mix(0.92, 0.55, depth) * vec3(0.85, 0.95, 1.0);
+    float glint = vnoise(vec2(p.x * 40.0 + iTime * 0.6, uv.y * 220.0 / (0.2 + depth)));
+    col += vec3(1.0) * smoothstep(0.82, 0.98, glint) * (1.0 - depth) * 0.35;
   }
 
-  float hill = 0.22 + 0.06 * sin(p.x * 1.2 + 0.6) + 0.03 * sin(p.x * 3.1);
-  float inHill = smoothstep(hill + 0.004, hill - 0.004, uv.y);
-  vec3 grass = mix(vec3(0.15, 0.55, 0.08), vec3(0.55, 0.92, 0.2), smoothstep(0.0, hill, uv.y));
-  grass += vec3(0.9, 1.0, 0.7) * exp(-pow((uv.y - (hill - 0.03)) / 0.02, 2.0)) * 0.5;
-  grass *= 0.9 + 0.1 * vnoise(p * 80.0);
+  // Glossy hill with a wet specular sheen along its crest.
+  float hill = 0.3 + 0.09 * sin(p.x * 1.1 + 0.4) + 0.025 * sin(p.x * 3.3 + 1.0);
+  float hillLeft = smoothstep(0.95 * ar, 0.2 * ar, p.x);
+  hill = mix(horizon - 0.01, hill, hillLeft);
+  float inHill = smoothstep(hill + 0.003, hill - 0.003, uv.y) * step(horizon - 0.02, uv.y);
+  vec3 grass = mix(vec3(0.1, 0.48, 0.06), vec3(0.6, 0.95, 0.22), smoothstep(horizon, hill, uv.y));
+  grass += vec3(0.95, 1.0, 0.75) * exp(-pow((uv.y - (hill - 0.025)) / 0.018, 2.0)) * 0.6;
+  grass *= 0.92 + 0.08 * vnoise(p * 90.0);
+  col = mix(col, grass, inHill);
 
-  vec3 col = mix(sky, grass, inHill);
-  col *= 1.0 - 0.25 * pow(length(uv - 0.5) * 1.2, 2.0);
+  // Lens flare: ghosts on the line from the sun through the centre.
+  vec2 sun = vec2(0.8, 0.84);
+  vec2 axis = vec2(0.5) - sun;
+  for (int i = 1; i < 5; i++) {
+    float fi = float(i);
+    vec2 g = sun + axis * (fi * 0.55);
+    float gd = length((uv - g) * vec2(ar, 1.0));
+    float rad = 0.02 + 0.025 * fi;
+    float ring = smoothstep(rad, rad * 0.8, gd) * (0.5 + 0.5 * smoothstep(rad * 0.6, rad, gd));
+    col += mix(vec3(0.5, 1.0, 0.8), vec3(0.6, 0.7, 1.0), fi / 4.0) * ring * 0.07 * clamp(u_glow, 0.0, 2.0);
+  }
+
+  // Foreground bokeh drifting upward.
+  for (int i = 0; i < 9; i++) {
+    float fi = float(i);
+    vec2 c = vec2(fract(hash(vec2(fi, 1.0)) + 0.01 * sin(iTime * 0.3 + fi)), fract(hash(vec2(fi, 7.0)) + iTime * (0.01 + 0.01 * hash(vec2(fi, 3.0)))));
+    float rad = 0.03 + 0.05 * hash(vec2(fi, 9.0));
+    float bd = length((uv - c) * vec2(ar, 1.0));
+    float disc = smoothstep(rad, rad * 0.9, bd);
+    col += vec3(0.8, 1.0, 0.95) * disc * (0.05 + 0.07 * smoothstep(rad * 0.7, rad, bd));
+  }
+
+  col *= 1.0 - 0.22 * pow(length(uv - 0.5) * 1.2, 2.0);
   fragColor = vec4(col, 1.0);
+}`
+
+const AERO_BUBBLE_GLSL = `// Soap bubbles: the blurred 3D bubble render (iChannel1) is read as a height field, so each
+// blob becomes a dome that refracts the sky (iChannel0), with a thin-film rainbow rim, a window
+// highlight and a dark edge line.
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = fragCoord / iResolution.xy;
+  vec2 px = 1.0 / iResolution.xy;
+  float m = texture(iChannel1, uv).r;
+  float gx = texture(iChannel1, uv + vec2(px.x * 2.0, 0.0)).r - texture(iChannel1, uv - vec2(px.x * 2.0, 0.0)).r;
+  float gy = texture(iChannel1, uv + vec2(0.0, px.y * 2.0)).r - texture(iChannel1, uv - vec2(0.0, px.y * 2.0)).r;
+  float inside = smoothstep(0.04, 0.2, m);
+  vec3 n = normalize(vec3(-gx * 9.0, -gy * 9.0, 0.3 + m));
+  vec3 bg = texture(iChannel0, uv - n.xy * 0.05 * inside).rgb;
+  vec3 sky = texture(iChannel0, uv).rgb;
+  float fres = pow(1.0 - clamp(n.z, 0.0, 1.0), 1.6);
+  vec3 film = 0.5 + 0.5 * cos(6.2831 * (fres * 1.6 + m * 0.6 + iTime * 0.07) + vec3(0.0, 2.1, 4.2));
+  vec3 col = bg * 1.04 + film * fres * 1.0 + vec3(0.9, 1.0, 1.0) * fres * 0.12;
+  float spec = pow(max(dot(n, normalize(vec3(-0.45, 0.6, 0.65))), 0.0), 60.0);
+  float spec2 = pow(max(dot(n, normalize(vec3(0.5, -0.5, 0.7))), 0.0), 25.0) * 0.35;
+  col += vec3(1.0) * (spec * 1.6 + spec2);
+  float edge = smoothstep(0.04, 0.09, m) * (1.0 - smoothstep(0.09, 0.2, m));
+  col = mix(col, col * 0.75 + film * 0.25, edge * 0.6);
+  fragColor = vec4(mix(sky, col, inside), 1.0);
 }`
 
 const CMY_HALFTONE_GLSL = `// Pop-art print: three rotated dot screens (cyan, magenta, yellow) on warm paper.
@@ -268,36 +338,37 @@ export const gallerySnippets: FlowSnippet[] = [
   {
     id: 'frutiger-aero',
     name: 'Frutiger Aero',
-    description: 'Glossy bubbles rise over an azure sky with aurora ribbons and a dewy green hill, to a lydian music box. Each bubble that reaches the top plays a note',
+    description: 'Soap bubbles rise over an azure sky and a mirror lake, refracting the sky with rainbow film, while aurora ribbons swell with a lydian music box. Each bubble that reaches the top plays a note',
     category: 'visual',
     persona: 'Showcase',
-    relatedNodes: ['shader', 'lfo', 'point-stream-3d', 'instances-3d', 'render-3d', 'blend', 'blur', 'text-overlay', 'progression', 'poly-voice', 'arpeggiator', 'bellows-instrument', 'scale-quantize'],
+    relatedNodes: ['shader', 'lfo', 'point-stream-3d', 'instances-3d', 'render-3d', 'blur', 'blend', 'audio-analyzer', 'text-overlay', 'progression', 'poly-voice', 'arpeggiator', 'bellows-instrument', 'scale-quantize'],
     nodes: [
-      node('sn-1', 'shader', 0, 0, { preset: 'custom', code: AERO_SKY_GLSL, _dynamicInputs: floatPorts(['u_glow', 'Sun glow']) }),
-      node('sn-2', 'lfo', 0, 300, { frequency: 0.07, waveform: 'sine' }),
-      node('sn-3', 'map-range', 320, 300, { inMin: -1, inMax: 1, outMin: 0.7, outMax: 1.25 }),
-      node('sn-4', 'point-stream-3d', 0, 560, { direction: 'up', count: 24, speed: 0.9, spreadX: 16, spreadY: 6, length: 16, end: 7, sizeMin: 0.5, sizeMax: 1.5, seed: 3 }),
-      node('sn-6', 'instances-3d', 320, 560, { shape: 'sphere', size: 1, valueMode: 'none', color: '#8fdcff', color2: '#d8fff0', emissive: 0.7 }),
-      node('sn-7', 'directional-light-3d', 320, 920, { intensity: 2.2, posX: 4, posY: 6, posZ: 8 }),
-      node('sn-8', 'ambient-light-3d', 320, 1160, { color: '#cfe8ff', intensity: 0.6 }),
-      node('sn-9', 'point-light-3d', 0, 1240, { color: '#9dffcf', intensity: 1.5, posX: -4, posY: -3, posZ: 4 }),
+      // sky
+      node('sn-1', 'shader', 0, 0, { preset: 'custom', code: AERO_SKY_GLSL, _dynamicInputs: floatPorts(['u_glow', 'Sun glow'], ['u_pulse', 'Aurora pulse']) }),
+      node('sn-2', 'lfo', -320, 0, { frequency: 0.07, waveform: 'sine' }),
+      node('sn-3', 'map-range', -320, 260, { inMin: -1, inMax: 1, outMin: 0.75, outMax: 1.3 }),
+      // bubbles: white spheres rendered as a mask, blurred into domes, then lensed over the sky
+      node('sn-4', 'point-stream-3d', 0, 560, { direction: 'up', count: 22, speed: 0.8, spreadX: 16, spreadY: 6, length: 16, end: 7, sizeMin: 0.6, sizeMax: 1.8, seed: 3 }),
+      node('sn-6', 'instances-3d', 320, 560, { shape: 'sphere', size: 1, valueMode: 'none', color: '#ffffff', color2: '#ffffff', emissive: 2 }),
       node('sn-10', 'scene-3d', 640, 560, { backgroundColor: '#000000' }),
       node('sn-11', 'camera-3d', 640, 840, { posX: 0, posY: 0, posZ: 11, targetX: 0, targetY: 0, targetZ: 0 }),
       node('sn-12', 'render-3d', 960, 560, { width: 1280, height: 720 }),
-      node('sn-13', 'blend', 1280, 0, { mode: 'screen', mix: 1 }),
-      node('sn-14', 'blur', 1280, 560, { radius: 14, passes: 2 }),
-      node('sn-15', 'blend', 1600, 0, { mode: 'add', mix: 0.5 }),
-      node('sn-16', 'text-overlay', 1920, 0, {
+      node('sn-14', 'blur', 1280, 560, { radius: 6, passes: 2 }),
+      node('sn-13', 'shader', 1600, 0, { preset: 'custom', code: AERO_BUBBLE_GLSL }),
+      // bloom
+      node('sn-5', 'blur', 1600, 560, { radius: 18, passes: 2 }),
+      node('sn-15', 'blend', 1920, 0, { mode: 'screen', mix: 0.45 }),
+      node('sn-16', 'text-overlay', 2240, 0, {
         text: 'welcome',
-        subtitle: 'clear skies  ·  fresh water  ·  new ideas',
+        subtitle: 'clear skies · fresh water · new ideas',
         position: 'center',
-        size: 84,
+        size: 72,
         font: 'sans',
         color: '#ffffff',
-        glow: '#7fd4ff',
-        glowAmount: 0.8,
+        glow: '#6fd8ff',
+        glowAmount: 0.9,
       }),
-      node('sn-17', 'main-output', 2240, 0),
+      node('sn-17', 'main-output', 2560, 0),
       // music
       node('sn-18', 'metronome', 640, 1500, { bpm: 76, subdivision: '1/2' }),
       node('sn-19', 'progression', 960, 1400, { root: 'F', scaleName: 'lydian', bars: 4, octave: 4 }),
@@ -312,22 +383,24 @@ export const gallerySnippets: FlowSnippet[] = [
       node('sn-28', 'scale-quantize', 960, 1160, { root: 'F', scaleName: 'lydian' }),
       node('sn-29', 'bellows-instrument', 1280, 1160, { preset: 'kalimba', gain: 0.3 }),
       node('sn-30', 'audio-output', 1600, 1160),
+      // the pad's loudness swells the aurora
+      node('sn-7', 'audio-analyzer', 1920, 1100, { smoothing: 0.85 }),
+      node('sn-8', 'smooth', 1920, 900, { factor: 0.08 }),
+      node('sn-9', 'remap', -320, 520, { inMin: 0, inMax: 0.4, outMin: 0, outMax: 1, clamp: true }),
     ],
     edges: wires(
       'sn-2.value > sn-3.value',
       'sn-3.result > sn-1.u_glow',
       'sn-4.positions > sn-6.positions',
       'sn-6.object > sn-10.objects',
-      'sn-7.object > sn-10.objects',
-      'sn-8.object > sn-10.objects',
-      'sn-9.object > sn-10.objects',
       'sn-10.scene > sn-12.scene',
       'sn-11.camera > sn-12.camera',
-      'sn-1.texture > sn-13.a',
-      'sn-12.texture > sn-13.b',
       'sn-12.texture > sn-14.texture',
+      'sn-1.texture > sn-13.iChannel0',
+      'sn-14.texture > sn-13.iChannel1',
+      'sn-13.texture > sn-5.texture',
       'sn-13.texture > sn-15.a',
-      'sn-14.texture > sn-15.b',
+      'sn-5.texture > sn-15.b',
       'sn-15.texture > sn-16.source',
       'sn-16.texture > sn-17.texture',
       'sn-18.bar > sn-19.clock',
@@ -347,6 +420,10 @@ export const gallerySnippets: FlowSnippet[] = [
       'sn-28.note > sn-29.note',
       'sn-4.passed > sn-29.trigger',
       'sn-29.audio > sn-30.audio',
+      'sn-23.audio > sn-7.audio',
+      'sn-7.level > sn-8.value',
+      'sn-8.result > sn-9.value',
+      'sn-9.result > sn-1.u_pulse',
     ),
   },
 

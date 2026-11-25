@@ -870,7 +870,7 @@ export const flowSnippets: FlowSnippet[] = [
     relatedNodes: ['webcam', 'blob-track', 'scale-quantize', 'bellows-instrument', 'bellows-reverb', 'main-output'],
     nodes: [
       { id: 'sn-1', type: 'webcam', position: { x: 0, y: 0 }, data: {} },
-      { id: 'sn-2', type: 'blob-track', position: { x: 300, y: 0 }, data: { style: 'corners', links: 'all', labels: 'id', maxBlobs: 12, minSize: 4 } },
+      { id: 'sn-2', type: 'blob-track', position: { x: 300, y: 0 }, data: { style: 'invert', links: 'nearest', labels: 'id', maxBlobs: 12, minSize: 4 } },
       { id: 'sn-3', type: 'remap', position: { x: 600, y: 260 }, data: { inMin: 1, inMax: 0, outMin: 48, outMax: 84, clamp: true } },
       { id: 'sn-4', type: 'scale-quantize', position: { x: 900, y: 260 }, data: { root: 'E', scaleName: 'minor pentatonic' } },
       { id: 'sn-5', type: 'bellows-instrument', position: { x: 1200, y: 0 }, data: { preset: 'marimba', gain: 0.9 } },
@@ -1302,7 +1302,7 @@ export const flowSnippets: FlowSnippet[] = [
  */
 export const STARTER_FLOW_IDS = [
   'first-sound',
-  'blob-cam',
+  'play-the-room',
   'air-harp',
   'frutiger-aero',
   'rule-110-garden',

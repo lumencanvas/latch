@@ -13,9 +13,11 @@
 - **Off by default, per tab.** Modes: Read only, Ask before changes, Allow edits. LATCH asks before
   an agent plays the flow, reads the output image or imports JSON. Pause, an activity list, and
   **Revert agent changes** live in the same menu. Every agent change is one undo step.
-- Agents can't run code: Function and Expression nodes they add or edit stay disabled until you
-  click Enable code. Tokens and passwords are masked in everything an agent reads. See
-  docs/AGENT_ACCESS.md.
+- Agents can't run code: Function and Expression nodes they add or edit, or import, stay disabled
+  until you click Enable code. Tokens and passwords are masked in everything an agent reads, and an
+  agent can't change where a node holding a saved token connects. See docs/AGENT_ACCESS.md.
+- Agent access works on every page (including Controls). Custom shader uniforms an agent writes
+  become ports straight away, and Revert agent changes still works after you turn agents off.
 
 ### Examples
 - 14 new flows: **Inventory of a Room** (a gallery piece: YOLO sees the room and an operatic voice
@@ -26,8 +28,21 @@
   voice, Music & sound, 3D & games, Data & network, Hardware) with filter chips. Frutiger Aero joins
   the empty-canvas starters.
 
+- **Frutiger Aero is now a show-piece:** real soap bubbles that refract the sky with a rainbow
+  film and a glint, a mirror lake, lens flare, bokeh, and aurora that swells with the music.
+  It runs about three times faster than before.
+- **Play the Room** replaces Blob Camera among the empty-canvas starters, with Blob Camera's
+  inverted look.
+
 ### Fixed
 - Tidy (auto-arrange) packed nodes with an image preview too tightly when they weren't on screen.
+- **Edits could vanish on reload** if you switched tabs within two seconds of changing a flow:
+  autosave only wrote whichever flow was open when it fired. It now saves every changed flow, and
+  saves the one you leave as you switch.
+- **Play and Stop in the Controls view did nothing** (the status said LIVE at 0 fps): they only
+  changed the label. They now start and stop the flow.
+- Loading LATCH straight on the Controls page left the node catalog empty.
+- Audio Analyzer: Smoothing is now capped at 0.99. At 1 the readings froze for good.
 
 ## 1.4.3: Flows library, close ≠ delete, share and paste single flows
 
