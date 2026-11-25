@@ -41,6 +41,15 @@ export interface ModelSpec {
   /** WebGPU acceleration available. */
   readonly supportsWebGPU?: boolean
   /**
+   * Devices and precisions to try in order (hackbuild `Rung[]`, e.g.
+   * `[{ device: 'webgpu', dtype: 'fp16' }, { device: 'wasm', dtype: 'q8' }]`). Omitted: the
+   * task's default ladder (`modelRecords.ts`).
+   */
+  readonly ladder?: readonly import('@hackbuild/models').Rung[]
+  /** Download size in MB when known better than the `size` string, and how it's known. */
+  readonly sizeMB?: number
+  readonly sizeSource?: 'vendor' | 'measured' | 'inferred'
+  /**
    * Load-time hints. `promptFormat` is REQUIRED for text-generation specs (the
    * prompt-format contract gate enforces it); the worker only sees the id otherwise.
    */

@@ -44,6 +44,13 @@
 - Speech Recognition can choose its Whisper model. LLM downloads show in the loading indicator.
   Download progress no longer mixes between models during "Load all".
 - transformers.js 4.3.2 (onnxruntime-web 1.31) and WebLLM 0.2.89, which adds newer chat models.
+- **Models use your GPU when they can:** each model tries the right devices and precisions for this
+  machine in order (for example, Depth now runs on the GPU in fp16) and falls back to the CPU on its
+  own. "Use GPU" in AI Models is on by default; turn it off to stay on the CPU.
+- **AI Models shows whether each model will run here** and why not ("needs WebGPU", "over memory"),
+  where a loaded model runs, and each model's licence, with a badge when it limits use
+  (non-commercial, terms apply). The "model needed" prompt shows the licence before downloading.
+- Agents can list models, sizes, licences and fit (`latch_list_models`); loading stays with you.
 
 ### Fixed
 - Tidy (auto-arrange) packed nodes with an image preview too tightly when they weren't on screen.

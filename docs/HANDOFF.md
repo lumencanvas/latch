@@ -6,6 +6,32 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 148): AI Phase 1: model records, device ladders, fit, licences
+
+- **Packages:** `@hackbuild/models` and `@hackbuild/ai-env` 0.1.1 (exact pins).
+- **Records:** `services/ai/modelRecords.ts`.
+  - `recordOf`, `ladderOf` (from `TASK_LADDERS`; VLM ids use the SmolVLM fp32-encoder ladder; WebLLM
+    uses a webgpu q4f16_1 rung), `parseSizeMB`, `commercialOf`, `licenceBadge`.
+  - `getAiEnv` (probe, cached), `rungsFor`, `fitFor`.
+  - Optional `ladder` / `sizeMB` / `sizeSource` on `defineModel`. The WebLLM specs got licences.
+- **Worker:** `handleLoad` walks `options.ladder` with `walkLadder` and replies `{used, failures}`.
+- **Main thread:**
+  - `loadModel` sends `rungsFor(model, env, cpuOnly)`. ModelInfo gains `precision` and `fallbacks`.
+  - `_useWebGPU` defaults to true and persists as `aiPreferCpu` (the old `aiUseWebGPU` is not read).
+  - `webgpu.ts` and `checkWebGPU` both use the ai-env probe.
+- **UI:**
+  - The Manager shows fit and reason, a licence badge, and "Running on the GPU (WebGPU), fp16." The
+    toggle is now "Use GPU".
+  - The RuntimeStatus prompt shows the licence, badge and a fit warning, and resolves the Manager's
+    default.
+  - New agent tool `latch_list_models` (37 tools).
+- **Tests:** `model-records.test.ts` (6).
+- **Verified in Chrome:**
+  - Depth v2 on webgpu fp16.
+  - SmolVLM on webgpu (vision fp32 / decoder q4) with a better caption.
+  - The probe: webgpu + f16, 16 GB, 7.2 GB budget.
+- **Next:** Phase 2, the hub in the worker and MediaPipe in a worker.
+
 ## 2026-11-25 (later 147): AI plan approved, Phase 0 done
 
 - **Decisions** (plan §5):

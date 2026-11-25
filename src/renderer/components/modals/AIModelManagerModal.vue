@@ -7,6 +7,8 @@ import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/mode
 import { WEBLLM_MODELS } from '@/registry/ai/llm/node'
 import { webLLMService } from '@/services/ai/WebLLMService'
 import { useDialogA11y } from '@/composables/useDialogA11y'
+import { fitFor, getAiEnv, licenceBadge, modelRecord } from '@/services/ai/modelRecords'
+import type { Env } from '@hackbuild/ai-env'
 
 const uiStore = useUIStore()
 
@@ -55,6 +57,30 @@ function loadWebLLM(): void {
 }
 function unloadWebLLM(id: string): void {
   void webLLMService.unload(id)
+}
+
+// --- Fit and licence (hackbuild model records + the device probe) ---
+const aiEnv = ref<Env | null>(null)
+void getAiEnv().then((e) => { aiEnv.value = e })
+
+/** Will this model run on this device, on what, and if not why ("needs f16", "over memory"…). */
+function fitOfModel(id: string | undefined) {
+  return id && aiEnv.value ? fitFor(id, aiEnv.value) : null
+}
+function badgeOf(id: string | undefined): string | null {
+  return id ? licenceBadge(modelRecord(id)?.licence) : null
+}
+/** Where a loaded model actually runs, and what it fell back from. */
+function loadedOn(taskId: string): string | null {
+  const task = AI_MODELS.find((m) => m.id === taskId)
+  const modelId = selectedModels.value.get(taskId)
+  if (!task || !modelId) return null
+  void modelStates.value
+  const info = aiInference.getModelInfo(task.task, modelId)
+  if (info?.state !== 'ready') return null
+  const where = info.device === 'webgpu' ? 'GPU (WebGPU)' : 'CPU'
+  const fell = info.fallbacks?.length ? ` after ${info.fallbacks.map((f) => `${f.device === 'webgpu' ? 'GPU' : 'CPU'} ${typeof f.dtype === 'string' ? f.dtype : 'mixed'} (${f.kind})`).join(', ')} failed` : ''
+  return `Running on the ${where}, ${info.precision || info.dtype || ''}${fell}.`
 }
 
 function formatBytes(bytes: number): string {
@@ -285,10 +311,6 @@ const loadedModelCount = computed(() => {
 })
 
 // Check if task supports WebGPU
-function supportsWebGPU(taskId: string): boolean {
-  const task = AI_MODELS.find(m => m.id === taskId)
-  return task?.supportsWebGPU ?? false
-}
 
 // Get category badge color
 function getCategoryColor(category: string): string {
@@ -375,7 +397,7 @@ function getCategoryColor(category: string): string {
                   >
                   <span class="toggle-switch" />
                   <Zap :size="14" />
-                  <span>WebGPU</span>
+                  <span title="Run models on the GPU (WebGPU) when they can. Off: CPU only, slower.">Use GPU</span>
                 </label>
               </div>
               <!-- Clear cache button -->
@@ -458,6 +480,21 @@ function getCategoryColor(category: string): string {
                     </option>
                   </select>
                   <span class="selected-size">{{ webllmSize(selectedWebLLM) }}</span>
+                  <span
+                    v-if="modelRecord(selectedWebLLM)"
+                    class="model-license"
+                    :class="{ 'is-gated': !!badgeOf(selectedWebLLM) }"
+                    :title="`License: ${modelRecord(selectedWebLLM)?.licence}`"
+                  >
+                    {{ modelRecord(selectedWebLLM)?.licence }}<template v-if="badgeOf(selectedWebLLM)"> · {{ badgeOf(selectedWebLLM) }}</template>
+                  </span>
+                </div>
+                <div
+                  v-if="fitOfModel(selectedWebLLM)"
+                  class="model-fit"
+                  :class="{ 'is-bad': !fitOfModel(selectedWebLLM)?.ok }"
+                >
+                  <strong>{{ fitOfModel(selectedWebLLM)?.fit }}</strong> · {{ fitOfModel(selectedWebLLM)?.reason }}
                 </div>
 
                 <!-- Loaded models (several may be loaded at once) -->
@@ -602,8 +639,23 @@ function getCategoryColor(category: string): string {
                       ? `${getSelectedModelLicense(task.id)} license — requires accepting the model terms on Hugging Face before download`
                       : `License: ${getSelectedModelLicense(task.id)}`"
                   >
-                    {{ getSelectedModelLicense(task.id) }}<template v-if="isGatedLicense(getSelectedModelLicense(task.id))"> · gated</template>
+                    {{ getSelectedModelLicense(task.id) }}<template v-if="isGatedLicense(getSelectedModelLicense(task.id))"> · gated</template><template v-else-if="badgeOf(selectedModels.get(task.id))"> · {{ badgeOf(selectedModels.get(task.id)) }}</template>
                   </span>
+                </div>
+
+                <!-- Will it run here, and where it runs once loaded -->
+                <div
+                  v-if="loadedOn(task.id)"
+                  class="model-fit"
+                >
+                  <Zap :size="12" /> {{ loadedOn(task.id) }}
+                </div>
+                <div
+                  v-else-if="fitOfModel(selectedModels.get(task.id))"
+                  class="model-fit"
+                  :class="{ 'is-bad': !fitOfModel(selectedModels.get(task.id))?.ok }"
+                >
+                  <strong>{{ fitOfModel(selectedModels.get(task.id))?.fit }}</strong> · {{ fitOfModel(selectedModels.get(task.id))?.reason }}
                 </div>
 
                 <!-- Auto-load toggle -->
@@ -619,15 +671,6 @@ function getCategoryColor(category: string): string {
                     <Play :size="12" />
                     <span>Load on startup</span>
                   </label>
-                </div>
-
-                <!-- WebGPU indicator -->
-                <div
-                  v-if="supportsWebGPU(task.id) && useWebGPU"
-                  class="webgpu-badge"
-                >
-                  <Zap :size="12" />
-                  <span>WebGPU</span>
                 </div>
 
                 <!-- Loading progress -->
@@ -1283,4 +1326,22 @@ function getCategoryColor(category: string): string {
 .modal-leave-to .ai-modal {
   transform: scale(0.95);
 }
+
+.model-fit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-neutral-600);
+}
+
+.model-fit strong {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-success-700);
+}
+
+.model-fit.is-bad strong { color: var(--color-error); }
 </style>

@@ -5,6 +5,7 @@
  * All model loading and inference happens in this worker.
  */
 
+import { walkLadder, type Rung } from '@hackbuild/models'
 import {
   pipeline,
   env,
@@ -58,6 +59,8 @@ interface LoadModelMessage {
     device?: 'cpu' | 'webgpu'
     dtype?: string
     useBrowserCache?: boolean
+    /** Devices and precisions to try in order (hackbuild rungs), already filtered for this device. */
+    ladder?: Rung[]
   }
 }
 
@@ -115,6 +118,10 @@ interface LoadedResponse {
   id: string
   success: boolean
   error?: string
+  /** The device and precision the model loaded on. */
+  used?: { device: string; dtype: unknown } | null
+  /** Rungs that failed before it (why a model fell back to the CPU, say). */
+  failures?: Array<{ device: string; dtype: unknown; kind: string; error: string }>
 }
 
 interface ResultResponse {
@@ -213,41 +220,48 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
       },
     }
 
-    // Add device if WebGPU requested
-    if (msg.options?.device === 'webgpu') {
-      pipelineOptions.device = 'webgpu'
+    // One attempt on one device and precision. A ladder walks several; without one (old callers),
+    // the single device/dtype from the options is used.
+    const attempt = async (device: string | undefined, dtype: unknown) => {
+      if (isVlm(msg.task, msg.model)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+        if (device) loadOpts.device = device
+        loadOpts.dtype = dtype ?? 'fp32'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const processor = await (AutoProcessor as any).from_pretrained(msg.model, {
+          progress_callback: pipelineOptions.progress_callback,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = await (AutoModelForVision2Seq as any).from_pretrained(msg.model, loadOpts)
+        return { processor, model, vlm: true }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const opts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+      if (device) opts.device = device
+      if (dtype !== undefined) opts.dtype = dtype
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (pipeline as any)(msg.task, msg.model, opts)
     }
 
-    // Add quantization
-    if (msg.options?.dtype && msg.options.dtype !== 'fp32') {
-      pipelineOptions.dtype = msg.options.dtype
+    const ladder = (msg.options?.ladder ?? []).filter((r) => r.device === 'webgpu' || r.device === 'wasm')
+    let pipe: unknown
+    let used: { device: string; dtype: unknown } | null = null
+    let failures: Array<{ device: string; dtype: unknown; kind: string; error: string }> = []
+    if (ladder.length) {
+      const walked = await walkLadder(msg.model, ladder, (rung) => attempt(rung.device, rung.dtype))
+      pipe = walked.value
+      used = { device: walked.rung.device, dtype: walked.rung.dtype }
+      failures = walked.failures.map((f) => ({ device: f.rung.device, dtype: f.rung.dtype, kind: f.kind, error: f.error.slice(0, 300) }))
+    } else {
+      const device = msg.options?.device === 'webgpu' ? 'webgpu' : undefined
+      const dtype = msg.options?.dtype && msg.options.dtype !== 'fp32' ? msg.options.dtype : undefined
+      pipe = await attempt(device, dtype ?? (isVlm(msg.task, msg.model) ? 'fp32' : undefined))
+      used = { device: device ?? 'wasm', dtype }
     }
-
-    // Vision-language (SmolVLM-style) models run via the processor + model API,
-    // not a high-level pipeline. Cache both under the same key.
-    if (isVlm(msg.task, msg.model)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
-      if (pipelineOptions.device) loadOpts.device = pipelineOptions.device
-      loadOpts.dtype = pipelineOptions.dtype ?? 'fp32'
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const processor = await (AutoProcessor as any).from_pretrained(msg.model, {
-        progress_callback: pipelineOptions.progress_callback,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = await (AutoModelForVision2Seq as any).from_pretrained(msg.model, loadOpts)
-      pipelines.set(key, { processor, model, vlm: true })
-      vlmUsers.set(key, new Set([msg.task]))
-      respond({ type: 'loaded', id: msg.id, success: true })
-      return
-    }
-
-    // Create pipeline
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pipe = await (pipeline as any)(msg.task, msg.model, pipelineOptions)
     pipelines.set(key, pipe)
-
-    respond({ type: 'loaded', id: msg.id, success: true })
+    if (isVlm(msg.task, msg.model)) vlmUsers.set(key, new Set([msg.task]))
+    respond({ type: 'loaded', id: msg.id, success: true, used, failures })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[AI Worker] Failed to load model: ${message}`)

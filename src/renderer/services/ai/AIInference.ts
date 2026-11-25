@@ -10,6 +10,7 @@
  * - Memory management and cleanup
  */
 
+import { getAiEnv, rungsFor } from './modelRecords'
 import { collectTransferables, type SerializedImage } from './imageTransfer'
 import { requestPersistentStorage } from './modelStorage'
 import { WorkerFacade } from '@/services/worker/WorkerFacade'
@@ -32,6 +33,10 @@ export interface ModelInfo {
   loadedAt?: number
   device?: DeviceType
   dtype?: DType
+  /** The precision it loaded at, readable ("fp16", or "vision fp32 · decoder q4" for split models). */
+  precision?: string
+  /** Devices/precisions tried before the one that loaded (a GPU that fell back to CPU, say). */
+  fallbacks?: Array<{ device: string; dtype: unknown; kind: string; error: string }>
 }
 
 export interface AIState {
@@ -121,12 +126,22 @@ type ProgressCallback = (progress: number) => void
 // Default timeout for worker requests (5 minutes for model loading)
 const DEFAULT_REQUEST_TIMEOUT = 5 * 60 * 1000
 
+/** 'fp16' stays 'fp16'; a per-part dtype reads "vision fp32 · decoder q4" (names shortened). */
+function precisionText(dtype: unknown): string {
+  if (typeof dtype === 'string') return dtype
+  if (!dtype || typeof dtype !== 'object') return ''
+  return Object.entries(dtype as Record<string, string>)
+    .map(([part, d]) => `${part.replace(/_model(_merged)?$|_tokens$|_encoder$/, '').replace(/_/g, ' ')} ${d}`)
+    .join(' · ')
+}
+
 class AIInferenceService extends WorkerFacade {
   private _initialized = false
   private _modelInfo = new Map<string, ModelInfo>()
   private _listeners = new Set<() => void>()
   private _webgpuAvailable = false
-  private _useWebGPU = false
+  /** Use the GPU when a model's ladder offers it (default). Off = CPU only. */
+  private _useWebGPU = true
   private _useBrowserCache = true
   private _defaultDType: DType = 'q4'
   private _loadedModels = new Set<string>()
@@ -159,6 +174,8 @@ class AIInferenceService extends WorkerFacade {
       success?: boolean
       data?: unknown
       loaded?: boolean
+      used?: { device: string; dtype: unknown } | null
+      failures?: ModelInfo["fallbacks"]
       error?: string
     }
 
@@ -170,7 +187,7 @@ class AIInferenceService extends WorkerFacade {
         break
       }
       case 'loaded':
-        if (msg.success) this.settle(msg.id, true)
+        if (msg.success) this.settle(msg.id, { used: msg.used ?? null, failures: msg.failures ?? [] })
         else this.fail(msg.id, new Error(msg.error || 'Failed to load model'))
         break
       case 'result':
@@ -200,27 +217,13 @@ class AIInferenceService extends WorkerFacade {
 
   // Check WebGPU availability
   private async checkWebGPU(): Promise<void> {
-    if (typeof navigator === 'undefined') {
-      this._webgpuAvailable = false
-      this._initialized = true
-      return
-    }
-
-    if (!('gpu' in navigator)) {
-      this._webgpuAvailable = false
-      this._initialized = true
-      return
-    }
-
+    // One device probe for all of AI (WebGPU, shader-f16, memory…), shared with model fit.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const gpu = (navigator as any).gpu
-      const adapter = await gpu.requestAdapter()
-      this._webgpuAvailable = adapter !== null
+      const env = await getAiEnv()
+      this._webgpuAvailable = env.webgpu
     } catch {
       this._webgpuAvailable = false
     }
-
     this._initialized = true
     this.notifyListeners()
   }
@@ -301,10 +304,6 @@ class AIInferenceService extends WorkerFacade {
 
   // Set WebGPU preference
   setUseWebGPU(use: boolean): void {
-    if (use && !this._webgpuAvailable) {
-      console.warn('[AIInference] WebGPU is not available on this device')
-      return
-    }
     this._useWebGPU = use
     this.notifyListeners()
   }
@@ -396,8 +395,10 @@ class AIInferenceService extends WorkerFacade {
         if (settings.aiSelectedModels) {
           this._selectedModels = settings.aiSelectedModels
         }
-        if (settings.aiUseWebGPU !== undefined) {
-          this._useWebGPU = settings.aiUseWebGPU && this._webgpuAvailable
+        // The old aiUseWebGPU defaulted to off, so it isn't read: the GPU is on unless the person
+        // chose CPU only (aiPreferCpu) since the switch to per-model ladders.
+        if (settings.aiPreferCpu !== undefined) {
+          this._useWebGPU = !settings.aiPreferCpu
         }
         if (settings.aiUseBrowserCache !== undefined) {
           this._useBrowserCache = settings.aiUseBrowserCache
@@ -425,7 +426,7 @@ class AIInferenceService extends WorkerFacade {
         ...existing,
         aiAutoLoadModels: this._autoLoadModels,
         aiSelectedModels: this._selectedModels,
-        aiUseWebGPU: this._useWebGPU,
+        aiPreferCpu: !this._useWebGPU,
         aiUseBrowserCache: this._useBrowserCache,
       })
 
@@ -520,15 +521,21 @@ class AIInferenceService extends WorkerFacade {
 
     try {
 
-      const device = options?.device || (this._useWebGPU ? 'webgpu' : undefined)
+      // The model's ladder for this device (records + probe), CPU-only when the person chose that.
+      // An explicit device/dtype (tests, callers that know better) is a one-rung ladder.
+      const env = await getAiEnv().catch(() => null)
+      const ladder = options?.device || options?.dtype
+        ? [{ device: options.device === 'webgpu' ? 'webgpu' as const : 'wasm' as const, ...(options.dtype ? { dtype: options.dtype } : {}) }]
+        : rungsFor(model, env, !this._useWebGPU)
+      const device = options?.device || (this._useWebGPU && this._webgpuAvailable ? 'webgpu' : undefined)
       const dtype = options?.dtype || this._defaultDType
 
-      await this.sendToWorker<boolean>(
+      const loaded = await this.sendToWorker<{ used?: { device: string; dtype: unknown } | null; failures?: ModelInfo['fallbacks'] } | true>(
         {
           type: 'load',
           task,
           model,
-          options: { device, dtype, useBrowserCache: this._useBrowserCache },
+          options: { device, dtype, useBrowserCache: this._useBrowserCache, ...(ladder.length ? { ladder } : {}) },
         },
         (progress) => {
           this.updateModelInfo(key, { progress })
@@ -536,13 +543,20 @@ class AIInferenceService extends WorkerFacade {
         }
       )
 
+      const used = loaded && loaded !== true ? loaded.used : null
+      const fallbacks = loaded && loaded !== true ? loaded.failures ?? [] : []
+      if (fallbacks.length) {
+        console.info(`[AIInference] ${model} loaded on ${used?.device ?? '?'} after: ${fallbacks.map((f) => `${f.device} ${JSON.stringify(f.dtype)} (${f.kind})`).join(', ')}`)
+      }
       this._loadedModels.add(key)
       this.updateModelInfo(key, {
         state: 'ready',
         progress: 100,
         loadedAt: Date.now(),
-        device: device || 'cpu',
-        dtype,
+        device: (used?.device === 'webgpu' ? 'webgpu' : used ? 'wasm' : device || 'cpu') as DeviceType,
+        dtype: (typeof used?.dtype === 'string' ? used.dtype : used?.dtype ? 'mixed' : dtype) as DType,
+        precision: precisionText(used?.dtype ?? dtype),
+        fallbacks,
       })
 
       return true

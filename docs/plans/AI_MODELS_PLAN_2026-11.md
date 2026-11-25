@@ -1,6 +1,6 @@
 # AI models plan: better WebGPU and vision models, real model control (2026-11-25)
 
-Status: **approved 2026-11-25** (decisions in §5). **Phase 0 done** (2026-11-25); Phase 1 next.
+Status: **approved 2026-11-25** (decisions in §5). **Phases 0 and 1 done** (2026-11-25); Phase 2 next.
 
 Goal: LATCH's AI nodes should use current models that actually load, run on WebGPU where the
 machine has it (and fall back cleanly where it doesn't), and give the person one honest place to
@@ -145,6 +145,38 @@ Done and verified in Chrome on the upgraded runtime (transformers.js 4.3.2, onnx
   free. One worker serves every model, which is the contention Phase 2's scheduler addresses.
 - **Not done:** the duplicate WebGPU check. It's left for Phase 1, which replaces both checks with
   `ai-env`'s probe.
+
+## Phase 1 result (2026-11-25)
+
+- **Packages:** `@hackbuild/models` and `@hackbuild/ai-env` 0.1.1 are dependencies, pinned exactly.
+- **Records:** `services/ai/modelRecords.ts` turns every model spec (transformers and WebLLM) into a
+  `ModelRecord`. Each record has:
+  - What the model provides.
+  - Its size, parsed from the spec strings and marked `inferred`.
+  - Its licence and whether that allows commercial use. WebLLM specs gained licences.
+  - A device and precision ladder.
+  - A test checks that every spec validates with hackbuild's `validateRecord`.
+- **Ladders:**
+  - Task defaults come from hackbuild's measured presets. SmolVLM runs its vision encoder in fp32 on
+    the GPU first, because fp16 gave wrong captions on M1.
+  - The worker walks the rungs with `walkLadder` and reports the rung it used plus any failures.
+  - The global q4 and "WebGPU off by default" are gone. "Use GPU" (stored as `aiPreferCpu`) is on by
+    default; off means CPU rungs only.
+- **One probe:** `ai-env`'s probe replaces both WebGPU checks.
+- **Fit and licence are shown:**
+  - In the Manager: fit and reason, a licence badge, and the device and precision a model loaded on
+    plus anything it fell back from.
+  - In the runtime prompt: the licence and badge before download, a fit warning, and "Default" now
+    following the Manager's pick.
+  - To agents: `latch_list_models`.
+- **Verified in Chrome (M1, WebGPU with shader-f16, 16 GB):**
+  - Depth Anything v2 loaded on the GPU in fp16 (on the CPU in q4 before).
+  - SmolVLM captioned on the GPU (vision fp32 / decoder q4): "In the center of the image there are
+    circles." The CPU run had said "spiral".
+- **Not done:**
+  - Node model selects don't show fit. They're built when the app starts, before the probe answers.
+    The Manager and the prompt do show it.
+  - Sizes are still the hand-written estimates. Measured per-dtype sizes come with the weights store.
 
 ## 4. Phases
 

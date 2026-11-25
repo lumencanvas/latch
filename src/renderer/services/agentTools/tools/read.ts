@@ -16,6 +16,10 @@ import { flowSnippets, SNIPPET_PERSONAS } from '@/data/flow-snippets'
 import { parseEndpoint } from '@/services/fileFormat'
 import { CODE_DISABLED_KEY } from '@/services/security/flowTrust'
 import { APP_VERSION } from '@/version'
+import { AI_MODELS, aiInference } from '@/services/ai/AIInference'
+import { webLLMService } from '@/services/ai/WebLLMService'
+import { deriveWebllmCatalog } from '@/services/ai/models/webllm/derive'
+import { fitFor, getAiEnv, licenceBadge, modelRecord } from '@/services/ai/modelRecords'
 import { ToolError, type AgentTool, type ToolResult } from '../types'
 import {
   checkConnection,
@@ -169,6 +173,40 @@ export const readTools: AgentTool<never>[] = [
         port: { id: port, type: origin.type, direction: out ? 'output' : 'input' },
         suggestions: s.map((x) => ({ type: x.nodeType, name: useNodesStore().getDefinition(x.nodeType)?.name, port: x.port.id, portType: x.port.type })),
       }
+    },
+  },
+  {
+    name: 'latch_list_models',
+    title: 'List AI models',
+    description: 'Lists the in-browser AI models by task: size, licence (with a badge when it limits use), whether it runs on this device and why not, which one "Default" uses, and whether it is loaded. Loading a model is up to the person (AI Models in the header, or the prompt when a flow needs one).',
+    tier: 'read',
+    inputSchema: { type: 'object', properties: { task: { type: 'string', maxLength: 60, description: 'Only this task, e.g. "depth-estimation" or "image-text-to-text".' } } },
+    execute: async (input: { task?: string }) => {
+      const env = await getAiEnv().catch(() => null)
+      const row = (id: string, task: string) => {
+        const rec = modelRecord(id)
+        const fit = env ? fitFor(id, env) : null
+        return {
+          id,
+          name: rec?.label ?? id,
+          sizeMB: rec?.sizeMB ?? null,
+          sizeSource: rec?.sizeSource ?? 'unknown',
+          licence: rec?.licence ?? 'unknown',
+          ...(licenceBadge(rec?.licence) ? { licenceNote: licenceBadge(rec?.licence) } : {}),
+          fit: fit ? { fit: fit.fit, ok: fit.ok, reason: fit.reason } : null,
+          loaded: task === 'llm' ? webLLMService.isLoaded(id) : aiInference.isModelLoaded(task, id),
+        }
+      }
+      const tasks = AI_MODELS.filter((m) => !input.task || m.task === input.task || m.id === input.task).map((m) => ({
+        task: m.task,
+        name: m.name,
+        default: aiInference.getDefaultModel(m.task),
+        models: [m.defaultModel, ...m.alternateModels.map((a) => a.id)].map((id) => row(id, m.task)),
+      }))
+      if (!input.task || input.task === 'llm') {
+        tasks.push({ task: 'llm', name: 'LLM (streaming, WebGPU)', default: deriveWebllmCatalog()[0]?.id ?? '', models: deriveWebllmCatalog().map((m) => row(m.id, 'llm')) })
+      }
+      return { device: env ? { webgpu: env.webgpu, shaderF16: env.f16, memoryGB: env.deviceMemoryGB } : null, tasks }
     },
   },
   {

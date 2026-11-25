@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Brain, ChevronDown, ChevronUp, Download, Loader2, X } from 'lucide-vue-next'
 import { aiInference, AI_MODELS } from '@/services/ai/AIInference'
 import { webLLMService } from '@/services/ai/WebLLMService'
+import { fitFor, getAiEnv, licenceBadge, modelRecord } from '@/services/ai/modelRecords'
+import type { Env } from '@hackbuild/ai-env'
 import { deriveWebllmCatalog } from '@/services/ai/models/webllm/derive'
 import { modelNeeds, groupModelNeeds } from '@/services/ai/modelNeeds'
 import { useRuntimeStore } from '@/stores/runtime'
@@ -23,6 +25,8 @@ const ui = useUIStore()
 const aiTick = ref(0)
 let unsubscribe: (() => void) | null = null
 let unsubscribeLLM: (() => void) | null = null
+const aiEnv = ref<Env | null>(null)
+void getAiEnv().then((e) => { aiEnv.value = e })
 const webllmCatalog = deriveWebllmCatalog()
 onMounted(() => {
   unsubscribe = aiInference.subscribe(() => { aiTick.value++ })
@@ -40,13 +44,21 @@ const inFlow = (id: string) => !!flows.activeFlow?.nodes.some((n) => n.id === id
 
 function modelMeta(task: string, modelId: string) {
   const def = AI_MODELS.find((m) => m.task === task)
-  const id = modelId || def?.defaultModel || ''
+  // "Default" is the model picked for this task in AI Models (else the catalog default).
+  const id = modelId || aiInference.getDefaultModel(task) || def?.defaultModel || ''
   const alt = def?.alternateModels.find((a) => a.id === id)
+  const rec = modelRecord(id)
+  const fit = aiEnv.value ? fitFor(id, aiEnv.value) : null
   return {
     id,
     name: alt?.name ?? (id.split('/').pop() || def?.name || task),
     task: def?.name ?? task,
     size: alt?.size ?? (id === def?.defaultModel ? def?.defaultSize : '') ?? '',
+    // Shown before the first download (the model's licence, and a badge when it limits use).
+    licence: rec?.licence && rec.licence !== 'unknown' ? rec.licence : '',
+    badge: licenceBadge(rec?.licence),
+    // Only said when it won't run here (or only slowly), with the reason.
+    fitWarning: fit && (!fit.ok || fit.fit === 'fits on cpu, slow') ? `${fit.fit}: ${fit.reason}` : '',
   }
 }
 
@@ -173,7 +185,7 @@ function focus(id: string | undefined) {
           :key="g.key"
         >
           <span class="model-name">{{ g.meta.name }}</span>
-          <span class="model-meta">{{ g.meta.task }}<template v-if="g.meta.size"> · {{ g.meta.size }}</template></span>
+          <span class="model-meta">{{ g.meta.task }}<template v-if="g.meta.size"> · {{ g.meta.size }}</template><template v-if="g.meta.licence"> · {{ g.meta.licence }}</template><template v-if="g.meta.badge"> · <strong class="model-badge">{{ g.meta.badge }}</strong></template></span>
           <button
             class="node-link"
             :title="`Show ${nodeLabel(g.nodeIds[0])}`"
@@ -181,6 +193,10 @@ function focus(id: string | undefined) {
           >
             {{ g.nodeIds.length === 1 ? nodeLabel(g.nodeIds[0]) : `${g.nodeIds.length} nodes` }}
           </button>
+          <span
+            v-if="g.meta.fitWarning"
+            class="model-error"
+          >{{ g.meta.fitWarning }}</span>
           <span
             v-if="loadErrors.get(g.key)"
             class="model-error"
@@ -462,5 +478,9 @@ function focus(id: string | undefined) {
 
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
+}
+.model-badge {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-warning-700);
 }
 </style>

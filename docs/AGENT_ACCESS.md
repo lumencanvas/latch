@@ -85,7 +85,7 @@ polyfill (`@w3c/webmcp-polyfill`) only when agent access is turned on.
 Read: `latch_get_guide`, `latch_get_app_info`, `latch_search_node_types`, `latch_list_categories`,
 `latch_get_node_type`, `latch_suggest_nodes_for_port`, `latch_list_snippets`, `latch_get_flow`,
 `latch_get_node`, `latch_list_flows`, `latch_get_runtime_state`, `latch_read_node_outputs`,
-`latch_validate_flow`, `latch_export_flow`, `latch_select_nodes`.
+`latch_validate_flow`, `latch_export_flow`, `latch_select_nodes`, `latch_list_models`.
 
 Asks first: `latch_capture_output`, `latch_list_connections`, `latch_set_transport`,
 `latch_import_flow`.
