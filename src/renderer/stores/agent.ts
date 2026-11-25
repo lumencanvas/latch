@@ -114,10 +114,12 @@ export const useAgentStore = defineStore('agent', {
       return snap
     },
 
-    /** Forget grants and checkpoints (agents turned off, or the person disconnected them). */
+    /**
+     * Forget grants (agents turned off). Revert checkpoints stay until the tab closes or the
+     * person reverts: "turn the agent off, then undo what it did" must still work.
+     */
     endSession() {
       this.grants = []
-      this.checkpoints = new Map()
       this.paused = false
       this.changeCount = 0
     },

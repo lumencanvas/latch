@@ -56,6 +56,8 @@ export interface ToolEnv {
   viewCenter?: () => XY
   /** Frame the given nodes (or everything) on the canvas. */
   frame?: (nodeIds?: string[]) => void
+  /** A node's rendered size on the canvas, so auto-arrange spaces real (not estimated) boxes. */
+  dimensions?: (nodeId: string) => { width: number; height: number } | undefined
 }
 
 export interface ToolContext {
@@ -74,6 +76,10 @@ export interface AgentTool<I = Record<string, unknown>> {
   tier: ToolTier
   /** The result carries text from flows, files, the network or models (prompt-injection hint). */
   untrustedOutput?: boolean
+  /** Edit-tier tools that don't change the active flow's nodes or wires (flow tabs, renames): no revert checkpoint. */
+  touchesGraph?: boolean
+  /** The tool waits on the person (a dialog): no call timeout, the person is the timeout. */
+  waitsForPerson?: boolean
   execute(input: I, ctx: ToolContext): Promise<ToolResult | Record<string, unknown>> | ToolResult | Record<string, unknown>
 }
 
@@ -89,6 +95,8 @@ export interface ConsentRequest {
   transport: AgentTransport
   /** 'session': the answer may cover the rest of the session for this tier. */
   scope: 'once' | 'session'
+  /** Aborts when the agent gives up on the call: the prompt should close as denied. */
+  signal?: AbortSignal
 }
 
 export type ConsentDecision = 'once' | 'session' | 'deny'

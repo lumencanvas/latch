@@ -123,6 +123,8 @@ export class AgentToolRegistry {
   private writeBucket = new Bucket(10, 30)
   private captureBucket = new Bucket(2, 2)
   private env: ToolEnv = {}
+  /** The running tool's own promise, which can outlive a timeout. */
+  private settling: Promise<unknown> = Promise.resolve()
 
   register(...tools: AgentTool<never>[]) {
     for (const t of tools) {
@@ -141,6 +143,13 @@ export class AgentToolRegistry {
 
   setEnv(env: ToolEnv) {
     this.env = env
+  }
+
+  /** Refill the rate limits (tests; a fresh agent session). */
+  resetRateLimits() {
+    this.readBucket = new Bucket(30, 60)
+    this.writeBucket = new Bucket(10, 30)
+    this.captureBucket = new Bucket(2, 2)
   }
 
   /** Run a tool call. Never throws: every failure is an `isError` result the agent can read. */
@@ -185,17 +194,18 @@ export class AgentToolRegistry {
     if (scope && !(scope === 'session' && agent.grants.includes(tool.tier))) {
       let decision: ConsentDecision
       try {
-        decision = await consentResolver({ tool: name, title: tool.title, tier: tool.tier, args, transport: opts.transport, scope })
+        decision = await consentResolver({ tool: name, title: tool.title, tier: tool.tier, args, transport: opts.transport, scope, signal: opts.signal })
       } catch {
         decision = 'deny'
       }
-      if (decision === 'deny') return fail('The person declined this action.')
+      if (decision === 'deny') return fail(opts.signal?.aborted ? 'Cancelled by the agent.' : 'The person declined this action.')
       if (decision === 'session' && scope === 'session') agent.grant(tool.tier)
     }
 
-    // Serialise: two agent calls never interleave inside one history entry.
+    // Serialise: two agent calls never interleave inside one history entry. The queue waits for
+    // the tool itself to settle, not just for a timeout, so a timed-out call can't overlap the next.
     const run = this.queue.then(() => this.execute(tool, input as Record<string, unknown>, opts))
-    this.queue = run.catch(() => undefined)
+    this.queue = run.catch(() => undefined).then(() => this.settling)
     try {
       const result = await run
       return finish(result, result.isError ? (result.content[0] as { text?: string })?.text : undefined)
@@ -209,30 +219,46 @@ export class AgentToolRegistry {
   private async execute(tool: AgentTool, input: Record<string, unknown>, opts: { transport: AgentTransport; signal?: AbortSignal }): Promise<ToolResult> {
     const flows = useFlowsStore()
     const agent = useAgentStore()
+    // Re-check at run time: the person may have paused agents, lowered the mode, or the agent
+    // may have given up on this call while it waited for consent or in the queue.
+    if (!MODE_TIERS[agent.mode].has(tool.tier)) throw new ToolError('Agent access changed while this call waited; it was not run.')
+    if (agent.paused) throw new ToolError('Paused by the person at the computer. Wait, or ask them to resume agent access.')
+    if (opts.signal?.aborted) throw new ToolError('Cancelled by the agent.')
+
     const mutating = isMutating(tool.tier)
+    let checkpoint: { flowId: string; snap: ReturnType<typeof createSnapshot> } | null = null
     if (mutating) {
       // A person's in-flight slider burst commits as its own undo step first.
       useFlowHistory().flushParamEdit()
       const flow = flows.activeFlow
-      if (flow && tool.tier === 'edit' && flow.nodes.length > MAX_FLOW_NODES) {
-        throw new ToolError(`This flow has over ${MAX_FLOW_NODES} nodes; agents can't edit it.`)
+      if (flow && tool.tier === 'edit' && tool.touchesGraph !== false) {
+        if (flow.nodes.length > MAX_FLOW_NODES) throw new ToolError(`This flow has over ${MAX_FLOW_NODES} nodes; agents can't edit it.`)
+        // Snapshot now, keep it only if the call changes the flow (see below).
+        if (!agent.hasCheckpoint(flow.id)) checkpoint = { flowId: flow.id, snap: createSnapshot(flow.nodes, flow.edges) }
       }
-      if (flow && tool.tier === 'edit') agent.checkpoint(flow.id, createSnapshot(flow.nodes, flow.edges))
     }
 
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(new Error('timed out')), CALL_TIMEOUT_MS)
+    const timer = tool.waitsForPerson ? undefined : setTimeout(() => controller.abort(new Error('timed out')), CALL_TIMEOUT_MS)
     const onOuterAbort = () => controller.abort(opts.signal?.reason)
     opts.signal?.addEventListener('abort', onOuterAbort, { once: true })
     try {
+      const running = Promise.resolve().then(() => tool.execute(input, { transport: opts.transport, signal: controller.signal, env: this.env }))
+      this.settling = running.catch(() => undefined)
       const raw = await Promise.race([
-        Promise.resolve(tool.execute(input, { transport: opts.transport, signal: controller.signal, env: this.env })),
+        running,
         new Promise<never>((_, reject) => {
           controller.signal.addEventListener('abort', () => reject(new ToolError(`Cancelled (${String(controller.signal.reason?.message ?? controller.signal.reason ?? 'aborted')}).`)), { once: true })
         }),
       ])
       const result = normalize(raw)
-      if (mutating && !result.isError) agent.noteChange()
+      if (mutating && !result.isError) {
+        agent.noteChange()
+        const flow = checkpoint && flows.getFlowById(checkpoint.flowId)
+        if (checkpoint && flow && JSON.stringify([flow.nodes, flow.edges]) !== JSON.stringify([checkpoint.snap.nodes, checkpoint.snap.edges])) {
+          agent.checkpoint(checkpoint.flowId, checkpoint.snap)
+        }
+      }
       return result
     } finally {
       clearTimeout(timer)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, markRaw, nextTick, inject } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, markRaw, nextTick } from 'vue'
 import { VueFlow, useVueFlow, Panel, ConnectionMode } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
@@ -28,8 +28,7 @@ import AnimatedEdge from '@/components/edges/AnimatedEdge.vue'
 import WireSuggestionPopover, { type SuggestionItem } from '@/components/canvas/WireSuggestionPopover.vue'
 import { validateConnection, getPortType, areTypesCompatible } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
-import { installAgentTools } from '@/services/agentTools'
-import type { ToolEnv } from '@/services/agentTools/types'
+import { setAgentEditorEnv } from '@/services/agentTools'
 import { useCanvasKeyboard } from '@/composables/useCanvasKeyboard'
 import { useAutoArrange } from '@/composables/useAutoArrange'
 import { useDialogA11y } from '@/composables/useDialogA11y'
@@ -59,8 +58,6 @@ const nodesStore = useNodesStore()
 
 const vueFlow = useVueFlow()
 const flowLibrary = useFlowLibrary()
-const executionControls = inject<ToolEnv['execution']>('executionControls')
-let uninstallAgentTools: (() => void) | null = null
 const {
   onConnect,
   onConnectStart,
@@ -1059,9 +1056,9 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown)
   window.addEventListener('paste', onPaste)
 
-  // AI agent tools (WebMCP): registered only while the person has agent access on.
-  uninstallAgentTools = installAgentTools({
-    execution: executionControls,
+  // AI agent tools (installed in App.vue) place and frame nodes on this canvas while it's mounted.
+  setAgentEditorEnv({
+    dimensions: (id) => vueFlow.findNode(id)?.dimensions,
     viewCenter: () => {
       const pane = document.querySelector('.vue-flow__pane') as HTMLElement | null
       const rect = pane?.getBoundingClientRect()
@@ -1093,8 +1090,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  uninstallAgentTools?.()
-  uninstallAgentTools = null
+  setAgentEditorEnv(null)
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('paste', onPaste)
   stopPlacementListeners()

@@ -15,6 +15,8 @@ const TAB_KEY = '__webmcp_relay_tab_id'
 
 let frame: HTMLIFrameElement | null = null
 let blobUrls: string[] = []
+/** Bumped by every stop: a start still awaiting its fetch sees it changed and backs out. */
+let generation = 0
 
 function tabId(): string {
   try {
@@ -32,10 +34,12 @@ export interface RelayOptions { port?: number }
 
 export async function startRelayWidget(opts: RelayOptions = {}): Promise<void> {
   if (frame) return
+  const gen = generation
   const widgetUrl = new URL('webmcp/widget.js', document.baseURI).href
   const res = await fetch(widgetUrl)
   if (!res.ok) throw new Error(`relay widget not found (${res.status})`)
   const widgetJs = await res.text()
+  if (gen !== generation || frame) return
   const host = new URL(window.location.href)
   host.search = ''
   host.hash = ''
@@ -67,6 +71,7 @@ export async function startRelayWidget(opts: RelayOptions = {}): Promise<void> {
 }
 
 export function stopRelayWidget(): void {
+  generation++
   frame?.remove()
   frame = null
   for (const u of blobUrls) URL.revokeObjectURL(u)

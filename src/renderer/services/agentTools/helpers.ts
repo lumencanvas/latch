@@ -7,6 +7,7 @@ import { areTypesCompatible, getPortType } from '@/utils/connections'
 import { parseEndpoint } from '@/services/fileFormat'
 import { REDACTED_SECRET } from '@/services/connections/redactSecrets'
 import { CODE_DISABLED_KEY, CODE_NODE_TYPES, isCodeNodeType } from '@/services/security/flowTrust'
+import { parseUniformsFromCode, generateInputsFromUniforms, generateControlsFromUniforms } from '@/services/visual/ShaderPresets'
 import { ToolError } from './types'
 
 /** Shared helpers for the agent tools: ports, secrets, value summaries, node creation. */
@@ -47,6 +48,25 @@ export function isSecretControl(c: Pick<ControlDefinition, 'id' | 'props'>): boo
   return SECRET_ID_RE.test(c.id) || (c.props as { type?: string } | undefined)?.type === 'password'
 }
 
+/** Where a node sends things: control or input ids that name a server, URL or address. */
+const DESTINATION_RE = /url|uri|host|endpoint|server|broker|address|webhook/i
+
+/** The node already holds a saved secret (a token or password the person typed). */
+export function holdsSecret(def: NodeDefinition, data: Record<string, unknown>): boolean {
+  return effectiveControls(def, data).some((c) => isSecretControl(c) && data[c.id] !== undefined && data[c.id] !== null && data[c.id] !== '')
+}
+
+/**
+ * An agent may not change where a node that holds a saved secret connects, by control or by
+ * wire: masking the token in reads means nothing if the agent can point the node at its own
+ * server and let it send the token there.
+ */
+export function assertSecretStaysHome(def: NodeDefinition, data: Record<string, unknown>, id: string, nodeId: string) {
+  if (DESTINATION_RE.test(id) && holdsSecret(def, data)) {
+    throw new ToolError(`${def.name} (${nodeId}) holds a saved token or password, so agents can't change where it connects ("${id}"). Ask the person to change it.`)
+  }
+}
+
 /** Control values of a node, with secrets masked. Internal (`_`) keys are left out. */
 export function nodeControlValues(def: NodeDefinition | undefined, data: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -77,7 +97,19 @@ export function createNodeData(def: NodeDefinition, extra: Record<string, unknow
   // Agents never get to run in-origin JavaScript: code nodes start disabled until the person
   // clicks "Enable code" on the node.
   if (isCodeNodeType(def.id)) data[CODE_DISABLED_KEY] = true
+  Object.assign(data, shaderPortsFor(def.id, data))
   return data
+}
+
+/**
+ * A custom Shader's `uniform float u_x;` declarations become input ports, exactly as saving in
+ * the shader editor does, so an agent can wire them in the same build step (not only after a run).
+ */
+export function shaderPortsFor(type: string, data: Record<string, unknown>): Record<string, unknown> {
+  if (type !== 'shader' || typeof data.code !== 'string') return {}
+  if (data.preset !== undefined && data.preset !== 'custom') return {}
+  const uniforms = parseUniformsFromCode(data.code)
+  return { _dynamicInputs: generateInputsFromUniforms(uniforms), _dynamicControls: generateControlsFromUniforms(uniforms) }
 }
 
 export function codeKeyFor(type: string): string | null {

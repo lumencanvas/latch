@@ -21,7 +21,7 @@ export function validateSchema(schema: JSONSchema, value: unknown, path = 'input
       }
       const props = schema.properties ?? {}
       for (const [key, v] of Object.entries(obj)) {
-        const sub = props[key]
+        const sub = Object.prototype.hasOwnProperty.call(props, key) ? props[key] : undefined
         if (!sub) {
           if (schema.additionalProperties === true) continue
           const known = Object.keys(props)

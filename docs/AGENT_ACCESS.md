@@ -19,7 +19,9 @@ Click the robot button in the header and pick a mode:
 | Allow edits | Edit freely. LATCH still asks before playing the flow or reading the output image, and every time before importing JSON. |
 
 The same menu pauses agents, shows what they did, and **Revert agent changes** puts the open
-flow back the way it was before an agent first touched it, as one undoable step.
+flow back the way it was before an agent first changed it, as one undoable step. Revert stays
+available after you turn agents off, until you close the tab. Pausing or lowering the mode also
+stops calls that were already waiting for your answer or in line.
 
 ## Connecting Claude Code, Claude Desktop or Cursor
 
@@ -43,6 +45,14 @@ Chrome may ask the page for local network access the first time. `--widget-origi
 relay refuse every other site. The relay has no other authentication, so keep it bound to
 loopback (the default).
 
+## Tips for agents
+
+- Custom Shader code: each `uniform float u_name;` becomes an input port as soon as the code is set,
+  so `latch_build_graph` can wire it in the same step.
+- Run `latch_auto_arrange` after a large build: it uses the nodes' real on-screen sizes.
+- `latch_get_runtime_state` says `pageHidden` when the LATCH tab is hidden. LATCH stops rendering
+  then, so values are from the last visible frame.
+
 ## Native WebMCP
 
 Where the browser implements `document.modelContext` (Chrome with
@@ -53,14 +63,21 @@ polyfill (`@w3c/webmcp-polyfill`) only when agent access is turned on.
 ## Safety rules built in
 
 - Code nodes (Function, Expression) are always created **disabled**, and stay disabled after an
-  agent edits their code. Only a person clicking **Enable code** runs them.
+  agent edits their code or imports them. Only a person clicking **Enable code** runs them.
 - Secret-looking control values (tokens, passwords, API keys) are masked in every read, and
-  saved connections are listed by name only.
-- Imported JSON goes through the same trust prompt as Paste and Import.
+  saved connections are listed by name only. Writing the mask back leaves the saved value alone,
+  and an agent can't change the URL, host or server of a node that holds a saved secret, by
+  control or by wire.
+- Importing JSON asks you every time; code in it arrives disabled.
 - There is no tool to delete flows, change settings, read files or run arbitrary code.
-- Each agent change is one undo step labelled “Agent: …”. Calls are rate-limited and run one at
-  a time.
-- Device pairing, camera and microphone permission, and starting audio need the person.
+- Each change an agent makes to a flow's nodes and wires is one undo step (labelled “Agent: …”, or
+  “Tidy graph” for a layout). Calls are rate-limited and run one at a time. A prompt the agent
+  gives up on closes by itself, and a call that timed out can't overlap the next one.
+- Device pairing, camera and microphone permission, and starting audio need the person. If the
+  page hasn't been clicked yet, a play request reports “waiting” and does nothing; it never
+  starts later by itself.
+- Numbers are clamped to a control's range and snapped only to a step the control declares, as
+  if typed.
 - Text that comes from flows, node outputs and the network is marked as untrusted content.
 
 ## Tool list

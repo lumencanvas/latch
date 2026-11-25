@@ -11,6 +11,7 @@ import { getPlatform } from '@/utils/platform'
 import { flowSnippets } from '@/data/flow-snippets'
 import { snippetOffsetToCenter, snippetToInsertableNodes } from '@/utils/snippets'
 import { CODE_DISABLED_KEY } from '@/services/security/flowTrust'
+import { REDACTED_SECRET } from '@/services/connections/redactSecrets'
 import { parseEndpoint } from '@/services/fileFormat'
 import { ToolError, type AgentTool, type ToolContext, type XY } from '../types'
 import {
@@ -25,6 +26,8 @@ import {
   getDefOrThrow,
   getNodeOrThrow,
   isSecretControl,
+  assertSecretStaysHome,
+  shaderPortsFor,
   nodeType,
 } from '../helpers'
 
@@ -50,6 +53,8 @@ function checkControls(def: NodeDefinition, data: Record<string, unknown>, value
       report.rejected.push({ id, error: `not a control of ${def.name}${controls.length ? ` (controls: ${controls.map((x) => x.id).join(', ')})` : ''}` })
       continue
     }
+    // The masked placeholder from a read, written back, means "leave the saved secret alone".
+    if (raw === REDACTED_SECRET && isSecretControl(c)) continue
     const r = coerceControlValue(c, raw)
     if (!r.ok) { report.rejected.push({ id, error: r.error }); continue }
     report.applied[id] = r.value
@@ -160,6 +165,10 @@ export const editTools: AgentTool<never>[] = [
         ...[...refs].map(([ref, v]) => ({ id: ref, data: v.data })),
       ]
       const edges = (input.edges ?? []).map((e) => checkConnection(e.from, e.to, pool))
+      for (const e of edges) {
+        const existing = flow.nodes.find((n) => n.id === e.target)
+        if (existing) assertSecretStaysHome(getDefOrThrow(nodeType(existing)), existing.data as Record<string, unknown>, e.targetHandle, e.target)
+      }
       const seen = new Set<string>()
       for (const e of edges) {
         const key = `${e.target}:${e.targetHandle}`
@@ -190,7 +199,7 @@ export const editTools: AgentTool<never>[] = [
           // Tidy records its own undo step; hold that back so the build stays ONE step.
           const history = useHistoryStore()
           history.setUndoingOrRedoing(true)
-          try { useAutoArrange().arrange('selection') } finally { history.setUndoingOrRedoing(false) }
+          try { useAutoArrange({ getDimensions: ctx.env.dimensions }).arrange('selection') } finally { history.setUndoingOrRedoing(false) }
         }
         return { nodeIds, edgeIds }
       })
@@ -261,12 +270,12 @@ export const editTools: AgentTool<never>[] = [
   {
     name: 'latch_auto_arrange',
     title: 'Tidy the layout',
-    description: 'Lays out the whole open flow (or the given nodes) left to right by wiring. One undo step.',
+    description: 'Lays out the whole open flow (or the given nodes) left to right by wiring, using the nodes\' real on-screen sizes. Run it after a big latch_build_graph to clear any overlaps. One undo step.',
     tier: 'edit',
     inputSchema: { type: 'object', properties: { nodeIds: { type: 'array', maxItems: 500, items: ID } } },
     execute: (input: { nodeIds?: string[] }, ctx) => {
       getActiveFlowOrThrow()
-      const arrange = useAutoArrange()
+      const arrange = useAutoArrange({ getDimensions: ctx.env.dimensions })
       let n: number
       if (input.nodeIds?.length) {
         for (const id of input.nodeIds) getNodeOrThrow(id)
@@ -292,6 +301,8 @@ export const editTools: AgentTool<never>[] = [
     execute: (input: { from: string; to: string; replace?: boolean }) => {
       const flow = getActiveFlowOrThrow()
       const c = checkConnection(input.from, input.to, flow.nodes.map((n) => ({ id: n.id, data: n.data as Record<string, unknown> })))
+      const dst = getNodeOrThrow(c.target)
+      assertSecretStaysHome(getDefOrThrow(nodeType(dst)), dst.data as Record<string, unknown>, c.targetHandle, c.target)
       const existing = flow.edges.filter((e) => e.target === c.target && e.targetHandle === c.targetHandle)
       if (existing.some((e) => e.source === c.source && e.sourceHandle === c.sourceHandle)) return { edgeId: existing.find((e) => e.source === c.source)!.id, note: 'Already wired.' }
       if (existing.length && !c.targetPort.multiple && !input.replace) {
@@ -344,13 +355,17 @@ export const editTools: AgentTool<never>[] = [
       const node = getNodeOrThrow(input.nodeId)
       const data = node.data as Record<string, unknown>
       const def = getDefOrThrow(nodeType(node))
+      for (const id of Object.keys(input.values)) assertSecretStaysHome(def, data, id, node.id)
       const report = strictControls(def, data, input.values, def.name)
       const codeKey = codeKeyFor(def.id)
       const touchesCode = !!codeKey && codeKey in report.applied
       useFlowHistory().withHistory(`Agent: Set ${def.name} controls`, () => {
         // Writing a code node's source would otherwise re-enable it (flows.updateNodeData treats a
         // source edit as the person having read it). An agent edit must leave it disabled.
-        useFlowsStore().updateNodeData(node.id, touchesCode ? { ...report.applied, [CODE_DISABLED_KEY]: true } : report.applied)
+        const patch = touchesCode ? { ...report.applied, [CODE_DISABLED_KEY]: true } : { ...report.applied }
+        // New shader code (or switching to the custom preset) re-derives its uniform ports.
+        if ('code' in patch || 'preset' in patch) Object.assign(patch, shaderPortsFor(def.id, { ...data, ...patch }))
+        useFlowsStore().updateNodeData(node.id, patch)
       })
       const controls = effectiveControls(def, data)
       const secret = Object.keys(report.applied).filter((id) => { const c = controls.find((x) => x.id === id); return c && isSecretControl(c) })
@@ -429,7 +444,12 @@ export const editTools: AgentTool<never>[] = [
       else if (runtime.isPaused) exec.resume()
       else if (runtime.isStopped) {
         getActiveFlowOrThrow()
-        // start() first unlocks audio, which waits for a click if the page has never had one.
+        // start() first unlocks audio, which waits for a click if the page has never had one. Don't
+        // leave a start pending that would fire on some later click: report and let the agent retry.
+        const activation = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation
+        if (activation && !activation.hasBeenActive) {
+          return { status: 'waiting', note: 'Browsers only allow sound after the person has clicked the page. Ask them to click anywhere on LATCH (or press Play), then call this again.' }
+        }
         const started = Promise.resolve(exec.start())
         await Promise.race([started, new Promise((r) => setTimeout(r, 1500))])
         if (runtime.isStopped) {

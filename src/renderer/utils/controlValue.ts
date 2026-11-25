@@ -2,8 +2,8 @@ import type { ControlDefinition } from '@/stores/nodes'
 
 /**
  * Control-value rules shared by the control UI (ControlRenderer's drag-to-scrub) and the
- * agent tools (`latch_set_controls`), so a value an agent sets lands exactly where the same
- * value typed or scrubbed by a person would.
+ * agent tools (`latch_set_controls`): an agent's value is clamped like a typed one, and snapped
+ * only to a step the control declares.
  */
 
 /** A control's step, or 1 when it has none (or a nonsense one). */
@@ -12,12 +12,25 @@ export function guardedStep(c: Pick<ControlDefinition, 'props'>): number {
   return Number.isFinite(s) && s > 0 ? s : 1
 }
 
-/** Snap to the control's step, then clamp ONLY against declared (finite) min/max. */
-export function snapClamp(c: Pick<ControlDefinition, 'props'>, v: number): number {
-  const step = guardedStep(c)
-  let nv = Math.round(v / step) * step
-  const decimals = (String(step).split('.')[1] || '').length
-  nv = Number(nv.toFixed(decimals)) // kill float dust so scrub matches typed values
+/** The step a control declares, or null (a typed value then lands as typed). */
+function declaredStep(c: Pick<ControlDefinition, 'props'>): number | null {
+  const s = c.props?.step as number
+  return Number.isFinite(s) && s > 0 ? s : null
+}
+
+/**
+ * Snap to the control's step, then clamp ONLY against declared (finite) min/max.
+ * `onlyDeclaredStep`: snap only when the control declares a step, as a typed value would be
+ * (no step means no rounding: 0.25 s of delay must not become 0).
+ */
+export function snapClamp(c: Pick<ControlDefinition, 'props'>, v: number, onlyDeclaredStep = false): number {
+  const step = onlyDeclaredStep ? declaredStep(c) : guardedStep(c)
+  let nv = v
+  if (step !== null) {
+    nv = Math.round(v / step) * step
+    const decimals = (String(step).split('.')[1] || '').length
+    nv = Number(nv.toFixed(decimals)) // kill float dust so scrub matches typed values
+  }
   const min = c.props?.min, max = c.props?.max
   if (typeof min === 'number') nv = Math.max(min, nv)
   if (typeof max === 'number') nv = Math.min(max, nv)
@@ -50,7 +63,7 @@ export function coerceControlValue(c: ControlDefinition, raw: unknown): CoerceRe
     case 'number': {
       const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw
       if (typeof n !== 'number' || !Number.isFinite(n)) return { ok: false, error: 'expected a finite number' }
-      const v = snapClamp(c, n)
+      const v = snapClamp(c, n, true)
       return v === n ? { ok: true, value: v } : { ok: true, value: v, clamped: true }
     }
     case 'toggle': {

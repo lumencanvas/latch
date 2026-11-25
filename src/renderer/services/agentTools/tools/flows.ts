@@ -19,6 +19,7 @@ export const flowTools: AgentTool<never>[] = [
     title: 'Create a flow',
     description: 'Creates a new empty flow in a new tab and switches to it. Other tools then act on it.',
     tier: 'edit',
+    touchesGraph: false,
     inputSchema: { type: 'object', properties: { name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['name'] },
     execute: async (input: { name: string }) => {
       const flow = useFlowsStore().createFlow(input.name.trim() || 'Untitled Flow')
@@ -31,6 +32,7 @@ export const flowTools: AgentTool<never>[] = [
     title: 'Open a flow',
     description: 'Opens a flow from the library as the active tab (the person sees the switch). Other tools then act on it.',
     tier: 'edit',
+    touchesGraph: false,
     inputSchema: { type: 'object', properties: { flowId: ID }, required: ['flowId'] },
     execute: async (input: { flowId: string }) => {
       const flow = flowOrThrow(input.flowId)
@@ -43,6 +45,7 @@ export const flowTools: AgentTool<never>[] = [
     title: 'Rename a flow',
     description: 'Renames a flow in the library (open or closed).',
     tier: 'edit',
+    touchesGraph: false,
     inputSchema: { type: 'object', properties: { flowId: ID, name: { type: 'string', minLength: 1, maxLength: 80 } }, required: ['flowId', 'name'] },
     execute: async (input: { flowId: string; name: string }) => {
       flowOrThrow(input.flowId)
@@ -55,6 +58,7 @@ export const flowTools: AgentTool<never>[] = [
     title: 'Duplicate a flow',
     description: 'Copies a flow into a new tab and switches to the copy, so you can change it without touching the original.',
     tier: 'edit',
+    touchesGraph: false,
     inputSchema: { type: 'object', properties: { flowId: ID }, required: ['flowId'] },
     execute: async (input: { flowId: string }) => {
       flowOrThrow(input.flowId)
@@ -68,6 +72,7 @@ export const flowTools: AgentTool<never>[] = [
     title: 'Close a flow tab',
     description: 'Closes a flow\'s tab. The flow stays in the library and can be opened again; nothing is deleted.',
     tier: 'edit',
+    touchesGraph: false,
     inputSchema: { type: 'object', properties: { flowId: ID }, required: ['flowId'] },
     execute: async (input: { flowId: string }) => {
       flowOrThrow(input.flowId)
@@ -95,14 +100,14 @@ export const flowTools: AgentTool<never>[] = [
   {
     name: 'latch_import_flow',
     title: 'Import flow JSON',
-    description: 'Opens LATCH file-format JSON as new flow tab(s), the same as Paste. Code nodes in it are shown to the person, who decides whether they may run. Never replaces existing flows.',
+    description: 'Opens LATCH file-format JSON as new flow tab(s), the same as Paste. The person is asked first. Code nodes in it arrive disabled until the person enables them. Never replaces existing flows.',
     tier: 'consequential',
     inputSchema: { type: 'object', properties: { json: { type: 'string', minLength: 2, maxLength: MAX_IMPORT } }, required: ['json'] },
     execute: async (input: { json: string }) => {
       const flows = useFlowsStore()
       const before = new Set(flows.flows.map((f) => f.id))
-      const ok = await useFlowLibrary().importText(input.json)
-      if (!ok) throw new ToolError('Not imported: the JSON isn\'t a LATCH flow, or the person cancelled.')
+      const ok = await useFlowLibrary().importText(input.json, { untrusted: true })
+      if (!ok) throw new ToolError('Not imported: the JSON isn\'t a valid LATCH flow file.')
       const added = flows.flows.filter((f) => !before.has(f.id)).map((f) => ({ id: f.id, name: f.name, nodeCount: f.nodes.length }))
       return { imported: added, activeFlowId: flows.activeFlowId }
     },

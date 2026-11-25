@@ -31,21 +31,34 @@ const WHAT: Record<ToolTier, string> = {
 }
 
 const VIA: Record<ConsentRequest['transport'], string> = {
-  webmcp: 'An AI agent connected to this tab',
+  webmcp: 'An AI agent',
   relay: 'A desktop AI agent',
   test: 'A test',
 }
 
 function decide(d: ConsentDecision) {
   const p = queue.value.shift()
-  p?.resolve(d)
+  if (!p) return
+  p.resolve(d)
+  // "For this session" also answers the same kind of request already waiting behind it.
+  if (d === 'session') {
+    const covered = queue.value.filter((q) => q.req.scope === 'session' && q.req.tier === p.req.tier)
+    queue.value = queue.value.filter((q) => !covered.includes(q))
+    for (const q of covered) q.resolve('session')
+  }
 }
 
 onMounted(() => {
   setAgentConsentResolver((req) => new Promise<ConsentDecision>((resolve) => {
     // Waiting requests beyond a handful are denied: an agent spamming prompts must not pile up dialogs.
-    if (queue.value.length >= 5) { resolve('deny'); return }
-    queue.value.push({ req, resolve })
+    if (queue.value.length >= 5 || req.signal?.aborted) { resolve('deny'); return }
+    const entry: Pending = { req, resolve }
+    queue.value.push(entry)
+    // The agent gave up on the call (timeout, cancel): withdraw the prompt.
+    req.signal?.addEventListener('abort', () => {
+      const i = queue.value.indexOf(entry)
+      if (i >= 0) { queue.value.splice(i, 1); resolve('deny') }
+    }, { once: true })
   }))
 })
 

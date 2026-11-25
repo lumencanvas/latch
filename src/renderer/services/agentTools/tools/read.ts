@@ -52,7 +52,8 @@ Conventions:
 - Endpoints are "nodeId:portId" strings.
 - Visual chains end in a "main-output" node (input "texture"). Audio chains end in "audio-output" (input "audio").
 - Control values are set by control id. Numbers are snapped to the control's step and clamped to its range (the result says when). Selects take one of the listed option values.
-- Ports a node creates at runtime (shader uniforms) appear in latch_get_node once it has run.
+- A custom Shader's \`uniform float u_name;\` lines become input ports as soon as its code is set (in latch_build_graph too), so you can wire them in the same step. Shaders use Shadertoy-style mainImage(out vec4 fragColor, in vec2 fragCoord) with iTime, iResolution and iChannel0-3.
+- Other ports a node creates at runtime appear in latch_get_node once it has run.
 - Wire types must be compatible; the matrix below lists, for each output type, which input types accept it ("any" inputs accept everything).
 - Code nodes (Function, Expression) are always created disabled: the person must click "Enable code" on the node. Device pairing (Bluetooth, serial) and camera or microphone permission also need the person.
 - Audio only starts after the person has clicked somewhere on the page: if latch_get_runtime_state says audioSuspended, ask them to click Play or the page once.
@@ -72,6 +73,7 @@ export const readTools: AgentTool<never>[] = [
     title: 'Get LATCH app info',
     description: 'Returns the LATCH version, platform, the open flow, playback status and the agent access mode.',
     tier: 'read',
+    untrustedOutput: true,
     inputSchema: { type: 'object', properties: {} },
     execute: () => {
       const flows = useFlowsStore()
@@ -312,6 +314,7 @@ export const readTools: AgentTool<never>[] = [
     title: 'Check the open flow for problems',
     description: 'Lints the open flow without running it: broken or type-incompatible wires, unknown node types, required inputs left unwired, visuals with no Main Output, disabled code nodes and nodes not available on this platform.',
     tier: 'read',
+    untrustedOutput: true,
     inputSchema: { type: 'object', properties: {} },
     execute: () => validateFlow(),
   },
@@ -394,9 +397,13 @@ function runtimeState(limit: number) {
     const a = audioManager.getState()
     audioSuspended = a.initialized ? a.state !== 'running' || a.needsUserGesture : null
   } catch { audioSuspended = null }
+  // LATCH stops rendering while its tab is hidden (another tab, minimised or covered window),
+  // so fps and node outputs are frozen at the last frame until the person looks at it again.
+  const pageHidden = typeof document !== 'undefined' && document.hidden
   return {
     status: runtime.status,
-    fps: Math.round(runtime.fps),
+    ...(pageHidden && runtime.isRunning ? { pageHidden: true, note: 'The LATCH tab is hidden, so frames are paused: fps and output values are from the last visible frame. They resume when the person shows the tab.' } : {}),
+    fps: pageHidden ? 0 : Math.round(runtime.fps),
     frameCount: runtime.frameCount,
     errorCount: runtime.errors.length,
     recentErrors: runtime.errors.slice(-limit).map((e) => ({ nodeId: e.nodeId, label: e.nodeName, message: e.message, at: new Date(e.timestamp).toISOString() })),

@@ -40,7 +40,9 @@ beforeEach(() => {
   const agent = useAgentStore()
   agent.setMode('edit')
   agent.endSession()
+  agent.checkpoints = new Map()
   agent.audit = []
+  reg.resetRateLimits()
   setAgentConsentResolver(async () => 'once')
 })
 
@@ -75,6 +77,8 @@ describe('schema validator', () => {
     expect(validateSchema(schema, { n: 1.5 })).toBe('input.n: expected an integer')
     expect(validateSchema(schema, { n: 1, s: 'long' })).toBe('input.s: at most 3 characters')
     expect(validateSchema(schema, { n: 1, x: 1 })).toMatch(/input\.x: unknown property/)
+    // Object.prototype names are not declared properties.
+    expect(validateSchema(schema, { n: 1, constructor: 1 })).toMatch(/unknown property/)
   })
 })
 
@@ -83,6 +87,8 @@ describe('control values', () => {
     expect(snapClamp({ props: { step: 0.01, min: 0, max: 1 } }, 0.12345)).toBe(0.12)
     expect(snapClamp({ props: { min: 0, max: 1, step: 0.1 } }, 7)).toBe(1)
     expect(coerceControlValue({ id: 'p', type: 'slider', label: 'p', props: { min: 0, max: 1, step: 0.01 } }, 3)).toEqual({ ok: true, value: 1, clamped: true })
+    // No declared step: an agent's value lands as typed (0.25 s of delay must not round to 0).
+    expect(coerceControlValue({ id: 't', type: 'number', label: 't' }, 0.25)).toEqual({ ok: true, value: 0.25 })
   })
   it('checks select options and colours', () => {
     const sel = { id: 'w', type: 'select', label: 'w', props: { options: ['sine', { value: 'square', label: 'Square' }] } }
@@ -221,5 +227,67 @@ describe('agent tools', () => {
     expect((await call('latch_nope')).isError).toBe(true)
     expect(text(await call('latch_get_node', {}))).toBe('input.nodeId: required')
     expect(text(await call('latch_get_node', { nodeId: 'missing' }))).toMatch(/No node "missing"/)
+  })
+})
+
+describe('agent tools: audit regressions', () => {
+  it('keeps a saved secret when the masked value is written back, and won\'t redirect it', async () => {
+    const flows = useFlowsStore()
+    const node = flows.addNode('clasp-connection', { x: 0, y: 0 }, { token: 'cpsk_supersecret', url: 'wss://relay.clasp.to' })!
+    const data = () => flows.activeFlow!.nodes.find((n) => n.id === node.id)!.data as Record<string, unknown>
+    expect((await call('latch_set_controls', { nodeId: node.id, values: { token: REDACTED_SECRET } })).isError).toBeFalsy()
+    expect(data().token).toBe('cpsk_supersecret')
+    expect(text(await call('latch_set_controls', { nodeId: node.id, values: { url: 'wss://elsewhere.example' } }))).toMatch(/can't change where it connects/)
+    expect(data().url).toBe('wss://relay.clasp.to')
+    const { nodeId: textId } = json(await call('latch_add_node', { type: 'textbox' })) as { nodeId: string }
+    const ports = json(await call('latch_get_node', { nodeId: textId })) as { outputs: Array<{ id: string }> }
+    const out = ports.outputs[0].id
+    expect(text(await call('latch_connect', { from: `${textId}:${out}`, to: `${node.id}:url` }))).toMatch(/can't change where it connects/)
+  })
+
+  it('re-checks pause and mode after consent, and drops calls the agent cancelled', async () => {
+    const agent = useAgentStore()
+    const flows = useFlowsStore()
+    agent.setMode('ask')
+    setAgentConsentResolver(async () => { agent.setPaused(true); return 'once' })
+    expect(text(await call('latch_add_node', { type: 'lfo' }))).toMatch(/Paused/)
+    agent.setPaused(false)
+    setAgentConsentResolver(async () => { agent.setMode('read'); return 'once' })
+    expect(text(await call('latch_add_node', { type: 'lfo' }))).toMatch(/changed while this call waited/)
+    agent.setMode('ask')
+    const ac = new AbortController()
+    setAgentConsentResolver(async () => { ac.abort(); return 'once' })
+    const r = await reg.invoke('latch_add_node', { type: 'lfo' }, { transport: 'test', signal: ac.signal })
+    expect(text(r)).toMatch(/Cancelled/)
+    expect(flows.activeFlow!.nodes).toHaveLength(0)
+  })
+
+  it('checkpoints only calls that change the flow, and keeps them after agents are turned off', async () => {
+    const agent = useAgentStore()
+    const flows = useFlowsStore()
+    const a = flows.activeFlowId!
+    await call('latch_set_controls', { nodeId: 'missing', values: {} })
+    expect(agent.hasCheckpoint(a)).toBe(false)
+    await call('latch_create_flow', { name: 'Other' })
+    expect(agent.hasCheckpoint(a)).toBe(false)
+    flows.setActiveFlow(a)
+    flows.addNode('lfo', { x: 0, y: 0 }, { label: 'mine' })
+    await call('latch_add_node', { type: 'monitor' })
+    expect(agent.hasCheckpoint(a)).toBe(true)
+    agent.setMode('off')
+    expect(revertAgentChanges()).toBe(true)
+    expect(flows.activeFlow!.nodes.map((n) => (n.data as Record<string, unknown>).label)).toEqual(['mine'])
+  })
+
+  it('imports agent JSON with code disabled and no trust prompt', async () => {
+    const flows = useFlowsStore()
+    flows.addNode('function', { x: 0, y: 0 }, { code: 'return { result: 2 }' })
+    const exported = text(await call('latch_export_flow'))
+    const before = new Set(flows.flows.map((f) => f.id))
+    const r = await call('latch_import_flow', { json: exported })
+    expect(r.isError, text(r)).toBeFalsy()
+    const added = flows.flows.find((f) => !before.has(f.id))!
+    const fn = added.nodes.find((n) => (n.data as Record<string, unknown>).nodeType === 'function')!
+    expect((fn.data as Record<string, unknown>)[CODE_DISABLED_KEY]).toBe(true)
   })
 })

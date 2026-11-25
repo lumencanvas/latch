@@ -23,14 +23,27 @@ export function getAgentToolRegistry(): AgentToolRegistry {
   return registry
 }
 
+let baseEnv: ToolEnv = {}
+let editorEnv: Pick<ToolEnv, 'viewCenter' | 'frame' | 'dimensions'> = {}
+
 /**
- * Install agent tools for the mounted editor. Tools are registered with WebMCP only while the
- * person has agent access on, and the relay widget only runs while they also turned it on.
- * Returns the teardown for the editor's unmount.
+ * The editor lends its canvas helpers (where the view is centred, framing new nodes) while it is
+ * mounted; pass null on unmount. Tools still work without it (e.g. from the Controls view).
+ */
+export function setAgentEditorEnv(env: Pick<ToolEnv, 'viewCenter' | 'frame' | 'dimensions'> | null): void {
+  editorEnv = env ?? {}
+  getAgentToolRegistry().setEnv({ ...baseEnv, ...editorEnv })
+}
+
+/**
+ * Install agent tools for the app (once, from App.vue, so they work on every route). Tools are
+ * registered with WebMCP only while the person has agent access on, and the relay widget only
+ * runs while they also turned it on. Returns the teardown.
  */
 export function installAgentTools(env: ToolEnv): () => void {
   const reg = getAgentToolRegistry()
-  reg.setEnv(env)
+  baseEnv = env
+  reg.setEnv({ ...baseEnv, ...editorEnv })
   const agent = useAgentStore()
   let controller: AbortController | null = null
   let disposed = false
@@ -65,6 +78,7 @@ export function installAgentTools(env: ToolEnv): () => void {
       agent.relayStatus = 'connecting'
       try {
         await startRelayWidget()
+        if (disposed) { stopRelayWidget(); return }
         agent.relayStatus = 'on'
         agent.relayError = null
       } catch (e) {
@@ -90,6 +104,7 @@ export function installAgentTools(env: ToolEnv): () => void {
     stopRelayWidget()
     agent.runtime = null
     agent.relayStatus = 'off'
-    reg.setEnv({})
+    baseEnv = {}
+    reg.setEnv({ ...editorEnv })
   }
 }

@@ -25,6 +25,8 @@ import LoadingScreen from './components/branding/LoadingScreen.vue'
 import NotificationToasts from './components/layout/NotificationToasts.vue'
 import { usePersistence } from './composables/usePersistence'
 import { useExecutionEngine } from './composables/useExecutionEngine'
+import { installAgentTools } from './services/agentTools'
+import { initializeNodeRegistry } from './registry'
 import { aiInference } from './services/ai/AIInference'
 
 const route = useRoute()
@@ -50,13 +52,21 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 const executionEngine = useExecutionEngine()
 
 // Provide execution controls to all child components
-provide('executionControls', {
+const executionControls = {
   start: executionEngine.start,
   stop: executionEngine.stop,
   pause: executionEngine.pause,
   resume: executionEngine.resume,
   toggle: executionEngine.toggle,
-})
+}
+provide('executionControls', executionControls)
+
+// Node catalog first: the Controls view and agent tools need it even on a direct /controls load.
+initializeNodeRegistry()
+
+// AI agent tools (WebMCP), on every route: registered only while the person has agent access on.
+const uninstallAgentTools = installAgentTools({ execution: executionControls })
+onUnmounted(uninstallAgentTools)
 
 const isInitialized = ref(false)
 const isRouterReady = ref(false)
