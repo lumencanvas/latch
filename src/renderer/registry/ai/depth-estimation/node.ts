@@ -4,7 +4,7 @@ import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
 import { reportModelNeed, clearModelNeed } from '@/services/ai/modelNeeds'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
-import { pendingOperations, isNodeDisposed, getCached, setCached, triggerFired, convertToImageData, isSupportedImageInput, depthEstimateState, depthColor, type DepthResult } from '../shared'
+import { liveRunDue, liveRunStarted, liveRunFinished, pendingOperations, isNodeDisposed, getCached, setCached, triggerFired, convertToImageData, isSupportedImageInput, depthEstimateState, depthColor, type DepthResult } from '../shared'
 
 const definition: NodeDefinition = {
   id: 'depth-estimation',
@@ -87,13 +87,16 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const currentFrame = ctx.frameCount
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, -1)
   const due = hasTrigger || lastFrame < 0 || currentFrame - lastFrame >= interval
-  const imageData = due && !pendingOperations.has(ctx.nodeId) ? convertToImageData(source) : null
+  const imageData = !pendingOperations.has(ctx.nodeId) && liveRunDue(ctx.nodeId, due, ctx.deltaTime) ? convertToImageData(source) : null
   if (imageData) {
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
     setCached(`${ctx.nodeId}:loading`, true)
+    liveRunStarted(ctx.nodeId)
+    const startedAt = performance.now()
     const operation = (async () => {
       try {
         const depth = await aiInference.estimateDepth(imageData, model)
+        liveRunFinished(ctx.nodeId, performance.now() - startedAt)
         if (isNodeDisposed(ctx.nodeId)) return
         setCached(`${ctx.nodeId}:depth`, depth)
         setCached(`${ctx.nodeId}:loading`, false)

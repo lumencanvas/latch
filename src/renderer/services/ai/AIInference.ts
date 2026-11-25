@@ -135,7 +135,82 @@ function precisionText(dtype: unknown): string {
     .join(' · ')
 }
 
+type AIWorkerMessage = {
+  type: string
+  id: number
+  progress?: number
+  success?: boolean
+  data?: unknown
+  loaded?: boolean
+  used?: { device: string; dtype: unknown } | null
+  failures?: ModelInfo['fallbacks']
+  error?: string
+}
+type MessageOps = {
+  progress(id: number, p: number): void
+  settle(id: number, v: unknown): void
+  fail(id: number, e: Error): void
+}
+/** One worker's replies → that facade's pending requests (shared by both lanes). */
+function routeAIWorkerMessage(data: unknown, ops: MessageOps): void {
+  const msg = data as AIWorkerMessage
+  switch (msg.type) {
+    case 'progress':
+      // Routed by request id to that load's own callback (loadModel updates its model's info).
+      ops.progress(msg.id, msg.progress ?? 0)
+      break
+    case 'loaded':
+      if (msg.success) ops.settle(msg.id, { used: msg.used ?? null, failures: msg.failures ?? [] })
+      else ops.fail(msg.id, new Error(msg.error || 'Failed to load model'))
+      break
+    case 'result':
+      if (msg.success) ops.settle(msg.id, msg.data)
+      else ops.fail(msg.id, new Error(msg.error || 'Inference failed'))
+      break
+    case 'checkResult':
+      ops.settle(msg.id, msg.loaded)
+      break
+  }
+}
+
+/**
+ * Generative tasks (vision-language captions and answers, text generation) run for seconds per
+ * call. In the one AI worker they blocked everything behind them: a 27 MB depth model sat at 0%
+ * until a caption finished. They get their own worker (same script), spawned on first use, so
+ * depth, detection and the rest never queue behind a generation.
+ */
+const GENERATIVE_TASKS = new Set(['text-generation', 'text2text-generation', 'image-text-to-text', 'image-to-text'])
+
+class GenerativeLane extends WorkerFacade {
+  protected createWorker(): Worker {
+    return new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'module' })
+  }
+  protected get label(): string {
+    return 'AIInference (generative)'
+  }
+  protected handleMessage(data: unknown): void {
+    routeAIWorkerMessage(data, {
+      progress: (id, p) => this.reportProgress(id, p),
+      settle: (id, v) => this.settle(id, v),
+      fail: (id, e) => this.fail(id, e),
+    })
+  }
+  send<T>(message: Record<string, unknown>, opts: Parameters<WorkerFacade['request']>[1]): Promise<T> {
+    return this.request<T>(message, opts)
+  }
+  post(message: Record<string, unknown>): void {
+    this.notify(message)
+  }
+  get running(): boolean {
+    return this.worker !== null
+  }
+  stop(reason: string): void {
+    this.terminate(reason)
+  }
+}
+
 class AIInferenceService extends WorkerFacade {
+  private generative = new GenerativeLane({ defaultTimeout: DEFAULT_REQUEST_TIMEOUT })
   private _initialized = false
   private _modelInfo = new Map<string, ModelInfo>()
   private _listeners = new Set<() => void>()
@@ -167,37 +242,11 @@ class AIInferenceService extends WorkerFacade {
 
   // Route worker messages to the shared facade's pending-request bookkeeping.
   protected handleMessage(data: unknown): void {
-    const msg = data as {
-      type: string
-      id: number
-      progress?: number
-      success?: boolean
-      data?: unknown
-      loaded?: boolean
-      used?: { device: string; dtype: unknown } | null
-      failures?: ModelInfo["fallbacks"]
-      error?: string
-    }
-
-    switch (msg.type) {
-      case 'progress': {
-        // Routed by request id to that load's own callback (loadModel updates its model's info).
-        // Broadcasting to every loading model made parallel loads show each other's progress.
-        this.reportProgress(msg.id, msg.progress ?? 0)
-        break
-      }
-      case 'loaded':
-        if (msg.success) this.settle(msg.id, { used: msg.used ?? null, failures: msg.failures ?? [] })
-        else this.fail(msg.id, new Error(msg.error || 'Failed to load model'))
-        break
-      case 'result':
-        if (msg.success) this.settle(msg.id, msg.data)
-        else this.fail(msg.id, new Error(msg.error || 'Inference failed'))
-        break
-      case 'checkResult':
-        this.settle(msg.id, msg.loaded)
-        break
-    }
+    routeAIWorkerMessage(data, {
+      progress: (id, p) => this.reportProgress(id, p),
+      settle: (id, v) => this.settle(id, v),
+      fail: (id, e) => this.fail(id, e),
+    })
   }
 
   // Send a request to the worker and await its response. Transfers image pixel
@@ -208,11 +257,14 @@ class AIInferenceService extends WorkerFacade {
     onProgress?: ProgressCallback,
     timeout: number = DEFAULT_REQUEST_TIMEOUT
   ): Promise<T> {
-    return this.request<T>(message, {
+    const opts = {
       transfer: collectTransferables(message.args as readonly unknown[] | undefined),
       onProgress,
       timeout,
-    })
+    }
+    return GENERATIVE_TASKS.has(message.task as string)
+      ? this.generative.send<T>(message, opts)
+      : this.request<T>(message, opts)
   }
 
   // Check WebGPU availability
@@ -329,6 +381,7 @@ class AIInferenceService extends WorkerFacade {
     this._useBrowserCache = use
     // Notify worker of the change (no-op if the worker isn't spawned).
     this.notify({ type: 'setCache', enabled: use })
+    this.generative.post({ type: 'setCache', enabled: use })
     this.notifyListeners()
   }
 
@@ -403,6 +456,7 @@ class AIInferenceService extends WorkerFacade {
         if (settings.aiUseBrowserCache !== undefined) {
           this._useBrowserCache = settings.aiUseBrowserCache
           this.notify({ type: 'setCache', enabled: this._useBrowserCache })
+          this.generative.post({ type: 'setCache', enabled: this._useBrowserCache })
         }
       }
 
@@ -468,6 +522,7 @@ class AIInferenceService extends WorkerFacade {
     // Clear from worker (this disposes all pipelines)
     if (this.worker) {
       await this.sendToWorker({ type: 'clearCache' }, undefined, 30000)
+      if (this.generative.running) await this.generative.send({ type: 'clearCache' }, { timeout: 30000 }).catch(() => undefined)
     }
 
     // Clear local state since models are now unloaded
@@ -590,8 +645,9 @@ class AIInferenceService extends WorkerFacade {
         // Ignore timeout on dispose
       }
     }
-    // Terminate the worker and reject any still-in-flight requests.
+    // Terminate the workers and reject any still-in-flight requests.
     this.terminate('Service disposed')
+    this.generative.stop('Service disposed')
     this._loadedModels.clear()
     this._modelInfo.clear()
     this._initialized = false

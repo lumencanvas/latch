@@ -604,6 +604,34 @@ export function roundRectPath(
   ctx.roundRect(x, y, w, h, rr)
 }
 
+/**
+ * Frame-aware cadence for live AI nodes (after hackbuild's `detectCadenceMs`). Each run reads the
+ * frame's pixels back from the GPU on the main thread, so running more often than inference can
+ * answer only costs frames. A node waits at least twice its last inference time between runs, and
+ * twice that again while the flow is under 24 fps. `frameDue` is the node's own interval/trigger.
+ */
+export const MIN_LIVE_GAP_FACTOR = 2
+export const SLOW_FPS = 24
+export function liveRunDue(nodeId: string, frameDue: boolean, deltaTime: number, now = performance.now()): boolean {
+  // Smoothed frame time (seconds), so one long frame doesn't count as "slow".
+  const prev = getCached<number>(`${nodeId}:liveDt`, deltaTime)
+  const dt = prev * 0.9 + deltaTime * 0.1
+  setCached(`${nodeId}:liveDt`, dt)
+  if (!frameDue) return false
+  const lastAt = getCached<number>(`${nodeId}:liveLastAt`, -Infinity)
+  const latency = getCached<number>(`${nodeId}:liveLatency`, 0)
+  const slow = dt > 0 && 1 / dt < SLOW_FPS
+  const gap = Math.min(4000, latency * MIN_LIVE_GAP_FACTOR * (slow ? 2 : 1))
+  return now - lastAt >= gap
+}
+/** Record a live run's start (call when it starts) and its latency (call when it ends). */
+export function liveRunStarted(nodeId: string, now = performance.now()): void {
+  setCached(`${nodeId}:liveLastAt`, now)
+}
+export function liveRunFinished(nodeId: string, latencyMs: number): void {
+  setCached(`${nodeId}:liveLatency`, latencyMs)
+}
+
 export function runLiveDetection(
   ctx: ExecutionContext,
   detect: (imageData: ImageData) => Promise<Detection[]>,
@@ -667,8 +695,9 @@ export function runLiveDetection(
   }
   const gated = !!opts.need && !aiInference.isModelLoaded(opts.need.task, opts.need.modelId)
 
-  if (due && !gated && !pendingOperations.has(ctx.nodeId)) {
+  if (!gated && !pendingOperations.has(ctx.nodeId) && liveRunDue(ctx.nodeId, due, ctx.deltaTime)) {
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+    liveRunStarted(ctx.nodeId)
     setCached(`${ctx.nodeId}:loading`, true)
     const operation = (async () => {
       const startedAt = performance.now()
@@ -681,6 +710,7 @@ export function runLiveDetection(
         // Last inference latency (ms) for the HUD. First call includes the model
         // download, so it reads high until the model is cached.
         setCached(`${ctx.nodeId}:detectMs`, performance.now() - startedAt)
+        liveRunFinished(ctx.nodeId, performance.now() - startedAt)
         setCached(`${ctx.nodeId}:loading`, false)
         setCached(`${ctx.nodeId}:detectError`, null)
       } catch (error) {

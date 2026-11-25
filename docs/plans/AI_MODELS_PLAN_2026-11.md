@@ -1,6 +1,6 @@
 # AI models plan: better WebGPU and vision models, real model control (2026-11-25)
 
-Status: **approved 2026-11-25** (decisions in §5). **Phases 0 and 1 done** (2026-11-25); Phase 2 next.
+Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1 and 2a done** (2026-11-25); Phase 2b (MediaPipe in a worker) or Phase 3 next.
 
 Goal: LATCH's AI nodes should use current models that actually load, run on WebGPU where the
 machine has it (and fall back cleanly where it doesn't), and give the person one honest place to
@@ -177,6 +177,27 @@ Done and verified in Chrome on the upgraded runtime (transformers.js 4.3.2, onnx
   - Node model selects don't show fit. They're built when the app starts, before the probe answers.
     The Manager and the prompt do show it.
   - Sizes are still the hand-written estimates. Measured per-dtype sizes come with the weights store.
+
+## Phase 2a result (2026-11-25)
+
+- **Two lanes:**
+  - Generative tasks (VLM caption and VLA, text generation, text2text) run in their own worker
+    (`GenerativeLane` in `AIInference.ts`, spawned on first use).
+  - Depth and detection no longer queue behind a generation. Verified: with both loading together,
+    Depth rendered within 6 s at 58 fps while SmolVLM was still loading, and the caption followed.
+- **Frame-aware cadence** (`liveRunDue` in `registry/ai/shared.ts`, used by Depth, the live detector
+  and YOLO):
+  - A live node waits at least twice its last inference time between runs.
+  - It waits twice that again under 24 fps (smoothed frame time).
+  - Each run's main-thread pixel readback was the cost.
+- **Not using `createHub` yet.** Its value is the GPU queue and memory budget across models in one
+  worker. With two lanes and per-model ladders, the remaining contention is GPU time between the
+  lanes and the WebGL renderer, which one hub per worker can't see. Revisit with measurements.
+- **Phase 2b, MediaPipe in a worker: not started.**
+  - It means six tasks moving to an OffscreenCanvas GPU delegate, plus an ImageBitmap transfer per
+    frame.
+  - It's worth it only if profiling shows MediaPipe hurting frames. It runs at about 30 Hz with
+    results reused between frames, so measure first.
 
 ## 4. Phases
 

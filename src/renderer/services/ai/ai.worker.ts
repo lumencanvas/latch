@@ -153,6 +153,8 @@ function isVlm(task: string, model: string): boolean {
   return task === 'image-text-to-text' || (task === 'image-to-text' && VLM_MODEL_RE.test(model))
 }
 const vlmUsers = new Map<string, Set<string>>()
+/** The device and precision each loaded model ended up on. */
+const usedByKey = new Map<string, { device: string; dtype: unknown }>()
 
 // Get cache key for pipeline
 function getCacheKey(task: string, model: string): string {
@@ -166,7 +168,8 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
   // Already loaded?
   if (pipelines.has(key)) {
     vlmUsers.get(key)?.add(msg.task)
-    respond({ type: 'loaded', id: msg.id, success: true })
+    // A shared model (a VLM already loaded for its other task) reports where it actually runs.
+    respond({ type: 'loaded', id: msg.id, success: true, used: usedByKey.get(key) ?? null, failures: [] })
     return
   }
 
@@ -260,6 +263,7 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
       used = { device: device ?? 'wasm', dtype }
     }
     pipelines.set(key, pipe)
+    if (used) usedByKey.set(key, used)
     if (isVlm(msg.task, msg.model)) vlmUsers.set(key, new Set([msg.task]))
     respond({ type: 'loaded', id: msg.id, success: true, used, failures })
   } catch (error) {
@@ -646,6 +650,7 @@ function handleUnload(msg: UnloadModelMessage): void {
     disposePipe(pipe)
     pipelines.delete(key)
     vlmUsers.delete(key)
+    usedByKey.delete(key)
   }
 
   // YOLO sessions are keyed by model URL (msg.model carries it), not the

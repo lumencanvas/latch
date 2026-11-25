@@ -6,6 +6,22 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 149): AI Phase 2a: generative lane, live cadence; audit fix
+
+- **Audit (quick):**
+  - Missing-dtype 404s classify as `unknown`, so the ladder continues (verified against the
+    transformers error text).
+  - Fixed: a shared VLM reused by its second task now reports its real device (`usedByKey`).
+- **`GenerativeLane`:** a second WorkerFacade over the same `ai.worker.ts`. `sendToWorker` routes by
+  `GENERATIVE_TASKS`. setCache, clearCache and dispose go to both lanes.
+- **Cadence:** `liveRunDue` / `liveRunStarted` / `liveRunFinished` in shared.ts.
+  `tests/unit/executors/live-cadence.test.ts` (3).
+- **Verified in Chrome:** Depth ran at 58 fps while SmolVLM loaded; the caption arrived after.
+- **Next:**
+  - Phase 2b (MediaPipe in a worker) only after profiling.
+  - Otherwise Phase 3 (SlimSAM Segment node, LFM2-VL, depth worker output, detection
+    interpolation), then the weights cache (Phase 5), then the bellows workstation.
+
 ## 2026-11-25 (later 148): AI Phase 1: model records, device ladders, fit, licences
 
 - **Packages:** `@hackbuild/models` and `@hackbuild/ai-env` 0.1.1 (exact pins).

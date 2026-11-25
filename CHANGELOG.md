@@ -51,6 +51,9 @@
   where a loaded model runs, and each model's licence, with a badge when it limits use
   (non-commercial, terms apply). The "model needed" prompt shows the licence before downloading.
 - Agents can list models, sizes, licences and fit (`latch_list_models`); loading stays with you.
+- **Captions and text generation no longer hold up other models:** they run in their own worker, so
+  Depth and object detection load and run while a caption is being written. Live AI nodes also pace
+  themselves to how long inference takes, and back off further when the flow drops below 24 fps.
 
 ### Fixed
 - Tidy (auto-arrange) packed nodes with an image preview too tightly when they weren't on screen.
