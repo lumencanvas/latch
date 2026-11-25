@@ -28,6 +28,7 @@ const { onKeydown } = useDialogA11y({
 watch(() => uiStore.nodeExplorerOpen, (open) => {
   if (open) {
     explorerStore.reset()
+    explorerStore.setTab(uiStore.nodeExplorerTab)
   }
 })
 

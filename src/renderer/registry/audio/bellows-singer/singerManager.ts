@@ -158,7 +158,7 @@ function stopProbe(rec: SingerRec): void {
 
 /** Free a record's singer + probe. The probe goes first (it parks the singer's probe slot). */
 function retire(rec: SingerRec, releaseSeconds: number): void {
-  for (const [id, r] of recs) if (r === rec) held.delete(id)
+  for (const [id, r] of recs) if (r === rec) { held.delete(id); lastShape.delete(id) }
   stopProbe(rec)
   if (rec.singer) {
     try { rec.singer.dispose({ releaseSeconds }) } catch { /* ignore */ }
@@ -400,6 +400,8 @@ interface HeldKey {
   coda: number[]
 }
 const held = new Map<string, HeldKey>()
+/** Mouth Voice: the last phoneme/articulator values posted per node (re-sent after a new singer). */
+const lastShape = new Map<string, Record<string, number>>()
 const syllableCache = new Map<string, VocalPhones[]>()
 
 function phonemeIndices(mod: VoicePluginHandle['mod'], ipa: string): number[] {
@@ -528,6 +530,38 @@ export function vocalHeld(nodeId: string): boolean {
   return held.has(nodeId)
 }
 
+/** Vocal-engine params a live mouth may steer (settings offsets, -1..1, except glide in seconds). */
+const LIVE_SHAPE_PARAMS = new Set(['jawSet', 'lipRound', 'lipOpen', 'tongueHigh', 'tongueFront', 'nasal', 'glide', 'breath'])
+
+/** The engine's phoneme index for one IPA sound (-1 when it has none, or the voice is still loading). */
+export function vocalIndex(ipa: string): number {
+  const h = currentHandle()
+  return h ? h.mod.vocalPhonemeIndex(ipa) : -1
+}
+
+/**
+ * Live articulation for a held note: move to `phoneme` (the engine morphs at its glide speed) and
+ * set articulator offsets. Only values that changed are posted, so a node may call this every frame.
+ */
+export function vocalShape(nodeId: string, phoneme: number | null, params: Record<string, number>): void {
+  const s = recs.get(nodeId)?.singer
+  if (!s) return
+  const last = lastShape.get(nodeId) ?? {}
+  try {
+    if (phoneme !== null && phoneme >= 0 && last.phoneme !== phoneme) {
+      s.param('phoneme', phoneme)
+      last.phoneme = phoneme
+    }
+    for (const [k, v] of Object.entries(params)) {
+      if (!LIVE_SHAPE_PARAMS.has(k) || !Number.isFinite(v)) continue
+      if (last[k] !== undefined && Math.abs(last[k] - v) < 0.02) continue
+      s.param(k, v)
+      last[k] = v
+    }
+    lastShape.set(nodeId, last)
+  } catch { /* the singer was retired */ }
+}
+
 /** Route the node's voice to its wired Audio output (or master); the Tone node for the port. */
 export function routeSinger(nodeId: string, wired: boolean) {
   const rec = recs.get(nodeId)
@@ -552,6 +586,7 @@ function disposeAllSingers(): void {
   for (const rec of recs.values()) retire(rec, 0)
   recs.clear()
   held.clear()
+  lastShape.clear()
   handle = null
 }
 
@@ -570,6 +605,7 @@ export function __setVoiceHandleForTest(h: { b: unknown; mod: unknown } | null):
 export function __resetSingersForTest(): void {
   recs.clear()
   held.clear()
+  lastShape.clear()
   syllableCache.clear()
   handle = null
   dict = null

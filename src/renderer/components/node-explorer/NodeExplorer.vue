@@ -136,7 +136,7 @@ function handleSelectCategory(category: string | null) {
 // tabindex + arrow keys) — the same keyboard model as the flow tabs.
 const tabs = [
   { id: 'nodes', label: 'Nodes' },
-  { id: 'snippets', label: 'Snippets' },
+  { id: 'snippets', label: 'Example Flows' },
 ] as const
 
 function onTabKeydown(event: KeyboardEvent, tab: 'nodes' | 'snippets') {
