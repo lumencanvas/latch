@@ -18,6 +18,7 @@ import type { Bellows, BusHandle } from 'bellowsjs'
 import type { Singer, ArticulatorProbe, ArticulatorFrame, SingNote, SingResult } from 'bellows-voice'
 import type { PronouncingDictionary } from 'bellows-voice/text'
 import { defineLifecycle } from '@/engine/nodeState'
+import { loopNotesToFit, improviseMelody } from './voiceNodeShared'
 import {
   loadVoicePlugin,
   kernelGeneration,
@@ -56,8 +57,11 @@ export interface SingerConfig {
   dictionary: boolean
 }
 
+/** How a sung line's melody meets its words: as written, looped to cover every syllable, or made up. */
+export interface MelodyFit { mode: 'fixed' | 'loop' | 'improvise'; root: number; scale: string; bpm: number; beat: number }
+
 export type VoiceLine =
-  | { kind: 'sing'; lyrics: string; notes: SingNote[] }
+  | { kind: 'sing'; lyrics: string; notes: SingNote[]; fit?: MelodyFit }
   | { kind: 'speak'; text: string; rate: number; hz?: number; breath: 'between' | 'all' | 'none' }
   | { kind: 'beat'; pattern: string; bpm: number; swing: number; repeat: number; vel: number }
 
@@ -237,6 +241,31 @@ function applyConfig(rec: SingerRec, h: VoicePluginHandle, cfg: SingerConfig): v
   else stopProbe(rec)
 }
 
+/**
+ * The notes to sing a line on. Syllables are counted with the singer's own dictionary and accent,
+ * so the count matches what it will actually sing; a melody shorter than the words loops, or a
+ * fresh one is made up for them.
+ */
+function fitMelody(h: VoicePluginHandle, s: Singer, line: Extract<VoiceLine, { kind: 'sing' }>): SingNote[] {
+  const fit = line.fit
+  if (!fit || fit.mode === 'fixed') return line.notes
+  let syls: { nucleus?: { stress?: number }; wordEnd?: boolean; phraseEnd?: boolean }[] = []
+  try {
+    syls = h.mod.lyricsToSyllables(line.lyrics, {
+      dictionary: s.dictionary ?? undefined,
+      accent: typeof s.accent === 'string' ? s.accent : undefined,
+    }) as typeof syls
+  } catch {
+    return line.notes
+  }
+  if (syls.length === 0) return line.notes
+  if (fit.mode === 'loop') return loopNotesToFit(line.notes, syls.length)
+  return improviseMelody(
+    syls.map((x) => ({ stress: x.nucleus?.stress ?? 0, wordEnd: !!x.wordEnd, phraseEnd: !!x.phraseEnd })),
+    { root: fit.root, scale: fit.scale, bpm: fit.bpm, beat: fit.beat, seed: line.lyrics },
+  )
+}
+
 function lineEndOf(result: SingResult): number {
   let end = 0
   for (const p of result.phrases) if (p.end > end) end = p.end
@@ -248,7 +277,7 @@ function perform(rec: SingerRec, h: VoicePluginHandle, line: VoiceLine): void {
   if (!s) return
   try {
     const result = line.kind === 'sing'
-      ? s.sing(line.lyrics, line.notes, { accent: s.accent })
+      ? s.sing(line.lyrics, fitMelody(h, s, line), { accent: s.accent })
       : line.kind === 'beat'
         ? s.beatbox(line.pattern, { bpm: line.bpm, swing: line.swing, repeat: line.repeat, vel: line.vel })
         : s.speak(line.text, { accent: s.accent, rate: line.rate, hz: line.hz, breath: line.breath })

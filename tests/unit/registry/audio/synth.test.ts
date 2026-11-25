@@ -63,3 +63,31 @@ describe('synth on bellows', () => {
     expect(setMonoGate).toHaveBeenLastCalledWith('s', false, 65, expect.any(Number))
   })
 })
+
+import { presetMacroParams, macrosForEngine, presetEngine, MACRO_MAP, PARAM_SPECS } from '@/registry/audio/bellows-instrument/engineParams'
+
+describe('preset dials (macros)', () => {
+  it('every mapped param exists on its engine', () => {
+    for (const [engine, map] of Object.entries(MACRO_MAP)) {
+      const names = new Set(PARAM_SPECS[engine].map((p) => p.name))
+      for (const targets of Object.values(map)) for (const [param] of targets ?? []) expect(names.has(param), `${engine}.${param}`).toBe(true)
+    }
+  })
+
+  it('centred dials leave the preset untouched; turned dials shade its own values within range', () => {
+    const base = (n: string) => ({ damp: 0.5, decay: 2 } as Record<string, number>)[n]
+    expect(presetMacroParams('pluck', base, {})).toEqual({})
+    const p = presetMacroParams('pluck', base, { tone: 1, length: -1 })
+    expect(p.damp).toBeLessThan(0.5)
+    expect(p.decay).toBeCloseTo(0.5, 5)
+    expect(presetMacroParams('pluck', base, { tone: 5 }).damp).toBeGreaterThanOrEqual(0)
+  })
+
+  it('a preset sound shows only the dials its engine responds to', () => {
+    expect(presetEngine('cello')).toBe('string')
+    expect(macrosForEngine('string')).toContain('vibrato')
+    expect(SYNTH_SOUNDS.find((s) => s.value === 'strings')!.knobs).toContain('m_vibrato')
+    expect(SYNTH_SOUNDS.find((s) => s.value === 'marimba')!.knobs).not.toContain('m_vibrato')
+    expect(cfgOf({ instrument: 'piano', m_tone: 0.5 }).macros).toEqual({ tone: 0.5 })
+  })
+})

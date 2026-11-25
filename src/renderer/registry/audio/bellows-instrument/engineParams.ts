@@ -449,6 +449,8 @@ export function buildVoiceControls(defaultEngine: string): ControlDefinition[] {
   return [
     // Casual layer: pick one of 50 ready-to-play instruments. '' → manual engine mode.
     { id: 'preset', type: 'select', label: 'Preset', default: '', description: 'A ready-made instrument, or Manual to build your own from an engine.', props: { options: PRESET_SELECT_OPTIONS } },
+    // Preset dials: shade the chosen preset (preset mode only).
+    ...buildMacroControls(),
     // Structured layer: engine + its param surface (manual mode only).
     { id: 'engine', type: 'select', label: 'Engine', default: defaultEngine, when: { preset: '' }, props: { options: ENGINE_SELECT_OPTIONS } },
     ...buildEngineParamControls(),
@@ -463,6 +465,85 @@ export function buildVoiceControls(defaultEngine: string): ControlDefinition[] {
   ]
 }
 
+// ── Preset dials (macros) ────────────────────────────────────────────────────
+/**
+ * A preset is a fixed set of engine params. These dials shade it without leaving preset mode: each
+ * macro maps onto the params of the preset's own engine, relative to the preset's values, so 0 is
+ * the instrument exactly as voiced. Tone / Attack / Release / Length run −1..1; Vibrato 0..1.
+ */
+export const MACROS = ['tone', 'attack', 'release', 'length', 'vibrato'] as const
+export type MacroId = typeof MACROS[number]
+export type Macros = Partial<Record<MacroId, number>>
+
+/** exp: value × factor^m.  lin: value + m × fraction of the param's range. */
+type MacroTarget = [param: string, kind: 'exp' | 'lin', amount: number]
+
+export const MACRO_MAP: Record<string, Partial<Record<MacroId, MacroTarget[]>>> = {
+  va: { tone: [['cutoff', 'exp', 4]], attack: [['attack', 'exp', 8], ['fAttack', 'exp', 8]], release: [['release', 'exp', 4], ['fRelease', 'exp', 4]], length: [['decay', 'exp', 4], ['fDecay', 'exp', 4]] },
+  // FM 'brightness' is velocity sensitivity (higher = darker at normal velocities), so Tone lowers it
+  // and lifts the modulators' sustain and feedback.
+  fm: { tone: [['brightness', 'exp', 0.3], ['mSustain', 'lin', 0.35], ['feedback', 'lin', 0.15]], attack: [['attack', 'exp', 8], ['mAttack', 'exp', 8]], release: [['release', 'exp', 4], ['mRelease', 'exp', 4]], length: [['decay', 'exp', 4], ['mDecay', 'exp', 4]] },
+  additive: { tone: [['rolloff', 'lin', 0.35]], attack: [['attack', 'exp', 8]], release: [['release', 'exp', 4]], length: [['decay', 'exp', 4]] },
+  wavetable: { tone: [['cutoff', 'exp', 4]], attack: [['attack', 'exp', 8]], release: [['release', 'exp', 4]], length: [['decay', 'exp', 4]] },
+  pluck: { tone: [['damp', 'lin', -0.4], ['pickPos', 'lin', -0.12]], length: [['decay', 'exp', 4]] },
+  string: { tone: [['damp', 'lin', -0.35]], attack: [['attackBite', 'lin', -0.5]], length: [['sustain', 'lin', 0.45]], vibrato: [['vibDepth', 'lin', 0.6]] },
+  tube: { tone: [['breath', 'lin', 0.3], ['noise', 'lin', 0.2]] },
+  modal: { tone: [['brightness', 'lin', 0.4], ['strikeHardness', 'lin', 0.4]], length: [['decay', 'exp', 4]] },
+  westcoast: { tone: [['foldAmount', 'exp', 3]], length: [['lpgDecay', 'exp', 4]] },
+  formant: { tone: [['breath', 'lin', 0.3]], vibrato: [['vibratoDepth', 'lin', 0.6]] },
+  harmonic: { tone: [['brightness', 'lin', 0.4]], attack: [['attack', 'exp', 8]], release: [['release', 'exp', 4]] },
+}
+
+/** The dials that do something on an engine. */
+export const macrosForEngine = (engine: string): MacroId[] => MACROS.filter((m) => (MACRO_MAP[engine]?.[m]?.length ?? 0) > 0)
+
+/** Engine of a preset id ('' when unknown). */
+export const presetEngine = (presetId: string): string => PRESETS.find((p) => p.id === presetId)?.engineId ?? ''
+
+/**
+ * The params to push for a preset's macros: only those that differ from the preset (an all-zero
+ * dial set is empty, so the preset plays untouched). `base` gives the preset's value for a param.
+ */
+export function presetMacroParams(engine: string, base: (name: string) => number | undefined, macros: Macros): Record<string, number> {
+  const out: Record<string, number> = {}
+  const map = MACRO_MAP[engine]
+  if (!map) return out
+  for (const m of MACROS) {
+    const amt = macros[m] ?? 0
+    if (!Number.isFinite(amt) || Math.abs(amt) < 1e-3) continue
+    for (const [param, kind, k] of map[m] ?? []) {
+      const spec = (PARAM_SPECS[engine] ?? []).find((p) => p.name === param)
+      const b = out[param] ?? base(param) ?? spec?.default
+      if (b === undefined) continue
+      let v = kind === 'exp' ? b * Math.pow(k, amt) : b + amt * k * (spec ? spec.max - spec.min : 1)
+      if (spec) v = Math.max(spec.min, Math.min(spec.max, v))
+      out[param] = v
+    }
+  }
+  return out
+}
+
+/** Preset dial controls, shown in preset mode. */
+export function buildMacroControls(when: Record<string, unknown> = { preset: { ne: '' } }): ControlDefinition[] {
+  return [
+    { id: 'm_tone', type: 'slider', label: 'Tone (darker ↔ brighter)', default: 0, when, props: { min: -1, max: 1, step: 0.01 }, description: 'Shades the preset: 0 is the instrument as voiced.' },
+    { id: 'm_attack', type: 'slider', label: 'Attack (snappier ↔ softer)', default: 0, when, props: { min: -1, max: 1, step: 0.01 } },
+    { id: 'm_release', type: 'slider', label: 'Release (shorter ↔ longer)', default: 0, when, props: { min: -1, max: 1, step: 0.01 } },
+    { id: 'm_length', type: 'slider', label: 'Length (shorter ↔ longer ring)', default: 0, when, props: { min: -1, max: 1, step: 0.01 } },
+    { id: 'm_vibrato', type: 'slider', label: 'Vibrato', default: 0, when, props: { min: 0, max: 1, step: 0.01 }, description: 'Bowed strings and voices.' },
+  ]
+}
+
+/** Read the macro controls (m_tone…) from a control map. */
+export function readMacros(controls: Map<string, unknown>): Macros {
+  const out: Macros = {}
+  for (const m of MACROS) {
+    const v = controls.get(`m_${m}`)
+    if (typeof v === 'number' && Number.isFinite(v) && v !== 0) out[m] = v
+  }
+  return out
+}
+
 // ── Pure config resolution (unit-tested; no kernel) ──────────────────────────
 export interface VoiceConfig {
   /** '' = manual engine+params; otherwise a preset id (params fetched at runtime). */
@@ -474,6 +555,8 @@ export interface VoiceConfig {
   insertFx: string | null
   /** Insert fx param overrides (name → value), applied on top of the effect's defaults. */
   fxParams: Record<string, number>
+  /** Preset dials (preset mode only); absent or empty = the preset as voiced. */
+  macros?: Macros
   /** Shared reverb send level 0..1. Nodes pass 0: the bus returns into master, past the wire. */
   send: number
   gain: number
@@ -553,6 +636,7 @@ export function resolveVoiceConfig(controls: Map<string, unknown>): VoiceConfig 
     params,
     insertFx,
     fxParams,
+    macros: preset ? readMacros(controls) : undefined,
     send: Math.max(0, Math.min(1, numOf(controls.get('sendLevel'), 0))),
     gain: Math.max(0, numOf(controls.get('gain'), 0.8)),
     pan: Math.max(-1, Math.min(1, numOf(controls.get('pan'), 0))),

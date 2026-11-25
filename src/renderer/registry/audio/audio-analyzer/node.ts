@@ -18,6 +18,7 @@ const definition: NodeDefinition = {
     { id: 'bass', type: 'number', label: 'Bass' },
     { id: 'mid', type: 'number', label: 'Mid' },
     { id: 'high', type: 'number', label: 'High' },
+    { id: 'spectrum', type: 'data', label: 'Spectrum (32 bands, 0–1)' },
   ],
   controls: [
     { id: 'smoothing', type: 'number', label: 'Smoothing', default: 0.8 },
@@ -33,6 +34,22 @@ const definition: NodeDefinition = {
   },
 }
 
+/** FFT dB bins → `n` log-spaced bands, 0..1 (−90 dB → 0, −20 dB → 1: the range music actually uses). Pure (tested). */
+export function spectrumBands(fft: ArrayLike<number>, n: number): number[] {
+  const bins = fft.length
+  const out: number[] = []
+  if (bins < 2) return out
+  for (let b = 0; b < n; b++) {
+    const lo = Math.max(1, Math.floor(Math.pow(bins, b / n)))
+    const hi = Math.max(lo + 1, Math.floor(Math.pow(bins, (b + 1) / n)))
+    let sum = 0, k = 0
+    for (let i = lo; i < Math.min(hi, bins); i++) { sum += fft[i]; k++ }
+    const db = k ? sum / k : -100
+    out.push(Math.max(0, Math.min(1, (db + 90) / 70)))
+  }
+  return out
+}
+
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
   const smoothing = (ctx.controls.get('smoothing') as number) ?? 0.8
@@ -43,6 +60,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     outputs.set('bass', 0)
     outputs.set('mid', 0)
     outputs.set('high', 0)
+    outputs.set('spectrum', [])
     return outputs
   }
 
@@ -107,6 +125,7 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   outputs.set('bass', bass)
   outputs.set('mid', mid)
   outputs.set('high', high)
+  outputs.set('spectrum', spectrumBands(fftData, 32))
   return outputs
 }
 

@@ -434,6 +434,126 @@ function insertStarterTemplate(snippetId: string) {
   })
 }
 
+// ── Example flows: place under the cursor, or open as a new flow ─────────────
+// Insert from the Example Flows list puts the editor in placement mode: an outline of the whole
+// example follows the pointer over the canvas and a click drops it there (Esc / right-click /
+// a click outside the canvas cancels).
+const PLACE_NODE = { width: 200, height: 120 } // matches snippetOffsetToCenter's node size
+const placingSnippet = computed(() =>
+  uiStore.placingSnippetId ? flowSnippets.find((s) => s.id === uiStore.placingSnippetId) ?? null : null,
+)
+const placePointer = ref<{ x: number; y: number } | null>(null)
+
+/** The outline, in screen pixels relative to the pointer (scaled by the canvas zoom). */
+const placementGhost = computed(() => {
+  const snip = placingSnippet.value
+  if (!snip || snip.nodes.length === 0) return null
+  const zoom = vueFlow.viewport.value.zoom || 1
+  const xs = snip.nodes.map((n) => n.position.x)
+  const ys = snip.nodes.map((n) => n.position.y)
+  const midX = (Math.min(...xs) + Math.max(...xs) + PLACE_NODE.width) / 2
+  const midY = (Math.min(...ys) + Math.max(...ys) + PLACE_NODE.height) / 2
+  const w = 180 * zoom
+  const h = 70 * zoom
+  const rects = new Map(snip.nodes.map((n) => [n.id, { x: (n.position.x - midX) * zoom, y: (n.position.y - midY) * zoom, w, h, type: n.type }]))
+  const lines = snip.edges.map((e) => {
+    const a = rects.get(e.source)
+    const b = rects.get(e.target)
+    return a && b ? { x1: a.x + a.w, y1: a.y + a.h / 2, x2: b.x, y2: b.y + b.h / 2 } : null
+  }).filter((l): l is { x1: number; y1: number; x2: number; y2: number } => !!l)
+  return { rects: [...rects.values()], lines, name: snip.name }
+})
+
+function overCanvas(clientX: number, clientY: number): boolean {
+  const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+  if (!el || el.closest('.snippet-ghost-label')) return false
+  if (el.closest('.vue-flow__panel, .vue-flow__controls, .vue-flow__minimap')) return false
+  return !!el.closest('.flow-canvas, .canvas-empty-state')
+}
+
+function placeSnippetAt(clientX: number, clientY: number) {
+  const snippet = placingSnippet.value
+  uiStore.cancelSnippetPlacement()
+  if (!snippet || !flowsStore.activeFlow) return
+  const canvas = document.querySelector('.flow-canvas')
+  if (!canvas) return
+  const { left, top } = canvas.getBoundingClientRect()
+  const center = project({ x: clientX - left, y: clientY - top })
+  const nodes = snippetToInsertableNodes(snippet, (type) => nodesStore.getDefinition(type))
+  const before = startBatch()
+  const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, snippetOffsetToCenter(snippet, center, PLACE_NODE))
+  if (nodeIds.length === 0) return
+  endBatch(before, `Insert ${snippet.name}`)
+  uiStore.selectNodes(nodeIds)
+}
+
+function onPlaceMove(e: PointerEvent) { placePointer.value = { x: e.clientX, y: e.clientY } }
+function onPlaceDown(e: PointerEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.button === 0 && overCanvas(e.clientX, e.clientY)) placeSnippetAt(e.clientX, e.clientY)
+  else uiStore.cancelSnippetPlacement()
+}
+function onPlaceKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); uiStore.cancelSnippetPlacement() }
+}
+function onPlaceContext(e: MouseEvent) { e.preventDefault() }
+// A click that started the placement (or the pointerup of the placing click) must not reach the canvas.
+function swallowClick(e: MouseEvent) { e.preventDefault(); e.stopPropagation() }
+
+function stopPlacementListeners() {
+  window.removeEventListener('pointermove', onPlaceMove, true)
+  window.removeEventListener('pointerdown', onPlaceDown, true)
+  window.removeEventListener('keydown', onPlaceKey, true)
+  window.removeEventListener('contextmenu', onPlaceContext, true)
+  window.removeEventListener('click', swallowClick, true)
+  document.body.classList.remove('latch-placing-snippet')
+}
+
+watch(placingSnippet, (snip) => {
+  stopPlacementListeners()
+  if (!snip) { placePointer.value = null; return }
+  window.addEventListener('pointermove', onPlaceMove, true)
+  window.addEventListener('pointerdown', onPlaceDown, true)
+  window.addEventListener('keydown', onPlaceKey, true)
+  window.addEventListener('contextmenu', onPlaceContext, true)
+  // Arm the click swallow after the current (button) click has finished dispatching.
+  setTimeout(() => { if (placingSnippet.value) window.addEventListener('click', swallowClick, true) }, 0)
+  document.body.classList.add('latch-placing-snippet')
+})
+
+// Focus a node on request (the loading indicator, the model prompt): select it and pan to it.
+watch(
+  () => uiStore.focusNodeRequest?.nonce,
+  () => {
+    const id = uiStore.focusNodeRequest?.id
+    const node = id ? flowsStore.activeFlow?.nodes.find((n) => n.id === id) : undefined
+    if (!node) return
+    uiStore.selectNodes([node.id])
+    vueFlow.setCenter(node.position.x + 100, node.position.y + 60, { zoom: Math.max(0.8, vueFlow.viewport.value.zoom), duration: 300 })
+  },
+)
+
+// Open as a new flow: a fresh tab named after the example, framed once Vue Flow has measured it.
+watch(
+  () => uiStore.openSnippetRequest?.nonce,
+  () => {
+    const id = uiStore.openSnippetRequest?.id
+    const snippet = id ? flowSnippets.find((s) => s.id === id) : undefined
+    if (!snippet) return
+    flowsStore.createFlow(snippet.name)
+    const nodes = snippetToInsertableNodes(snippet, (type) => nodesStore.getDefinition(type))
+    const { nodeIds } = flowsStore.insertSubgraph(nodes, snippet.edges, { x: 0, y: 0 })
+    if (nodeIds.length === 0) return
+    // Frame from the stored positions: with only-render-visible-elements, nodes outside the view
+    // are never measured, so fitView would frame only what is already on screen.
+    const xs = nodes.map((n) => n.position.x)
+    const ys = nodes.map((n) => n.position.y)
+    const rect = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs) + PLACE_NODE.width, height: Math.max(...ys) - Math.min(...ys) + PLACE_NODE.height }
+    setTimeout(() => { vueFlow.fitBounds(rect, { padding: 0.12 }) }, 150)
+  },
+)
+
 // Open the full "Starter Flow" showcase (the demo behind the empty-state CTA) as a NEW tab —
 // 3D scene, keyboard→synth→analysis, and MediaPipe hand/face tracking. Non-destructive: imported
 // with replace:false so any other open flows are untouched; the file's activeFlowId switches to it.
@@ -937,6 +1057,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  stopPlacementListeners()
+  uiStore.cancelSnippetPlacement()
   // Clear any pending connection error timeout
   if (connectionErrorTimeout) {
     clearTimeout(connectionErrorTimeout)
@@ -983,6 +1105,8 @@ onUnmounted(() => {
       :edges-updatable="true"
       :selectable-edges="true"
       :only-render-visible-elements="true"
+      :min-zoom="0.1"
+      :max-zoom="4"
       fit-view-on-init
       class="flow-canvas"
       @dragover="onDragOver"
@@ -1043,6 +1167,43 @@ onUnmounted(() => {
       </Panel>
     </VueFlow>
 
+    <!-- Example flow being placed: follows the pointer until a click drops it -->
+    <Teleport to="body">
+      <div
+        v-if="placementGhost && placePointer"
+        class="snippet-ghost"
+        :style="{ left: `${placePointer.x}px`, top: `${placePointer.y}px` }"
+        aria-hidden="true"
+      >
+        <svg
+          class="snippet-ghost-wires"
+          overflow="visible"
+        >
+          <line
+            v-for="(l, i) in placementGhost.lines"
+            :key="i"
+            :x1="l.x1"
+            :y1="l.y1"
+            :x2="l.x2"
+            :y2="l.y2"
+          />
+        </svg>
+        <div
+          v-for="(r, i) in placementGhost.rects"
+          :key="i"
+          class="snippet-ghost-node"
+          :style="{ left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, borderColor: templateNodeColor(r.type) }"
+        />
+      </div>
+    </Teleport>
+    <div
+      v-if="placingSnippet"
+      class="snippet-ghost-label"
+      role="status"
+    >
+      Click to place <strong>{{ placingSnippet.name }}</strong> · Esc to cancel
+    </div>
+
     <!-- Empty state -->
     <div
       v-if="flowsStore.activeNodes.length === 0"
@@ -1070,7 +1231,10 @@ onUnmounted(() => {
             :get-color="templateNodeColor"
           />
           <span class="starter-name">{{ template.name }}</span>
-          <span class="starter-desc">{{ template.description }}</span>
+          <span
+            class="starter-desc"
+            :title="template.description"
+          >{{ template.description }}</span>
           <span
             v-if="template.requires?.length"
             class="starter-needs"
@@ -1174,6 +1338,48 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.snippet-ghost {
+  position: fixed;
+  z-index: 3000;
+  pointer-events: none;
+}
+
+.snippet-ghost-node {
+  position: absolute;
+  border: 2px dashed var(--color-neutral-500);
+  background: color-mix(in srgb, var(--color-neutral-0) 55%, transparent);
+  border-radius: var(--radius-xs);
+}
+
+.snippet-ghost-wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+}
+
+.snippet-ghost-wires line {
+  stroke: var(--color-neutral-500);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.snippet-ghost-label {
+  position: absolute;
+  top: var(--space-3);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-neutral-800);
+  color: var(--color-neutral-0);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  pointer-events: none;
+}
+
 .editor-view {
   width: 100%;
   height: 100%;
@@ -1353,6 +1559,12 @@ onUnmounted(() => {
   font-size: var(--font-size-xs);
   color: var(--color-neutral-500);
   line-height: 1.3;
+  /* Long descriptions are cut (full text on hover) so the six cards stay one height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Permission / hardware hint, so a camera or mic prompt is never a surprise. */
@@ -1519,5 +1731,13 @@ onUnmounted(() => {
 .modal-actions .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+</style>
+
+<style>
+/* Example flow placement: crosshair everywhere while the outline follows the pointer. */
+body.latch-placing-snippet,
+body.latch-placing-snippet * {
+  cursor: crosshair !important;
 }
 </style>

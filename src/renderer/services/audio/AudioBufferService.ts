@@ -226,6 +226,7 @@ class AudioBufferServiceImpl {
 
     this.ringBuffer = []
     this.isConnected = false
+    this.noiseFloor = null
     this.vadState = {
       speaking: false,
       speechStartTime: null,
@@ -304,6 +305,19 @@ class AudioBufferServiceImpl {
     this.vadThreshold = threshold
   }
 
+  /** Start timing a new utterance (after a forced transcription of a long one). */
+  restartUtterance(): void {
+    if (this.vadState.speaking) this.vadState.speechStartTime = Date.now()
+  }
+
+  /** Slowly-tracked background level (RMS) while nobody is speaking. */
+  private noiseFloor: number | null = null
+
+  /** The threshold actually used: the set one, or clearly above the room's background noise. */
+  effectiveVadThreshold(): number {
+    return Math.max(this.vadThreshold, (this.noiseFloor ?? 0) * 2.5)
+  }
+
   setVadSilenceDuration(durationMs: number): void {
     this.vadSilenceDuration = durationMs
   }
@@ -335,7 +349,19 @@ class AudioBufferServiceImpl {
     const now = Date.now()
     const wasSpeak = this.vadState.speaking
 
-    if (rms > this.vadThreshold) {
+    // Learn the room: a steady hum or fan above the fixed threshold used to count as endless speech,
+    // so speech never "ended" and nothing was ever transcribed. Track the floor while quiet (fast
+    // down, slow up) and require speech to stand clearly above it.
+    if (this.noiseFloor === null) this.noiseFloor = rms
+    else if (!this.vadState.speaking || rms < this.noiseFloor) {
+      const k = rms < this.noiseFloor ? 0.2 : 0.01
+      this.noiseFloor += (rms - this.noiseFloor) * k
+    } else if (this.vadState.speechStartTime && now - this.vadState.speechStartTime > 4000) {
+      // "Speaking" for a long time at a steady level is more likely noise: let the floor creep up.
+      this.noiseFloor += (rms - this.noiseFloor) * 0.002
+    }
+
+    if (rms > this.effectiveVadThreshold()) {
       if (!this.vadState.speaking) {
         this.vadState.speaking = true
         this.vadState.speechStartTime = now

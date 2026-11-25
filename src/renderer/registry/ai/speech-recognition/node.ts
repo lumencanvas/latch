@@ -2,6 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
+import { reportModelNeed, clearModelNeed } from '@/services/ai/modelNeeds'
 import { pendingOperations, getCached, setCached, triggerFired, getSTTState, isToneAudioNode, isNodeDisposed } from '../shared'
 
 const definition: NodeDefinition = {
@@ -99,6 +100,7 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   const isLoaded = aiInference.isModelLoaded('automatic-speech-recognition', modelId)
 
   if (!isLoaded) {
+    reportModelNeed(ctx.nodeId, 'automatic-speech-recognition', modelId)
     outputs.set('text', getCached(`${ctx.nodeId}:text`, ''))
     outputs.set('partial', getCached(`${ctx.nodeId}:partial`, ''))
     outputs.set('speaking', false)
@@ -106,6 +108,7 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
     outputs.set('_error', 'Model not loaded. Open AI Model Manager to load.')
     return outputs
   }
+  clearModelNeed(ctx.nodeId)
 
   // Get node-specific STT state
   const state = getSTTState(ctx.nodeId)
@@ -200,8 +203,19 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
       }
     }
   } else if (mode === 'vad') {
-    // VAD mode: transcribe on speech→silence transition
-    if (!isSpeaking && state.vadWasSpeaking) {
+    // VAD mode: transcribe on speech→silence transition, or once an utterance has run for the whole
+    // buffer (continuous talking or background noise would otherwise never reach a silence).
+    const speechStart = vadState.speechStartTime
+    const tooLong = isSpeaking && speechStart != null && now - speechStart >= bufferDuration * 1000
+    if (tooLong) {
+      const buffer = state.audioBufferService.getFullBuffer()
+      if (buffer.length > 0) {
+        shouldTranscribe = true
+        audioToTranscribe = buffer
+        state.audioBufferService.clearBuffer()
+        state.audioBufferService.restartUtterance()
+      }
+    } else if (!isSpeaking && state.vadWasSpeaking) {
       // Speech just ended - transcribe the captured speech
       const buffer = state.audioBufferService.getFullBuffer()
       if (buffer.length > 0) {

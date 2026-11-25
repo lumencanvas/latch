@@ -44,7 +44,7 @@ export const groupState = new Map<string, {
 /** The node-owned fallback material of a primitive — the ONLY material a primitive disposes. */
 export const primitiveDefaultMaterials = new Map<string, THREE.Material>()
 /** Param signature of each primitive's current geometry (rebuild only when it changes). */
-const primitiveGeoKeys = new Map<string, string>()
+export const primitiveGeoKeys = new Map<string, string>()
 
 /**
  * Shared per-frame update for the primitive mesh nodes. Previously each rebuilt its
@@ -81,6 +81,9 @@ export function updatePrimitiveMesh(
   let mesh = nodeObjects.get(ctx.nodeId) as THREE.Mesh | undefined
   if (!(mesh instanceof THREE.Mesh)) {
     mesh = new THREE.Mesh(makeGeometry(), material)
+    // Lights already cast shadows; primitives now take part (a floor plane catches them).
+    mesh.castShadow = true
+    mesh.receiveShadow = true
     nodeObjects.set(ctx.nodeId, mesh)
     primitiveGeoKeys.set(ctx.nodeId, geoKey)
   } else {

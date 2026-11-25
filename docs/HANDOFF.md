@@ -6,6 +6,56 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 142): 1.4.2: model-load prompt + loading pill, example placement, synth dials, singer melody modes
+
+- **Runtime status** (`components/layout/RuntimeStatus.vue`, mounted in App): AI executors report unloaded
+  models to `services/ai/modelNeeds.ts` (from `runModelInference` and Speech to Text); on Play a card
+  offers to load them; a pill lists loading models (aiInference.listModelInfo) and nodes with
+  `loading` outputs (AI-model nodes excluded, their `loading` also means inferring). Click → 
+  `uiStore.requestFocusNode` → EditorView pans/selects. Verified in Chrome with Sing It Back.
+- **Example placement:** `uiStore.beginSnippetPlacement` (ghost follows pointer, click places, Esc /
+  right-click / outside cancels) and `requestOpenSnippet` (new tab, framed with `fitBounds` from stored
+  positions: `only-render-visible-elements` leaves off-screen nodes unmeasured so fitView fails).
+  Canvas min-zoom 0.1. Snippet cards restacked + line-clamped.
+- **Synth/Bellows preset macros:** `engineParams.ts` MACRO_MAP (Tone/Attack/Release/Length/Vibrato per
+  engine, relative to the preset's params; zero dials push nothing). Note FM `brightness` is velocity
+  sensitivity (higher = darker), so Tone lowers it.
+- **Singer:** `melodyMode` loop (default) / fixed / improvise; syllables counted with the singer's own
+  dictionary + accent (`fitMelody` in singerManager). Measured: 14 words on 3 notes sing 1 s / 7 s / 6.7 s.
+- **Speech to Text VAD:** adaptive noise floor in AudioBufferService + forced transcription after
+  `bufferDuration` of continuous speech (the fake-mic tone held VAD "speaking" forever before).
+- **Air Harp:** strum on quantized-note change (`changed` node) instead of a metronome; Tracking Overlay
+  `strings` guide lines; Text Overlay instructions (+ new `subtitle` control).
+- Not verified with real hands/faces/voice: Air Harp strum feel, Mouth Voice v2, Sing It Back with speech.
+
+## 2026-11-24 (later 141): 1.4.1 shipped; Synth on bellows; Mouth Voice v2 + calibration; 3D game nodes
+
+- **1.4.1 released** (PR #5, tag v1.4.1, Netlify live). Release workflow: Windows + Linux built, both mac
+  jobs failed notarization again (Apple agreement missing/expired: same as 1.3.0/1.4.0). After the
+  agreement is signed: `gh run rerun <Release run> --failed` for v1.3.0, v1.4.0 and v1.4.1.
+- **Keyboard → Synth notes sustaining forever (in 1.4.1):** three causes. Synth released only `prevNote`
+  (two keys held = first voice orphaned), its release `setTimeout` deleted whichever note was current
+  when it fired, and `SynthNode.vue` ran a second WebAudio engine straight to `destination` (bypassing
+  Audio Output). Synth now plays bellows via `configureVoice` / `setMonoGate`; `setMonoGate` follows note
+  changes while held (legato, also helps Bellows Instrument). PianoKeyboard releases all on window blur /
+  hidden and maps computer key → started note; KeyboardNode falls back to the still-held key.
+  Verified in Chrome: 4 instruments, hold two keys, release → 0 RMS.
+- **Mouth Voice v2 (branch `mouth-voice-v2-3d`, uncommitted):** `bellows-mouth-voice/mouthFeatures.ts`
+  (features from blendshapes + inner-lip geometry + optional tongue pixels; auto rest-width baseline;
+  calibration build/match/project). New node **Mouth Calibrate** (`mouth-calibrate`): guided rest/ah/ee/
+  oo/oh/eh run, saves JSON into its `saved` control via `_controlUpdates`. Mouth Voice gains Landmarks,
+  Calibration and Video inputs; p (puff→open), b (hum→open), w, sh. Flows: `mouth-voice` (basic, now with
+  landmarks) and `mouth-voice-calibrated`. Chrome with scripted blendshapes: a timid face misread
+  uncalibrated (ee silent, ah→uh), all six shapes right after calibrating. **Not tried on a real face.**
+- **3D:** new nodes Key Input (`inputs`), Instances 3D, Point Stream 3D (with built-in player hit test,
+  because Collide 3D → stream reset would be a graph cycle: the engine skips cyclic nodes), Collide 3D,
+  Text Overlay (`visual`); Audio Analyzer gains `spectrum` (32 bands). Primitives now cast/receive
+  shadows. Instances glow uses the instance colour via `onBeforeCompile` (fragment define is `USE_COLOR`,
+  `vColor` is vec4 here → `vColor.rgb`). Flows: Build a 3D Scene, Sound City, Hold It in Your Hand
+  (camera), Warp Tunnel, **Comet Dodge** (game; replaced endless-melody in the starters). All rendered
+  and checked in Chrome; the game scores and resets on crash.
+- **TODO (carried):** Bellows Instrument presets overhaul; the singing flow needs work (ask what feels off).
+
 ## 2026-11-24 (later 140): sidebar drag rewritten on pointer events; five showcase sample flows
 
 - **Drag freeze (maintainer, real Chrome):** HTML5 drag from the sidebar left the grab cursor stuck and

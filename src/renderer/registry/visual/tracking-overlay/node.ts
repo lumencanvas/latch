@@ -46,6 +46,9 @@ const definition: NodeDefinition = {
     { id: 'web', type: 'toggle', label: 'Fingertip Web', default: true },
     { id: 'lineWidth', type: 'slider', label: 'Line Width', default: 1.5, props: { min: 0.5, max: 6, step: 0.5 } },
     { id: 'dim', type: 'slider', label: 'Dim Video', default: 0.25, props: { min: 0, max: 1, step: 0.05 } },
+    { id: 'strings', type: 'number', label: 'Guide Strings', default: 0, props: { min: 0, max: 48, step: 1 }, description: 'Horizontal lines across the video, like harp strings, so you can see where each note is (0 = off).' },
+    { id: 'stringsTop', type: 'slider', label: 'Strings Top', default: 0.15, props: { min: 0, max: 1, step: 0.01 } },
+    { id: 'stringsBottom', type: 'slider', label: 'Strings Bottom', default: 0.85, props: { min: 0, max: 1, step: 0.01 } },
   ],
   info: {
     overview:
@@ -187,7 +190,26 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const dim = Math.max(0, Math.min(1, ctx.num('dim', 0.25)))
   if (dim > 0) { g.fillStyle = `rgba(0,0,0,${dim})`; g.fillRect(0, 0, W, H) }
 
+  // Guide strings: evenly spaced lines; the one nearest the fingertip (index tip of the first hand) lights up
   const sets = [...landmarkSets(ctx.inputs.get('landmarks')), ...landmarkSets(ctx.inputs.get('landmarks2'))]
+  const nStrings = Math.max(0, Math.min(48, Math.round(ctx.num('strings', 0))))
+  if (nStrings > 0) {
+    const top = ctx.num('stringsTop', 0.15)
+    const bottom = ctx.num('stringsBottom', 0.85)
+    const hand = sets.find((s) => s.length === 21)
+    const tipY = hand ? hand[8].y : null
+    const accent = ctx.str('accent', '#00ffcc')
+    g.save()
+    for (let i = 0; i < nStrings; i++) {
+      const yN = nStrings === 1 ? (top + bottom) / 2 : top + ((bottom - top) * i) / (nStrings - 1)
+      const near = tipY !== null && Math.abs(tipY - yN) < Math.abs(bottom - top) / Math.max(1, nStrings - 1) / 2
+      g.strokeStyle = near ? accent : 'rgba(255,255,255,0.18)'
+      g.lineWidth = near ? 2.5 : 1
+      if (near) { g.shadowColor = accent; g.shadowBlur = 12 } else g.shadowBlur = 0
+      g.beginPath(); g.moveTo(W * 0.04, yN * H); g.lineTo(W * 0.96, yN * H); g.stroke()
+    }
+    g.restore()
+  }
   const o = {
     style: ctx.str('style', 'tech'),
     color: ctx.str('color', '#ffffff'),
