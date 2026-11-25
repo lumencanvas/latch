@@ -1,6 +1,6 @@
 # AI models plan: better WebGPU and vision models, real model control (2026-11-25)
 
-Status: **proposed**. Nothing here is built yet.
+Status: **approved 2026-11-25** (decisions in §5). **Phase 0 done** (2026-11-25); Phase 1 next.
 
 Goal: LATCH's AI nodes should use current models that actually load, run on WebGPU where the
 machine has it (and fall back cleanly where it doesn't), and give the person one honest place to
@@ -123,6 +123,29 @@ Runtime pins in hackbuild are newer than ours:
 
 ---
 
+## Phase 0 result (2026-11-25)
+
+Done and verified in Chrome on the upgraded runtime (transformers.js 4.3.2, onnxruntime-web
+1.31.0-dev, web-llm 0.2.89):
+- **Captioning:** Image Captioning runs SmolVLM-256M; a shader image came back as "The image
+  displays a black and green spiral pattern."
+- **Depth:** Depth uses Depth Anything v2 small (~27 MB) through the catalog and the "model needed"
+  prompt.
+- **Fixes:**
+  - The Manager's VLA state.
+  - "Default" follows the Manager's pick.
+  - Per-request progress.
+  - Speech Recognition's model select.
+  - WebLLM loads in the pill.
+  - The live detector asks for its model.
+  - The YOLO default agrees with its control.
+  - The VLA select comes from the catalog.
+- **Worker:** VLMs load once per model, shared between captioning and VLA.
+- **Seen live:** while a slow WASM caption ran, a depth model load sat at 0% until the worker was
+  free. One worker serves every model, which is the contention Phase 2's scheduler addresses.
+- **Not done:** the duplicate WebGPU check. It's left for Phase 1, which replaces both checks with
+  `ai-env`'s probe.
+
 ## 4. Phases
 
 Each phase ships on its own and is verified in Chrome (WebGPU) and with WebGPU disabled (WASM fallback) before the next starts.
@@ -178,10 +201,9 @@ Built on `@hackbuild/vision`:
   - Default to Depth Anything **v2** small on a WebGPU rung (205 ms vs 3 s on WASM).
   - `depthWorker` for live video: texture → ImageData readback at ≤10 Hz through `readbackLoop`, so it never blocks frames.
   - Output stays a texture, plus a new `depth` data output.
-- **Describe / Ask about image** replaces both Image Captioning and the VLA "action" node:
-  - The model is SmolVLM-256M (default, Apache-2.0) or LFM2-VL-450M (WebGPU only, 3–4× faster, licence restricts commercial use by revenue).
-  - Inputs are image, question and trigger. Outputs are text, busy and error.
-  - Keep the old node ids as aliases so saved flows load.
+- **Image Captioning and VLA** (kept as two nodes, decision 4) both run on `@hackbuild/vision`:
+  - The models are SmolVLM-256M (default, Apache-2.0) and LFM2-VL-450M (WebGPU only, 3–4× faster, licence restricts commercial use by revenue).
+  - Captioning uses `caption()`; VLA uses `ask(img, question)`.
 - **Segment (new node), using SlimSAM:**
   - Point or box prompts come from an XY pad, blob-track or a detection box.
   - It outputs a mask texture and a cut-out texture.
@@ -214,13 +236,18 @@ Built on `@hackbuild/vision`:
 
 ---
 
-## 5. Decisions needed
+## 5. Decisions (made 2026-11-25)
 
-1. **Depend on `@hackbuild/*` 0.1.x from npm (recommended, pinned exactly) or vendor copies?** Depending keeps one source of truth, and fixes flow upstream. The cost is that LATCH's release can wait on a hackbuild publish.
-2. **MediaPipe 1.x:** it is faster and has hackbuild's pin, but it adds Google telemetry. Upgrade and say so in the privacy notes, upgrade and switch telemetry off if possible, or stay on 0.10.32.
-3. **Restricted licences:** offer LFM2-VL (revenue-limited) and Qwen-research models with a visible licence badge (recommended), or leave them out of the catalog.
-4. **Image Captioning and VLA:** merge them into one "Describe / Ask" node with aliases (recommended), or keep two nodes.
-5. **Cache migration:** do the weights switch once in Phase 5 (everyone re-downloads then), or never.
+1. **Depend on `@hackbuild/*` from npm**, pinned exactly. Fixes go upstream.
+2. **MediaPipe stays as it is** (0.10.32): no 1.x upgrade and no telemetry. Moving it to a worker
+   (Phase 2) is still planned.
+3. **Offer every model**, including restricted licences (LFM2-VL, Qwen research, AGPL YOLO), each
+   with a visible licence badge and the licence shown on first load.
+4. **Keep Image Captioning and VLA as separate nodes.** Image Captioning gets a working default
+   (SmolVLM through image-text-to-text with a fixed "describe" prompt). VLA stays the
+   ask-a-question node. Phase 3 upgrades both on the shared vision path.
+5. **Switch to `@hackbuild/weights`' download cache** once its transformers.js path passes a
+   real-browser check. Everyone re-downloads once, which is accepted.
 
 ## 6. Risks
 

@@ -164,14 +164,9 @@ class AIInferenceService extends WorkerFacade {
 
     switch (msg.type) {
       case 'progress': {
+        // Routed by request id to that load's own callback (loadModel updates its model's info).
+        // Broadcasting to every loading model made parallel loads show each other's progress.
         this.reportProgress(msg.id, msg.progress ?? 0)
-        // Also update model info for the UI (not tied to a single request id).
-        const loadingModels = Array.from(this._modelInfo.entries()).filter(
-          ([, info]) => info.state === 'loading'
-        )
-        for (const [key] of loadingModels) {
-          this.updateModelInfo(key, { progress: msg.progress })
-        }
         break
       }
       case 'loaded':
@@ -254,10 +249,17 @@ class AIInferenceService extends WorkerFacade {
     return AI_MODELS.find((m) => m.task === task)
   }
 
-  // Get default model for task
+  /**
+   * The model a node on "Default" uses for a task: the one the person picked for that task in
+   * the AI Models manager, else the catalog default. (Picks are stored by catalog entry id,
+   * which differs from the task for some entries, e.g. VLA's 'vision-language'.)
+   */
   getDefaultModel(task: string): string {
-    const model = AI_MODELS.find((m) => m.task === task)
-    return model?.defaultModel ?? ''
+    const entry = AI_MODELS.find((m) => m.task === task)
+    if (!entry) return ''
+    const picked = this._selectedModels[entry.id] ?? this._selectedModels[task]
+    const offered = picked && (picked === entry.defaultModel || entry.alternateModels.some((a) => a.id === picked))
+    return offered ? picked : entry.defaultModel
   }
 
   // Get model info
@@ -369,7 +371,7 @@ class AIInferenceService extends WorkerFacade {
 
   // Get selected model for a task
   getSelectedModel(task: string): string {
-    return this._selectedModels[task] || this.getDefaultModel(task)
+    return this.getDefaultModel(task)
   }
 
   // Set selected model for a task
@@ -711,7 +713,7 @@ class AIInferenceService extends WorkerFacade {
     image: ImageData | HTMLCanvasElement | HTMLImageElement | string,
     modelId?: string
   ): Promise<{ width: number; height: number; channels: number; data: number[] }> {
-    const model = modelId || 'Xenova/depth-anything-small-hf'
+    const model = modelId || this.getDefaultModel('depth-estimation')
     const key = `depth-estimation:${model}`
 
     if (!this._loadedModels.has(key)) {

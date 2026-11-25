@@ -30,16 +30,26 @@ const detections = [
   { label: 'dog', score: 0.95, box: { xmin: 5, ymin: 6, xmax: 7, ymax: 8 } },
 ]
 // vi.mock is hoisted above const declarations, so create the spies via vi.hoisted.
-const { detectYolo, detectObjects, estimateDepth } = vi.hoisted(() => ({
+const { detectYolo, detectObjects, estimateDepth, isModelLoaded } = vi.hoisted(() => ({
   detectYolo: vi.fn(),
   detectObjects: vi.fn(),
   estimateDepth: vi.fn(),
+  isModelLoaded: vi.fn(() => true),
 }))
 
 vi.mock('@/services/ai/AIInference', () => ({
-  aiInference: { detectYolo, detectObjects, estimateDepth },
+  aiInference: {
+    detectYolo,
+    detectObjects,
+    estimateDepth,
+    // Catalog models count as loaded here (the "model needed" gate has its own test below).
+    isModelLoaded,
+    getModelInfo: () => undefined,
+    getDefaultModel: (task: string) => (task === 'depth-estimation' ? 'onnx-community/depth-anything-v2-small' : ''),
+  },
 }))
 
+import { modelNeeds } from '@/services/ai/modelNeeds'
 import {
   objectDetectionYoloExecutor,
   objectDetectionLiveExecutor,
@@ -103,6 +113,18 @@ describe('runLiveDetection', () => {
     expect(detectObjects).toHaveBeenCalledTimes(1)
     expect(r1.get('count')).toBe(2)
     expect(r1.get('topLabel')).toBe('dog')
+  })
+
+  it('an unloaded catalog detector asks for its model instead of downloading on the first frame', () => {
+    isModelLoaded.mockReturnValue(false)
+    try {
+      const r = objectDetectionLiveExecutor(ctx('l-gate', { interval: 1 }, 0))
+      expect(detectObjects).not.toHaveBeenCalled()
+      expect(r.get('error')).toMatch(/Model not loaded/)
+      expect(modelNeeds.get('l-gate')?.task).toBe('object-detection')
+    } finally {
+      isModelLoaded.mockReturnValue(true)
+    }
   })
 
   // Previously-swallowed inference catches now surface on the public `error` port

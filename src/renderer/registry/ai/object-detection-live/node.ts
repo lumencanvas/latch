@@ -90,7 +90,7 @@ export const objectDetectionLiveExecutor: NodeExecutorFn = (ctx: ExecutionContex
   return runLiveDetection(
     ctx,
     (img) => aiInference.detectObjects(img, threshold, modelId) as Promise<Detection[]>,
-    overlayOptions(ctx, 20)
+    { ...overlayOptions(ctx, 20), need: { task: 'object-detection', modelId } },
   )
 }
 

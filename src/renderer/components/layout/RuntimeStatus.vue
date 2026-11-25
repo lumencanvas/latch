@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Brain, ChevronDown, ChevronUp, Download, Loader2, X } from 'lucide-vue-next'
 import { aiInference, AI_MODELS } from '@/services/ai/AIInference'
+import { webLLMService } from '@/services/ai/WebLLMService'
+import { deriveWebllmCatalog } from '@/services/ai/models/webllm/derive'
 import { modelNeeds, groupModelNeeds } from '@/services/ai/modelNeeds'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
@@ -20,7 +22,14 @@ const ui = useUIStore()
 // aiInference is a plain service: mirror its change notifications into a reactive tick.
 const aiTick = ref(0)
 let unsubscribe: (() => void) | null = null
-onMounted(() => { unsubscribe = aiInference.subscribe(() => { aiTick.value++ }) })
+let unsubscribeLLM: (() => void) | null = null
+const webllmCatalog = deriveWebllmCatalog()
+onMounted(() => {
+  unsubscribe = aiInference.subscribe(() => { aiTick.value++ })
+  // WebLLM (the LLM node) loads in its own service; its downloads belong in the pill too.
+  unsubscribeLLM = webLLMService.subscribe(() => { aiTick.value++ })
+})
+onUnmounted(() => { unsubscribeLLM?.() })
 onUnmounted(() => unsubscribe?.())
 
 const nodeLabel = (id: string) => {
@@ -93,6 +102,12 @@ const loadingItems = computed<LoadingItem[]>(() => {
     const meta = modelMeta(task, modelId)
     const nodeIds = [...modelNeeds.values()].filter((n) => n.task === task && (n.modelId || meta.id) === modelId && inFlow(n.nodeId)).map((n) => n.nodeId)
     items.push({ key, label: meta.name, detail: `${meta.task} model${meta.size ? ` · ${meta.size}` : ''}`, progress: Math.round(info.progress ?? 0), nodeIds })
+  }
+  for (const [modelId, st] of webLLMService.listLoadStates()) {
+    if (st.status !== 'loading') continue
+    const meta = webllmCatalog.find((m) => m.id === modelId)
+    const nodeIds = (flows.activeFlow?.nodes ?? []).filter((n) => n.data?.nodeType === 'llm').map((n) => n.id)
+    items.push({ key: `webllm:${modelId}`, label: meta?.name ?? modelId, detail: `LLM model${meta?.size ? ` · ${meta.size}` : ''}`, progress: Math.round((st.progress ?? 0) * 100), nodeIds })
   }
   if (runtime.isRunning) {
     for (const n of flows.activeFlow?.nodes ?? []) {

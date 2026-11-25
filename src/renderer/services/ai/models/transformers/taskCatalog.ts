@@ -79,6 +79,21 @@ export const TASK_CATALOG: readonly TaskCatalogEntry[] = [
     defaultModel: 'Xenova/detr-resnet-50',
     alternates: [
       'Xenova/yolos-tiny',
+      'onnx-community/dfine_s_coco-ONNX',
+      'onnx-community/rtdetr_v2_r18vd-ONNX',
+    ],
+  },
+  {
+    id: 'depth-estimation',
+    name: 'Depth Estimation',
+    task: 'depth-estimation',
+    description: 'Estimate how far each pixel is from the camera (a depth map) from one image',
+    category: 'vision',
+    supportsWebGPU: true,
+    defaultModel: 'onnx-community/depth-anything-v2-small',
+    alternates: [
+      'Xenova/depth-anything-small-hf',
+      'Xenova/dpt-hybrid-midas',
     ],
   },
   {
@@ -124,12 +139,14 @@ export const TASK_CATALOG: readonly TaskCatalogEntry[] = [
     id: 'image-to-text',
     name: 'Image Captioning',
     task: 'image-to-text',
-    description: 'Generate captions for images',
+    description: 'Generate captions for images (a small vision-language model asked to describe the image)',
     category: 'multimodal',
     supportsWebGPU: true,
-    defaultModel: 'Xenova/blip-image-captioning-base',
+    // BLIP (the old default) went 401 on Hugging Face (2026-11). SmolVLM is shared with the VLA
+    // task; the worker loads a VLM once per model, whichever task asks.
+    defaultModel: 'HuggingFaceTB/SmolVLM-256M-Instruct',
     alternates: [
-      'Xenova/blip-image-captioning-large',
+      'HuggingFaceTB/SmolVLM-500M-Instruct',
       'Xenova/trocr-base-handwritten',
     ],
   },

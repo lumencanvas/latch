@@ -170,6 +170,10 @@ export class WebLLMService {
   getLoadState(model: string): ModelLoadState | undefined {
     return this.loadStates.get(model)
   }
+  /** Every model with a load state, as [modelId, state] (for status displays like the loading pill). */
+  listLoadStates(): [string, ModelLoadState][] {
+    return [...this.loadStates.entries()]
+  }
 
   /**
    * Load (and cache) an engine for `model`. Idempotent and serialized per model, so

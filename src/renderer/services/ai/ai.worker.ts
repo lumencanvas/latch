@@ -32,7 +32,7 @@ env.useBrowserCache = true
 // transformers), so it is NOT pinned in package.json — after any transformers bump,
 // re-sync this version string with the output of `npm ls onnxruntime-web`.
 ort.env.wasm.wasmPaths =
-  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/'
+  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/'
 
 // Pipeline cache
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,9 +138,18 @@ function respond(response: WorkerResponse): void {
   self.postMessage(response)
 }
 
+// Vision-language models (SmolVLM, LFM2-VL) serve two tasks: answering about an image
+// (image-text-to-text) and captioning (image-to-text, asked to describe). They load once per
+// model whichever task asks, and are disposed when the last task using them unloads.
+const VLM_MODEL_RE = /smolvlm|lfm2-vl/i
+function isVlm(task: string, model: string): boolean {
+  return task === 'image-text-to-text' || (task === 'image-to-text' && VLM_MODEL_RE.test(model))
+}
+const vlmUsers = new Map<string, Set<string>>()
+
 // Get cache key for pipeline
 function getCacheKey(task: string, model: string): string {
-  return `${task}:${model}`
+  return isVlm(task, model) ? `vlm:${model}` : `${task}:${model}`
 }
 
 // Handle model loading
@@ -149,6 +158,7 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
 
   // Already loaded?
   if (pipelines.has(key)) {
+    vlmUsers.get(key)?.add(msg.task)
     respond({ type: 'loaded', id: msg.id, success: true })
     return
   }
@@ -215,7 +225,7 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
 
     // Vision-language (SmolVLM-style) models run via the processor + model API,
     // not a high-level pipeline. Cache both under the same key.
-    if (msg.task === 'image-text-to-text') {
+    if (isVlm(msg.task, msg.model)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
       if (pipelineOptions.device) loadOpts.device = pipelineOptions.device
@@ -227,6 +237,7 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const model = await (AutoModelForVision2Seq as any).from_pretrained(msg.model, loadOpts)
       pipelines.set(key, { processor, model, vlm: true })
+      vlmUsers.set(key, new Set([msg.task]))
       respond({ type: 'loaded', id: msg.id, success: true })
       return
     }
@@ -524,6 +535,10 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
           imageData.width,
           imageData.height
         )
+        if (pipe?.vlm) {
+          result = await vlmGenerate(pipe, imageData, 'Describe this image in one short sentence.', 48)
+          break
+        }
         const canvas = new OffscreenCanvas(reconstructed.width, reconstructed.height)
         const ctx = canvas.getContext('2d')!
         ctx.putImageData(reconstructed, 0, 0)
@@ -540,36 +555,7 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
           string,
           number,
         ]
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { processor, model } = pipe as { processor: any; model: any }
-        const image = new RawImage(
-          toPixels(imageData.data),
-          imageData.width,
-          imageData.height,
-          4
-        ).rgb()
-        const messages = [
-          {
-            role: 'user',
-            content: [
-              { type: 'image' },
-              { type: 'text', text: String(instruction || 'What action should be taken?') },
-            ],
-          },
-        ]
-        const prompt = processor.apply_chat_template(messages, { add_generation_prompt: true })
-        const inputs = await processor(prompt, [image])
-        const { sequences } = await model.generate({
-          ...inputs,
-          max_new_tokens: Math.max(1, Math.min(512, Math.floor(maxNewTokens || 64))),
-          do_sample: false,
-          return_dict_in_generate: true,
-        })
-        // Drop the prompt tokens; decode only what the model generated.
-        const promptLen = inputs.input_ids.dims.at(-1)
-        const trimmed = sequences.slice(null, [promptLen, null])
-        const decoded = processor.batch_decode(trimmed, { skip_special_tokens: true })
-        result = (decoded[0] ?? '').trim()
+        result = await vlmGenerate(pipe, imageData, instruction || 'What action should be taken?', maxNewTokens)
         break
       }
 
@@ -597,6 +583,32 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
 // Release a cached pipeline/model. Vision-language entries are a { processor,
 // model, vlm: true } wrapper with no top-level dispose(), so dispose the model
 // (and processor) directly — otherwise the GPU/WASM model leaks on unload.
+/** Run a vision-language model on an image and an instruction; returns only the generated text. */
+async function vlmGenerate(
+  pipe: unknown,
+  imageData: { width: number; height: number; data: Uint8ClampedArray | number[] },
+  instruction: string,
+  maxNewTokens: number,
+): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { processor, model } = pipe as { processor: any; model: any }
+  const image = new RawImage(toPixels(imageData.data), imageData.width, imageData.height, 4).rgb()
+  const messages = [{ role: 'user', content: [{ type: 'image' }, { type: 'text', text: String(instruction) }] }]
+  const prompt = processor.apply_chat_template(messages, { add_generation_prompt: true })
+  const inputs = await processor(prompt, [image])
+  const { sequences } = await model.generate({
+    ...inputs,
+    max_new_tokens: Math.max(1, Math.min(512, Math.floor(maxNewTokens || 64))),
+    do_sample: false,
+    return_dict_in_generate: true,
+  })
+  // Drop the prompt tokens; decode only what the model generated.
+  const promptLen = inputs.input_ids.dims.at(-1)
+  const trimmed = sequences.slice(null, [promptLen, null])
+  const decoded = processor.batch_decode(trimmed, { skip_special_tokens: true })
+  return (decoded[0] ?? '').trim()
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function disposePipe(pipe: any): void {
   if (!pipe) return
@@ -612,10 +624,14 @@ function disposePipe(pipe: any): void {
 function handleUnload(msg: UnloadModelMessage): void {
   const key = getCacheKey(msg.task, msg.model)
   const pipe = pipelines.get(key)
+  const users = vlmUsers.get(key)
+  users?.delete(msg.task)
 
-  if (pipe) {
+  // A VLM still used by its other task stays loaded.
+  if (pipe && !(users && users.size > 0)) {
     disposePipe(pipe)
     pipelines.delete(key)
+    vlmUsers.delete(key)
   }
 
   // YOLO sessions are keyed by model URL (msg.model carries it), not the

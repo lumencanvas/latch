@@ -502,7 +502,8 @@ export function disposeSTTNode(nodeId: string): void {
 export type Detection = { label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }
 
 /** Default YOLOv9/GELAN COCO weights (Xenova mirror; ~102 MB, CORS-enabled). */
-export const DEFAULT_YOLO_URL = 'https://huggingface.co/Xenova/yolov9-onnx/resolve/main/gelan-c.onnx'
+// Same as the YOLO node's control default (they used to disagree: gelan-c vs YOLOv10s).
+export const DEFAULT_YOLO_URL = 'https://huggingface.co/onnx-community/yolov10s/resolve/main/onnx/model.onnx'
 
 export interface LiveOverlayOptions {
   interval: number
@@ -512,6 +513,9 @@ export interface LiveOverlayOptions {
   lineWidth: number
   boxStyle: 'box' | 'corners' | 'filled'
   colorMode: 'class' | 'uniform'
+  /** A catalog model this detector needs: unloaded, it raises the "model needed" prompt
+   *  (and passes the video through) instead of downloading on the first frame. */
+  need?: { task: string; modelId: string }
 }
 
 /**
@@ -651,7 +655,19 @@ export function runLiveDetection(
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, -1)
   const due = hasTrigger || lastFrame < 0 || currentFrame - lastFrame >= interval
 
-  if (due && !pendingOperations.has(ctx.nodeId)) {
+  let gatedError = ''
+  if (opts.need) {
+    if (aiInference.isModelLoaded(opts.need.task, opts.need.modelId)) {
+      clearModelNeed(ctx.nodeId)
+    } else {
+      reportModelNeed(ctx.nodeId, opts.need.task, opts.need.modelId)
+      const downloading = aiInference.getModelInfo(opts.need.task, opts.need.modelId)?.state === 'loading'
+      gatedError = downloading ? '' : 'Model not loaded. Open AI Model Manager to load.'
+    }
+  }
+  const gated = !!opts.need && !aiInference.isModelLoaded(opts.need.task, opts.need.modelId)
+
+  if (due && !gated && !pendingOperations.has(ctx.nodeId)) {
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
     setCached(`${ctx.nodeId}:loading`, true)
     const operation = (async () => {
@@ -734,8 +750,8 @@ export function runLiveDetection(
   outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
   outputs.set('texture', state.texture)
   // Recompute after the possible kickoff above so it reflects the live state.
-  outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
-  outputs.set('error', detectError)
+  outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false) || (gated && !gatedError))
+  outputs.set('error', gatedError || detectError)
   return outputs
 }
 

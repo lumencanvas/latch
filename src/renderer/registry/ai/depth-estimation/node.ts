@@ -2,6 +2,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { aiInference } from '@/services/ai/AIInference'
+import { reportModelNeed, clearModelNeed } from '@/services/ai/modelNeeds'
 import { getThreeShaderRenderer } from '@/services/visual/ThreeShaderRenderer'
 import { pendingOperations, isNodeDisposed, getCached, setCached, triggerFired, convertToImageData, isSupportedImageInput, depthEstimateState, depthColor, type DepthResult } from '../shared'
 
@@ -23,19 +24,6 @@ const definition: NodeDefinition = {
     { id: 'error', type: 'string', label: 'Error' },
   ],
   controls: [
-    {
-      id: 'model',
-      type: 'select',
-      label: 'Model',
-      default: 'Xenova/depth-anything-small-hf',
-      props: {
-        options: [
-          { value: 'Xenova/depth-anything-small-hf', label: 'Depth-Anything Small (~50 MB)' },
-          { value: 'onnx-community/depth-anything-v2-small', label: 'Depth-Anything V2 Small' },
-          { value: 'Xenova/dpt-hybrid-midas', label: 'DPT Hybrid MiDaS (larger)' },
-        ],
-      },
-    },
     { id: 'interval', type: 'number', label: 'Frame Interval', default: 30, props: { min: 1, max: 120, step: 1 } },
     { id: 'colorize', type: 'toggle', label: 'Colorize', default: false },
   ],
@@ -55,7 +43,7 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   const outputs = new Map<string, unknown>()
   const source = ctx.inputs.get('source')
   const trigger = ctx.inputs.get('trigger')
-  const model = (ctx.controls.get('model') as string) || 'Xenova/depth-anything-small-hf'
+  const model = (ctx.controls.get('model') as string) || aiInference.getDefaultModel('depth-estimation')
   const interval = (ctx.controls.get('interval') as number) ?? 30
   const colorize = (ctx.controls.get('colorize') as boolean) ?? false
 
@@ -82,6 +70,18 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
     if (source) outputs.set('_error', 'Unsupported source. Connect a texture or video feed.')
     return outputs
   }
+
+  // Like every catalog model: an unloaded model raises the "this flow needs a model" prompt
+  // instead of downloading silently on the first frame.
+  if (!aiInference.isModelLoaded('depth-estimation', model)) {
+    reportModelNeed(ctx.nodeId, 'depth-estimation', model)
+    const downloading = aiInference.getModelInfo('depth-estimation', model)?.state === 'loading'
+    outputs.set('texture', state.texture)
+    outputs.set('loading', downloading)
+    outputs.set('error', downloading ? '' : 'Model not loaded. Open AI Model Manager to load.')
+    return outputs
+  }
+  clearModelNeed(ctx.nodeId)
 
   // Throttle the async inference by frame interval (or run on trigger).
   const currentFrame = ctx.frameCount
@@ -148,4 +148,4 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   return outputs
 }
 
-export default defineNode({ definition, executor: depthEstimationExecutor })
+export default defineNode({ definition, executor: depthEstimationExecutor, models: [{ task: 'depth-estimation' }] })

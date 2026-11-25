@@ -132,6 +132,7 @@ export function deriveModelDefinition(
         id: 'model',
         type: 'select',
         label: 'Model',
+        description: 'Default uses the model chosen for this task in AI Models (the one named here unless you changed it there).',
         // '' resolves to the task default at inference time; a non-empty pick overrides.
         default: resolved.default,
         props: { options: [...resolved.options] },

@@ -6,6 +6,42 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 147): AI plan approved, Phase 0 done
+
+- **Decisions** (plan §5):
+  - Depend on `@hackbuild/*`.
+  - MediaPipe stays on 0.10.32.
+  - Offer every model, with licence badges.
+  - Keep Image Captioning and VLA as separate nodes.
+  - Switch to the hackbuild weights cache once it is verified.
+- **Phase 0** (`docs/plans/AI_MODELS_PLAN_2026-11.md` has the result section):
+  - **Captioning:** the image-to-text default is SmolVLM-256M (the BLIP specs are deleted; they
+    return 401).
+    - The worker keys VLMs as `vlm:<model>` with a per-task user set, so captioning and VLA share one
+      load. `captionImage` on a VLM uses `vlmGenerate` with a "describe" prompt.
+    - `derive.ts` now allows one model in several tasks (at most once per task).
+  - **Default model:** `getDefaultModel(task)` follows the Manager pick, stored by catalog entry id.
+    The node select keeps "Default — X", and the control description explains it.
+  - **Manager:** state is keyed by task (fixes VLA).
+  - **Progress:** the broadcast to every loading model is gone; progress is per request.
+  - **Speech Recognition:** now declares `models:`.
+  - **Pill:** RuntimeStatus shows WebLLM loads (`webLLMService.listLoadStates`).
+  - **Depth:** in the catalog (v2 small default, ~27 MB at q4). It is gated through
+    `reportModelNeed`.
+  - **Live detector:** `runLiveDetection` has an optional `need`, used by the live detector, plus a
+    test. D-FINE and RT-DETR are in the catalog. YOLO uses one `DEFAULT_YOLO_URL`.
+  - **VLA:** its select comes from the catalog.
+  - **Upgrades:** transformers 4.3.2 / ORT 1.31.0-dev (pins moved in `ai.worker.ts` and
+    `protocol.ts`), web-llm 0.2.89. The ai-models baseline fixture was rebaselined on purpose.
+  - **Verified in Chrome:**
+    - The SmolVLM caption on a shader: "The image displays a black and green spiral pattern."
+    - Depth v2 renders.
+    - A depth load waited at 0% behind a running WASM caption: single-worker contention, which is
+      the Phase 2 motivation.
+- **Next:**
+  - AI Phase 1: records, ladders and fit with `@hackbuild/models` and `ai-env`.
+  - Then the bellows workstation (see the memory file and the entry below).
+
 ## 2026-11-25 (later 146): open fixes closed, AI models plan written
 
 - **Desktop vs in-browser agent calls are now told apart** (`adapters/relay.ts`).

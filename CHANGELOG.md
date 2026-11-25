@@ -34,6 +34,17 @@
 - **Play the Room** replaces Blob Camera among the empty-canvas starters, with Blob Camera's
   inverted look.
 
+### AI models
+- **Image Captioning works again:** its old default (BLIP) was removed from Hugging Face. It now
+  uses SmolVLM, which it shares with the VLA node, so the model loads once.
+- **Depth Estimation** defaults to Depth Anything V2, and like Detect Objects (Live) it now asks
+  before downloading its model. D-FINE and RT-DETR join the detection models.
+- **Default means your choice:** a node set to "Default" uses the model you picked for that task in
+  AI Models.
+- Speech Recognition can choose its Whisper model. LLM downloads show in the loading indicator.
+  Download progress no longer mixes between models during "Load all".
+- transformers.js 4.3.2 (onnxruntime-web 1.31) and WebLLM 0.2.89, which adds newer chat models.
+
 ### Fixed
 - Tidy (auto-arrange) packed nodes with an image preview too tightly when they weren't on screen.
 - **Edits could vanish on reload** if you switched tabs within two seconds of changing a flow:

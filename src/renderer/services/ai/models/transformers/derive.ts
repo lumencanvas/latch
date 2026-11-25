@@ -9,7 +9,7 @@
  *
  * Both directions are checked at load: every id named in `TASK_CATALOG` must resolve
  * to a transformers spec, and every co-located transformers spec must be referenced
- * exactly once — so a dropped/duplicated/orphaned `*.model.ts` fails loudly in CI
+ * (at most once per task) — so a dropped/duplicated/orphaned `*.model.ts` fails loudly in CI
  * rather than silently changing the catalog. Deep-equal gated against the frozen
  * git-original baseline in `tests/fixtures/ai-models.baseline.ts`.
  */
@@ -30,12 +30,16 @@ function specFor(id: string, role: string) {
 
 export function deriveAiModels(): ModelDefinition[] {
   // Reverse completeness: every co-located transformers spec must be referenced by the
-  // catalog exactly once (as a default or an alternate). Catches an orphaned or
+  // catalog, and at most once per task (as a default or an alternate). A model may serve
+  // several tasks (SmolVLM captions and answers questions). Catches an orphaned or
   // double-listed model file before it silently distorts the derived catalog.
   const referenced = new Map<string, number>()
   for (const t of TASK_CATALOG) {
-    referenced.set(t.defaultModel, (referenced.get(t.defaultModel) ?? 0) + 1)
-    for (const id of t.alternates) referenced.set(id, (referenced.get(id) ?? 0) + 1)
+    for (const id of new Set([t.defaultModel, ...t.alternates])) referenced.set(id, (referenced.get(id) ?? 0) + 1)
+    const ids = [t.defaultModel, ...t.alternates]
+    if (new Set(ids).size !== ids.length) {
+      throw new Error(`[transformers derive] a model is listed twice in task ${t.id}`)
+    }
   }
   const transformersIds = Object.values(modelSpecs)
     .filter((s) => s.family === 'transformers')
@@ -43,10 +47,6 @@ export function deriveAiModels(): ModelDefinition[] {
   const orphaned = transformersIds.filter((id) => !referenced.has(id))
   if (orphaned.length > 0) {
     throw new Error(`[transformers derive] co-located transformers spec(s) not referenced by TASK_CATALOG: ${orphaned.join(', ')}`)
-  }
-  const duplicated = [...referenced.entries()].filter(([, n]) => n > 1).map(([id]) => id)
-  if (duplicated.length > 0) {
-    throw new Error(`[transformers derive] model(s) referenced more than once in TASK_CATALOG: ${duplicated.join(', ')}`)
   }
 
   return TASK_CATALOG.map((t) => {

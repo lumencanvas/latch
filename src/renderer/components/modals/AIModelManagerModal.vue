@@ -128,9 +128,12 @@ function updateState() {
   autoLoadModels.value = new Set(state.autoLoadModels)
 }
 
+// The service keys models by pipeline task (`image-text-to-text:<model>`), which differs from
+// the catalog entry id for some rows (VLA's entry is 'vision-language'). Key by the task.
 function getTaskModelKey(taskId: string): string {
   const modelId = selectedModels.value.get(taskId)
-  return `${taskId}:${modelId}`
+  const task = AI_MODELS.find(m => m.id === taskId)?.task ?? taskId
+  return `${task}:${modelId}`
 }
 
 function getModelState(taskId: string): ModelLoadState {
