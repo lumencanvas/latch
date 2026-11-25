@@ -66,22 +66,21 @@ function updateDisplay() {
     smoothedValues.value = new Array(barCount.value).fill(0)
   }
 
-  // Calculate bar values from FFT data
-  const binsPerBar = Math.floor(fftData.length / barCount.value)
+  // Bars are spaced logarithmically, 40 Hz to 16 kHz, like any spectrum display: linear bins put
+  // nearly all musical energy in the first bar. Level: −90 dB → empty, −20 dB → full.
+  const nyquist = 22050
+  const binHz = nyquist / fftData.length
+  const fLo = 40
+  const fHi = 16000
   const barValues: number[] = []
-
   for (let i = 0; i < barCount.value; i++) {
-    let sum = 0
-    const startBin = i * binsPerBar
-    const endBin = Math.min(startBin + binsPerBar, fftData.length)
-
-    for (let j = startBin; j < endBin; j++) {
-      // FFT data is in dB, normalize to 0-1
-      const val = (fftData[j] + 100) / 100
-      sum += Math.max(0, Math.min(1, val))
-    }
-
-    barValues.push(sum / binsPerBar)
+    const f0 = fLo * Math.pow(fHi / fLo, i / barCount.value)
+    const f1 = fLo * Math.pow(fHi / fLo, (i + 1) / barCount.value)
+    const b0 = Math.max(1, Math.floor(f0 / binHz))
+    const b1 = Math.min(fftData.length, Math.max(b0 + 1, Math.ceil(f1 / binHz)))
+    let peak = -Infinity
+    for (let j = b0; j < b1; j++) if (fftData[j] > peak) peak = fftData[j]
+    barValues.push(Math.max(0, Math.min(1, (peak + 90) / 70)))
   }
 
   // Smooth the values

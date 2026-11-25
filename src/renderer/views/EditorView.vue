@@ -20,6 +20,7 @@ import { useUIStore } from '@/stores/ui'
 import { useNodesStore, dataTypeMeta } from '@/stores/nodes'
 import { flowSnippets, STARTER_FLOW_IDS, REQUIREMENT_LABELS } from '@/data/flow-snippets'
 import { snippetToInsertableNodes, snippetOffsetToCenter } from '@/utils/snippets'
+import { useFlowLibrary, looksLikeFlowText } from '@/composables/useFlowLibrary'
 import { nodeTypeColor } from '@/utils/nodeColor'
 import { suggestNodesForPort } from '@/utils/nodeSuggestions'
 import FlowPreview from '@/components/preview/FlowPreview.vue'
@@ -55,6 +56,7 @@ const uiStore = useUIStore()
 const nodesStore = useNodesStore()
 
 const vueFlow = useVueFlow()
+const flowLibrary = useFlowLibrary()
 const {
   onConnect,
   onConnectStart,
@@ -703,12 +705,9 @@ function handleKeyDown(event: KeyboardEvent) {
     return
   }
 
-  // Paste: Ctrl/Cmd + V
-  if (modifier && event.key === 'v') {
-    event.preventDefault()
-    pasteNodes()
-    return
-  }
+  // Paste: Ctrl/Cmd + V is handled by the `paste` event (onPaste), which can read the system
+  // clipboard: flow JSON opens as a new flow, otherwise copied nodes are pasted. Don't block it.
+  if (modifier && event.key === 'v') return
 
   // Duplicate: Ctrl/Cmd + D
   if (modifier && event.key === 'd') {
@@ -1037,8 +1036,24 @@ function unpackSelectedSubflow() {
   }
 }
 
+/** Paste: LATCH flow JSON on the clipboard opens as a new flow; anything else pastes copied nodes. */
+async function onPaste(e: ClipboardEvent) {
+  const t = e.target as HTMLElement | null
+  if (t && (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t.isContentEditable)) return
+  if (t?.closest('.modal-overlay, .monaco-editor')) return
+  const text = e.clipboardData?.getData('text/plain') ?? ''
+  if (text && looksLikeFlowText(text)) {
+    e.preventDefault()
+    await flowLibrary.importText(text)
+    return
+  }
+  e.preventDefault()
+  pasteNodes()
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown)
+  window.addEventListener('paste', onPaste)
 
   // Initialize custom node loader (loads custom nodes from custom-nodes folder)
   try {
@@ -1057,6 +1072,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('paste', onPaste)
   stopPlacementListeners()
   uiStore.cancelSnippetPlacement()
   // Clear any pending connection error timeout

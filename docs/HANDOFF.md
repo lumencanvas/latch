@@ -6,6 +6,24 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 143): 1.4.3: flow library, close ≠ delete, single-flow share/paste, Assets + EQ fixes
+
+- `FlowState.open` (persisted; missing = open). `openFlows` getter drives tabs; `closeFlow` keeps the
+  flow (switches tab, or creates Untitled when the last one closes); `setActiveFlow` reopens.
+  `importFlows` returns `flowIds` and marks imported flows open.
+- `composables/useFlowLibrary.ts`: shared open/close/rename/duplicate/delete/export/copy/import/paste
+  actions (persisting as they go) + `looksLikeFlowText`. Used by `components/flows/FlowLibrary.vue`
+  (new sidebar tab; sidebar tab state moved to `uiStore.sidebarTab` / `openSidebarTab`), FlowTabs
+  (× = close; menu: Export Flow, Copy Flow JSON, Close Tab, Delete Flow…), the header (a labelled
+  **Flows** button next to Examples toggles the library panel and replaced the Import/Export icons;
+  Save = persist only; More → Flows) and the editor's `paste` listener (⌘V no longer
+  preventDefault'd in keydown so the paste event can read clipboard text).
+- Assets: chips wrap, drop zone stacks, grid `minmax(0,1fr)` so long names truncate.
+- Equalizer: Tone.FFT 1024 + log-spaced bars (40 Hz–16 kHz), −90…−20 dB.
+- Verified in Chrome: close/reopen, copy → ⌘V import, paste dialog prefill, open state survives reload.
+- Nit: tab order after a reload follows database order, so a reopened flow can move to the end.
+- Browser checks: use the Claude in Chrome extension, not Playwright-launched windows (maintainer asked).
+
 ## 2026-11-25 (later 142): 1.4.2: model-load prompt + loading pill, example placement, synth dials, singer melody modes
 
 - **Runtime status** (`components/layout/RuntimeStatus.vue`, mounted in App): AI executors report unloaded

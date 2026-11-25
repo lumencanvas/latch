@@ -36,6 +36,8 @@ export interface ImportReport {
   droppedEdges?: number
   /** Non-fatal structural problems surfaced during a best-effort import. */
   warnings?: string[]
+  /** Ids of the flows this import added (so a caller can open/activate them). */
+  flowIds?: string[]
   /** Code (Function/Expression) nodes imported with their code disabled. */
   disabledCode?: number
 }
@@ -265,6 +267,8 @@ export interface FlowState {
   // Icon and category for when used as a node
   icon?: string
   category?: string
+  /** Shown as a tab. false = closed but kept in the flow library (undefined = open, older saves). */
+  open?: boolean
 }
 
 interface FlowsStoreState {
@@ -316,6 +320,11 @@ export const useFlowsStore = defineStore('flows', {
     mainFlows: (state): FlowState[] => {
       return state.flows.filter((f) => !f.isSubflow)
     },
+
+    /** Main flows shown as tabs (closed flows stay in the library). */
+    openFlows: (state): FlowState[] => {
+      return state.flows.filter((f) => !f.isSubflow && f.open !== false)
+    },
   },
 
   actions: {
@@ -363,9 +372,51 @@ export const useFlowsStore = defineStore('flows', {
     setActiveFlow(flowId: string) {
       const flow = this.flows.find((f) => f.id === flowId)
       if (flow) {
+        if (flow.open === false) flow.open = true
         this.activeFlowId = flowId
         this.healNodeTypes(flow)
       }
+    },
+
+    /** Open a library flow as a tab and switch to it. */
+    openFlow(flowId: string) {
+      this.setActiveFlow(flowId)
+    },
+
+    /**
+     * Close a flow's tab without deleting it (it stays in the flow library). Closing the active tab
+     * switches to the next open one; closing the last tab opens a fresh Untitled flow so the canvas
+     * is never empty-handed. Returns the ids whose `open` state changed or were created (to persist).
+     */
+    closeFlow(flowId: string): string[] {
+      const flow = this.flows.find((f) => f.id === flowId)
+      if (!flow || flow.isSubflow) return []
+      const tabs = this.openFlows
+      const idx = tabs.findIndex((f) => f.id === flowId)
+      flow.open = false
+      const changed = [flowId]
+      if (this.activeFlowId === flowId) {
+        const next = tabs[idx + 1] ?? tabs[idx - 1]
+        if (next && next.id !== flowId) this.activeFlowId = next.id
+        else changed.push(this.createFlow('Untitled Flow').id)
+      }
+      return changed
+    },
+
+    /** Download one flow as a `.latch.json` file (the format Import and Paste read). */
+    exportFlowFile(flowId: string): void {
+      const flow = this.flows.find((f) => f.id === flowId)
+      if (!flow) return
+      const blob = new Blob([this.exportFlow(flowId)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const slug = flow.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'flow'
+      a.download = `${slug}.latch.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
     },
 
     /**
@@ -1286,6 +1337,7 @@ export const useFlowsStore = defineStore('flows', {
         const disabledCode =
           (options.codePolicy ?? 'disable') === 'disable' ? disableCodeNodes(importedFlows) : 0
 
+        for (const f of importedFlows) f.open = true
         if (options.replace) {
           this.flows = importedFlows
         } else {
@@ -1327,6 +1379,7 @@ export const useFlowsStore = defineStore('flows', {
           success: true,
           message: parts.join(', '),
           count: importedFlows.length,
+          flowIds: importedFlows.map((f) => f.id),
           migrated: totals.migrated,
           unknownNodes: totals.unknown,
           droppedEdges: totals.dropped,

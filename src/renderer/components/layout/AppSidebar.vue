@@ -2,10 +2,11 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useUIStore } from '@/stores/ui'
 import { useNodesStore, categoryMeta, type NodeDefinition } from '@/stores/nodes'
-import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen, Plug } from 'lucide-vue-next'
+import { Search, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, Brain, Download, Blocks, FolderOpen, Plug, Workflow } from 'lucide-vue-next'
 import { getCategoryIcon } from '@/utils/categoryIcons'
 import { aiInference } from '@/services/ai/AIInference'
 import AssetBrowser from '@/components/assets/AssetBrowser.vue'
+import FlowLibrary from '@/components/flows/FlowLibrary.vue'
 import ConnectionSidebar from '@/components/connections/ConnectionSidebar.vue'
 import { useConnectionsStore } from '@/stores/connections'
 
@@ -14,8 +15,17 @@ const nodesStore = useNodesStore()
 const connectionsStore = useConnectionsStore()
 
 // Tab state
-type SidebarTab = 'nodes' | 'assets' | 'connections'
-const activeTab = ref<SidebarTab>('nodes')
+// The active panel lives in the UI store so other parts of the app (header, menus) can open one.
+const activeTab = computed({
+  get: () => uiStore.sidebarTab,
+  set: (t) => { uiStore.sidebarTab = t },
+})
+const SIDEBAR_TABS = [
+  { id: 'nodes', label: 'Nodes', icon: Blocks },
+  { id: 'flows', label: 'Flows', icon: Workflow },
+  { id: 'assets', label: 'Assets', icon: FolderOpen },
+  { id: 'connections', label: 'Links', icon: Plug },
+] as const
 
 // All categories collapsed by default
 function getAllCategoriesCollapsed(): Set<string> {
@@ -241,30 +251,27 @@ function onSelectConnection(connectionId: string) {
     >
       <!-- Header with tabs -->
       <div class="sidebar-header">
-        <div class="sidebar-tabs">
+        <div
+          class="sidebar-tabs"
+          role="tablist"
+        >
+          <!-- Only the active tab shows its label, so four fit in a narrow sidebar. -->
           <button
+            v-for="t in SIDEBAR_TABS"
+            :key="t.id"
             class="sidebar-tab"
-            :class="{ active: activeTab === 'nodes' }"
-            @click="activeTab = 'nodes'"
+            role="tab"
+            :aria-selected="activeTab === t.id"
+            :class="{ active: activeTab === t.id }"
+            :title="t.label"
+            :aria-label="t.label"
+            @click="activeTab = t.id"
           >
-            <Blocks :size="14" />
-            <span>Nodes</span>
-          </button>
-          <button
-            class="sidebar-tab"
-            :class="{ active: activeTab === 'assets' }"
-            @click="activeTab = 'assets'"
-          >
-            <FolderOpen :size="14" />
-            <span>Assets</span>
-          </button>
-          <button
-            class="sidebar-tab"
-            :class="{ active: activeTab === 'connections' }"
-            @click="activeTab = 'connections'"
-          >
-            <Plug :size="14" />
-            <span>Links</span>
+            <component
+              :is="t.icon"
+              :size="14"
+            />
+            <span v-if="activeTab === t.id">{{ t.label }}</span>
           </button>
         </div>
         <button
@@ -276,8 +283,11 @@ function onSelectConnection(connectionId: string) {
         </button>
       </div>
 
+      <!-- Flows Tab -->
+      <FlowLibrary v-if="activeTab === 'flows'" />
+
       <!-- Assets Tab -->
-      <AssetBrowser v-if="activeTab === 'assets'" />
+      <AssetBrowser v-else-if="activeTab === 'assets'" />
 
       <!-- Connections Tab -->
       <ConnectionSidebar
