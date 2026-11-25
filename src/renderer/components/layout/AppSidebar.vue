@@ -51,6 +51,7 @@ function handleClickOutside(event: MouseEvent) {
 onUnmounted(() => {
   aiUnsubscribe?.()
   document.removeEventListener('click', handleClickOutside)
+  cancelNodeDrag()
 })
 
 function updateAIModelStatus() {
@@ -145,9 +146,75 @@ function isCategoryCollapsed(categoryId: string): boolean {
   return collapsedCategories.value.has(categoryId)
 }
 
-// Handle node drag start
-function onDragStart(event: DragEvent, nodeId: string) {
-  event.dataTransfer?.setData('application/clasp-node', nodeId)
+// Drag a node onto the canvas with pointer events, not HTML5 drag and drop: a native drag session
+// could get stuck in Chrome (grab cursor, every click swallowed until reload), and HTML5 drag never
+// worked for touch. A press that moves past DRAG_THRESHOLD becomes a drag with a ghost label;
+// releasing over the canvas adds the node there. A press without movement stays a click (tap-to-add).
+const DRAG_THRESHOLD = 6
+interface NodeDrag { nodeId: string; name: string; color: string; x: number; y: number; started: boolean; overCanvas: boolean }
+const nodeDrag = ref<NodeDrag | null>(null)
+let pressStart = { x: 0, y: 0 }
+let suppressNextClick = false
+
+function isOverCanvas(x: number, y: number): boolean {
+  const el = document.elementFromPoint(x, y)
+  return !!el?.closest('.flow-canvas, .canvas-empty-state') && !el.closest('.vue-flow__panel')
+}
+
+function onItemPointerDown(event: PointerEvent, node: NodeDefinition, color: string) {
+  // Touch keeps the list scrollable and uses tap-to-add.
+  if (event.button !== 0 || event.pointerType === 'touch') return
+  pressStart = { x: event.clientX, y: event.clientY }
+  nodeDrag.value = { nodeId: node.id, name: node.name, color, x: event.clientX, y: event.clientY, started: false, overCanvas: false }
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragEnd)
+  window.addEventListener('pointercancel', cancelNodeDrag)
+  window.addEventListener('keydown', onDragKey)
+  window.addEventListener('blur', cancelNodeDrag)
+}
+
+function onDragMove(event: PointerEvent) {
+  const d = nodeDrag.value
+  if (!d) return
+  if (!d.started) {
+    if (Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y) < DRAG_THRESHOLD) return
+    d.started = true
+    document.body.classList.add('latch-node-dragging')
+    window.getSelection()?.removeAllRanges()
+  }
+  event.preventDefault()
+  d.x = event.clientX
+  d.y = event.clientY
+  d.overCanvas = isOverCanvas(d.x, d.y)
+}
+
+function onDragEnd(event: PointerEvent) {
+  const d = nodeDrag.value
+  if (d?.started) {
+    suppressNextClick = true
+    setTimeout(() => { suppressNextClick = false }, 0)
+    if (isOverCanvas(event.clientX, event.clientY)) uiStore.requestNodeDrop(d.nodeId, event.clientX, event.clientY)
+  }
+  cancelNodeDrag()
+}
+
+function onDragKey(event: KeyboardEvent) {
+  if (event.key === 'Escape') cancelNodeDrag()
+}
+
+function cancelNodeDrag() {
+  nodeDrag.value = null
+  document.body.classList.remove('latch-node-dragging')
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragEnd)
+  window.removeEventListener('pointercancel', cancelNodeDrag)
+  window.removeEventListener('keydown', onDragKey)
+  window.removeEventListener('blur', cancelNodeDrag)
+}
+
+function onItemClick(nodeId: string) {
+  if (suppressNextClick) return
+  uiStore.requestNodeAdd(nodeId)
 }
 
 // Open AI model manager
@@ -372,11 +439,11 @@ function onSelectConnection(connectionId: string) {
                   :key="node.id"
                   type="button"
                   class="node-item"
-                  draggable="true"
                   :aria-label="`Add ${node.name} node`"
                   :title="`Drag onto the canvas, or tap to add`"
-                  @dragstart="(e) => onDragStart(e, node.id)"
-                  @click="uiStore.requestNodeAdd(node.id)"
+                  @pointerdown="(e) => onItemPointerDown(e, node, meta.color)"
+                  @dragstart.prevent
+                  @click="onItemClick(node.id)"
                 >
                   <span
                     class="node-item-color"
@@ -411,6 +478,17 @@ function onSelectConnection(connectionId: string) {
       <PanelLeft :size="18" />
     </button>
   </aside>
+    <Teleport to="body">
+      <div
+        v-if="nodeDrag?.started"
+        class="node-drag-ghost"
+        :class="{ 'is-over-canvas': nodeDrag.overCanvas }"
+        :style="{ transform: `translate(${nodeDrag.x + 12}px, ${nodeDrag.y + 8}px)`, borderLeftColor: nodeDrag.color }"
+        aria-hidden="true"
+      >
+        {{ nodeDrag.name }}
+      </div>
+    </Teleport>
 </template>
 
 <style scoped>
@@ -875,5 +953,36 @@ function onSelectConnection(connectionId: string) {
   text-align: center;
   color: var(--color-neutral-400);
   font-size: var(--font-size-sm);
+}
+</style>
+
+<style>
+/* Global while a sidebar node is being dragged (pointer-driven; see onItemPointerDown). */
+body.latch-node-dragging,
+body.latch-node-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.node-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  pointer-events: none;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-700);
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-left: 3px solid;
+  border-radius: var(--radius-xs);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.15);
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+.node-drag-ghost.is-over-canvas {
+  opacity: 0.95;
 }
 </style>

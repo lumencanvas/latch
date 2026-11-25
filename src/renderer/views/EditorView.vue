@@ -331,29 +331,25 @@ function onDragOver(event: DragEvent) {
 function onDrop(event: DragEvent) {
   const nodeType = event.dataTransfer?.getData('application/clasp-node')
   if (!nodeType) return
+  event.preventDefault()
+  addNodeAtClientPoint(nodeType, event.clientX, event.clientY)
+}
 
+// Add a node at a client (viewport) point over the canvas: sidebar drags (pointer-driven, see
+// AppSidebar) and any HTML5 drop land here.
+function addNodeAtClientPoint(nodeType: string, clientX: number, clientY: number) {
   const definition = nodesStore.getDefinition(nodeType)
   if (!definition) return
-
-  // Get drop position in flow coordinates. Measured from the canvas itself, not currentTarget:
-  // the empty-state overlay forwards its drops here too.
-  const canvas = document.querySelector('.flow-canvas') ?? (event.currentTarget as HTMLElement)
+  const canvas = document.querySelector('.flow-canvas')
+  if (!canvas) return
   const { left, top } = canvas.getBoundingClientRect()
-  const position = project({
-    x: event.clientX - left,
-    y: event.clientY - top,
-  })
-
-  // Record history before adding node
+  const position = project({ x: clientX - left, y: clientY - top })
   const before = startBatch()
-
-  // Add node
   flowsStore.addNode(nodeType, position, {
     label: definition.name,
     nodeType: nodeType,
     definition: definition,
   })
-
   endBatch(before, `Add ${definition.name} node`)
 }
 
@@ -384,6 +380,9 @@ function addNodeAtCenter(nodeType: string) {
 watch(
   () => uiStore.nodeAddNonce,
   () => {
+    const drops = [...uiStore.pendingNodeDrops]
+    uiStore.pendingNodeDrops = []
+    for (const d of drops) addNodeAtClientPoint(d.nodeType, d.clientX, d.clientY)
     if (uiStore.pendingNodeAdds.length === 0) return
     const types = [...uiStore.pendingNodeAdds]
     uiStore.pendingNodeAdds = []
@@ -1047,7 +1046,7 @@ onUnmounted(() => {
     <!-- Empty state -->
     <div
       v-if="flowsStore.activeNodes.length === 0"
-      class="empty-state"
+      class="empty-state canvas-empty-state"
       @dragover="onDragOver"
       @drop="onDrop"
     >
@@ -1080,6 +1079,12 @@ onUnmounted(() => {
       </div>
       <div class="empty-actions">
         <button
+          class="browse-examples"
+          @click="uiStore.openNodeExplorer('snippets')"
+        >
+          Browse all {{ flowSnippets.length }} example flows →
+        </button>
+        <button
           class="open-starter-flow"
           @click="openStarterFlow()"
         >
@@ -1087,7 +1092,7 @@ onUnmounted(() => {
         </button>
         <button
           class="browse-library"
-          @click="uiStore.openNodeExplorer()"
+          @click="uiStore.openNodeExplorer('nodes')"
         >
           Browse the node library
         </button>
@@ -1387,7 +1392,7 @@ onUnmounted(() => {
   margin-top: var(--space-3);
 }
 
-.open-starter-flow {
+.browse-examples {
   padding: 8px 16px;
   font-size: var(--font-size-sm);
   font-weight: 600;
@@ -1399,8 +1404,24 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-.open-starter-flow:hover {
+.browse-examples:hover {
   background: var(--color-primary-700);
+}
+
+.open-starter-flow {
+  padding: 8px 16px;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-primary-700);
+  background: transparent;
+  border: 1px solid var(--color-primary-600);
+  border-radius: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.open-starter-flow:hover {
+  background: var(--color-primary-50);
 }
 
 .connection-error {

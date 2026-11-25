@@ -118,6 +118,8 @@ interface UIState {
   // so it can't project itself). A queue (vs a single value) so multiple requests
   // in one tick aren't coalesced/lost.
   pendingNodeAdds: string[]
+  /** Nodes dragged from the sidebar and released over the canvas, at their client point. */
+  pendingNodeDrops: { nodeType: string; clientX: number; clientY: number }[]
   nodeAddNonce: number
 
   // Shader editor modal
@@ -133,6 +135,8 @@ interface UIState {
 
   // Node explorer modal
   nodeExplorerOpen: boolean
+  /** Tab the explorer opens on (applied after its reset-on-open). */
+  nodeExplorerTab: 'nodes' | 'snippets'
 
   // Add Bluetooth Device modal
   bluetoothDeviceManagerOpen: boolean
@@ -201,6 +205,7 @@ export const useUIStore = defineStore('ui', {
 
     // Tap-to-add queue (consumed by the editor view)
     pendingNodeAdds: [],
+    pendingNodeDrops: [],
     nodeAddNonce: 0,
 
     // Shader editor modal
@@ -216,6 +221,7 @@ export const useUIStore = defineStore('ui', {
 
     // Node explorer modal
     nodeExplorerOpen: false,
+    nodeExplorerTab: 'nodes',
 
     // Add Bluetooth Device modal
     bluetoothDeviceManagerOpen: false,
@@ -290,6 +296,12 @@ export const useUIStore = defineStore('ui', {
       if (this.isMobile) this.sidebarOpen = false
     },
 
+    /** Add a node where a sidebar drag was released (client coordinates). */
+    requestNodeDrop(nodeType: string, clientX: number, clientY: number) {
+      this.pendingNodeDrops.push({ nodeType, clientX, clientY })
+      this.nodeAddNonce++
+    },
+
     // Left sidebar
     toggleSidebar() {
       this.sidebarOpen = !this.sidebarOpen
@@ -352,7 +364,9 @@ export const useUIStore = defineStore('ui', {
     },
 
     // Node explorer modal
-    openNodeExplorer() {
+    /** Open the node explorer on a tab ('snippets' = the Example Flows list, unfiltered). */
+    openNodeExplorer(tab: 'nodes' | 'snippets' = 'nodes') {
+      this.nodeExplorerTab = tab
       this.nodeExplorerOpen = true
     },
 

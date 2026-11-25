@@ -26,6 +26,7 @@ const definition: NodeDefinition = {
     { id: 'confidence', type: 'number', label: 'Confidence' },
     { id: 'gestureType', type: 'string', label: 'Gesture' },
     { id: 'fingerTips', type: 'data', label: 'Finger Tips' },
+    { id: 'allHands', type: 'data', label: 'All Hands' },
     { id: 'handCount', type: 'number', label: 'Hand Count' },
     { id: 'detected', type: 'boolean', label: 'Detected' },
     { id: 'loading', type: 'boolean', label: 'Loading' },

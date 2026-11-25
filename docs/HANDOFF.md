@@ -6,6 +6,54 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-24 (later 140): sidebar drag rewritten on pointer events; five showcase sample flows
+
+- **Drag freeze (maintainer, real Chrome):** HTML5 drag from the sidebar left the grab cursor stuck and
+  swallowed every click until reload. Not reproducible under Playwright (it emulates DnD). Replaced
+  native DnD in `AppSidebar.vue` with pointer events: threshold 6px, teleported ghost label, global
+  `latch-node-dragging` body class, drop target = `elementFromPoint` inside `.flow-canvas` or
+  `.canvas-empty-state` (NOT `.empty-state`: the Properties panel has one too, which caused a false
+  drop), Escape/blur/pointercancel/unmount cancel; `uiStore.requestNodeDrop(type, clientX, clientY)` →
+  EditorView `addNodeAtClientPoint`. Touch skips it (tap-to-add). Verified in Chrome: drop on empty and
+  busy canvas at the pointer, no add over Properties/sidebar, click-add intact, no leftover state.
+- **Sample flows** (`flow-snippets.ts`, guarded by `starter-flows.test.ts`): air-harp, face-choir,
+  sing-it-back, depth-mirror, rule-110-garden, chosen from a research pass on Max/TouchDesigner trends
+  (MediaPipe interactives, magic-mirror depth, audience/voice). Starter picker now: lfo-kaleidoscope,
+  bellows-progression, rule-110-garden, spinning-torus-3d, air-harp, face-choir. Chrome run: Garden
+  plays (0.017 rms, quiet: maybe raise gains); Depth Mirror renders after the model download; the
+  hand/face flows load cleanly (fake camera has no hand/face to drive them); Sing It Back needs the
+  Speech Recognition + Sentiment models loaded in the AI Model Manager (its setup line says so).
+  **Not yet played live by the maintainer.**
+- **Then (same entry, maintainer asks):** new nodes `blob-track` (visual; motion = running-average
+  background on an 80-wide luma grid, 4-connected blobs, greedy id tracking, styles/links/labels;
+  outputs blobs/count/activity/x/y/onset) and `tracking-overlay` (visual; hand 21 / pose 33 / face 468+
+  auto-detected, tech/neon/dots, fingertip web, note-name label), sharing `registry/visual/overlayCanvas.ts`
+  (drawable-from-texture, surface, publish, dispose). MediaPipe Hand declares its existing `allHands`
+  output. Air Harp v2 (harp + motion-pad chord per bar + granular `public/samples/glass-cloud.wav`, a
+  synthesized 8 s D-dorian texture, scrubbed by hand x + tech HUD), Sing With Your Face v2 (choir-aah
+  chord on mouth gate + neon face HUD), plus blob-cam, play-the-room, skeleton-hud and five beginner
+  flows (first-sound, play-the-keyboard, type-to-speak, see-your-voice, endless-melody). 33 snippets.
+  **Discoverability:** header Examples button + empty-state "Browse all N example flows" open the
+  explorer on the Example Flows tab (renamed from Snippets) via `uiStore.openNodeExplorer('snippets')`,
+  applied after NodeExplorerModal's reset-on-open.
+- **Mouth Voice** (`bellows-mouth-voice`): blendshapes → (open, round, spread, closed, lipTeeth, tongue)
+  → nearest vowel prototype (hand-set mouth chart, hysteresis 1.35×) or m / v / ð; held note via
+  `vocalKeyDown`, live `vocalShape(nodeId, phoneme, params)` (new in singerManager: posts phoneme +
+  jawSet/lipOpen/lipRound/tongueFront/tongueHigh/glide only on change; offsets are the DEVIATION from
+  the chosen vowel's prototype, clamped ±0.45, because absolute offsets closed the lips on "oo" and
+  silenced it). Verified in Chrome with scripted blendshapes: ah/ee/oo/hum all sound, centroid oo 845 Hz
+  vs ah/ee ~1100 Hz; rest is silent. Prototypes are visual guesses: tune with real faces.
+  Sample `mouth-voice` (Mouth to Voice). 34 snippets.
+- **Header responsive:** secondary actions in `.header-secondary` hide ≤1440px behind a More menu
+  (`.header-more`); view/AI labels hide ≤1200; brand text, flow name, Examples label ≤900; history ≤640;
+  AI button moves into More ≤480. Media queries live at the END of the scoped style (base rules later in
+  the file override them otherwise). No horizontal overflow at 390 / 768 / 1100 / 1500.
+- **TODO (maintainer): the singing flow (Sing With Your Face / Voice Keys) "does need work"**; ask
+  what feels wrong (timing of syllables vs mouth, pitch, lyric stepping).
+- **TODO (maintainer, later): Bellows Instrument presets.** Wants a fuller preset/instrument list (check
+  whether bellowsjs exposes a list-instruments/preset catalog), browsing by instrument category, a
+  "define your own" path with settings, and vocal instruments in the same picker.
+
 ## 2026-11-24 (later 139): bellows heard only via Audio Output, sidebar drop fix, 1.4.0
 
 Maintainer testing: a Singer played with no Audio Output and muting the output didn't silence it;

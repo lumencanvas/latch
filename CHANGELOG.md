@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.4.1: Synth on bellows, tracking nodes, example flows, drag fix
+
+### Fixed
+- **Dragging a node from the sidebar could lock up the editor** (grab cursor stuck, no clicks until a
+  reload). The sidebar no longer uses the browser's drag and drop: the drag is tracked with pointer
+  events, shows the node's name under the cursor, and drops where you release over the canvas.
+  Releasing anywhere else, or pressing Escape, cancels it. Tap or click still adds at the center.
+- **Keyboard to Synth notes could sustain forever.** Holding two keys and letting go left the first
+  note ringing: the Synth released only the latest note, its clean-up timer could drop a newer note,
+  and the Synth panel ran a second copy of every note straight to the speakers. The keyboard now
+  releases everything when the window loses focus, frees the exact note a computer key started, and
+  falls back to the key still held when you let go of one.
+
+### Changed
+- **Synth now plays bellows underneath.** Same simple panel and the same six instruments, plus twelve
+  modelled ones (electric piano, organ, nylon guitar, harp, cello, flute, brass, marimba, kalimba, FM
+  bell, choir, analog lead, acid bass, motion pad). Sine, Moog Bass, Warm Pad and Pluck still follow
+  the envelope and filter knobs. The Pad's Voices knob is gone (detune sets the width).
+- Bellows Instrument and Synth move to the new note when it changes while the gate is held (legato).
+
+### New nodes
+- **Blob Tracker:** the blob-tracking look. Boxes, ids, coordinates and connecting lines snap onto
+  whatever moves (or bright/dark areas), in outline, corner, invert or tinted styles. Outputs the blobs,
+  their count, how much of the frame is moving, the biggest blob's position and a trigger on each new
+  blob, so movement can play sound.
+- **Tracking Overlay:** draws MediaPipe hand, pose or face tracking over the video as a texture (tech
+  HUD with square joints, bracketed tags and fingertip coordinates, neon glow, or dots), with an
+  optional big label or note name. MediaPipe Hand gains an **All Hands** output to draw every hand.
+
+- **Mouth Voice:** your mouth shape, read by face tracking, becomes the articulatory voice. How open,
+  how rounded and how spread your lips are picks the nearest vowel (ee, ih, ay, eh, a, ah, uh, aw,
+  oh, oo), the voice's jaw, lip and tongue settings follow your mouth between vowels, pressed lips hum,
+  lower lip under the teeth gives v and the tongue out gives th. The **Mouth to Voice** sample wires it
+  up with eyebrow pitch and a HUD that labels the sound you are making.
+
+### Easier to find
+- **Header works on small screens:** labels collapse to icons step by step and the flow name truncates
+  instead of wrapping; the icon actions and GitHub link stay on desktop and tablet, folding into a More
+  menu only at phone widths. Nothing is cut off at any width.
+- An **Examples** button (graduation cap) in the header and a **Browse all example flows** button on the empty canvas
+  open the full list (the explorer tab is now called Example Flows, unfiltered when opened this way).
+
+### New sample flows
+- **Air Harp:** your fingertip plays a harp in the air (hand tracking, notes snapped to D dorian, a
+  pad chord that follows your hand each bar, a granular glass cloud scrubbed by moving sideways, ladder
+  filter, tape delay and plate), with a tech HUD drawing your hand and the note it plays.
+- **Sing With Your Face:** open your mouth and the bellows voice sings the next syllable of the lyrics
+  while a choir holds the chord; raise your eyebrows to sing higher. Neon face HUD.
+- **Sing It Back:** speech recognition and a sentiment model, both in the browser; a singing voice sings
+  your sentence back, with more reverb the sadder it sounds.
+- **Depth Mirror:** a depth model turns the webcam into a depth camera that warps the image, pushed by
+  the room's bass and highs.
+- **Rule 110 Garden:** an L-system kalimba melody and a Rule 110 hi-hat, retuned to just intonation.
+- **Blob Tracking Cam**, **Play the Room** (motion strikes a marimba), **Skeleton HUD**.
+- For beginners: **Your First Sound**, **Play the Keyboard**, **Type and It Talks**, **See Your Voice**,
+  **Endless Melody**.
+- The empty-canvas picker now offers Your First Sound, Blob Tracking Cam, Air Harp, Sing With Your
+  Face, Rule 110 Garden and Endless Melody.
+
 ## 1.4.0: bellows as a node family
 
 Needs bellowsjs 0.5.2 (direct inputs/outputs and the filter effect).

@@ -27,6 +27,8 @@ import {
   Undo2,
   Redo2,
   HelpCircle,
+  GraduationCap,
+  MoreHorizontal,
 } from 'lucide-vue-next'
 import LatchLogo from '@/components/branding/LatchLogo.vue'
 import { aiInference } from '@/services/ai/AIInference'
@@ -152,6 +154,28 @@ async function saveProject() {
 function openGitHub() {
   window.open('https://github.com/lumencanvas/latch', '_blank')
 }
+
+// Narrow screens: the secondary actions fold into a "More" menu (see the media queries).
+const moreOpen = ref(false)
+const moreRef = ref<HTMLElement | null>(null)
+function runMore(action: () => unknown) {
+  moreOpen.value = false
+  void action()
+}
+function onDocPointer(e: PointerEvent) {
+  if (moreOpen.value && moreRef.value && !moreRef.value.contains(e.target as Node)) moreOpen.value = false
+}
+function onDocKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') moreOpen.value = false
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocPointer)
+  document.addEventListener('keydown', onDocKey)
+})
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocPointer)
+  document.removeEventListener('keydown', onDocKey)
+})
 
 // Detect macOS Electron for traffic light padding
 const isMacElectron = computed(() => {
@@ -287,16 +311,16 @@ const isMacElectron = computed(() => {
       <!-- AI Button: Full text when no models loaded, icon only when loaded -->
       <button
         v-if="!hasLoadedModels"
-        class="btn ai-load-btn"
+        class="btn ai-load-btn header-ai"
         title="Load Local AI Models"
         @click="openAIModelManager"
       >
         <Brain :size="16" />
-        <span>Load Local AI</span>
+        <span class="ai-load-label">Load Local AI</span>
       </button>
       <button
         v-else
-        class="btn btn-icon ai-btn-loaded"
+        class="btn btn-icon ai-btn-loaded header-ai"
         title="AI Model Manager"
         aria-label="AI Model Manager"
         @click="openAIModelManager"
@@ -305,83 +329,262 @@ const isMacElectron = computed(() => {
       </button>
 
       <button
-        class="btn btn-icon btn-ghost connections-btn"
-        :class="{ 'has-connections': connectionsStore.connections.length > 0 }"
-        title="Connection Manager"
-        aria-label="Connection Manager"
-        @click="openConnectionManager"
+        class="btn btn-ghost header-examples"
+        title="Example flows: ready-made patches to open and remix"
+        aria-label="Example flows"
+        @click="uiStore.openNodeExplorer('snippets')"
       >
-        <Plug />
+        <GraduationCap />
+        <span class="header-examples-label">Examples</span>
       </button>
 
-      <button
-        class="btn btn-icon btn-ghost"
-        title="Add Bluetooth Device"
-        aria-label="Add Bluetooth Device"
-        @click="uiStore.openBluetoothDeviceManager()"
-      >
-        <Bluetooth />
-      </button>
+      <div class="header-secondary">
+        <button
+          class="btn btn-icon btn-ghost connections-btn"
+          :class="{ 'has-connections': connectionsStore.connections.length > 0 }"
+          title="Connection Manager"
+          aria-label="Connection Manager"
+          @click="openConnectionManager"
+        >
+          <Plug />
+        </button>
 
-      <span class="header-divider" />
+        <button
+          class="btn btn-icon btn-ghost"
+          title="Add Bluetooth Device"
+          aria-label="Add Bluetooth Device"
+          @click="uiStore.openBluetoothDeviceManager()"
+        >
+          <Bluetooth />
+        </button>
 
-      <button
-        class="btn btn-icon btn-ghost"
-        title="Save Project"
-        aria-label="Save Project"
-        @click="saveProject"
-      >
-        <Save />
-      </button>
-      <button
-        class="btn btn-icon btn-ghost"
-        title="Export Project"
-        aria-label="Export Project"
-        @click="exportProject"
-      >
-        <Download />
-      </button>
-      <button
-        class="btn btn-icon btn-ghost"
-        title="Import Project"
-        aria-label="Import Project"
-        @click="importProject"
-      >
-        <Upload />
-      </button>
-      <button
-        class="btn btn-icon btn-ghost"
-        title="Node Explorer"
-        aria-label="Node Explorer"
-        @click="uiStore.openNodeExplorer()"
-      >
-        <Boxes />
-      </button>
+        <span class="header-divider" />
 
-      <button
-        class="btn btn-icon btn-ghost"
-        title="Help & keyboard shortcuts (?)"
-        aria-label="Help and keyboard shortcuts"
-        @click="uiStore.openHelp()"
-      >
-        <HelpCircle />
-      </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          title="Save Project"
+          aria-label="Save Project"
+          @click="saveProject"
+        >
+          <Save />
+        </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          title="Export Project"
+          aria-label="Export Project"
+          @click="exportProject"
+        >
+          <Download />
+        </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          title="Import Project"
+          aria-label="Import Project"
+          @click="importProject"
+        >
+          <Upload />
+        </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          title="Node Explorer"
+          aria-label="Node Explorer"
+          @click="uiStore.openNodeExplorer('nodes')"
+        >
+          <Boxes />
+        </button>
 
-      <button
-        class="btn btn-icon btn-ghost github-btn"
-        title="View on GitHub"
-        aria-label="View on GitHub"
-        @click="openGitHub"
-      >
-        <Github :size="16" />
-      </button>
+        <button
+          class="btn btn-icon btn-ghost"
+          title="Help & keyboard shortcuts (?)"
+          aria-label="Help and keyboard shortcuts"
+          @click="uiStore.openHelp()"
+        >
+          <HelpCircle />
+        </button>
 
-      <span class="header-version">v{{ APP_VERSION }}</span>
+        <button
+          class="btn btn-icon btn-ghost github-btn"
+          title="View on GitHub"
+          aria-label="View on GitHub"
+          @click="openGitHub"
+        >
+          <Github :size="16" />
+        </button>
+
+        <span class="header-version">v{{ APP_VERSION }}</span>
+      </div>
+
+      <div
+        ref="moreRef"
+        class="header-more"
+      >
+        <button
+          class="btn btn-icon btn-ghost"
+          title="More"
+          aria-label="More actions"
+          aria-haspopup="menu"
+          :aria-expanded="moreOpen"
+          @click="moreOpen = !moreOpen"
+        >
+          <MoreHorizontal />
+        </button>
+        <div
+          v-if="moreOpen"
+          class="more-menu"
+          role="menu"
+        >
+          <button
+            role="menuitem"
+            class="more-item more-ai"
+            @click="runMore(openAIModelManager)"
+          >
+            <Brain /> AI Models
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(openConnectionManager)"
+          >
+            <Plug /> Connections
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(() => uiStore.openBluetoothDeviceManager())"
+          >
+            <Bluetooth /> Bluetooth Device
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(saveProject)"
+          >
+            <Save /> Save Project
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(exportProject)"
+          >
+            <Download /> Export Project
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(importProject)"
+          >
+            <Upload /> Import Project
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(() => uiStore.openNodeExplorer('nodes'))"
+          >
+            <Boxes /> Node Explorer
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(() => uiStore.openHelp())"
+          >
+            <HelpCircle /> Help &amp; Shortcuts
+          </button>
+          <button
+            role="menuitem"
+            class="more-item"
+            @click="runMore(openGitHub)"
+          >
+            <Github :size="16" /> GitHub
+          </button>
+          <span class="more-version">LATCH v{{ APP_VERSION }}</span>
+        </div>
+      </div>
     </div>
   </header>
 </template>
 
 <style scoped>
+.header-examples {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+
+.header-examples svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.header-secondary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.header-more {
+  position: relative;
+  display: none;
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: var(--space-1);
+  background: var(--color-neutral-800);
+  border: 1px solid var(--color-neutral-600);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  color: var(--color-neutral-200);
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.more-item:hover,
+.more-item:focus-visible {
+  color: var(--color-neutral-0);
+  background: var(--color-neutral-700);
+}
+
+.more-item svg {
+  width: 16px;
+  height: 16px;
+}
+
+.more-ai {
+  display: none;
+}
+
+.more-version {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-400);
+  border-top: 1px solid var(--color-neutral-700);
+  margin-top: var(--space-1);
+}
+
+
 .app-header {
   display: flex;
   align-items: center;
@@ -464,8 +667,12 @@ const isMacElectron = computed(() => {
 }
 
 .header-flow-name {
+  max-width: 220px;
+  overflow: hidden;
   font-size: var(--font-size-sm);
   color: var(--color-neutral-300);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .dirty-indicator {
@@ -608,5 +815,49 @@ const isMacElectron = computed(() => {
 .view-btn svg {
   width: 14px;
   height: 14px;
+}
+
+/* Responsive header: drop the version and text labels first, then the brand text and flow name;
+   only on phone widths do the icon actions fold into More, then history goes. Play/Stop, the view switch and Examples always stay. */
+@media (max-width: 1440px) {
+  .header-version,
+  .header-secondary .header-divider { display: none; }
+  .header-secondary { gap: var(--space-1); }
+}
+
+@media (max-width: 1360px) {
+  .view-btn span,
+  .ai-load-label { display: none; }
+  .header-flow-name { max-width: 140px; }
+}
+
+@media (max-width: 1140px) {
+  .brand-title,
+  .header-flow-name,
+  .header-left .header-divider,
+  .header-examples-label { display: none; }
+}
+
+@media (max-width: 900px) {
+  .app-header { gap: var(--space-2); }
+  .history-controls,
+  .header-center .header-divider,
+  .header-right .header-divider { display: none; }
+}
+
+@media (max-width: 768px) {
+  .header-secondary { display: none; }
+  .header-more { display: block; }
+}
+
+@media (max-width: 640px) {
+  .app-header { padding: 0 var(--space-2); }
+  .header-left,
+  .header-right { flex: 0 1 auto; }
+}
+
+@media (max-width: 480px) {
+  .header-ai { display: none; }
+  .more-ai { display: flex; }
 }
 </style>

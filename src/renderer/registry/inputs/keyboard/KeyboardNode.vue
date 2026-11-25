@@ -51,6 +51,7 @@ const keyboardHeight = computed(() => nodeHeight.value - HEADER_HEIGHT)
 
 // Handle note events
 function handleNoteOn(note: number, velocity: number) {
+  activeNotes.value.delete(note)
   activeNotes.value.add(note)
   flowsStore.updateNodeData(props.id, {
     note,
@@ -65,9 +66,14 @@ function handleNoteOn(note: number, velocity: number) {
 
 function handleNoteOff(note: number) {
   activeNotes.value.delete(note)
-  // Only close gate when ALL notes are released
+  // Only close gate when ALL notes are released; otherwise fall back to the most recent key still
+  // held (last-note priority), so the released key stops sounding.
   if (activeNotes.value.size === 0) {
     flowsStore.updateNodeData(props.id, { gate: false })
+  } else {
+    const held = [...activeNotes.value]
+    const last = held[held.length - 1]
+    if (props.data?.note !== last) flowsStore.updateNodeData(props.id, { note: last })
   }
 }
 

@@ -71,7 +71,9 @@ const keyboardMapping: Record<string, number> = {
 }
 
 // Track which computer keys are currently pressed
-const pressedComputerKeys = ref<Set<string>>(new Set())
+// Computer key → the MIDI note it started, so its release frees that exact note even if the octave
+// or key mapping changed while it was held.
+const pressedComputerKeys = ref<Map<string, number>>(new Map())
 
 // Base note for keyboard mapping (affected by octaveShift)
 const mappingBaseNote = computed(() => {
@@ -184,20 +186,24 @@ function handleKeyLeave(midiNote: number) {
 }
 
 function handleGlobalMouseUp() {
-  for (const note of activeKeys.value) {
-    const noteOffset = note - mappingBaseNote.value
-    let heldByKeyboard = false
-    for (const [key, offset] of Object.entries(keyboardMapping)) {
-      if (offset === noteOffset && pressedComputerKeys.value.has(key)) {
-        heldByKeyboard = true
-        break
-      }
-    }
-    if (!heldByKeyboard) {
-      emit('note-off', note)
+  const heldByKeyboard = new Set(pressedComputerKeys.value.values())
+  for (const note of [...activeKeys.value]) {
+    if (!heldByKeyboard.has(note)) {
       activeKeys.value.delete(note)
+      emit('note-off', note)
     }
   }
+}
+
+/** Release everything: the window lost focus, so key-up and mouse-up events will never arrive. */
+function releaseAll() {
+  pressedComputerKeys.value.clear()
+  for (const note of [...activeKeys.value]) emit('note-off', note)
+  activeKeys.value.clear()
+}
+
+function onVisibility() {
+  if (document.hidden) releaseAll()
 }
 
 function handleComputerKeyDown(event: KeyboardEvent) {
@@ -219,21 +225,15 @@ function handleComputerKeyDown(event: KeyboardEvent) {
   if (!props.includeBlackKeys && blackKeyNotes.includes(midiNote % 12)) return
 
   event.preventDefault()
-  pressedComputerKeys.value.add(key)
+  pressedComputerKeys.value.set(key, midiNote)
   activeKeys.value.add(midiNote)
   emit('note-on', midiNote, 100)
 }
 
 function handleComputerKeyUp(event: KeyboardEvent) {
   const key = event.key.toLowerCase()
-
-  if (!pressedComputerKeys.value.has(key)) return
-
-  const noteOffset = keyboardMapping[key]
-  if (noteOffset === undefined) return
-
-  const midiNote = mappingBaseNote.value + noteOffset
-
+  const midiNote = pressedComputerKeys.value.get(key)
+  if (midiNote === undefined) return
   pressedComputerKeys.value.delete(key)
 
   if (activeKeys.value.has(midiNote)) {
@@ -245,11 +245,15 @@ function handleComputerKeyUp(event: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener('keydown', handleComputerKeyDown)
   window.addEventListener('keyup', handleComputerKeyUp)
+  window.addEventListener('blur', releaseAll)
+  document.addEventListener('visibilitychange', onVisibility)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleComputerKeyDown)
   window.removeEventListener('keyup', handleComputerKeyUp)
+  window.removeEventListener('blur', releaseAll)
+  document.removeEventListener('visibilitychange', onVisibility)
 
   for (const note of activeKeys.value) {
     emit('note-off', note)
