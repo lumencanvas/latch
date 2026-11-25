@@ -6,6 +6,27 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 150): AI Phase 3: Segment Anything, LFM2-VL, depth data, eased boxes
+
+- **Segment Anything node:** `registry/ai/segment-anything/node.ts`.
+  - Worker: the `mask-generation` task loads `SamModel` and keeps the image embedding on the pipe.
+    The `segment` infer picks the best-IoU mask.
+  - Service: `aiInference.segment()`.
+  - `segmentState` has dispose and gc in shared.ts. `_display` drives the node preview.
+  - The worker gets a copy of the ImageData (pixels are transferred zero-copy; the original builds
+    the cut-out).
+- **LFM2-VL:**
+  - Spec with a GPU-only ladder.
+  - The worker loads it with `AutoModelForImageTextToText` and calls the processor images first.
+  - SmolVLM gets `repetition_penalty: 1.3`.
+  - `commercialOf('lfm…')` returns 'unknown', and its badge reads "commercial use limited".
+- **Depth `depth` data output; `easedBoxes` in `runLiveDetection`.**
+- **Verified in Chrome:** a SlimSAM cut-out on WebGPU, an LFM2-VL caption on WebGPU, and the preview.
+- **Next:**
+  - Phase 4 (one Model Manager: families, filter by capability, storage, flows using each model).
+  - Phase 5 (`@hackbuild/weights` cache once its transformers path checks out).
+  - Then the bellows workstation.
+
 ## 2026-11-25 (later 149): AI Phase 2a: generative lane, live cadence; audit fix
 
 - **Audit (quick):**

@@ -632,6 +632,34 @@ export function liveRunFinished(nodeId: string, latencyMs: number): void {
   setCached(`${nodeId}:liveLatency`, latencyMs)
 }
 
+/** How long a box takes to glide to its new position after a detection run (ms). */
+export const BOX_EASE_MS = 150
+/**
+ * The boxes to draw now: each new detection eases from the nearest previous box with the same
+ * label, so boxes move smoothly between runs instead of jumping (outputs stay the raw result).
+ */
+export function easedBoxes(nodeId: string, current: Detection[], now = performance.now()): Detection[] {
+  const prev = getCached<Detection[]>(`${nodeId}:prevBoxes`, [])
+  const t = Math.min(1, (now - getCached<number>(`${nodeId}:detAt`, 0)) / BOX_EASE_MS)
+  if (t >= 1 || prev.length === 0) return current
+  const centre = (d: Detection) => [(d.box.xmin + d.box.xmax) / 2, (d.box.ymin + d.box.ymax) / 2]
+  return current.map((d) => {
+    const [cx, cy] = centre(d)
+    let best: Detection | null = null
+    let bestD = Infinity
+    for (const p of prev) {
+      if (p.label !== d.label) continue
+      const [px, py] = centre(p)
+      const dist = (px - cx) ** 2 + (py - cy) ** 2
+      if (dist < bestD) { bestD = dist; best = p }
+    }
+    if (!best) return d
+    const e = t * (2 - t) // ease-out
+    const lerp = (a: number, b: number) => a + (b - a) * e
+    return { ...d, box: { xmin: lerp(best.box.xmin, d.box.xmin), ymin: lerp(best.box.ymin, d.box.ymin), xmax: lerp(best.box.xmax, d.box.xmax), ymax: lerp(best.box.ymax, d.box.ymax) } }
+  })
+}
+
 export function runLiveDetection(
   ctx: ExecutionContext,
   detect: (imageData: ImageData) => Promise<Detection[]>,
@@ -704,6 +732,9 @@ export function runLiveDetection(
       try {
         const detections = await detect(imageData)
         if (isNodeDisposed(ctx.nodeId)) return
+        // Boxes glide from where they were drawn to the new result (see easedBoxes).
+        setCached(`${ctx.nodeId}:prevBoxes`, easedBoxes(ctx.nodeId, getCached<Detection[]>(`${ctx.nodeId}:detections`, [])))
+        setCached(`${ctx.nodeId}:detAt`, performance.now())
         setCached(`${ctx.nodeId}:detections`, detections)
         const top = detections.reduce<Detection | null>((best, d) => (!best || d.score > best.score ? d : best), null)
         setCached(`${ctx.nodeId}:topLabel`, top?.label ?? '')
@@ -733,7 +764,7 @@ export function runLiveDetection(
     c2d.putImageData(imageData, 0, 0)
 
     if (showBoxes) {
-      for (const det of cachedDetections) {
+      for (const det of easedBoxes(ctx.nodeId, cachedDetections)) {
         const { xmin, ymin, xmax, ymax } = det.box
         drawBoundingBox(
           c2d,
@@ -818,6 +849,26 @@ export function disposeDepthNode(nodeId: string): void {
     state.canvas.height = 0
     depthEstimateState.delete(nodeId)
   }
+}
+
+/** Segment Anything: the mask and the cut-out, each a canvas-backed texture. */
+export interface SegmentState {
+  maskCanvas: HTMLCanvasElement
+  cutCanvas: HTMLCanvasElement
+  mask: THREE.Texture | null
+  cutout: THREE.Texture | null
+  builtFrom: unknown
+}
+export const segmentState = new Map<string, SegmentState>()
+
+export function disposeSegmentNode(nodeId: string): void {
+  const state = segmentState.get(nodeId)
+  if (!state) return
+  state.mask?.dispose()
+  state.cutout?.dispose()
+  state.maskCanvas.width = state.maskCanvas.height = 0
+  state.cutCanvas.width = state.cutCanvas.height = 0
+  segmentState.delete(nodeId)
 }
 
 /** Cheap jet-style colormap (blue→cyan→green→yellow→red) for depth viz. */
@@ -1032,6 +1083,9 @@ export function disposeAllAINodes(): void {
   for (const nodeId of depthEstimateState.keys()) {
     disposeDepthNode(nodeId)
   }
+  for (const nodeId of segmentState.keys()) {
+    disposeSegmentNode(nodeId)
+  }
 
   nodeCache.clear()
   pendingOperations.clear()
@@ -1084,6 +1138,10 @@ export function gcAIState(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(nodeId)) {
       disposeTTSNode(nodeId)
     }
+  }
+
+  for (const nodeId of segmentState.keys()) {
+    if (!validNodeIds.has(nodeId)) disposeSegmentNode(nodeId)
   }
 
   // Dispose depth-estimation textures for removed nodes

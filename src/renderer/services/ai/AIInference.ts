@@ -775,6 +775,26 @@ class AIInferenceService extends WorkerFacade {
   }
 
   /**
+   * Segment Anything (SlimSAM): the mask of whatever is under the points (x, y in 0..1, label 1 =
+   * include, 0 = exclude). `reuseEmbedding` skips the image encoder when the image hasn't changed
+   * (moving the point on a still image is then cheap).
+   */
+  async segment(
+    image: ImageData,
+    points: Array<{ x: number; y: number; label?: number }>,
+    options: { modelId?: string; reuseEmbedding?: boolean } = {},
+  ): Promise<{ width: number; height: number; data: Uint8Array; score: number }> {
+    const model = options.modelId || this.getDefaultModel('mask-generation')
+    if (!this._loadedModels.has(`mask-generation:${model}`)) await this.loadModel('mask-generation', model)
+    const imageData = this.imageToSerializable(image)
+    return this.sendToWorker(
+      { type: 'infer', task: 'mask-generation', model, method: 'segment', args: [imageData, points, !!options.reuseEmbedding] },
+      undefined,
+      300000,
+    )
+  }
+
+  /**
    * Monocular depth estimation. Returns the depth map as a normalized 0–255
    * grayscale buffer (`channels` is usually 1). The first call downloads the
    * model (tens of MB), hence the long timeout.

@@ -11,6 +11,8 @@ import {
   env,
   AutoProcessor,
   AutoModelForVision2Seq,
+  AutoModelForImageTextToText,
+  SamModel,
   RawImage,
 } from '@huggingface/transformers'
 import * as ort from 'onnxruntime-web'
@@ -236,8 +238,23 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
           progress_callback: pipelineOptions.progress_callback,
         })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const model = await (AutoModelForVision2Seq as any).from_pretrained(msg.model, loadOpts)
-        return { processor, model, vlm: true }
+        // LFM2-VL registers under ImageTextToText; SmolVLM under Vision2Seq (it also maps there).
+        const Cls = /lfm2-vl/i.test(msg.model) ? AutoModelForImageTextToText : AutoModelForVision2Seq
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = await (Cls as any).from_pretrained(msg.model, loadOpts)
+        return { processor, model, vlm: true, modelId: msg.model }
+      }
+      if (msg.task === 'mask-generation') {
+        // SlimSAM: an image encoder (run once per image, cached) and a small prompt decoder.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const processor = await (AutoProcessor as any).from_pretrained(msg.model, { progress_callback: pipelineOptions.progress_callback })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+        if (device) loadOpts.device = device
+        if (dtype !== undefined) loadOpts.dtype = dtype
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = await (SamModel as any).from_pretrained(msg.model, loadOpts)
+        return { processor, model, sam: true, embedding: null }
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const opts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
@@ -546,6 +563,39 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
         break
       }
 
+      case 'segment': {
+        // args: image, points [{x,y,label}] in 0..1 image coords, reuseEmbedding (same image as last time)
+        const [imageData, points, reuse] = msg.args as [
+          { width: number; height: number; data: Uint8ClampedArray | number[] },
+          Array<{ x: number; y: number; label?: number }>,
+          boolean,
+        ]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sam = pipe as { processor: any; model: any; embedding: any }
+        if (!reuse || !sam.embedding) {
+          const raw = new RawImage(toPixels(imageData.data), imageData.width, imageData.height, 4).rgb()
+          const inputs = await sam.processor(raw)
+          sam.embedding = { raw, inputs, emb: await sam.model.get_image_embeddings(inputs) }
+        }
+        const e = sam.embedding
+        const pts = points.length ? points : [{ x: 0.5, y: 0.5, label: 1 }]
+        const prompt = await sam.processor(e.raw, {
+          input_points: [[pts.map((p) => [p.x * imageData.width, p.y * imageData.height])]],
+          input_labels: [[pts.map((p) => p.label ?? 1)]],
+        })
+        const out = await sam.model({ ...e.emb, input_points: prompt.input_points, input_labels: prompt.input_labels })
+        const masks = await sam.processor.post_process_masks(out.pred_masks, e.inputs.original_sizes, e.inputs.reshaped_input_sizes)
+        const m = masks[0]
+        const [n, h, w] = m.dims.slice(-3) as [number, number, number]
+        // The highest-scoring of SAM's candidate masks.
+        let best = 0
+        for (let k = 1; k < n; k++) if ((out.iou_scores.data[k] ?? 0) > (out.iou_scores.data[best] ?? 0)) best = k
+        const data = new Uint8Array(w * h)
+        for (let i = 0; i < w * h; i++) data[i] = m.data[best * w * h + i] ? 255 : 0
+        result = { width: w, height: h, data, score: Number(out.iou_scores.data[best] ?? 0) }
+        break
+      }
+
       case 'captionImage': {
         const [imageData] = msg.args as [{ width: number; height: number; data: Uint8ClampedArray | number[] }]
         const reconstructed = new ImageData(
@@ -609,15 +659,19 @@ async function vlmGenerate(
   maxNewTokens: number,
 ): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { processor, model } = pipe as { processor: any; model: any }
+  const { processor, model, modelId } = pipe as { processor: any; model: any; modelId?: string }
   const image = new RawImage(toPixels(imageData.data), imageData.width, imageData.height, 4).rgb()
   const messages = [{ role: 'user', content: [{ type: 'image' }, { type: 'text', text: String(instruction) }] }]
   const prompt = processor.apply_chat_template(messages, { add_generation_prompt: true })
-  const inputs = await processor(prompt, [image])
+  // Quirks measured by hackbuild (vision/records.ts): LFM2-VL's processor wants images first
+  // (text first throws "undefined is not iterable"); SmolVLM repeats itself without a penalty.
+  const lfm = /lfm2-vl/i.test(modelId ?? '')
+  const inputs = lfm ? await processor([image], prompt) : await processor(prompt, [image])
   const { sequences } = await model.generate({
     ...inputs,
     max_new_tokens: Math.max(1, Math.min(512, Math.floor(maxNewTokens || 64))),
     do_sample: false,
+    ...(/smolvlm/i.test(modelId ?? '') ? { repetition_penalty: 1.3 } : {}),
     return_dict_in_generate: true,
   })
   // Drop the prompt tokens; decode only what the model generated.
@@ -630,7 +684,7 @@ async function vlmGenerate(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function disposePipe(pipe: any): void {
   if (!pipe) return
-  if (pipe.vlm) {
+  if (pipe.vlm || pipe.sam) {
     if (typeof pipe.model?.dispose === 'function') pipe.model.dispose()
     if (typeof pipe.processor?.dispose === 'function') pipe.processor.dispose()
   } else if (typeof pipe.dispose === 'function') {

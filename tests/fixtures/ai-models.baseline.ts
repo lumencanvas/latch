@@ -152,6 +152,7 @@ export const AI_MODELS_BASELINE = [
     category: 'multimodal',
     alternateModels: [
       { id: 'HuggingFaceTB/SmolVLM-500M-Instruct', name: 'SmolVLM 500M', size: '~600 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/LFM2-VL-450M-ONNX', name: 'LFM2-VL 450M (GPU, fast)', size: '~320 MB', license: 'lfm1.0' },
       { id: 'Xenova/trocr-base-handwritten', name: 'TrOCR Handwritten', size: '~1.2 GB', license: 'mit' },
     ],
   },
@@ -167,7 +168,20 @@ export const AI_MODELS_BASELINE = [
     category: 'multimodal',
     alternateModels: [
       { id: 'HuggingFaceTB/SmolVLM-500M-Instruct', name: 'SmolVLM 500M', size: '~600 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/LFM2-VL-450M-ONNX', name: 'LFM2-VL 450M (GPU, fast)', size: '~320 MB', license: 'lfm1.0' },
     ],
+  },
+  {
+    id: 'segmentation',
+    name: 'Segment Anything',
+    task: 'mask-generation',
+    description: 'Cut out the object under a point: a mask of whatever you point at (SlimSAM)',
+    defaultModel: 'Xenova/slimsam-77-uniform',
+    defaultSize: '~40 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'vision',
+    alternateModels: [],
   },
 ]
 

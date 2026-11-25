@@ -147,6 +147,7 @@ export const TASK_CATALOG: readonly TaskCatalogEntry[] = [
     defaultModel: 'HuggingFaceTB/SmolVLM-256M-Instruct',
     alternates: [
       'HuggingFaceTB/SmolVLM-500M-Instruct',
+      'onnx-community/LFM2-VL-450M-ONNX',
       'Xenova/trocr-base-handwritten',
     ],
   },
@@ -160,6 +161,17 @@ export const TASK_CATALOG: readonly TaskCatalogEntry[] = [
     defaultModel: 'HuggingFaceTB/SmolVLM-256M-Instruct',
     alternates: [
       'HuggingFaceTB/SmolVLM-500M-Instruct',
+      'onnx-community/LFM2-VL-450M-ONNX',
     ],
+  },
+  {
+    id: 'segmentation',
+    name: 'Segment Anything',
+    task: 'mask-generation',
+    description: 'Cut out the object under a point: a mask of whatever you point at (SlimSAM)',
+    category: 'vision',
+    supportsWebGPU: true,
+    defaultModel: 'Xenova/slimsam-77-uniform',
+    alternates: [],
   },
 ]

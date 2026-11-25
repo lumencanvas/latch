@@ -51,6 +51,11 @@
   where a loaded model runs, and each model's licence, with a badge when it limits use
   (non-commercial, terms apply). The "model needed" prompt shows the licence before downloading.
 - Agents can list models, sizes, licences and fit (`latch_list_models`); loading stays with you.
+- **New node: Segment Anything.** Point at something in an image or video and get its mask and a
+  cut-out (SlimSAM, ~40 MB, on-device). Moving the point on a still image is fast.
+- **LFM2-VL** joins Image Captioning and VLA: a faster GPU vision-language model (its licence limits
+  commercial use above a revenue threshold, shown as a badge).
+- Depth Estimation also outputs the raw depth values; live detection boxes glide between updates.
 - **Captions and text generation no longer hold up other models:** they run in their own worker, so
   Depth and object detection load and run while a caption is being written. Live AI nodes also pace
   themselves to how long inference takes, and back off further when the flow drops below 24 fps.

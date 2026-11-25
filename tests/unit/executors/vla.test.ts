@@ -38,7 +38,7 @@ describe('vlaNode definition', () => {
     // '' = the task default (SmolVLM-256M unless changed in AI Models).
     expect(model?.default).toBe('')
     expect(options[0].label).toMatch(/SmolVLM-256M/)
-    expect(options.slice(1).every((o) => /SmolVLM/.test(o.value))).toBe(true)
+    expect(options.slice(1).every((o) => /SmolVLM|LFM2-VL/.test(o.value))).toBe(true)
   })
 })
 

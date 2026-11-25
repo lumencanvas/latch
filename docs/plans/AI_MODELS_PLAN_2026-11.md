@@ -1,6 +1,6 @@
 # AI models plan: better WebGPU and vision models, real model control (2026-11-25)
 
-Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1 and 2a done** (2026-11-25); Phase 2b (MediaPipe in a worker) or Phase 3 next.
+Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1, 2a and 3 done** (2026-11-25). Next: Phase 4 (one Model Manager), Phase 5 (weights cache); Phase 2b only after profiling.
 
 Goal: LATCH's AI nodes should use current models that actually load, run on WebGPU where the
 machine has it (and fall back cleanly where it doesn't), and give the person one honest place to
@@ -198,6 +198,26 @@ Done and verified in Chrome on the upgraded runtime (transformers.js 4.3.2, onnx
     frame.
   - It's worth it only if profiling shows MediaPipe hurting frames. It runs at about 30 Hz with
     results reused between frames, so measure first.
+
+## Phase 3 result (2026-11-25)
+
+Built in LATCH's worker, after `@hackbuild/vision`'s measured recipes (records and loaders). The
+package itself is not a dependency: it needs the hub, which isn't adopted.
+- **Segment Anything (new node, SlimSAM, ~40 MB, catalog task `mask-generation`):**
+  - Point X/Y in, cut-out, mask and confidence out.
+  - The image embedding is cached, so moving the point on an unchanged image runs only the prompt
+    decoder.
+  - Verified in Chrome: it cut one voronoi cell out of a shader image.
+- **LFM2-VL 450M** is an alternate for Image Captioning and VLA:
+  - Ladder: GPU only, q4f16 then q4.
+  - The images-first processor quirk and SmolVLM's repetition penalty (1.3) are applied.
+  - Badge: "commercial use limited".
+  - Verified: it captioned on the GPU.
+- **Depth:** a new `depth` data output (width, height, 0–255).
+- **Live detection:** boxes ease from the previous box with the same label (`easedBoxes`, 150 ms).
+- **Tests:** `vision-phase3.test.ts` (3).
+- **Not done:** the depth worker (`depthWorker`, raw RGBA in a dedicated worker). Depth already runs
+  in the AI worker on the GPU and is paced by `liveRunDue`.
 
 ## 4. Phases
 

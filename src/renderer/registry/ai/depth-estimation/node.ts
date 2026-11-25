@@ -20,6 +20,7 @@ const definition: NodeDefinition = {
   ],
   outputs: [
     { id: 'texture', type: 'texture', label: 'Depth' },
+    { id: 'depth', type: 'data', label: 'Depth data' },
     { id: 'loading', type: 'boolean', label: 'Loading' },
     { id: 'error', type: 'string', label: 'Error' },
   ],
@@ -146,6 +147,8 @@ export const depthEstimationExecutor: NodeExecutorFn = (ctx: ExecutionContext) =
   }
 
   outputs.set('texture', state.texture)
+  // The raw map: { width, height, data } with 0–255 per pixel (255 = nearest).
+  outputs.set('depth', depth ? { width: depth.width, height: depth.height, data: depth.data } : null)
   outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
   outputs.set('error', depthError)
   return outputs

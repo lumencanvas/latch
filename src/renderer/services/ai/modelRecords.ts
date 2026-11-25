@@ -66,7 +66,8 @@ export function parseSizeMB(size: string | undefined): number | null {
 export function commercialOf(licence: string | undefined): boolean | 'unknown' {
   const l = (licence ?? '').toLowerCase()
   if (!l) return 'unknown'
-  if (/research|non-?commercial|cc-by-nc|lfm|agpl/.test(l)) return false
+  if (/research|non-?commercial|cc-by-nc|agpl/.test(l)) return false
+  if (/lfm/.test(l)) return 'unknown' // allowed below a revenue threshold: read the licence
   if (/apache|mit|bsd|llama|gemma|openrail|cc-by(?!-nc)/.test(l)) return true
   return 'unknown'
 }
@@ -92,6 +93,7 @@ const TASK_PROVIDES: Record<string, string[]> = {
   'automatic-speech-recognition': ['transcribe'],
   'image-to-text': ['vision.caption'],
   'image-text-to-text': ['vision.ask', 'vision.caption'],
+  'mask-generation': ['segment'],
 }
 
 export function recordOf(spec: ModelSpec): ModelRecord {

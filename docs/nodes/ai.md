@@ -7,7 +7,7 @@
 
 AI nodes run models locally in the browser on four runtimes:
 
-- [Transformers.js](https://huggingface.co/docs/transformers.js) in a worker: text, captioning (SmolVLM), VLA, depth, detection, speech recognition, embeddings.
+- [Transformers.js](https://huggingface.co/docs/transformers.js) in two workers (one for long generative jobs): text, captioning and VLA (SmolVLM, LFM2-VL), depth, detection, Segment Anything (SlimSAM), speech recognition, embeddings.
 - [WebLLM](https://webllm.mlc.ai) (WebGPU only): the LLM node.
 - [MediaPipe](https://ai.google.dev/edge/mediapipe): hands, face, pose, gesture, objects, segmentation, audio classification.
 - Raw ONNX Runtime: the YOLO node.
