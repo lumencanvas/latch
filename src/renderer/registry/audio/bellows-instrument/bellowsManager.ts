@@ -33,6 +33,7 @@ import {
   isSteppedParam,
   paramDefault,
   INSERT_FX_OPTIONS,
+  presetMacroParams,
 } from './engineParams'
 
 type BellowsModule = typeof import('bellowsjs')
@@ -315,11 +316,23 @@ function applyConfig(rec: NodeVoice, cfg: VoiceConfig): void {
   const live = rec.instrument!
   const applied = rec.applied
 
+  let macroParams: Record<string, number> = {}
   if (preset) {
     // Preset owns timbre: params went in at creation; set its insert chain once.
     if (!applied) {
       const fx = presetFx(preset)
       if (fx.length > 0) { try { live.fx(...fx) } catch { /* ignore */ } }
+    }
+    // Preset dials shade the preset's own params; a dial back at 0 restores the preset's value.
+    const base = (name: string) => preset.params?.[name] ?? engineDefault(targetEngine, name)
+    macroParams = presetMacroParams(targetEngine, base, cfg.macros ?? {})
+    const prev = applied?.params ?? {}
+    for (const name of computeParamRemovals(prev, macroParams)) {
+      const v = base(name)
+      if (v !== undefined) { try { live.param(name, v) } catch { /* ignore */ } }
+    }
+    for (const [name, value] of computeParamUpdates(prev, macroParams)) {
+      try { live.rampParam(name, value, { seconds: PARAM_RAMP_SECONDS }) } catch { /* ignore */ }
     }
   } else {
     if (applied) {
@@ -364,7 +377,7 @@ function applyConfig(rec: NodeVoice, cfg: VoiceConfig): void {
   rec.applied = {
     preset: presetId,
     engine: targetEngine,
-    params: preset ? {} : cfg.params,
+    params: preset ? macroParams : cfg.params,
     insertFx: preset ? null : cfg.insertFx,
     fxParams: preset ? {} : cfg.fxParams,
     send: cfg.send,

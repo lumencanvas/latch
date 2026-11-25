@@ -10,6 +10,7 @@ import NodeCard from './NodeCard.vue'
 import NodeDetail from './NodeDetail.vue'
 import FlowSnippetCard from './FlowSnippet.vue'
 import { groupSnippetsByPersona } from '@/utils/snippets'
+import { useUIStore } from '@/stores/ui'
 
 const emit = defineEmits<{
   addNode: [nodeId: string]
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 }>()
 
 const nodesStore = useNodesStore()
+const uiStore = useUIStore()
 const explorerStore = useNodeExplorerStore()
 
 // Nodes in the selected category (before tag/search narrowing) — drives the
@@ -121,6 +123,11 @@ function handleAddToFlow(nodeId: string) {
 
 function handleInsertSnippet(snippetId: string) {
   emit('insertSnippet', snippetId)
+  emit('close')
+}
+
+function handleOpenSnippet(snippetId: string) {
+  uiStore.requestOpenSnippet(snippetId)
   emit('close')
 }
 
@@ -390,6 +397,7 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
                 :key="snippet.id"
                 :snippet="snippet"
                 @insert="handleInsertSnippet"
+                @open="handleOpenSnippet"
               />
             </div>
           </section>

@@ -3,7 +3,7 @@ import { defineNode } from '@/engine/defineNode'
 import type { NodeDefinition } from '@/stores/nodes'
 import type { ExecutionContext, NodeExecutorFn } from '@/engine/ExecutionEngine'
 import { configureVoice, queueNote, setMonoGate, routeChannel, getVoice } from '../bellows-instrument/bellowsManager'
-import type { VoiceConfig } from '../bellows-instrument/engineParams'
+import { buildMacroControls, macrosForEngine, presetEngine, readMacros, type VoiceConfig } from '../bellows-instrument/engineParams'
 import SynthNode from './SynthNode.vue'
 
 /**
@@ -36,6 +36,11 @@ export const SYNTH_SOUNDS: SynthSound[] = [
   { value: 'acid', label: 'Acid Bass', preset: 'acid-bass', knobs: ['volume'] },
   { value: 'motion', label: 'Motion Pad', preset: 'motion-pad', knobs: ['volume'] },
 ]
+
+// Preset sounds get the dials their engine responds to (Tone, Attack, Release, Length, Vibrato).
+for (const snd of SYNTH_SOUNDS) {
+  if (snd.preset) snd.knobs = ['volume', ...macrosForEngine(presetEngine(snd.preset)).map((m) => `m_${m}`)]
+}
 
 const SOUND_BY_VALUE = new Map(SYNTH_SOUNDS.map((s) => [s.value, s]))
 
@@ -71,10 +76,12 @@ const definition: NodeDefinition = {
     { id: 'brightness', type: 'number', label: 'Brightness', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'damping', type: 'number', label: 'Damping', default: 0.5, props: { min: 0, max: 1, step: 0.01 } },
     { id: 'detune', type: 'number', label: 'Detune', default: 10, props: { min: 0, max: 50, step: 1 } },
+    // Dials for the modelled instruments: 0 = the instrument as designed.
+    ...buildMacroControls({}),
   ],
   info: {
     overview:
-      'The easy synthesizer. Pick an instrument and play it from a Keyboard, MIDI, a sequencer or any note source: Gate holds a note while high, Trigger plays a short one. Sine, Moog Bass, Warm Pad and Pluck follow the envelope and filter knobs; the rest (electric piano, organ, guitar, harp, cello, flute, brass, mallets, bell, choir, leads) are modelled bellows instruments that sound right as they are. Wire Audio to an Audio Output to hear it. For every engine and parameter, use Bellows Instrument.',
+      'The easy synthesizer. Pick an instrument and play it from a Keyboard, MIDI, a sequencer or any note source: Gate holds a note while high, Trigger plays a short one. Sine, Moog Bass, Warm Pad and Pluck follow the envelope and filter knobs; the rest (electric piano, organ, guitar, harp, cello, flute, brass, mallets, bell, choir, leads) are modelled bellows instruments, shaded by Tone, Attack, Release, Length and Vibrato dials (whichever the instrument responds to; centred = as designed). Wire Audio to an Audio Output to hear it. For every engine and parameter, use Bellows Instrument.',
     tips: [
       'Changing notes while the gate stays high glides the voice to the new note, so legato playing never leaves a note hanging.',
       'Moog Bass: lower Cutoff and raise Resonance and Filter Env for acid squelch.',
@@ -97,7 +104,7 @@ export function synthVoiceConfig(controls: Map<string, unknown>): VoiceConfig {
   // -6 dB (the old default) lands near bellows' usual 0.8 level.
   const gain = clamp(1.6 * Math.pow(10, n('volume', -6) / 20), 0, 2)
   const base = { insertFx: null, fxParams: {}, send: 0, gain, pan: 0 }
-  if (sound.preset) return { ...base, preset: sound.preset, engine: 'va', params: {} }
+  if (sound.preset) return { ...base, preset: sound.preset, engine: 'va', params: {}, macros: readMacros(controls) }
 
   const env = {
     attack: clamp(n('attack', 0.01), 0.001, 10),

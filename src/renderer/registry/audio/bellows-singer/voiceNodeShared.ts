@@ -158,3 +158,93 @@ export const NOTE_LENGTH_OPTIONS = [
   { value: 2, label: 'Half' },
   { value: 4, label: 'Whole' },
 ]
+
+// ── Fitting a melody to the words ────────────────────────────────────────────
+
+/** What the melody fitter needs to know about each sung syllable. */
+export interface SyllableShape { stress: number; wordEnd: boolean; phraseEnd: boolean }
+
+/**
+ * PURE: repeat `notes` until there is one pitched note per syllable (rests are kept where they
+ * fall and don't use a syllable). A melody already long enough is returned unchanged.
+ */
+export function loopNotesToFit(notes: SingNote[], syllables: number): SingNote[] {
+  const pitched = (n: SingNote) => n.note !== null
+  const have = notes.filter(pitched).length
+  if (have === 0 || have >= syllables) return notes
+  const out: SingNote[] = []
+  let count = 0
+  for (let i = 0; count < syllables && i < syllables * 4 + notes.length; i++) {
+    const n = notes[i % notes.length]
+    out.push(n)
+    if (pitched(n)) count++
+  }
+  return out
+}
+
+export const IMPROV_SCALES: Record<string, number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  'major pentatonic': [0, 2, 4, 7, 9],
+  'minor pentatonic': [0, 3, 5, 7, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  blues: [0, 3, 5, 6, 7, 10],
+}
+
+function seededRng(text: string) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+  return () => { h ^= h << 13; h >>>= 0; h ^= h >>> 17; h ^= h << 5; h >>>= 0; return h / 4294967296 }
+}
+
+/**
+ * PURE: make up a singable melody for a line. Each phrase arcs up and comes home: stressed syllables
+ * sit higher and longer, steps are mostly small, the last syllable of a phrase lands on the root
+ * (or the fifth mid-line) and is held. Same words in, same tune out (seeded from the text).
+ */
+export function improviseMelody(
+  syls: SyllableShape[],
+  opts: { root: number; scale: string; bpm: number; beat: number; seed: string },
+): SingNote[] {
+  const scale = IMPROV_SCALES[opts.scale] ?? IMPROV_SCALES.major
+  const secPerBeat = 60 / clamp(opts.bpm, 20, 400)
+  const beat = clamp(opts.beat, 1 / 8, 4)
+  const rnd = seededRng(opts.seed)
+  const toMidi = (deg: number) => {
+    const oct = Math.floor(deg / scale.length)
+    const i = ((deg % scale.length) + scale.length) % scale.length
+    return clamp(opts.root + oct * 12 + scale[i], 36, 96)
+  }
+  const fifth = scale.indexOf(7) >= 0 ? scale.indexOf(7) : Math.floor(scale.length / 2)
+  const out: SingNote[] = []
+  // Split into phrases at phraseEnd (and keep phrases a breath long).
+  let start = 0
+  let deg = 0
+  let phraseNo = 0
+  for (let i = 0; i < syls.length; i++) {
+    const endHere = syls[i].phraseEnd || i === syls.length - 1 || i - start >= 11
+    if (!endHere) continue
+    const len = i - start + 1
+    const peak = scale.length - 1 + Math.round(rnd() * 3) // how high this phrase climbs
+    const lastLine = i === syls.length - 1
+    for (let k = 0; k < len; k++) {
+      const s = syls[start + k]
+      const t = len === 1 ? 1 : k / (len - 1)
+      const arc = Math.sin(Math.PI * Math.min(1, t * 1.15)) // up, then home
+      let target = Math.round(arc * peak * 0.75)
+      if (s.stress > 0) target += 1
+      // mostly stepwise from the last note
+      const step = clamp(target - deg, -2, 3)
+      deg += step === 0 && rnd() < 0.3 ? (rnd() < 0.5 ? 1 : -1) : step
+      const isEnd = k === len - 1
+      if (isEnd) deg = lastLine || phraseNo % 2 === 1 ? 0 : fifth
+      let beats = s.stress > 0 ? beat : beat / 2
+      if (s.wordEnd && !isEnd && rnd() < 0.25) beats *= 1.5
+      if (isEnd) beats = beat * 2
+      out.push({ note: toMidi(deg), dur: { seconds: beats * secPerBeat } })
+    }
+    start = i + 1
+    phraseNo++
+  }
+  return out
+}

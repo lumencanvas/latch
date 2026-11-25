@@ -13,6 +13,7 @@ import type { ExecutionContext } from '@/engine/ExecutionEngine'
 import { defineLifecycle } from '@/engine/nodeState'
 import { drawBoundingBox } from '@/registry/ai/utils/mediapipe-drawing'
 import { aiInference } from '@/services/ai/AIInference'
+import { reportModelNeed, clearModelNeed } from '@/services/ai/modelNeeds'
 import { textToSpeechService } from '@/services/ai/TextToSpeechService'
 import { COCO_LABELS } from '@/services/ai/yolo'
 import { AudioBufferServiceImpl } from '@/services/audio/AudioBufferService'
@@ -159,10 +160,13 @@ export function runModelInference<T>(
   // (e.g. from the Model Manager) is a transient — show the spinner, no error; an
   // unloaded model is a needs-user-action error (matches the prior `_error`).
   if (!aiInference.isModelLoaded(opts.task, modelId)) {
+    reportModelNeed(nodeId, opts.task, modelId)
     const downloading = aiInference.getModelInfo(opts.task, modelId)?.state === 'loading'
     emit(downloading, downloading ? null : (opts.notLoadedMessage ?? 'Model not loaded. Open AI Model Manager to load.'))
     return { result, state: 'not-loaded', started: false }
   }
+
+  clearModelNeed(nodeId)
 
   // An op is already in flight: hold `loading` until it resolves (no new op).
   if (pendingOperations.has(nodeId)) {

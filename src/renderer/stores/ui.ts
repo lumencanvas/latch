@@ -137,6 +137,12 @@ interface UIState {
   nodeExplorerOpen: boolean
   /** Tab the explorer opens on (applied after its reset-on-open). */
   nodeExplorerTab: 'nodes' | 'snippets'
+  /** Example flow being placed: its outline follows the cursor until a click drops it (null = none). */
+  placingSnippetId: string | null
+  /** Example flow to open in a new tab (nonce re-fires the same id). */
+  openSnippetRequest: { id: string; nonce: number } | null
+  /** Ask the editor to select a node and pan to it (nonce re-fires the same id). */
+  focusNodeRequest: { id: string; nonce: number } | null
 
   // Add Bluetooth Device modal
   bluetoothDeviceManagerOpen: boolean
@@ -222,6 +228,9 @@ export const useUIStore = defineStore('ui', {
     // Node explorer modal
     nodeExplorerOpen: false,
     nodeExplorerTab: 'nodes',
+    placingSnippetId: null,
+    openSnippetRequest: null,
+    focusNodeRequest: null,
 
     // Add Bluetooth Device modal
     bluetoothDeviceManagerOpen: false,
@@ -297,6 +306,21 @@ export const useUIStore = defineStore('ui', {
     },
 
     /** Add a node where a sidebar drag was released (client coordinates). */
+    /** Start placing an example flow on the canvas (the editor shows it under the cursor). */
+    beginSnippetPlacement(id: string) {
+      this.placingSnippetId = id
+    },
+    cancelSnippetPlacement() {
+      this.placingSnippetId = null
+    },
+    /** Select a node and pan the canvas to it. */
+    requestFocusNode(id: string) {
+      this.focusNodeRequest = { id, nonce: (this.focusNodeRequest?.nonce ?? 0) + 1 }
+    },
+    /** Open an example flow as a new flow tab. */
+    requestOpenSnippet(id: string) {
+      this.openSnippetRequest = { id, nonce: (this.openSnippetRequest?.nonce ?? 0) + 1 }
+    },
     requestNodeDrop(nodeType: string, clientX: number, clientY: number) {
       this.pendingNodeDrops.push({ nodeType, clientX, clientY })
       this.nodeAddNonce++

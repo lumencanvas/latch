@@ -8,8 +8,11 @@ defineProps<{
   snippet: FlowSnippet
 }>()
 
+const MAX_TAGS = 4
+
 const emit = defineEmits<{
   insert: [snippetId: string]
+  open: [snippetId: string]
 }>()
 
 const nodesStore = useNodesStore()
@@ -21,46 +24,72 @@ const nodeColor = (nodeType: string) =>
 
 <template>
   <div class="flow-snippet">
-    <FlowPreview
-      class="snippet-thumb"
-      :nodes="snippet.nodes"
-      :edges="snippet.edges"
-      :get-color="nodeColor"
-    />
-    <div class="snippet-info">
-      <span class="snippet-name">{{ snippet.name }}</span>
-      <span class="snippet-desc">{{ snippet.description }}</span>
-      <span
-        v-if="snippet.requires?.length"
-        class="snippet-needs"
-      >Needs: {{ snippet.requires.map(r => REQUIREMENT_LABELS[r]).join(' · ') }}</span>
-      <span
-        v-if="snippet.setup"
-        class="snippet-setup"
-      >Setup: {{ snippet.setup }}</span>
-      <div class="snippet-nodes">
+    <div class="snippet-head">
+      <FlowPreview
+        class="snippet-thumb"
+        :nodes="snippet.nodes"
+        :edges="snippet.edges"
+        :get-color="nodeColor"
+      />
+      <div class="snippet-title">
+        <span class="snippet-name">{{ snippet.name }}</span>
         <span
-          v-for="nodeId in snippet.relatedNodes"
-          :key="nodeId"
-          class="snippet-node-tag"
-        >{{ nodeId }}</span>
+          v-if="snippet.requires?.length"
+          class="snippet-needs"
+        >Needs {{ snippet.requires.map(r => REQUIREMENT_LABELS[r]).join(' · ') }}</span>
       </div>
     </div>
-    <button
-      class="snippet-btn"
-      :aria-label="`Insert ${snippet.name}`"
-      @click="emit('insert', snippet.id)"
+    <p
+      class="snippet-desc"
+      :title="snippet.description"
     >
-      Insert
-    </button>
+      {{ snippet.description }}
+    </p>
+    <span
+      v-if="snippet.setup"
+      class="snippet-setup"
+      :title="snippet.setup"
+    >Setup: {{ snippet.setup }}</span>
+    <div class="snippet-nodes">
+      <span
+        v-for="nodeId in snippet.relatedNodes.slice(0, MAX_TAGS)"
+        :key="nodeId"
+        class="snippet-node-tag"
+      >{{ nodeId }}</span>
+      <span
+        v-if="snippet.relatedNodes.length > MAX_TAGS"
+        class="snippet-node-tag snippet-node-more"
+        :title="snippet.relatedNodes.slice(MAX_TAGS).join(', ')"
+      >+{{ snippet.relatedNodes.length - MAX_TAGS }}</span>
+    </div>
+    <div class="snippet-actions">
+      <button
+        class="snippet-btn"
+        :aria-label="`Insert ${snippet.name}`"
+        title="Place it on this canvas: it follows your cursor until you click"
+        @click="emit('insert', snippet.id)"
+      >
+        Insert
+      </button>
+      <button
+        class="snippet-btn snippet-btn-secondary"
+        :aria-label="`Open ${snippet.name} as a new flow`"
+        title="Open it in its own new flow tab"
+        @click="emit('open', snippet.id)"
+      >
+        Open as New
+      </button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .flow-snippet {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  min-width: 0;
   padding: var(--space-3);
   border: 2px solid var(--color-neutral-200);
   background: var(--color-neutral-0);
@@ -70,19 +99,26 @@ const nodeColor = (nodeType: string) =>
   border-color: var(--color-neutral-300);
 }
 
+.snippet-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .snippet-thumb {
-  width: 56px;
-  height: 40px;
+  width: 64px;
+  height: 44px;
   flex-shrink: 0;
   background: var(--color-neutral-50);
   border-radius: var(--radius-xs);
 }
 
-.snippet-info {
-  flex: 1;
+.snippet-title {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .snippet-name {
@@ -90,28 +126,42 @@ const nodeColor = (nodeType: string) =>
   font-weight: var(--font-weight-bold);
   text-transform: uppercase;
   color: var(--color-neutral-800);
-}
-
-.snippet-desc {
-  font-size: 10px;
-  color: var(--color-neutral-500);
-}
-
-.snippet-needs,
-.snippet-setup {
-  font-size: 10px;
-  color: var(--color-neutral-600);
+  line-height: 1.3;
 }
 
 .snippet-needs {
+  font-size: 10px;
   font-weight: var(--font-weight-bold);
+  color: var(--color-neutral-600);
+}
+
+/* Long descriptions are cut at three lines (full text on hover) so cards stay one size. */
+.snippet-desc {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--color-neutral-500);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.snippet-setup {
+  font-size: 10px;
+  color: var(--color-neutral-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .snippet-nodes {
   display: flex;
   gap: 3px;
   flex-wrap: wrap;
-  margin-top: 2px;
+  max-height: 34px;
+  overflow: hidden;
 }
 
 .snippet-node-tag {
@@ -119,12 +169,24 @@ const nodeColor = (nodeType: string) =>
   padding: 0 4px;
   background: var(--color-neutral-100);
   color: var(--color-neutral-600);
+  font-family: var(--font-mono);
+}
+
+.snippet-node-more {
+  font-weight: var(--font-weight-bold);
+}
+
+.snippet-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: auto;
 }
 
 .snippet-btn {
-  padding: var(--space-1) var(--space-3);
+  flex: 1;
+  padding: var(--space-1) var(--space-2);
   background: var(--color-neutral-800);
-  border: none;
+  border: 2px solid var(--color-neutral-800);
   color: var(--color-neutral-0);
   cursor: pointer;
   font-family: var(--font-mono);
@@ -135,5 +197,19 @@ const nodeColor = (nodeType: string) =>
 
 .snippet-btn:hover {
   background: var(--color-neutral-700);
+}
+
+.snippet-btn-secondary {
+  background: transparent;
+  color: var(--color-neutral-800);
+}
+
+.snippet-btn-secondary:hover {
+  background: var(--color-neutral-100);
+}
+
+.snippet-btn:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 2px;
 }
 </style>

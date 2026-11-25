@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.4.2: Mouth Voice v2, 3D game nodes, model loading prompt, example placement
+
+### Added
+- **Load the models a flow needs:** pressing Play on a flow whose AI models aren't loaded shows a card
+  naming them (with sizes) and offers to load them; a loading pill at the top lists everything still
+  loading (models, trackers, samples) and clicking an entry jumps to its node.
+- **Example flows: Insert or Open as New.** Insert now follows your cursor as an outline until you click
+  where it goes (Esc cancels); Open as New puts it in its own tab, framed. Cards are one size with long
+  descriptions trimmed, and the canvas zooms out further (to 10%) for big flows.
+- **Synth preset dials:** the modelled instruments get Tone, Attack, Release, Length and Vibrato dials
+  (whichever the instrument responds to), also on Bellows Instrument and Poly Voice in preset mode.
+- **Bellows Singer melody modes:** more words than notes now loops the melody; "Make up a melody" writes a
+  tune for any incoming text in a chosen key and scale. Sing It Back uses it.
+
+### Fixed
+- Speech to Text in voice-detection mode waited forever in a room with steady background noise: it now
+  learns the noise floor and transcribes at least every Buffer Duration.
+- Air Harp played on a metronome whatever you did; now each string your fingertip crosses plucks, the
+  strings are drawn on the video, and the controls are written on screen.
+- Hot reloads in development no longer print a duplicate-id warning for every node.
+
+
+### Mouth Voice v2
+- **Calibrate to your face:** new **Mouth Calibrate** node runs a guided minute (relax, then hold ah, ee,
+  oo, oh, eh) and saves your shapes in the flow. Wire its Calibration into Mouth Voice and vowels are
+  matched against your own mouth instead of an average one.
+- Sharper reading from the inner-lip outline (wire Face Landmarks), with a resting mouth width learned
+  on the fly. Lip consonants: p (puffed cheeks, then open), b (hum, then open), w, sh, alongside m, v, th.
+- Experimental: Read Tongue From Video guesses tongue height from inside the open mouth.
+- Two flows: **Mouth to Voice** (basic) and **Mouth to Voice (calibrated)**.
+
+### 3D
+- New nodes: **Instances 3D** (one shape hundreds of times in one draw call; grid, ring, spiral, line,
+  random or your positions; heights and colours from data), **Point Stream 3D** (endless stream for
+  asteroids, stars, rain; speeds up as points pass; optional player hit test), **Collide 3D**,
+  **Key Input** (arrow keys / WASD as axes, Space, a custom key) and **Text Overlay** (scores, captions).
+- Audio Analyzer has a **Spectrum** output (32 bands, 0 to 1).
+- Primitives cast and receive shadows.
+- New flows: **Build a 3D Scene**, **Sound City**, **Warp Tunnel**, **Hold It in Your Hand** and
+  **Comet Dodge**, a 3D game made only of nodes (now on the empty-canvas starters).
+
 ## 1.4.1: Synth on bellows, tracking nodes, example flows, drag fix
 
 ### Fixed

@@ -266,6 +266,11 @@ class AIInferenceService extends WorkerFacade {
     return this._modelInfo.get(key)
   }
 
+  /** Every model the service knows about, as [`task:modelId`, info] (for status displays). */
+  listModelInfo(): [string, ModelInfo][] {
+    return [...this._modelInfo.entries()]
+  }
+
   // Check if model is loaded
   isModelLoaded(task: string, modelId?: string): boolean {
     const key = `${task}:${modelId || this.getDefaultModel(task)}`

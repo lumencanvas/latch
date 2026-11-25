@@ -96,6 +96,23 @@ const detune = computed({
   set: (value: number) => flowsStore.updateNodeData(props.id, { detune: value }),
 })
 
+// Dials for the modelled instruments (0 = as designed)
+const MACRO_KNOBS = [
+  { id: 'm_tone', label: 'Tone', min: -1 },
+  { id: 'm_attack', label: 'Atk', min: -1 },
+  { id: 'm_release', label: 'Rel', min: -1 },
+  { id: 'm_length', label: 'Length', min: -1 },
+  { id: 'm_vibrato', label: 'Vib', min: 0 },
+]
+function macroValue(id: string): number {
+  const v = props.data?.[id]
+  return typeof v === 'number' ? v : 0
+}
+function setMacro(id: string, value: number) {
+  flowsStore.updateNodeData(props.id, { [id]: value })
+}
+const fmtMacro = (v: number) => (v === 0 ? '0' : `${v > 0 ? '+' : ''}${Math.round(v * 100)}`)
+
 
 // Current input values
 const currentNote = computed(() => (props.data?.note as number) ?? 60)
@@ -356,6 +373,25 @@ function getTypeColor(type: string): string {
             accent-color="#22c55e"
             :value-format="(v: number) => `${Math.round(v * 100)}%`"
           />
+
+          <!-- Modelled-instrument dials -->
+          <template
+            v-for="k in MACRO_KNOBS"
+            :key="k.id"
+          >
+            <RotaryKnob
+              v-if="visibleControls.includes(k.id)"
+              :model-value="macroValue(k.id)"
+              :min="k.min"
+              :max="1"
+              :step="0.01"
+              :label="k.label"
+              size="small"
+              accent-color="#a855f7"
+              :value-format="fmtMacro"
+              @update:model-value="(v: number) => setMacro(k.id, v)"
+            />
+          </template>
 
           <!-- Detune (Pad) -->
           <RotaryKnob
