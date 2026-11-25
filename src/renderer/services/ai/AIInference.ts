@@ -12,7 +12,7 @@
 
 import { getAiEnv, rungsFor } from './modelRecords'
 import { collectTransferables, type SerializedImage } from './imageTransfer'
-import { requestPersistentStorage } from './modelStorage'
+import { markModelUsed, requestPersistentStorage } from './modelStorage'
 import { WorkerFacade } from '@/services/worker/WorkerFacade'
 import { deriveAiModels } from './models/transformers/derive'
 import { setModelSelectResolver } from '@/engine/defineNode'
@@ -604,6 +604,7 @@ class AIInferenceService extends WorkerFacade {
         console.info(`[AIInference] ${model} loaded on ${used?.device ?? '?'} after: ${fallbacks.map((f) => `${f.device} ${JSON.stringify(f.dtype)} (${f.kind})`).join(', ')}`)
       }
       this._loadedModels.add(key)
+      markModelUsed(model)
       this.updateModelInfo(key, {
         state: 'ready',
         progress: 100,

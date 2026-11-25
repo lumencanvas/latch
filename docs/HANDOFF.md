@@ -6,6 +6,17 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 151): AI Phase 4: one Model Manager
+
+- `services/ai/modelInventory.ts`: `modelUsage(flows)`, `listStoredModels()` / `deleteStoredModel()`
+  (Cache API, grouped by HF repo), `MEDIAPIPE_MODELS`, `modelFacts()` (shared with
+  `RuntimeStatus.vue`'s prompt). Last use lives in `modelStorage.ts` (`markModelUsed`, called on
+  load by AIInference and WebLLMService) to avoid an import cycle.
+- `AIModelManagerModal.vue`: filter chips, "downloaded / used in" line per card, MediaPipe card,
+  "Downloaded models" list with delete and "Free N unused".
+- Verified in Chrome: real cache (2.1 GB over 7 repos), filters, delete. Tests: model-inventory (5).
+- Next: Phase 5 (`@hackbuild/weights`), then the bellows workstation.
+
 ## 2026-11-25 (later 150): AI Phase 3: Segment Anything, LFM2-VL, depth data, eased boxes
 
 - **Segment Anything node:** `registry/ai/segment-anything/node.ts`.

@@ -1,6 +1,6 @@
 # AI models plan: better WebGPU and vision models, real model control (2026-11-25)
 
-Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1, 2a and 3 done** (2026-11-25). Next: Phase 4 (one Model Manager), Phase 5 (weights cache); Phase 2b only after profiling.
+Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1, 2a, 3 and 4 done** (2026-11-25). Next: Phase 5 (weights cache first); Phase 2b only after profiling.
 
 Goal: LATCH's AI nodes should use current models that actually load, run on WebGPU where the
 machine has it (and fall back cleanly where it doesn't), and give the person one honest place to
@@ -198,6 +198,23 @@ Done and verified in Chrome on the upgraded runtime (transformers.js 4.3.2, onnx
     frame.
   - It's worth it only if profiling shows MediaPipe hurting frames. It runs at about 30 Hz with
     results reused between frames, so measure first.
+
+## Phase 4 result (2026-11-25)
+
+Built into the existing AI Models dialog rather than a new one; the data lives in
+`services/ai/modelInventory.ts` (tested in `model-inventory.test.ts`).
+- **Filter** by what a model does (Vision, Audio, Text, Chat), plus "Used in flows" and "Downloaded".
+- **Which flows use each model:** from every flow's nodes (their `model` control, or the task default
+  when it is empty; the LLM node's WebLLM id; `mediapipe:<task>` for MediaPipe nodes).
+- **What is downloaded:** read from the Cache API (transformers.js and WebLLM both keep weights there),
+  grouped by Hugging Face repo with real sizes; each card says "downloaded, N MB".
+- **Downloaded models list:** biggest first, with last use (recorded on each load), which flows use
+  it, delete per model, and "Free N unused" (not loaded and no flow uses it).
+- **MediaPipe** is in the list: its seven models, loaded state, sizes and users. They still load
+  inside their nodes.
+- **The runtime prompt** uses the same `modelFacts()` as the manager.
+- Not done: per-model load phases beyond the progress bar, and MediaPipe storage (its files sit in
+  the HTTP cache, which a page cannot measure). Fit in node selects is still missing.
 
 ## Phase 3 result (2026-11-25)
 

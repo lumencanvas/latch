@@ -56,6 +56,9 @@
 - **LFM2-VL** joins Image Captioning and VLA: a faster GPU vision-language model (its licence limits
   commercial use above a revenue threshold, shown as a badge).
 - Depth Estimation also outputs the raw depth values; live detection boxes glide between updates.
+- **AI Models lists every model in one place** (MediaPipe too), filterable by what it does, with
+  which flows use each one and what is already downloaded. A "Downloaded models" list shows sizes
+  and last use, and frees space from models no flow uses.
 - **Captions and text generation no longer hold up other models:** they run in their own worker, so
   Depth and object detection load and run while a caption is being written. Live AI nodes also pace
   themselves to how long inference takes, and back off further when the flow drops below 24 fps.

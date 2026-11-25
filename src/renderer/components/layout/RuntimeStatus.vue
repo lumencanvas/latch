@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Brain, ChevronDown, ChevronUp, Download, Loader2, X } from 'lucide-vue-next'
-import { aiInference, AI_MODELS } from '@/services/ai/AIInference'
+import { aiInference } from '@/services/ai/AIInference'
 import { webLLMService } from '@/services/ai/WebLLMService'
-import { fitFor, getAiEnv, licenceBadge, modelRecord } from '@/services/ai/modelRecords'
+import { getAiEnv } from '@/services/ai/modelRecords'
+import { modelFacts } from '@/services/ai/modelInventory'
 import type { Env } from '@hackbuild/ai-env'
 import { deriveWebllmCatalog } from '@/services/ai/models/webllm/derive'
 import { modelNeeds, groupModelNeeds } from '@/services/ai/modelNeeds'
@@ -42,25 +43,8 @@ const nodeLabel = (id: string) => {
 }
 const inFlow = (id: string) => !!flows.activeFlow?.nodes.some((n) => n.id === id)
 
-function modelMeta(task: string, modelId: string) {
-  const def = AI_MODELS.find((m) => m.task === task)
-  // "Default" is the model picked for this task in AI Models (else the catalog default).
-  const id = modelId || aiInference.getDefaultModel(task) || def?.defaultModel || ''
-  const alt = def?.alternateModels.find((a) => a.id === id)
-  const rec = modelRecord(id)
-  const fit = aiEnv.value ? fitFor(id, aiEnv.value) : null
-  return {
-    id,
-    name: alt?.name ?? (id.split('/').pop() || def?.name || task),
-    task: def?.name ?? task,
-    size: alt?.size ?? (id === def?.defaultModel ? def?.defaultSize : '') ?? '',
-    // Shown before the first download (the model's licence, and a badge when it limits use).
-    licence: rec?.licence && rec.licence !== 'unknown' ? rec.licence : '',
-    badge: licenceBadge(rec?.licence),
-    // Only said when it won't run here (or only slowly), with the reason.
-    fitWarning: fit && (!fit.ok || fit.fit === 'fits on cpu, slow') ? `${fit.fit}: ${fit.reason}` : '',
-  }
-}
+// The same facts the AI Models manager shows for a model (size, licence, whether it fits here).
+const modelMeta = (task: string, modelId: string) => modelFacts(task, modelId, aiEnv.value)
 
 // ── Prompt: models the running flow needs ──────────────────────────────────
 const dismissed = ref(new Set<string>())
