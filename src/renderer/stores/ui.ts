@@ -104,6 +104,8 @@ export interface ControlPanelGroup {
 interface UIState {
   // Left sidebar (node palette)
   sidebarOpen: boolean
+  /** Which sidebar panel is showing. */
+  sidebarTab: 'nodes' | 'flows' | 'assets' | 'connections'
   sidebarWidth: number
 
   // Right panel (properties)
@@ -200,6 +202,7 @@ export const useUIStore = defineStore('ui', {
   state: (): UIState => ({
     // Left sidebar
     sidebarOpen: true,
+    sidebarTab: 'nodes',
     sidebarWidth: 240,
 
     // Right properties panel
@@ -312,6 +315,11 @@ export const useUIStore = defineStore('ui', {
     },
     cancelSnippetPlacement() {
       this.placingSnippetId = null
+    },
+    /** Show a sidebar panel (opening the sidebar if it is collapsed). */
+    openSidebarTab(tab: 'nodes' | 'flows' | 'assets' | 'connections') {
+      this.sidebarTab = tab
+      this.sidebarOpen = true
     },
     /** Select a node and pan the canvas to it. */
     requestFocusNode(id: string) {

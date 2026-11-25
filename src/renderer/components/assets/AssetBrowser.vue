@@ -179,6 +179,9 @@ function formatSize(bytes: number): string {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .search-wrapper {
@@ -223,7 +226,8 @@ function formatSize(bytes: number): string {
 
 .filter-tabs {
   display: flex;
-  gap: 2px;
+  flex-wrap: wrap; /* five chips don't fit one row of a narrow sidebar */
+  gap: 2px 4px;
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-neutral-100);
   background: var(--color-neutral-50);
@@ -239,6 +243,7 @@ function formatSize(bytes: number): string {
   border-radius: var(--radius-xs);
   font-size: 11px;
   color: var(--color-neutral-600);
+  white-space: nowrap;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -265,11 +270,13 @@ function formatSize(bytes: number): string {
 
 .drop-zone {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin: var(--space-3);
-  padding: var(--space-4);
+  padding: var(--space-3);
+  text-align: center;
   border: 2px dashed var(--color-neutral-300);
   border-radius: var(--radius-sm);
   background: var(--color-neutral-50);
@@ -309,7 +316,8 @@ function formatSize(bytes: number): string {
 
 .asset-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* minmax(0, 1fr): grid items otherwise refuse to shrink below a long file name */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
 }
 

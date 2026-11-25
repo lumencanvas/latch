@@ -57,6 +57,7 @@ export function usePersistence() {
       subflowOutputs: JSON.parse(JSON.stringify(flow.subflowOutputs)),
       icon: flow.icon,
       category: flow.category,
+      open: flow.open !== false,
     } as PersistedFlow
   }
 
@@ -112,6 +113,7 @@ export function usePersistence() {
       subflowOutputs: (persisted as FlowState).subflowOutputs ?? [],
       icon: (persisted as FlowState).icon,
       category: (persisted as FlowState).category,
+      open: persisted.open !== false,
     }
   }
 
@@ -137,10 +139,15 @@ export function usePersistence() {
       const settings = await settingsStorage.get()
       let activeFlowId: string | null = null
 
-      if (settings?.lastOpenedFlowId && flowsStore.flows.some(f => f.id === settings.lastOpenedFlowId)) {
+      const openIds = new Set(flowsStore.openFlows.map(f => f.id))
+      if (settings?.lastOpenedFlowId && openIds.has(settings.lastOpenedFlowId)) {
         activeFlowId = settings.lastOpenedFlowId
-      } else if (flowsStore.flows.length > 0) {
-        activeFlowId = flowsStore.flows[0].id
+      } else if (flowsStore.openFlows.length > 0) {
+        activeFlowId = flowsStore.openFlows[0].id
+      } else if (flowsStore.mainFlows.length > 0) {
+        // Every flow was closed: reopen the most recently edited one rather than show nothing.
+        const recent = [...flowsStore.mainFlows].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))[0]
+        activeFlowId = recent.id
       }
 
       if (activeFlowId) {

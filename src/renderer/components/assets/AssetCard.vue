@@ -131,6 +131,7 @@ const typeIcon = {
 
 <style scoped>
 .asset-card {
+  min-width: 0;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -204,6 +205,7 @@ const typeIcon = {
 }
 
 .asset-info {
+  min-width: 0;
   padding: var(--space-2);
   display: flex;
   flex-direction: column;

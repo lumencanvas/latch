@@ -10,8 +10,8 @@ const flowsStore = useFlowsStore()
 const uiStore = useUIStore()
 const { deleteFlow: deleteFlowFromDb, saveFlow } = usePersistence()
 
-// Get only main flows (not subflows) for tabs
-const openFlows = computed(() => flowsStore.mainFlows)
+// Tabs show the OPEN main flows; closed ones live on in the Flows library (sidebar).
+const openFlows = computed(() => flowsStore.openFlows)
 const activeFlowId = computed(() => flowsStore.activeFlowId)
 
 // The roving-tabindex entry point. Normally the active tab, but fall back to the
@@ -83,7 +83,13 @@ async function createNewFlow() {
   await saveFlow(flow.id)
 }
 
-function closeFlowById(flowId: string) {
+/** Close a tab (the flow stays in the library). Persist the change so it survives a reload. */
+async function closeFlowById(flowId: string) {
+  const changed = flowsStore.closeFlow(flowId)
+  for (const id of changed) await saveFlow(id)
+}
+
+function askDeleteFlow(flowId: string) {
   const flow = flowsStore.getFlowById(flowId)
   deleteModal.value = {
     visible: true,
@@ -94,7 +100,7 @@ function closeFlowById(flowId: string) {
 
 function closeFlow(flowId: string, event: MouseEvent) {
   event.stopPropagation()
-  closeFlowById(flowId)
+  void closeFlowById(flowId)
 }
 
 function openContextMenu(flowId: string, x: number, y: number) {
@@ -165,7 +171,7 @@ function onTabKeydown(event: KeyboardEvent, flowId: string) {
     case 'Delete':
     case 'Backspace':
       event.preventDefault()
-      closeFlowById(flowId)
+      void closeFlowById(flowId)
       break
     case 'ContextMenu': {
       event.preventDefault()
@@ -233,35 +239,50 @@ async function duplicateFlow() {
 
 function closeFlowFromMenu() {
   const flowId = contextMenu.value.flowId
+  contextMenu.value.visible = false
+  if (flowId) void closeFlowById(flowId)
+}
+
+function exportFlowFromMenu() {
+  const flowId = contextMenu.value.flowId
+  contextMenu.value.visible = false
+  if (flowId) flowsStore.exportFlowFile(flowId)
+}
+
+async function copyFlowFromMenu() {
+  const flowId = contextMenu.value.flowId
+  contextMenu.value.visible = false
+  if (!flowId) return
+  try {
+    await navigator.clipboard.writeText(flowsStore.exportFlow(flowId))
+    uiStore.notify('Flow copied. Paste it into LATCH (⌘V / Ctrl+V) or share the text.', 'success')
+  } catch {
+    uiStore.notify('Could not copy to the clipboard. Use Export Flow instead.', 'error')
+  }
+}
+
+function deleteFlowFromMenu() {
+  const flowId = contextMenu.value.flowId
   // Close the menu first (restores focus to the tab), then open the modal next
   // tick so it captures the tab as its restore target rather than the menu item.
   contextMenu.value.visible = false
-  if (flowId) {
-    const flow = flowsStore.getFlowById(flowId)
-    nextTick(() => {
-      deleteModal.value = {
-        visible: true,
-        flowId,
-        flowName: flow?.name ?? 'this flow',
-      }
-    })
-  }
+  if (flowId) nextTick(() => askDeleteFlow(flowId))
 }
 
 async function confirmDelete() {
   if (!deleteModal.value.flowId) return
+  const id = deleteModal.value.flowId
+  const wasOpen = openFlows.value.some((f) => f.id === id)
+  const isLastTab = wasOpen && openFlows.value.length <= 1
 
-  const isLastFlow = openFlows.value.length <= 1
+  await deleteFlowFromDb(id)
+  flowsStore.deleteFlow(id)
 
-  await deleteFlowFromDb(deleteModal.value.flowId)
-  flowsStore.deleteFlow(deleteModal.value.flowId)
-
-  if (isLastFlow) {
-    // Load sample flow when deleting the last flow
-    const loaded = await flowsStore.loadSampleFlow()
-    if (!loaded) {
-      flowsStore.createFlow('Untitled Flow')
-    }
+  if (isLastTab || !flowsStore.openFlows.length) {
+    const flow = flowsStore.createFlow('Untitled Flow')
+    await saveFlow(flow.id)
+  } else if (!flowsStore.openFlows.some((f) => f.id === flowsStore.activeFlowId)) {
+    flowsStore.setActiveFlow(flowsStore.openFlows[0].id)
   }
 
   deleteModal.value.visible = false
@@ -351,7 +372,8 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
         <button
           class="close-btn"
           tabindex="-1"
-          :aria-label="`Delete flow ${flow.name}`"
+          :aria-label="`Close ${flow.name} (it stays in your Flows library)`"
+          :title="'Close tab (the flow stays in your Flows library)'"
           @click="closeFlow(flow.id, $event)"
         >
           <X :size="12" />
@@ -393,12 +415,30 @@ const { onKeydown: onContextMenuKeydown } = useDialogA11y({
         >
           Duplicate
         </button>
+        <button
+          class="menu-item"
+          @click="exportFlowFromMenu"
+        >
+          Export Flow…
+        </button>
+        <button
+          class="menu-item"
+          @click="copyFlowFromMenu"
+        >
+          Copy Flow JSON
+        </button>
         <div class="menu-divider" />
         <button
-          class="menu-item danger"
+          class="menu-item"
           @click="closeFlowFromMenu"
         >
-          Delete
+          Close Tab
+        </button>
+        <button
+          class="menu-item danger"
+          @click="deleteFlowFromMenu"
+        >
+          Delete Flow…
         </button>
       </div>
     </Teleport>

@@ -14,6 +14,8 @@ export interface PersistedFlow {
   connections?: BaseConnectionConfig[]
   createdAt: Date
   updatedAt: Date
+  /** Shown as a tab (false = closed, kept in the library). Missing on older saves = open. */
+  open?: boolean
 }
 
 export interface AppSettings {

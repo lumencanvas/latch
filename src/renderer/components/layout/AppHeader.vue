@@ -11,8 +11,6 @@ import {
   Pause,
   Square,
   Save,
-  Download,
-  Upload,
   Boxes,
   PanelLeftClose,
   PanelLeft,
@@ -29,6 +27,7 @@ import {
   HelpCircle,
   GraduationCap,
   MoreHorizontal,
+  Workflow,
 } from 'lucide-vue-next'
 import LatchLogo from '@/components/branding/LatchLogo.vue'
 import { aiInference } from '@/services/ai/AIInference'
@@ -124,31 +123,22 @@ function openConnectionManager() {
   connectionsStore.openModal()
 }
 
-function exportProject() {
-  flowsStore.exportAllFlows()
-}
-
-async function importProject() {
-  const result = await flowsStore.promptImport({ replace: false })
-  if (result.success) {
-    // Imported flows live only in the store until written; the autosave watcher
-    // covers only the active flow, so persist them all now or they vanish on reload.
-    await saveAllFlows()
-    // Surface the structured outcome (migrated / placeholder / dropped-edge counts);
-    // a clean import is a success, a degraded one is a warning the user should see.
-    const hadIssues = !!(result.unknownNodes || result.droppedEdges || result.warnings?.length)
-    uiStore.notify(result.message, hadIssues ? 'warning' : 'success')
-  } else if (result.message !== 'Import cancelled') {
-    uiStore.notify(result.message, 'error', 0) // sticky until dismissed
-  }
-}
+// Import / export / share live in the Flows library (the Flows button); Save keeps everything in
+// this browser.
 
 async function saveProject() {
-  // Persist every flow to the database (the in-app save that survives reload),
-  // then also download a backup file. Previously this only cleared dirty + exported
-  // a file, so the IndexedDB copy stayed stale and the user lost work on reload.
   await saveAllFlows()
-  flowsStore.exportAllFlows()
+  uiStore.notify('All flows saved in this browser. Use Export to make a file you can share.', 'success')
+}
+
+function openFlowLibrary() {
+  uiStore.openSidebarTab('flows')
+}
+
+/** The Flows button opens the library panel, or closes the sidebar if it's already showing. */
+function toggleFlowLibrary() {
+  if (uiStore.sidebarOpen && uiStore.sidebarTab === 'flows') uiStore.toggleSidebar()
+  else uiStore.openSidebarTab('flows')
 }
 
 function openGitHub() {
@@ -329,6 +319,17 @@ const isMacElectron = computed(() => {
       </button>
 
       <button
+        class="btn btn-ghost header-examples header-flows"
+        :class="{ active: uiStore.sidebarOpen && uiStore.sidebarTab === 'flows' }"
+        title="Your flows: open, import, export, share or paste a flow"
+        aria-label="Your flows"
+        @click="toggleFlowLibrary"
+      >
+        <Workflow />
+        <span class="header-examples-label">Flows</span>
+      </button>
+
+      <button
         class="btn btn-ghost header-examples"
         title="Example flows: ready-made patches to open and remix"
         aria-label="Example flows"
@@ -362,27 +363,11 @@ const isMacElectron = computed(() => {
 
         <button
           class="btn btn-icon btn-ghost"
-          title="Save Project"
-          aria-label="Save Project"
+          title="Save all flows (in this browser)"
+          aria-label="Save all flows"
           @click="saveProject"
         >
           <Save />
-        </button>
-        <button
-          class="btn btn-icon btn-ghost"
-          title="Export Project"
-          aria-label="Export Project"
-          @click="exportProject"
-        >
-          <Download />
-        </button>
-        <button
-          class="btn btn-icon btn-ghost"
-          title="Import Project"
-          aria-label="Import Project"
-          @click="importProject"
-        >
-          <Upload />
         </button>
         <button
           class="btn btn-icon btn-ghost"
@@ -459,21 +444,14 @@ const isMacElectron = computed(() => {
             class="more-item"
             @click="runMore(saveProject)"
           >
-            <Save /> Save Project
+            <Save /> Save All Flows
           </button>
           <button
             role="menuitem"
             class="more-item"
-            @click="runMore(exportProject)"
+            @click="runMore(openFlowLibrary)"
           >
-            <Download /> Export Project
-          </button>
-          <button
-            role="menuitem"
-            class="more-item"
-            @click="runMore(importProject)"
-          >
-            <Upload /> Import Project
+            <Workflow /> Flows (open, import, export)
           </button>
           <button
             role="menuitem"
@@ -512,6 +490,11 @@ const isMacElectron = computed(() => {
   font-size: var(--font-size-xs);
   letter-spacing: var(--letter-spacing-wide);
   text-transform: uppercase;
+}
+
+.header-flows.active {
+  background: var(--color-primary-100);
+  color: var(--color-primary-700);
 }
 
 .header-examples svg {
@@ -857,7 +840,15 @@ const isMacElectron = computed(() => {
 }
 
 @media (max-width: 480px) {
-  .header-ai { display: none; }
+  .header-ai,
+  .header-flows { display: none; } /* both stay reachable from the More menu */
   .more-ai { display: flex; }
+}
+
+@media (max-width: 400px) {
+  .app-header { gap: var(--space-1); padding: 0 var(--space-1); }
+  .header-left,
+  .header-center,
+  .header-right { gap: 2px; }
 }
 </style>

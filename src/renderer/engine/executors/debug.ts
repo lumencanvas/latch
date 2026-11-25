@@ -136,8 +136,8 @@ export const equalizerExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
     if (!state.fft || state.prevAudio !== audio) {
       // Dispose the previous analyser before replacing it (disconnect alone leaks).
       disposeAnalyzer(state.fft, state.prevAudio)
-      // Create new FFT analyzer with more bins for better resolution
-      state.fft = new Tone.FFT(128)
+      // 1024 bins (~21 Hz each at 44.1 kHz): enough resolution for log-spaced bars down to the bass.
+      state.fft = new Tone.FFT(1024)
       ;(audio as { connect: (n: unknown) => void }).connect(state.fft as unknown)
       state.prevAudio = audio
     }

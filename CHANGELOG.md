@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.4.3: Flows library, close ≠ delete, share and paste single flows
+
+### Flows
+- **Flows button** in the header (next to Examples) opens the flow library, replacing the old Import
+  and Export icons, which now live there.
+- **Flow library:** a Flows tab in the sidebar lists every saved flow (newest first, searchable) with its
+  node count and last edit. Click to open it in a tab; its menu renames, duplicates, exports one flow,
+  copies its JSON, closes or deletes it. New / Import / Paste at the top, Export all at the bottom.
+- **Closing a tab no longer deletes the flow.** It stays in the library; Delete there (with an
+  “Export first” option) is the only way to remove one.
+- **Share one flow:** the library and the tab menu export just that flow, and “Copy Flow
+  JSON” puts it on the clipboard. **Paste a flow:** ⌘V / Ctrl+V with flow JSON on the clipboard opens it
+  as a new tab (or use Paste in the library). Import opens whatever a file holds, one flow or many.
+- Save keeps every flow in this browser without downloading a file each time.
+
+### Fixed
+- Assets tab: the filter chips wrap instead of running off the edge, the upload box no longer squeezes
+  its text, and long file names truncate inside their cards.
+- The Equalizer display spaced its bars linearly, so almost all music landed in the first bar (Rule 110
+  Garden looked dead): bars are now log-spaced 40 Hz–16 kHz over a finer analysis.
+
 ## 1.4.2: Mouth Voice v2, 3D game nodes, model loading prompt, example placement
 
 ### Added
