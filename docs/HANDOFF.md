@@ -6,6 +6,28 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 146): open fixes closed, AI models plan written
+
+- **Desktop vs in-browser agent calls are now told apart** (`adapters/relay.ts`).
+  - While the relay runs, `executeTool` is wrapped. A call carrying the relay iframe's AbortSignal
+    leaves a 5 s mark under the tool name, which `takeRelayCall` claims in the WebMCP adapter.
+  - Verified live: relay calls are logged `relay`, an in-page `executeTool` call is logged `webmcp`.
+  - The polyfill hands tools its own signal, so a realm check inside the tool can't work.
+  - It is a label only and grants nothing.
+- **Agent Tidy** records as "Agent: Tidy graph" (the `labelPrefix` option on `useAutoArrange`).
+- **The "Controls view hides Main Output" item was a false alarm:** that flow was empty at the time
+  (the lost-edit bug, now fixed). `main-output` is a monitor tile.
+- **AI plan:** `docs/plans/AI_MODELS_PLAN_2026-11.md`.
+  - It covers the current stack, 11 verified bugs, what `@hackbuild/*` offers (with maturity) and
+    phases 0–5.
+  - Phase 0 is the bug fixes plus the transformers 4.3.2 / web-llm 0.2.89 upgrades.
+  - Five decisions for the user are in §5.
+- **Next after the AI work (user request):**
+  - The Generative Festival flow "sucks".
+  - Build a proper **bellows music workstation**: generate music from a seed, with Markov melodies,
+    Euclidean rhythms and multiple instruments, "but better".
+  - Re-read the bellows docs and llmref first.
+
 ## 2026-11-25 (later 145): WebMCP audit + fixes, agent-built flows, four app bugs found by driving it
 
 - **Audit (independent review of the agent layer, 13 findings), fixed:**
