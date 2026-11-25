@@ -275,7 +275,7 @@ export const editTools: AgentTool<never>[] = [
     inputSchema: { type: 'object', properties: { nodeIds: { type: 'array', maxItems: 500, items: ID } } },
     execute: (input: { nodeIds?: string[] }, ctx) => {
       getActiveFlowOrThrow()
-      const arrange = useAutoArrange({ getDimensions: ctx.env.dimensions })
+      const arrange = useAutoArrange({ getDimensions: ctx.env.dimensions, labelPrefix: 'Agent: ' })
       let n: number
       if (input.nodeIds?.length) {
         for (const id of input.nodeIds) getNodeOrThrow(id)

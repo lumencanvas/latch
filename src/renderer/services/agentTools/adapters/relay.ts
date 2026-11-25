@@ -68,14 +68,76 @@ export async function startRelayWidget(opts: RelayOptions = {}): Promise<void> {
   f.setAttribute('allow', 'loopback-network; local-network; local-network-access')
   document.body.appendChild(f)
   frame = f
+  hookExecuteTool()
 }
 
 export function stopRelayWidget(): void {
   generation++
+  unhookExecute?.()
+  unhookExecute = null
+  relayMarks.clear()
   frame?.remove()
   frame = null
   for (const u of blobUrls) URL.revokeObjectURL(u)
   blobUrls = []
+}
+
+/**
+ * Did this call come through the relay? The widget runs in our iframe and passes executeTool an
+ * AbortSignal it created there, so the signal belongs to the iframe's realm. In-page agents' don't.
+ */
+function isRelaySignal(signal: unknown): boolean {
+  const Remote = (frame?.contentWindow as (Window & typeof globalThis) | null | undefined)?.AbortSignal
+  return !!signal && !!Remote && signal instanceof Remote
+}
+
+// WebMCP doesn't tell a tool who called it, so while the relay runs, executeTool is wrapped: a
+// call with a relay signal leaves a short-lived mark under the tool's name, which the tool's
+// callback claims (takeRelayCall). Used only to label the call ("a desktop agent"), never to
+// grant anything.
+const relayMarks = new Map<string, number[]>()
+const MARK_TTL_MS = 5000
+let unhookExecute: (() => void) | null = null
+
+type ExecuteTool = (tool: { name?: string }, input?: unknown, options?: { signal?: AbortSignal }) => unknown
+
+function hookExecuteTool() {
+  if (unhookExecute) return
+  const mc = ((document as unknown as { modelContext?: object }).modelContext
+    ?? (navigator as unknown as { modelContext?: object }).modelContext) as { executeTool?: ExecuteTool } | undefined
+  const original = mc?.executeTool
+  if (!mc || typeof original !== 'function') return
+  const hadOwn = Object.prototype.hasOwnProperty.call(mc, 'executeTool')
+  const wrapped: ExecuteTool = function (this: unknown, tool, input, options) {
+    if (tool?.name && isRelaySignal(options?.signal)) {
+      const marks = relayMarks.get(tool.name) ?? []
+      marks.push(performance.now())
+      relayMarks.set(tool.name, marks)
+    }
+    return original.call(this, tool, input, options)
+  }
+  try {
+    mc.executeTool = wrapped
+  } catch {
+    return // a frozen native implementation: calls are just labelled as in-browser
+  }
+  unhookExecute = () => {
+    if (mc.executeTool !== wrapped) return
+    if (hadOwn) mc.executeTool = original
+    else delete mc.executeTool
+  }
+}
+
+/** True once per relay call to this tool (marks older than a few seconds are ignored). */
+export function takeRelayCall(toolName: string): boolean {
+  const marks = relayMarks.get(toolName)
+  if (!marks) return false
+  const now = performance.now()
+  while (marks.length && now - marks[0] > MARK_TTL_MS) marks.shift()
+  const hit = marks.length > 0
+  if (hit) marks.shift()
+  if (!marks.length) relayMarks.delete(toolName)
+  return hit
 }
 
 /** Wake the widget after the tab comes back (it backs off to a slow probe when no relay answers). */

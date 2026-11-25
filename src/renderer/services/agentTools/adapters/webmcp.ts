@@ -1,4 +1,5 @@
 /// <reference types="webmcp-types" />
+import { takeRelayCall } from './relay'
 import { annotationsFor, type AgentToolRegistry } from '../registry'
 import type { AgentTool } from '../types'
 
@@ -45,7 +46,7 @@ export async function registerWebMCP(registry: AgentToolRegistry, filter?: (tool
           inputSchema: tool.inputSchema,
           annotations: annotationsFor(tool),
           execute: (input: unknown, options?: { signal?: AbortSignal }) =>
-            registry.invoke(tool.name, input, { transport: 'webmcp', signal: options?.signal }),
+            registry.invoke(tool.name, input, { transport: takeRelayCall(tool.name) ? 'relay' : 'webmcp', signal: options?.signal }),
         },
         { signal: controller.signal },
       ),

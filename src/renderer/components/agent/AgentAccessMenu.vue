@@ -262,6 +262,11 @@ onUnmounted(() => {
               <span class="agent-log-time">{{ time(e.ts) }}</span>
               <span class="agent-log-title">{{ e.title }}</span>
               <span
+                v-if="e.transport === 'relay'"
+                class="agent-log-via"
+                title="Called by a desktop agent through the relay"
+              >desktop</span>
+              <span
                 v-if="!e.ok"
                 class="agent-log-error"
                 :title="e.error"
@@ -622,6 +627,14 @@ onUnmounted(() => {
 }
 
 .agent-log-title { color: var(--color-neutral-800); }
+
+.agent-log-via {
+  padding: 0 4px;
+  border: 1px solid var(--color-neutral-300);
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+}
 
 .agent-log li.failed { border-left-color: var(--color-error); }
 .agent-log li.failed .agent-log-title { color: var(--color-error); }

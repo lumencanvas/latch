@@ -10,6 +10,8 @@ type Port = { id: string }
 export interface AutoArrangeOptions {
   /** Measured size of a rendered node (Vue Flow `dimensions`); falls back to an estimate. */
   getDimensions?: (nodeId: string) => Size | undefined
+  /** Undo-history label prefix (an agent's tidy reads "Agent: Tidy graph"). */
+  labelPrefix?: string
   /** Called after a whole-flow arrange so the result is framed. */
   onArranged?: (arrangedIds: string[], scope: 'selection' | 'all') => void
 }
@@ -95,7 +97,7 @@ export function useAutoArrange(options: AutoArrangeOptions = {}) {
     })
     if (moved.length === 0) return 0
 
-    const label = useSelection ? `Tidy ${nodes.length} nodes` : 'Tidy graph'
+    const label = `${options.labelPrefix ?? ''}${useSelection ? `Tidy ${nodes.length} nodes` : 'Tidy graph'}`
     withHistory(label, () => {
       for (const n of moved) flowsStore.updateNodePosition(n.id, { ...positions.get(n.id)! })
       // updateNodePosition skips dirty (it is the per-frame drag path) — mark once.

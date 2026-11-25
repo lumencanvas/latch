@@ -70,8 +70,8 @@ polyfill (`@w3c/webmcp-polyfill`) only when agent access is turned on.
   control or by wire.
 - Importing JSON asks you every time; code in it arrives disabled.
 - There is no tool to delete flows, change settings, read files or run arbitrary code.
-- Each change an agent makes to a flow's nodes and wires is one undo step (labelled “Agent: …”, or
-  “Tidy graph” for a layout). Calls are rate-limited and run one at a time. A prompt the agent
+- Each change an agent makes to a flow's nodes and wires is one undo step, labelled “Agent: …”. The
+  activity list marks calls from desktop agents (through the relay). Calls are rate-limited and run one at a time. A prompt the agent
   gives up on closes by itself, and a call that timed out can't overlap the next one.
 - Device pairing, camera and microphone permission, and starting audio need the person. If the
   page hasn't been clicked yet, a play request reports “waiting” and does nothing; it never
