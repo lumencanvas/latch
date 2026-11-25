@@ -18,6 +18,7 @@ import NodeExplorerModal from './components/modals/NodeExplorerModal.vue'
 import BluetoothDeviceManagerModal from './components/modals/BluetoothDeviceManagerModal.vue'
 import HelpModal from './components/modals/HelpModal.vue'
 import ImportTrustModal from './components/modals/ImportTrustModal.vue'
+import AgentConsentModal from './components/agent/AgentConsentModal.vue'
 import RuntimeStatus from './components/layout/RuntimeStatus.vue'
 import ElectronDeviceChooser from './components/modals/ElectronDeviceChooser.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
@@ -202,6 +203,7 @@ onUnmounted(() => {
       <BluetoothDeviceManagerModal />
       <HelpModal />
       <ImportTrustModal />
+      <AgentConsentModal />
       <RuntimeStatus v-if="isEditorView" />
     </template>
   </div>

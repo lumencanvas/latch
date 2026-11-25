@@ -17,15 +17,18 @@ export interface AutoArrangeOptions {
 /**
  * Size estimate for a node that hasn't been measured (off-screen nodes aren't
  * rendered — `only-render-visible-elements`). Mirrors BaseNode's sizing: a 32px
- * header, 22px per port row, ~30px per inline control (capped like the node body).
+ * header, 22px per port row, ~30px per inline control (capped like the node body), plus the
+ * texture preview.
  */
 export function estimateNodeSize(def: NodeDefinition | undefined, data: Record<string, unknown> = {}): Size {
   const dynIn = (data._dynamicInputs as Port[] | undefined)?.length ?? 0
   const dynOut = (data._dynamicOutputs as Port[] | undefined)?.length ?? 0
   const ports = Math.max((def?.inputs.length ?? 0) + dynIn, (def?.outputs.length ?? 0) + dynOut, 1)
   const controls = Math.min(def?.controls.length ?? 0, 8)
-  const height = Math.max(40 + ports * 22, 40 + controls * 30)
-  const width = def?.outputs.some(o => o.type === 'texture') ? 180 : 170
+  // Nodes with a texture output draw a ~120px preview above their controls, and render wider.
+  const preview = def?.outputs.some(o => o.type === 'texture') ?? false
+  const height = Math.max(40 + ports * 22, 40 + controls * 30) + (preview ? 120 : 0)
+  const width = preview ? 240 : 170
   return { width, height }
 }
 
