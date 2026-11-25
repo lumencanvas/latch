@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, nextTick, inject } from 'vue'
 import { useUIStore, type ControlLayout } from '@/stores/ui'
 import { needsReflow, reflow, exposedControlSize, type LayoutItem } from '@/utils/controlPanelLayout'
 import ControlRenderer from '@/components/controls/ControlRenderer.vue'
@@ -24,6 +24,17 @@ const uiStore = useUIStore()
 const flowsStore = useFlowsStore()
 const nodesStore = useNodesStore()
 const runtimeStore = useRuntimeStore()
+// Play/Stop must drive the execution engine (App.vue provides it), not just the status flag:
+// runtimeStore.start() alone showed LIVE at 0 fps with nothing running.
+const executionControls = inject<{ start: () => unknown; stop: () => void }>('executionControls')
+function play() {
+  if (executionControls) void executionControls.start()
+  else runtimeStore.start()
+}
+function stopPlayback() {
+  if (executionControls) executionControls.stop()
+  else runtimeStore.stop()
+}
 
 // Grid configuration - responsive
 const CELL_SIZE = 60
@@ -1260,14 +1271,14 @@ onUnmounted(() => {
         <button
           v-if="!isRunning"
           class="play-btn"
-          @click="runtimeStore.start()"
+          @click="play"
         >
           PLAY
         </button>
         <button
           v-else
           class="stop-btn"
-          @click="runtimeStore.stop()"
+          @click="stopPlayback"
         >
           STOP
         </button>
