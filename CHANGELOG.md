@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.0: AI agents can build flows (WebMCP), 14 new example flows
+
+### AI agent access (WebMCP)
+- **Let an AI agent work in LATCH:** the new robot button in the header offers LATCH's editor to AI
+  agents as tools. An agent can read the flow, search nodes, build and wire whole patches in one
+  step, set controls, play and stop, read values and errors, and see Main Output. It follows WebMCP
+  (`document.modelContext`), with a built-in polyfill where the browser has none.
+- **Claude Code, Claude Desktop and Cursor** connect through the WebMCP local relay: turn on “Let
+  desktop agents connect” and run the command shown (`claude mcp add latch -- npx -y
+  @mcp-b/webmcp-local-relay@6.2.0 --widget-origin https://latch.design`).
+- **Off by default, per tab.** Modes: Read only, Ask before changes, Allow edits. LATCH asks before
+  an agent plays the flow, reads the output image or imports JSON. Pause, an activity list, and
+  **Revert agent changes** live in the same menu. Every agent change is one undo step.
+- Agents can't run code: Function and Expression nodes they add or edit stay disabled until you
+  click Enable code. Tokens and passwords are masked in everything an agent reads. See
+  docs/AGENT_ACCESS.md.
+
+### Examples
+- 14 new flows: **Inventory of a Room** (a gallery piece: YOLO sees the room and an operatic voice
+  sings each new thing as you're redrawn in light), **Frutiger Aero**, Liquid Chrome, Pop Halftone,
+  Signal Decay, Ink Mandala, YOLO Object Detector, Say What You See, Motion Ink, Duotone Poster Cam,
+  Ghost Presence, Corner Constellations and Narrated Camera.
+- Examples are grouped by interest (Start here, Showcase, Shaders & visuals, Camera & tracking, AI &
+  voice, Music & sound, 3D & games, Data & network, Hardware) with filter chips. Frutiger Aero joins
+  the empty-canvas starters.
+
+### Fixed
+- Tidy (auto-arrange) packed nodes with an image preview too tightly when they weren't on screen.
+
 ## 1.4.3: Flows library, close ≠ delete, share and paste single flows
 
 ### Flows

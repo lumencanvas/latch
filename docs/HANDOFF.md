@@ -6,6 +6,34 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 144): 1.5.0: WebMCP agent tools + relay, 14 example flows
+
+- **Examples** (commit d4fa667): `data/flow-snippets-gallery.ts` (14 flows), nine personas, interest chips in
+  NodeExplorer, Frutiger Aero in `STARTER_FLOW_IDS`. The Image Captioning node's BLIP defaults now 401
+  on Hugging Face and `vit-gpt2` fails to load in onnxruntime-web, so Narrated Camera uses the VLA node
+  (SmolVLM). That default is still broken and needs a fix.
+- **Agent tools** (`services/agentTools/`): `registry.ts` handles mode gate, schema
+  (`schema.ts`), buckets, consent resolver (default deny), FIFO queue, timeout, result cap and audit.
+  Tools are in `tools/read.ts`, `tools/edit.ts` and `tools/flows.ts`. `helpers.ts` covers effective
+  ports incl. `_dynamic*`, strict `checkConnection`, secret masking, `summarizeValue` and
+  `createNodeData` (stamps `_codeDisabled` on code types). `stores/agent.ts` holds the mode and relay
+  flag (sessionStorage), grants, audit ring and per-flow checkpoints. `index.ts`
+  `installAgentTools(env)` is called from EditorView (execution controls, view centre, frame);
+  registration is serialised and re-registers when entering or leaving read-only.
+- Adapters: `adapters/webmcp.ts` (native `document.modelContext` → `navigator.modelContext` → lazy
+  `@w3c/webmcp-polyfill`; abort signal unregisters) and `adapters/relay.ts` (own embed: pinned
+  `public/webmcp/widget.js` from `@mcp-b/webmcp-local-relay` 6.2.0, run from blob: scripts for the
+  Electron CSP; ignores the widget's reload message).
+- UI: `components/agent/AgentAccessMenu.vue` (header) and `AgentConsentModal.vue` (App).
+  `utils/controlValue.ts` is shared with ControlRenderer. `estimateNodeSize` now counts texture
+  previews.
+- `latch_build_graph` suppresses Tidy's own history entry, so one call is one undo step.
+  `latch_set_controls` re-stamps `_codeDisabled` (the `updateNodeData` re-enable trap).
+- Verified with a real MCP client via the relay in Chrome (see the plan's status section). Open:
+  `capture_output` end to end, Electron, Phase 4 polish.
+- Test gotcha: after HMR the engine module can be duplicated, so reads return null. Reload before
+  checking values.
+
 ## 2026-11-25 (later 143): 1.4.3: flow library, close ≠ delete, single-flow share/paste, Assets + EQ fixes
 
 - `FlowState.open` (persisted; missing = open). `openFlows` getter drives tabs; `closeFlow` keeps the
