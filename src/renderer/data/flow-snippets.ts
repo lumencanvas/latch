@@ -1,13 +1,17 @@
+import { gallerySnippets } from './flow-snippets-gallery'
+
 /** What a starter needs from the user/machine before it does anything — shown as a hint on its card. */
 export type SnippetRequirement = 'camera' | 'microphone' | 'hardware' | 'network' | 'model'
 
 /** Who a starter is for — drives grouping in the snippet gallery. Order here is display order. */
 export const SNIPPET_PERSONAS = [
   'Start here',
-  'Visuals & VJ',
-  'Music & audio',
-  'AI & vision',
-  '3D',
+  'Showcase',
+  'Shaders & visuals',
+  'Camera & tracking',
+  'AI & voice',
+  'Music & sound',
+  '3D & games',
   'Data & network',
   'Hardware',
 ] as const
@@ -55,6 +59,9 @@ export const REQUIREMENT_LABELS: Record<SnippetRequirement, string> = {
 // — insertion does not validate wires, so a stale port id would otherwise leave a silently dead edge.
 // Layout: ~300px columns, rows spaced so no two node bodies overlap.
 export const flowSnippets: FlowSnippet[] = [
+  // The second shelf (CV / YOLO, shader chains, Frutiger Aero, Inventory of a Room) leads each
+  // of its groups; the gallery keeps array order within a group.
+  ...gallerySnippets,
   // ── Start here ───────────────────────────────────────────────────────────────
   {
     id: 'lfo-kaleidoscope',
@@ -123,7 +130,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Animated Shader',
     description: 'Render an animated Shadertoy-style shader to the main output — edit the GLSL live',
     category: 'visual',
-    persona: 'Visuals & VJ',
+    persona: 'Shaders & visuals',
     relatedNodes: ['shader', 'main-output'],
     nodes: [
       { id: 'sn-1', type: 'shader', position: { x: 0, y: 0 }, data: {} },
@@ -138,7 +145,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Audio-Reactive VJ Loop',
     description: 'Voronoi shader → kaleidoscope → RGB split; the mic’s bass kicks the split, the mids fold the mirror',
     category: 'visual',
-    persona: 'Visuals & VJ',
+    persona: 'Shaders & visuals',
     requires: ['microphone'],
     relatedNodes: ['shader', 'image-fx-kaleidoscope', 'image-fx-rgb-shift', 'audio-input', 'audio-analyzer', 'remap', 'main-output'],
     nodes: [
@@ -167,7 +174,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Webcam Kaleidoscope',
     description: 'Feed your webcam through a kaleidoscope effect to the main output',
     category: 'visual',
-    persona: 'Visuals & VJ',
+    persona: 'Camera & tracking',
     requires: ['camera'],
     relatedNodes: ['webcam', 'image-fx-kaleidoscope', 'main-output'],
     nodes: [
@@ -185,7 +192,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Webcam Edge Detection',
     description: 'OpenCV Canny edges on your webcam to the output, with a live count of the shapes it sees',
     category: 'opencv',
-    persona: 'Visuals & VJ',
+    persona: 'Camera & tracking',
     requires: ['camera'],
     relatedNodes: ['webcam', 'cv-canny', 'cv-contours', 'main-output', 'monitor'],
     nodes: [
@@ -209,7 +216,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Generative Melody',
     description: 'A metronome clocks a melody walker through A minor pentatonic into a plucked synth with delay and reverb',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     relatedNodes: ['metronome', 'melody-walk', 'synth', 'audio-delay', 'reverb', 'audio-output', 'oscilloscope'],
     nodes: [
       { id: 'sn-1', type: 'metronome', position: { x: 0, y: 0 }, data: { bpm: 100, subdivision: '1/2' } },
@@ -236,7 +243,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Chords & Arpeggio',
     description: 'A bellows chord progression in D dorian plays electric piano each bar while a kalimba arpeggiates it',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     relatedNodes: ['metronome', 'progression', 'arpeggiator', 'poly-voice', 'bellows-instrument', 'bellows-reverb', 'audio-output'],
     nodes: [
       { id: 'sn-1', type: 'metronome', position: { x: 0, y: 120 }, data: { bpm: 84, subdivision: '1/2', beatsPerBar: 4 } },
@@ -267,7 +274,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Keyboard to Synth',
     description: 'Play the on-screen keyboard (click the keys) through a synthesizer to your speakers',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     relatedNodes: ['keyboard', 'synth', 'audio-output'],
     nodes: [
       { id: 'sn-1', type: 'keyboard', position: { x: 0, y: 0 }, data: {} },
@@ -286,7 +293,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Mic Scope & Tempo',
     description: 'Show a live waveform of the mic and read out the detected tempo',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     requires: ['microphone'],
     relatedNodes: ['audio-input', 'oscilloscope', 'beat-detect', 'monitor'],
     nodes: [
@@ -308,7 +315,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Face-Controlled Glitch',
     description: 'MediaPipe face tracking: open your mouth to split the RGB channels, smile to swing their angle',
     category: 'ai',
-    persona: 'AI & vision',
+    persona: 'Camera & tracking',
     requires: ['camera'],
     relatedNodes: ['webcam', 'mediapipe-face', 'remap', 'image-fx-rgb-shift', 'main-output'],
     nodes: [
@@ -334,7 +341,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Hand Tracking',
     description: 'Track hands from the webcam with MediaPipe, show your camera on the output and count the hands',
     category: 'ai',
-    persona: 'AI & vision',
+    persona: 'Camera & tracking',
     requires: ['camera'],
     relatedNodes: ['webcam', 'mediapipe-hand', 'main-output', 'monitor'],
     nodes: [
@@ -354,7 +361,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Local LLM Poem',
     description: 'Generate text with a small language model running entirely in your browser — press the trigger to write',
     category: 'ai',
-    persona: 'AI & vision',
+    persona: 'AI & voice',
     requires: ['model'],
     setup: 'Load a text-generation model in the AI Model Manager first, then click the Trigger.',
     relatedNodes: ['trigger', 'text-generation', 'monitor'],
@@ -377,7 +384,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Spinning 3D Torus',
     description: 'Geometry + physical material, rotated by time, rendered through a camera to the main output',
     category: '3d',
-    persona: '3D',
+    persona: '3D & games',
     relatedNodes: ['time', 'expression', 'material-3d', 'torus-3d', 'transform-3d', 'scene-3d', 'camera-3d', 'render-3d', 'main-output'],
     nodes: [
       { id: 'sn-1', type: 'time', position: { x: 0, y: 0 }, data: {} },
@@ -524,7 +531,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Air Harp',
     description: 'Strum a harp in the air: raise or lower your index finger across the glowing strings and every string you cross plucks a note (always in key). Left and right makes it brighter and changes the glass texture; a pad chord and a granular cloud follow your hand. Hide your hand to stop',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Showcase',
     requires: ['camera'],
     relatedNodes: ['mediapipe-hand', 'tracking-overlay', 'changed', 'text-overlay', 'scale-quantize', 'chord', 'bellows-instrument', 'poly-voice', 'bellows-granular', 'bellows-filter', 'bellows-delay', 'bellows-reverb'],
     nodes: [
@@ -599,7 +606,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Sing With Your Face',
     description: 'Open your mouth and a physically modelled voice sings the next syllable of the lyrics while a choir holds the chord; raise your eyebrows to sing higher. Your face is drawn as a neon HUD',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     requires: ['camera'],
     relatedNodes: ['mediapipe-face', 'tracking-overlay', 'compare', 'scale-quantize', 'bellows-vocal-keys', 'chord', 'poly-voice', 'bellows-reverb'],
     nodes: [
@@ -645,7 +652,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Sing It Back',
     description: 'Say a sentence: in-browser speech recognition writes it down, a sentiment model reads the mood, and a singing voice makes up a tune for your words and sings them back, drier when happy and cavernous when sad',
     category: 'ai',
-    persona: 'AI & vision',
+    persona: 'AI & voice',
     requires: ['microphone', 'model'],
     setup: 'Load the Speech Recognition and Sentiment models in the AI Model Manager, and use headphones so the mic does not transcribe the singer.',
     relatedNodes: ['audio-input', 'speech-recognition', 'sentiment-analysis', 'bellows-singer', 'bellows-reverb', 'audio-output'],
@@ -676,7 +683,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Depth Mirror',
     description: 'A depth model turns any webcam into a depth camera; the depth map warps your image, and the bass and highs of the room push it around',
     category: 'visual',
-    persona: 'Visuals & VJ',
+    persona: 'Camera & tracking',
     requires: ['camera', 'microphone', 'model'],
     relatedNodes: ['webcam', 'depth-estimation', 'displacement', 'audio-analyzer', 'image-fx-rgb-shift', 'main-output'],
     nodes: [
@@ -708,7 +715,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Rule 110 Garden',
     description: 'Self-growing music: an L-system grows a kalimba melody, a cellular automaton (Rule 110) plays the hi-hat, and everything is retuned to pure just intonation',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     relatedNodes: ['metronome', 'lsystem-melody', 'cellular-rhythm', 'bellows-instrument', 'bellows-tuning', 'bellows-reverb', 'equalizer'],
     nodes: [
       { id: 'sn-1', type: 'metronome', position: { x: 0, y: 160 }, data: { bpm: 92, subdivision: '1/2' } },
@@ -840,7 +847,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Blob Tracking Cam',
     description: 'The blob-tracking look: boxes, ids and coordinates snap onto everything that moves, joined into a network of lines',
     category: 'visual',
-    persona: 'Visuals & VJ',
+    persona: 'Camera & tracking',
     requires: ['camera'],
     relatedNodes: ['webcam', 'blob-track', 'main-output'],
     nodes: [
@@ -858,7 +865,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Play the Room',
     description: 'Movement becomes music: every new blob of motion strikes a marimba, its height picks the note, and the more the room moves the bigger the reverb',
     category: 'audio',
-    persona: 'Music & audio',
+    persona: 'Music & sound',
     requires: ['camera'],
     relatedNodes: ['webcam', 'blob-track', 'scale-quantize', 'bellows-instrument', 'bellows-reverb', 'main-output'],
     nodes: [
@@ -890,7 +897,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Skeleton HUD',
     description: 'Body tracking drawn as a glowing skeleton with bracketed tags, the overlay style from motion-tracking edits',
     category: 'visual',
-    persona: 'Visuals & VJ',
+    persona: 'Camera & tracking',
     requires: ['camera'],
     relatedNodes: ['webcam', 'mediapipe-pose', 'tracking-overlay', 'main-output'],
     nodes: [
@@ -911,7 +918,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Mouth to Voice',
     description: 'Mime and it speaks: the camera reads your mouth shape (open, rounded, smiling) and the articulatory voice makes the vowel you are shaping, ee, ah, oh, oo, plus a hum when your lips close. Raise your eyebrows to go higher',
     category: 'ai',
-    persona: 'AI & vision',
+    persona: 'AI & voice',
     requires: ['camera'],
     relatedNodes: ['mediapipe-face', 'bellows-mouth-voice', 'tracking-overlay', 'scale-quantize', 'bellows-reverb', 'audio-output'],
     nodes: [
@@ -945,7 +952,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Mouth to Voice (calibrated)',
     description: 'The better Mouth to Voice: a one-minute calibration records YOUR mouth on ah, ee, oo, oh and eh, then the voice matches your own shapes. Lip gestures add p, b, w and sh, and it can try to read your tongue from the video. Turn on Calibrate Now in Mouth Calibrate and follow the words on screen',
     category: 'ai',
-    persona: 'AI & vision',
+    persona: 'AI & voice',
     requires: ['camera'],
     relatedNodes: ['mouth-calibrate', 'bellows-mouth-voice', 'mediapipe-face', 'tracking-overlay', 'template', 'audio-output'],
     nodes: [
@@ -988,7 +995,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Build a 3D Scene',
     description: 'A complete 3D scene from nodes: a floor that catches shadows, a chrome sphere, a glowing torus, a wooden box and a ring of pillars, lit by a sun, a fill light and a cyan light that circles the objects, filmed by a camera that orbits. Every object is one node; change any of them live',
     category: '3d',
-    persona: '3D',
+    persona: '3D & games',
     relatedNodes: ['scene-3d', 'material-3d', 'transform-3d', 'directional-light-3d', 'point-light-3d', 'camera-3d', 'instances-3d', 'render-3d'],
     nodes: [
       { id: 'sn-2', type: 'lfo', position: { x: 0, y: 160 }, data: { frequency: 0.05, amplitude: 8, phase: 0 } },
@@ -1051,7 +1058,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Sound City',
     description: 'A generative marimba tune builds a 3D city as it plays: Audio Analyzer splits the sound into 32 bands, one ring of towers rises with each band, a spiral of orbs swells with them, and the bass pumps a magenta light. One Instances 3D node draws each ring',
     category: '3d',
-    persona: 'Music & audio',
+    persona: 'Showcase',
     relatedNodes: ['instances-3d', 'audio-analyzer', 'synth', 'melody-walk', 'point-light-3d', 'text-overlay'],
     nodes: [
       { id: 'sn-1', type: 'metronome', position: { x: 0, y: 0 }, data: { bpm: 112, subdivision: '1/2' } },
@@ -1108,7 +1115,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Hold It in Your Hand',
     description: 'Turn a golden 3D ring with your hand: MediaPipe tracks your index fingertip and its position spins the ring, in a cloud of glowing crystals. Webcam to tracking to 3D, with no code',
     category: '3d',
-    persona: 'AI & vision',
+    persona: '3D & games',
     requires: ['camera'],
     relatedNodes: ['mediapipe-hand', 'object-get', 'smooth', 'transform-3d', 'torus-3d', 'instances-3d'],
     nodes: [
@@ -1163,7 +1170,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Warp Tunnel',
     description: 'Fly through 900 stars: one Point Stream 3D keeps them flowing past the camera, one Instances 3D draws them all. Arrow keys steer and change speed',
     category: '3d',
-    persona: '3D',
+    persona: '3D & games',
     relatedNodes: ['key-input', 'point-stream-3d', 'instances-3d', 'camera-3d', 'render-3d'],
     nodes: [
       { id: 'sn-1', type: 'key-input', position: { x: 0, y: 0 }, data: { smoothing: 0.85 } },
@@ -1196,7 +1203,7 @@ export const flowSnippets: FlowSnippet[] = [
     name: 'Comet Dodge (a 3D game)',
     description: 'A whole 3D game made of nodes, no code. Steer your ship with ← → (or A D) and dodge the comets. Every comet you pass scores a point and plays a note that climbs with your score; the comets speed up as you go; a crash shakes the camera, plays a hit and resets the score. Key Input, Point Stream 3D (which also detects the crash) and Instances 3D do the work',
     category: '3d',
-    persona: '3D',
+    persona: 'Showcase',
     relatedNodes: ['key-input', 'point-stream-3d', 'instances-3d', 'integral', 'counter', 'text-overlay', 'synth'],
     nodes: [
       { id: 'sn-1', type: 'key-input', position: { x: 0, y: 0 }, data: { smoothing: 0.4 } },
@@ -1297,7 +1304,7 @@ export const STARTER_FLOW_IDS = [
   'first-sound',
   'blob-cam',
   'air-harp',
-  'face-choir',
+  'frutiger-aero',
   'rule-110-garden',
   'comet-dodge',
 ] as const

@@ -63,11 +63,11 @@ describe('snippetOffsetToCenter', () => {
 describe('groupSnippetsByPersona', () => {
   it('groups in canonical persona order and drops empty groups', () => {
     const groups = groupSnippetsByPersona([
-      { id: 'a', persona: '3D' },
+      { id: 'a', persona: '3D & games' },
       { id: 'b', persona: 'Start here' },
-      { id: 'c', persona: '3D' },
+      { id: 'c', persona: '3D & games' },
     ] as Array<Pick<FlowSnippet, 'persona'> & { id: string }>)
-    expect(groups.map((g) => g.persona)).toEqual(['Start here', '3D'])
+    expect(groups.map((g) => g.persona)).toEqual(['Start here', '3D & games'])
     expect(groups[1].snippets.map((s) => s.id)).toEqual(['a', 'c'])
   })
 })

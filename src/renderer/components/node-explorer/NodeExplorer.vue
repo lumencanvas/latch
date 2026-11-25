@@ -3,7 +3,7 @@ import { computed, ref, nextTick } from 'vue'
 import { Search } from 'lucide-vue-next'
 import { useNodesStore, dataTypeMeta, type DataType } from '@/stores/nodes'
 import { useNodeExplorerStore } from '@/stores/node-explorer'
-import { flowSnippets } from '@/data/flow-snippets'
+import { flowSnippets, type SnippetPersona } from '@/data/flow-snippets'
 import { fuzzySearch } from '@/utils/fuzzySearch'
 import CategoryNav from './CategoryNav.vue'
 import NodeCard from './NodeCard.vue'
@@ -92,8 +92,21 @@ const visibleSnippets = computed(() => {
   return fuzzySearch(flowSnippets, query, s => [s.name, s.description]).map(r => r.item)
 })
 
-// Starters grouped by who they're for (Start here, Visuals & VJ, Music, AI, 3D, ...).
-const snippetGroups = computed(() => groupSnippetsByPersona(visibleSnippets.value))
+// Starters grouped by interest (Start here, Showcase, Shaders, Camera, AI, Music, 3D, ...).
+const allSnippetGroups = computed(() => groupSnippetsByPersona(visibleSnippets.value))
+
+// Interest chips above the gallery: pick one group to see only that shelf (null = all).
+const snippetPersona = ref<SnippetPersona | null>(null)
+const snippetGroups = computed(() => {
+  const want = snippetPersona.value
+  if (!want) return allSnippetGroups.value
+  const only = allSnippetGroups.value.filter((g) => g.persona === want)
+  // A search or category that empties the chosen shelf falls back to everything that matches.
+  return only.length ? only : allSnippetGroups.value
+})
+function toggleSnippetPersona(p: SnippetPersona) {
+  snippetPersona.value = snippetPersona.value === p ? null : p
+}
 
 // The node grid, so we can return keyboard focus to the originating card when the
 // detail view closes (WCAG 2.4.3 — the swap must not strand focus on <body>).
@@ -381,6 +394,36 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
           >
         </div>
 
+        <div
+          v-if="allSnippetGroups.length > 1"
+          class="tag-filter snippet-interests"
+          role="group"
+          aria-label="Filter examples by interest"
+        >
+          <button
+            class="tag-chip interest-chip"
+            :class="{ active: !snippetPersona }"
+            :aria-pressed="!snippetPersona"
+            @click="snippetPersona = null"
+          >
+            All <span class="interest-count">{{ visibleSnippets.length }}</span>
+          </button>
+          <button
+            v-for="group in allSnippetGroups"
+            :key="group.persona"
+            class="tag-chip interest-chip"
+            :class="{ active: snippetPersona === group.persona }"
+            :aria-pressed="snippetPersona === group.persona"
+            @click="toggleSnippetPersona(group.persona)"
+          >
+            <span
+              v-if="snippetPersona === group.persona"
+              class="tag-check"
+              aria-hidden="true"
+            >✓ </span>{{ group.persona }} <span class="interest-count">{{ group.snippets.length }}</span>
+          </button>
+        </div>
+
         <template v-if="visibleSnippets.length > 0">
           <section
             v-for="group in snippetGroups"
@@ -605,6 +648,17 @@ const legendTypes = (['trigger', 'number', 'string', 'boolean', 'audio', 'video'
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-2);
   padding: 0 var(--space-3) var(--space-3);
+}
+
+/* Interest chips keep their case ("Start here", "3D & games"), unlike node tags. */
+.interest-chip {
+  text-transform: none;
+  gap: 4px;
+}
+
+.interest-count {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
 }
 
 .snippet-group-title {
