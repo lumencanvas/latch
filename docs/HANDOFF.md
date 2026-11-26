@@ -6,6 +6,20 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 156): Fit in node model selects; Electron check
+
+- Node model selects now say "· won't run here (needs webgpu)" or "· slow here (CPU)". Options
+  built before the probe are relabelled in place when it answers (`getModelSelectOptions`,
+  `AIInference.ts`); test `select-fit.test.ts` mocks a no-GPU probe.
+- Electron dev (`npx electron-vite dev -- --remote-debugging-port=9229`, driven over CDP): renderer is
+  cross-origin isolated with WebGPU; the weight store opens on OPFS; SlimSAM downloaded through it
+  and ran on WebGPU fp16 (6.9 s); the workstation played (Strike, −13…−27 dB). A background window
+  throttles rAF (fps 0 until `Page.bringToFront`) but bellows keeps time on the audio thread.
+  Dev serves the renderer from http://localhost:5174, so the packaged `app://` origin is still
+  unverified.
+- WAV export of a seed deferred: `b.render()` replays every clock callback on the shared kernel, so
+  it needs its own offline path.
+
 ## 2026-11-25 (later 155): Workstation: bellows moods, Seed Band example
 
 - Added the bellows workbench moods (`apps/workbench/src/lib/composer.ts` MOODS: EMBER, DRAW,
@@ -24,10 +38,10 @@ PR #8 (`more-examples`, Release 1.5.0) holds all of this session's work. Do NOT 
 deploys latch.design.
 - **Workstation:** awaiting the maintainer's listening feedback (Seed Band example added). Optional: per-part instrument pickers, WAV export of a
   seed (`b.render`).
-- **AI (optional):** fit in node model selects; measured sizes and pinned SHA-256 (`sha256For`)
+- **AI (optional):** measured sizes and pinned SHA-256 (`sha256For`)
   from the weight store; Phase 2b (MediaPipe worker) only after profiling; Phase 5 extras (wllama,
   Prompt API, Whisper turbo / Moonshine, Kokoro "Speak (neural)", model2vec embed).
-- **Unverified:** Electron app after this session (weights store on `app://`, bellows clock, relay);
+- **Unverified:** the packaged Electron build (`app://` origin; dev renderer verified) and the relay there;
   Safari/Firefox; `capture_output` end to end (needs a person); hardware nodes (Muse, printer,
   Buzz); two tabs sharing one download in LATCH.
 

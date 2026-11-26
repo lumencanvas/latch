@@ -10,7 +10,8 @@
  * - Memory management and cleanup
  */
 
-import { getAiEnv, rungsFor } from './modelRecords'
+import type { Env } from '@hackbuild/ai-env'
+import { aiEnvNow, fitFor, getAiEnv, rungsFor } from './modelRecords'
 import { collectTransferables, type SerializedImage } from './imageTransfer'
 import { markModelUsed, requestPersistentStorage } from './modelStorage'
 import { WorkerFacade } from '@/services/worker/WorkerFacade'
@@ -99,15 +100,37 @@ export interface ModelSelectOption {
  * swaps to the model registry once models are co-located; the hand-authored
  * catalog stays authoritative until the sign-off-gated derive.
  */
+/** Said after a model's name in a node's model select when it won't run here, or only slowly. */
+function fitNote(modelId: string, env: Env | null): string {
+  const fit = env ? fitFor(modelId, env) : null
+  if (!fit) return ''
+  if (!fit.ok) return ` · won't run here (${fit.fit})`
+  return fit.fit === 'fits on cpu, slow' ? ' · slow here (CPU)' : ''
+}
+
+/** Options handed out before the device probe finished, relabelled once it has. */
+const issuedOptions: Array<{ option: ModelSelectOption; modelId: string; base: string }> = []
+
 export function getModelSelectOptions(task: string): ModelSelectOption[] {
   const def = AI_MODELS.find((m) => m.task === task)
   if (!def) return []
   const defaultName = def.defaultModel.split('/').pop() ?? def.defaultModel
-  return [
-    { value: '', label: `Default — ${defaultName} (${def.defaultSize})` },
-    ...def.alternateModels.map((m) => ({ value: m.id, label: `${m.name} (${m.size})` })),
+  const env = aiEnvNow()
+  const rows: Array<[string, string, string]> = [
+    ['', def.defaultModel, `Default — ${defaultName} (${def.defaultSize})`],
+    ...def.alternateModels.map((m): [string, string, string] => [m.id, m.id, `${m.name} (${m.size})`]),
   ]
+  return rows.map(([value, modelId, base]) => {
+    const option = { value, label: base + fitNote(modelId, env) }
+    if (!env) issuedOptions.push({ option, modelId, base })
+    return option
+  })
 }
+
+// Node selects are built at startup, before the probe answers: relabel them in place once it does.
+void getAiEnv().then((env) => {
+  for (const { option, modelId, base } of issuedOptions.splice(0)) option.label = base + fitNote(modelId, env)
+}).catch(() => { /* no probe: selects keep their plain labels */ })
 
 // Inject the AI catalog into `defineNode`'s global model-select resolver. This is THE
 // seam that makes the declarative `defineNode({ models: [{ task }] })` path work for any
