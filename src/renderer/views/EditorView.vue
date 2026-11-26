@@ -28,6 +28,7 @@ import AnimatedEdge from '@/components/edges/AnimatedEdge.vue'
 import WireSuggestionPopover, { type SuggestionItem } from '@/components/canvas/WireSuggestionPopover.vue'
 import { validateConnection, getPortType, areTypesCompatible } from '@/utils/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
+import { setAgentEditorEnv } from '@/services/agentTools'
 import { useCanvasKeyboard } from '@/composables/useCanvasKeyboard'
 import { useAutoArrange } from '@/composables/useAutoArrange'
 import { useDialogA11y } from '@/composables/useDialogA11y'
@@ -1055,6 +1056,24 @@ onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown)
   window.addEventListener('paste', onPaste)
 
+  // AI agent tools (installed in App.vue) place and frame nodes on this canvas while it's mounted.
+  setAgentEditorEnv({
+    dimensions: (id) => vueFlow.findNode(id)?.dimensions,
+    viewCenter: () => {
+      const pane = document.querySelector('.vue-flow__pane') as HTMLElement | null
+      const rect = pane?.getBoundingClientRect()
+      return project(rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 400, y: 300 })
+    },
+    frame: (ids) => {
+      const nodes = flowsStore.activeFlow?.nodes.filter((n) => !ids?.length || ids.includes(n.id)) ?? []
+      if (nodes.length === 0) return
+      const xs = nodes.map((n) => n.position.x)
+      const ys = nodes.map((n) => n.position.y)
+      const rect = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs) + PLACE_NODE.width, height: Math.max(...ys) - Math.min(...ys) + PLACE_NODE.height }
+      setTimeout(() => { vueFlow.fitBounds(rect, { padding: 0.15, duration: 200 }) }, 80)
+    },
+  })
+
   // Initialize custom node loader (loads custom nodes from custom-nodes folder)
   try {
     const customNodeLoader = getCustomNodeLoader()
@@ -1071,6 +1090,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  setAgentEditorEnv(null)
   window.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('paste', onPaste)
   stopPlacementListeners()

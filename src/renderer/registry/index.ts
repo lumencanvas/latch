@@ -17,6 +17,9 @@ export { allNodes }
  */
 export function initializeNodeRegistry() {
   const nodesStore = useNodesStore()
+  // Idempotent: App.vue registers at startup (so /controls and agent tools work on a direct
+  // load), and the editor view still calls it.
+  if (nodesStore.definitions.size >= allNodes.length && allNodes.every((n) => nodesStore.definitions.has(n.id))) return
 
   for (const node of allNodes) {
     nodesStore.register(node)

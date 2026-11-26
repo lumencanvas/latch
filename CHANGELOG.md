@@ -1,5 +1,91 @@
 # Changelog
 
+## 1.5.0: AI agents can build flows (WebMCP), 14 new example flows
+
+### AI agent access (WebMCP)
+- **Let an AI agent work in LATCH:** the new robot button in the header offers LATCH's editor to AI
+  agents as tools. An agent can read the flow, search nodes, build and wire whole patches in one
+  step, set controls, play and stop, read values and errors, and see Main Output. It follows WebMCP
+  (`document.modelContext`), with a built-in polyfill where the browser has none.
+- **Claude Code, Claude Desktop and Cursor** connect through the WebMCP local relay: turn on “Let
+  desktop agents connect” and run the command shown (`claude mcp add latch -- npx -y
+  @mcp-b/webmcp-local-relay@6.2.0 --widget-origin https://latch.design`).
+- **Off by default, per tab.** Modes: Read only, Ask before changes, Allow edits. LATCH asks before
+  an agent plays the flow, reads the output image or imports JSON. Pause, an activity list, and
+  **Revert agent changes** live in the same menu. Every agent change is one undo step.
+- Agents can't run code: Function and Expression nodes they add or edit, or import, stay disabled
+  until you click Enable code. Tokens and passwords are masked in everything an agent reads, and an
+  agent can't change where a node holding a saved token connects. See docs/AGENT_ACCESS.md.
+- Agent access works on every page (including Controls). Custom shader uniforms an agent writes
+  become ports straight away, and Revert agent changes still works after you turn agents off.
+
+### Examples
+- 14 new flows: **Inventory of a Room** (a gallery piece: YOLO sees the room and an operatic voice
+  sings each new thing as you're redrawn in light), **Frutiger Aero**, Liquid Chrome, Pop Halftone,
+  Signal Decay, Ink Mandala, YOLO Object Detector, Say What You See, Motion Ink, Duotone Poster Cam,
+  Ghost Presence, Corner Constellations and Narrated Camera.
+- Examples are grouped by interest (Start here, Showcase, Shaders & visuals, Camera & tracking, AI &
+  voice, Music & sound, 3D & games, Data & network, Hardware) with filter chips. Frutiger Aero joins
+  the empty-canvas starters.
+
+- **Frutiger Aero is now a show-piece:** real soap bubbles that refract the sky with a rainbow
+  film and a glint, a mirror lake, lens flare, bokeh, and aurora that swells with the music.
+  It runs about three times faster than before.
+- **Play the Room** replaces Blob Camera among the empty-canvas starters, with Blob Camera's
+  inverted look.
+
+### Music
+- **New node: Bellows Workstation.** A whole piece of music from one seed: a song form (intro,
+  verses, choruses, a break, an outro), Markov chord progressions, melodies built from motifs that
+  repeat, vary and answer, Euclidean drums and bass, and several bellows instruments chosen by
+  style (Lo-fi, House, Synthwave, Ambient, Folk, Techno, plus the bellows workbench moods Ember,
+  Draw, Temper, Billow, Quench and Strike). The same seed always plays the same song,
+  and it keeps evolving pass after pass. Energy brings parts in and out live; Kick, Snare, Hat,
+  Chord, Section and note outputs follow the music for visuals.
+- **New example: Seed Band.** Type a seed and a song plays, with a synthwave horizon that pumps with
+  the kick, flashes on the snare and takes its colour from the melody.
+
+### AI models
+- **Image Captioning works again:** its old default (BLIP) was removed from Hugging Face. It now
+  uses SmolVLM, which it shares with the VLA node, so the model loads once.
+- **Depth Estimation** defaults to Depth Anything V2, and like Detect Objects (Live) it now asks
+  before downloading its model. D-FINE and RT-DETR join the detection models.
+- **Default means your choice:** a node set to "Default" uses the model you picked for that task in
+  AI Models.
+- Speech Recognition can choose its Whisper model. LLM downloads show in the loading indicator.
+  Download progress no longer mixes between models during "Load all".
+- transformers.js 4.3.2 (onnxruntime-web 1.31) and WebLLM 0.2.89, which adds newer chat models.
+- **Models use your GPU when they can:** each model tries the right devices and precisions for this
+  machine in order (for example, Depth now runs on the GPU in fp16) and falls back to the CPU on its
+  own. "Use GPU" in AI Models is on by default; turn it off to stay on the CPU.
+- **AI Models shows whether each model will run here** and why not ("needs WebGPU", "over memory"),
+  where a loaded model runs, and each model's licence, with a badge when it limits use
+  (non-commercial, terms apply). The "model needed" prompt shows the licence before downloading.
+- Agents can list models, sizes, licences and fit (`latch_list_models`); loading stays with you.
+- **New node: Segment Anything.** Point at something in an image or video and get its mask and a
+  cut-out (SlimSAM, ~40 MB, on-device). Moving the point on a still image is fast.
+- **LFM2-VL** joins Image Captioning and VLA: a faster GPU vision-language model (its licence limits
+  commercial use above a revenue threshold, shown as a badge).
+- Depth Estimation also outputs the raw depth values; live detection boxes glide between updates.
+- **AI Models lists every model in one place** (MediaPipe too), filterable by what it does, with
+  which flows use each one and what is already downloaded. A "Downloaded models" list shows sizes
+  and last use, and frees space from models no flow uses.
+- **Model downloads resume:** an interrupted download picks up where it stopped, and two tabs
+  share one download (`@hackbuild/weights`). Models you already downloaded are kept.
+- **Captions and text generation no longer hold up other models:** they run in their own worker, so
+  Depth and object detection load and run while a caption is being written. Live AI nodes also pace
+  themselves to how long inference takes, and back off further when the flow drops below 24 fps.
+
+### Fixed
+- Tidy (auto-arrange) packed nodes with an image preview too tightly when they weren't on screen.
+- **Edits could vanish on reload** if you switched tabs within two seconds of changing a flow:
+  autosave only wrote whichever flow was open when it fired. It now saves every changed flow, and
+  saves the one you leave as you switch.
+- **Play and Stop in the Controls view did nothing** (the status said LIVE at 0 fps): they only
+  changed the label. They now start and stop the flow.
+- Loading LATCH straight on the Controls page left the node catalog empty.
+- Audio Analyzer: Smoothing is now capped at 0.99. At 1 the readings froze for good.
+
 ## 1.4.3: Flows library, close ≠ delete, share and paste single flows
 
 ### Flows

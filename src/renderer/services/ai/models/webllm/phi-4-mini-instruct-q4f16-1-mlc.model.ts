@@ -6,5 +6,6 @@ export default defineModel({
   family: 'webllm',
   task: 'text-generation',
   size: '~3.7 GB',
+  license: 'mit',
   load: { promptFormat: 'chat' },
 })

@@ -26,18 +26,6 @@ const definition: NodeDefinition = {
   ],
   controls: [
     {
-      id: 'model',
-      type: 'select',
-      label: 'Model',
-      default: 'HuggingFaceTB/SmolVLM-256M-Instruct',
-      props: {
-        options: [
-          { value: 'HuggingFaceTB/SmolVLM-256M-Instruct', label: 'SmolVLM 256M (~300 MB)' },
-          { value: 'HuggingFaceTB/SmolVLM-500M-Instruct', label: 'SmolVLM 500M (~600 MB)' },
-        ],
-      },
-    },
-    {
       id: 'instruction',
       type: 'text',
       label: 'Instruction',
@@ -101,4 +89,5 @@ export const vlaExecutor: NodeExecutorFn = (ctx: ExecutionContext) => {
   return outputs
 }
 
-export default defineNode({ definition, executor: vlaExecutor })
+// The model select comes from the catalog (task image-text-to-text), like every catalog node.
+export default defineNode({ definition, executor: vlaExecutor, models: [{ task: 'image-text-to-text' }] })

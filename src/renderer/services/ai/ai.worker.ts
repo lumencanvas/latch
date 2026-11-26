@@ -5,21 +5,42 @@
  * All model loading and inference happens in this worker.
  */
 
+import { walkLadder, type Rung } from '@hackbuild/models'
 import {
   pipeline,
   env,
   AutoProcessor,
   AutoModelForVision2Seq,
+  AutoModelForImageTextToText,
+  SamModel,
   RawImage,
 } from '@huggingface/transformers'
 import * as ort from 'onnxruntime-web'
 import { isChatModel } from './textGenFormat'
+import { transformersWeightCache, weightStore, type FileProgress } from './weightCache'
 import { parseYoloOutput, parseYolov10Output, isYolov10Output, nms, COCO_LABELS } from './yolo'
 
 // Configure Transformers.js for browser usage
 env.allowLocalModels = false
 // Browser cache setting - can be toggled at runtime
 env.useBrowserCache = true
+
+// Weights go through @hackbuild/weights (resumable, one download across tabs). Files cached
+// before the switch are still read from transformers.js's own Cache API, so nothing re-downloads.
+// Progress of a store download goes to the load of the model it belongs to.
+const storeProgress = new Map<string, (p: FileProgress) => void>()
+let weightsReady: Promise<void> | null = null
+function useWeightStore(): Promise<void> {
+  weightsReady ??= (async () => {
+    const store = await weightStore()
+    if (!store) return
+    let legacy: Cache | null = null
+    try { legacy = await caches.open(env.cacheKey) } catch { /* no Cache API */ }
+    env.customCache = transformersWeightCache(store, { legacy, onProgress: (p) => storeProgress.get(p.repo)?.(p) })
+    env.useCustomCache = env.useBrowserCache
+  })()
+  return weightsReady
+}
 
 // onnxruntime-web (the raw ORT backing the YOLO sessions — a SEPARATE package from
 // the ORT that transformers.js bundles, so it is NOT configured by the lines above)
@@ -32,7 +53,7 @@ env.useBrowserCache = true
 // transformers), so it is NOT pinned in package.json — after any transformers bump,
 // re-sync this version string with the output of `npm ls onnxruntime-web`.
 ort.env.wasm.wasmPaths =
-  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/dist/'
+  'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/'
 
 // Pipeline cache
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,6 +79,8 @@ interface LoadModelMessage {
     device?: 'cpu' | 'webgpu'
     dtype?: string
     useBrowserCache?: boolean
+    /** Devices and precisions to try in order (hackbuild rungs), already filtered for this device. */
+    ladder?: Rung[]
   }
 }
 
@@ -115,6 +138,10 @@ interface LoadedResponse {
   id: string
   success: boolean
   error?: string
+  /** The device and precision the model loaded on. */
+  used?: { device: string; dtype: unknown } | null
+  /** Rungs that failed before it (why a model fell back to the CPU, say). */
+  failures?: Array<{ device: string; dtype: unknown; kind: string; error: string }>
 }
 
 interface ResultResponse {
@@ -138,9 +165,20 @@ function respond(response: WorkerResponse): void {
   self.postMessage(response)
 }
 
+// Vision-language models (SmolVLM, LFM2-VL) serve two tasks: answering about an image
+// (image-text-to-text) and captioning (image-to-text, asked to describe). They load once per
+// model whichever task asks, and are disposed when the last task using them unloads.
+const VLM_MODEL_RE = /smolvlm|lfm2-vl/i
+function isVlm(task: string, model: string): boolean {
+  return task === 'image-text-to-text' || (task === 'image-to-text' && VLM_MODEL_RE.test(model))
+}
+const vlmUsers = new Map<string, Set<string>>()
+/** The device and precision each loaded model ended up on. */
+const usedByKey = new Map<string, { device: string; dtype: unknown }>()
+
 // Get cache key for pipeline
 function getCacheKey(task: string, model: string): string {
-  return `${task}:${model}`
+  return isVlm(task, model) ? `vlm:${model}` : `${task}:${model}`
 }
 
 // Handle model loading
@@ -149,7 +187,9 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
 
   // Already loaded?
   if (pipelines.has(key)) {
-    respond({ type: 'loaded', id: msg.id, success: true })
+    vlmUsers.get(key)?.add(msg.task)
+    // A shared model (a VLM already loaded for its other task) reports where it actually runs.
+    respond({ type: 'loaded', id: msg.id, success: true, used: usedByKey.get(key) ?? null, failures: [] })
     return
   }
 
@@ -159,6 +199,8 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
     if (msg.options?.useBrowserCache !== undefined) {
       env.useBrowserCache = msg.options.useBrowserCache
     }
+    await useWeightStore()
+    env.useCustomCache = env.useBrowserCache && !!env.customCache
 
     // Track progress across multiple files
     const fileProgress = new Map<string, number>()
@@ -203,44 +245,72 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
       },
     }
 
-    // Add device if WebGPU requested
-    if (msg.options?.device === 'webgpu') {
-      pipelineOptions.device = 'webgpu'
+    storeProgress.set(msg.model, (p) => pipelineOptions.progress_callback({ status: 'progress', file: p.file, loaded: p.loaded, total: p.total ?? undefined }))
+
+    // One attempt on one device and precision. A ladder walks several; without one (old callers),
+    // the single device/dtype from the options is used.
+    const attempt = async (device: string | undefined, dtype: unknown) => {
+      if (isVlm(msg.task, msg.model)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+        if (device) loadOpts.device = device
+        loadOpts.dtype = dtype ?? 'fp32'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const processor = await (AutoProcessor as any).from_pretrained(msg.model, {
+          progress_callback: pipelineOptions.progress_callback,
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // LFM2-VL registers under ImageTextToText; SmolVLM under Vision2Seq (it also maps there).
+        const Cls = /lfm2-vl/i.test(msg.model) ? AutoModelForImageTextToText : AutoModelForVision2Seq
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = await (Cls as any).from_pretrained(msg.model, loadOpts)
+        return { processor, model, vlm: true, modelId: msg.model }
+      }
+      if (msg.task === 'mask-generation') {
+        // SlimSAM: an image encoder (run once per image, cached) and a small prompt decoder.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const processor = await (AutoProcessor as any).from_pretrained(msg.model, { progress_callback: pipelineOptions.progress_callback })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+        if (device) loadOpts.device = device
+        if (dtype !== undefined) loadOpts.dtype = dtype
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const model = await (SamModel as any).from_pretrained(msg.model, loadOpts)
+        return { processor, model, sam: true, embedding: null }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const opts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
+      if (device) opts.device = device
+      if (dtype !== undefined) opts.dtype = dtype
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (pipeline as any)(msg.task, msg.model, opts)
     }
 
-    // Add quantization
-    if (msg.options?.dtype && msg.options.dtype !== 'fp32') {
-      pipelineOptions.dtype = msg.options.dtype
+    const ladder = (msg.options?.ladder ?? []).filter((r) => r.device === 'webgpu' || r.device === 'wasm')
+    let pipe: unknown
+    let used: { device: string; dtype: unknown } | null = null
+    let failures: Array<{ device: string; dtype: unknown; kind: string; error: string }> = []
+    if (ladder.length) {
+      const walked = await walkLadder(msg.model, ladder, (rung) => attempt(rung.device, rung.dtype))
+      pipe = walked.value
+      used = { device: walked.rung.device, dtype: walked.rung.dtype }
+      failures = walked.failures.map((f) => ({ device: f.rung.device, dtype: f.rung.dtype, kind: f.kind, error: f.error.slice(0, 300) }))
+    } else {
+      const device = msg.options?.device === 'webgpu' ? 'webgpu' : undefined
+      const dtype = msg.options?.dtype && msg.options.dtype !== 'fp32' ? msg.options.dtype : undefined
+      pipe = await attempt(device, dtype ?? (isVlm(msg.task, msg.model) ? 'fp32' : undefined))
+      used = { device: device ?? 'wasm', dtype }
     }
-
-    // Vision-language (SmolVLM-style) models run via the processor + model API,
-    // not a high-level pipeline. Cache both under the same key.
-    if (msg.task === 'image-text-to-text') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const loadOpts: Record<string, any> = { progress_callback: pipelineOptions.progress_callback }
-      if (pipelineOptions.device) loadOpts.device = pipelineOptions.device
-      loadOpts.dtype = pipelineOptions.dtype ?? 'fp32'
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const processor = await (AutoProcessor as any).from_pretrained(msg.model, {
-        progress_callback: pipelineOptions.progress_callback,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const model = await (AutoModelForVision2Seq as any).from_pretrained(msg.model, loadOpts)
-      pipelines.set(key, { processor, model, vlm: true })
-      respond({ type: 'loaded', id: msg.id, success: true })
-      return
-    }
-
-    // Create pipeline
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pipe = await (pipeline as any)(msg.task, msg.model, pipelineOptions)
     pipelines.set(key, pipe)
-
-    respond({ type: 'loaded', id: msg.id, success: true })
+    if (used) usedByKey.set(key, used)
+    if (isVlm(msg.task, msg.model)) vlmUsers.set(key, new Set([msg.task]))
+    respond({ type: 'loaded', id: msg.id, success: true, used, failures })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[AI Worker] Failed to load model: ${message}`)
     respond({ type: 'loaded', id: msg.id, success: false, error: message })
+  } finally {
+    storeProgress.delete(msg.model)
   }
 }
 
@@ -517,6 +587,39 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
         break
       }
 
+      case 'segment': {
+        // args: image, points [{x,y,label}] in 0..1 image coords, reuseEmbedding (same image as last time)
+        const [imageData, points, reuse] = msg.args as [
+          { width: number; height: number; data: Uint8ClampedArray | number[] },
+          Array<{ x: number; y: number; label?: number }>,
+          boolean,
+        ]
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sam = pipe as { processor: any; model: any; embedding: any }
+        if (!reuse || !sam.embedding) {
+          const raw = new RawImage(toPixels(imageData.data), imageData.width, imageData.height, 4).rgb()
+          const inputs = await sam.processor(raw)
+          sam.embedding = { raw, inputs, emb: await sam.model.get_image_embeddings(inputs) }
+        }
+        const e = sam.embedding
+        const pts = points.length ? points : [{ x: 0.5, y: 0.5, label: 1 }]
+        const prompt = await sam.processor(e.raw, {
+          input_points: [[pts.map((p) => [p.x * imageData.width, p.y * imageData.height])]],
+          input_labels: [[pts.map((p) => p.label ?? 1)]],
+        })
+        const out = await sam.model({ ...e.emb, input_points: prompt.input_points, input_labels: prompt.input_labels })
+        const masks = await sam.processor.post_process_masks(out.pred_masks, e.inputs.original_sizes, e.inputs.reshaped_input_sizes)
+        const m = masks[0]
+        const [n, h, w] = m.dims.slice(-3) as [number, number, number]
+        // The highest-scoring of SAM's candidate masks.
+        let best = 0
+        for (let k = 1; k < n; k++) if ((out.iou_scores.data[k] ?? 0) > (out.iou_scores.data[best] ?? 0)) best = k
+        const data = new Uint8Array(w * h)
+        for (let i = 0; i < w * h; i++) data[i] = m.data[best * w * h + i] ? 255 : 0
+        result = { width: w, height: h, data, score: Number(out.iou_scores.data[best] ?? 0) }
+        break
+      }
+
       case 'captionImage': {
         const [imageData] = msg.args as [{ width: number; height: number; data: Uint8ClampedArray | number[] }]
         const reconstructed = new ImageData(
@@ -524,6 +627,10 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
           imageData.width,
           imageData.height
         )
+        if (pipe?.vlm) {
+          result = await vlmGenerate(pipe, imageData, 'Describe this image in one short sentence.', 48)
+          break
+        }
         const canvas = new OffscreenCanvas(reconstructed.width, reconstructed.height)
         const ctx = canvas.getContext('2d')!
         ctx.putImageData(reconstructed, 0, 0)
@@ -540,36 +647,7 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
           string,
           number,
         ]
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { processor, model } = pipe as { processor: any; model: any }
-        const image = new RawImage(
-          toPixels(imageData.data),
-          imageData.width,
-          imageData.height,
-          4
-        ).rgb()
-        const messages = [
-          {
-            role: 'user',
-            content: [
-              { type: 'image' },
-              { type: 'text', text: String(instruction || 'What action should be taken?') },
-            ],
-          },
-        ]
-        const prompt = processor.apply_chat_template(messages, { add_generation_prompt: true })
-        const inputs = await processor(prompt, [image])
-        const { sequences } = await model.generate({
-          ...inputs,
-          max_new_tokens: Math.max(1, Math.min(512, Math.floor(maxNewTokens || 64))),
-          do_sample: false,
-          return_dict_in_generate: true,
-        })
-        // Drop the prompt tokens; decode only what the model generated.
-        const promptLen = inputs.input_ids.dims.at(-1)
-        const trimmed = sequences.slice(null, [promptLen, null])
-        const decoded = processor.batch_decode(trimmed, { skip_special_tokens: true })
-        result = (decoded[0] ?? '').trim()
+        result = await vlmGenerate(pipe, imageData, instruction || 'What action should be taken?', maxNewTokens)
         break
       }
 
@@ -597,10 +675,40 @@ async function handleInfer(msg: InferenceMessage): Promise<void> {
 // Release a cached pipeline/model. Vision-language entries are a { processor,
 // model, vlm: true } wrapper with no top-level dispose(), so dispose the model
 // (and processor) directly — otherwise the GPU/WASM model leaks on unload.
+/** Run a vision-language model on an image and an instruction; returns only the generated text. */
+async function vlmGenerate(
+  pipe: unknown,
+  imageData: { width: number; height: number; data: Uint8ClampedArray | number[] },
+  instruction: string,
+  maxNewTokens: number,
+): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { processor, model, modelId } = pipe as { processor: any; model: any; modelId?: string }
+  const image = new RawImage(toPixels(imageData.data), imageData.width, imageData.height, 4).rgb()
+  const messages = [{ role: 'user', content: [{ type: 'image' }, { type: 'text', text: String(instruction) }] }]
+  const prompt = processor.apply_chat_template(messages, { add_generation_prompt: true })
+  // Quirks measured by hackbuild (vision/records.ts): LFM2-VL's processor wants images first
+  // (text first throws "undefined is not iterable"); SmolVLM repeats itself without a penalty.
+  const lfm = /lfm2-vl/i.test(modelId ?? '')
+  const inputs = lfm ? await processor([image], prompt) : await processor(prompt, [image])
+  const { sequences } = await model.generate({
+    ...inputs,
+    max_new_tokens: Math.max(1, Math.min(512, Math.floor(maxNewTokens || 64))),
+    do_sample: false,
+    ...(/smolvlm/i.test(modelId ?? '') ? { repetition_penalty: 1.3 } : {}),
+    return_dict_in_generate: true,
+  })
+  // Drop the prompt tokens; decode only what the model generated.
+  const promptLen = inputs.input_ids.dims.at(-1)
+  const trimmed = sequences.slice(null, [promptLen, null])
+  const decoded = processor.batch_decode(trimmed, { skip_special_tokens: true })
+  return (decoded[0] ?? '').trim()
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function disposePipe(pipe: any): void {
   if (!pipe) return
-  if (pipe.vlm) {
+  if (pipe.vlm || pipe.sam) {
     if (typeof pipe.model?.dispose === 'function') pipe.model.dispose()
     if (typeof pipe.processor?.dispose === 'function') pipe.processor.dispose()
   } else if (typeof pipe.dispose === 'function') {
@@ -612,10 +720,15 @@ function disposePipe(pipe: any): void {
 function handleUnload(msg: UnloadModelMessage): void {
   const key = getCacheKey(msg.task, msg.model)
   const pipe = pipelines.get(key)
+  const users = vlmUsers.get(key)
+  users?.delete(msg.task)
 
-  if (pipe) {
+  // A VLM still used by its other task stays loaded.
+  if (pipe && !(users && users.size > 0)) {
     disposePipe(pipe)
     pipelines.delete(key)
+    vlmUsers.delete(key)
+    usedByKey.delete(key)
   }
 
   // YOLO sessions are keyed by model URL (msg.model carries it), not the
@@ -649,6 +762,7 @@ function handleDispose(msg: DisposeMessage): void {
 // Handle cache setting change
 function handleSetCache(msg: SetCacheMessage): void {
   env.useBrowserCache = msg.enabled
+  env.useCustomCache = msg.enabled && !!env.customCache
 }
 
 // Handle cache clear
@@ -671,6 +785,12 @@ async function handleClearCache(msg: ClearCacheMessage): Promise<void> {
     }
   } catch (error) {
     console.warn('[AI Worker] Could not clear Cache API:', error)
+  }
+  try {
+    const store = await weightStore()
+    for (const key of (await store?.keys()) ?? []) await store?.evict(key)
+  } catch (error) {
+    console.warn('[AI Worker] Could not clear the weight store:', error)
   }
 
   respond({ type: 'result', id: msg.id, success: true })

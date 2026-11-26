@@ -6,6 +6,311 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 156): Fit in node model selects; Electron check
+
+- Node model selects now say "· won't run here (needs webgpu)" or "· slow here (CPU)". Options
+  built before the probe are relabelled in place when it answers (`getModelSelectOptions`,
+  `AIInference.ts`); test `select-fit.test.ts` mocks a no-GPU probe.
+- Electron dev (`npx electron-vite dev -- --remote-debugging-port=9229`, driven over CDP): renderer is
+  cross-origin isolated with WebGPU; the weight store opens on OPFS; SlimSAM downloaded through it
+  and ran on WebGPU fp16 (6.9 s); the workstation played (Strike, −13…−27 dB). A background window
+  throttles rAF (fps 0 until `Page.bringToFront`) but bellows keeps time on the audio thread.
+  Dev serves the renderer from http://localhost:5174, so the packaged `app://` origin is still
+  unverified.
+- WAV export of a seed deferred: `b.render()` replays every clock callback on the shared kernel, so
+  it needs its own offline path.
+
+## 2026-11-25 (later 155): Workstation: bellows moods, Seed Band example
+
+- Added the bellows workbench moods (`apps/workbench/src/lib/composer.ts` MOODS: EMBER, DRAW,
+  TEMPER, BILLOW, QUENCH, STRIKE) as styles: their engines, modes, tempos, swing and Euclidean
+  pulses (keys → lead, chime → arp, pad → chords; texture not carried over). New scales
+  `harmonic minor` and `minor pentatonic` (harmonised in natural minor; lead/arp snapped to five
+  notes). New `drums: 'kit'` driven by one pulse count, like the workbench kit.
+- Bass/Lead Note outputs now hold the last note heard.
+- Example `seed-band` (gallery, Music & sound): workstation → audio out; kick/snare → envelopes,
+  lead → hue, intensity → smoothed energy, into `SEED_BAND_GLSL`. Verified playing in Chrome
+  (visual envelopes peak 0.99/0.89; Strike at 126 BPM, −17…−23 dB, no errors).
+
+## 2026-11-25 (later 154): What's left (state of PR #8)
+
+PR #8 (`more-examples`, Release 1.5.0) holds all of this session's work. Do NOT merge; merging
+deploys latch.design.
+- **Workstation:** awaiting the maintainer's listening feedback (Seed Band example added). Optional: per-part instrument pickers, WAV export of a
+  seed (`b.render`).
+- **AI (optional):** measured sizes and pinned SHA-256 (`sha256For`)
+  from the weight store; Phase 2b (MediaPipe worker) only after profiling; Phase 5 extras (wllama,
+  Prompt API, Whisper turbo / Moonshine, Kokoro "Speak (neural)", model2vec embed).
+- **Unverified:** the packaged Electron build (`app://` origin; dev renderer verified) and the relay there;
+  Safari/Firefox; `capture_output` end to end (needs a person); hardware nodes (Muse, printer,
+  Buzz); two tabs sharing one download in LATCH.
+
+## 2026-11-25 (later 153): Bellows Workstation
+
+- Asked for after "Generative Festival sucks": seed → music with Markov melodies, Euclidean rhythm,
+  several instruments, "but better".
+- `services/audio/workstation/composer.ts` (pure, tested in `workstation-composer.test.ts`): seeded
+  streams (mulberry32 per label), Bjorklund `euclid`, order-n `Markov`; `plan()` picks key, mode,
+  tempo and one of three forms; `compose(seed, opts, cycle)` writes every bar: functional-harmony
+  Markov progression per section (B lifts to IV/vi, cadence back home), voice-led chords, melody
+  motifs (Euclidean rhythm + order-2 Markov over scale steps trained on a contour corpus, strong
+  beats snapped to chord tones) in A A' B A phrases, Euclidean kick/hat/ghost/bass grooves, fills,
+  chromatic bass approaches. `cycle` keeps the song and varies details.
+- `workstationManager.ts`: one bellows preset voice per part on the shared kernel, `b.clock.at('16n')`
+  scheduling, energy-gated arrangement (`style.enter`), hits handed to the executor when audible.
+  gc/disposeAll registered; kernel client counted.
+- `registry/audio/bellows-workstation/node.ts`.
+- Verified in Chrome: lofi then house switched live, master −10…−29 dB while playing, kernel
+  released on Stop. Not judged by ear; nobody listened yet.
+- Not done: replace the Generative Festival example with a workstation flow; per-part instrument
+  pickers; render/export of a seed.
+
+## 2026-11-25 (later 152): AI Phase 5: weights cache
+
+- `services/ai/weightCache.ts`: `weightStore()` (memoized `openWeightStore`), and
+  `transformersWeightCache(store, {legacy, onProgress})` used as `env.customCache` in `ai.worker.ts`
+  (both lanes). Old `transformers-cache` entries are read first; no re-downloads.
+- `modelInventory` lists and deletes store entries too; worker clearCache evicts the store.
+- Verified in Chrome (OPFS): fresh download, interrupted-then-resumed 393 MB file whose SHA-256
+  equals the Hub LFS oid, 206 from HF, old-cache load. Details in the plan's Phase 5 result.
+- Next: the bellows workstation (memory: bellows-workstation-next). Optional AI Phase 5 items remain.
+
+## 2026-11-25 (later 151): AI Phase 4: one Model Manager
+
+- `services/ai/modelInventory.ts`: `modelUsage(flows)`, `listStoredModels()` / `deleteStoredModel()`
+  (Cache API, grouped by HF repo), `MEDIAPIPE_MODELS`, `modelFacts()` (shared with
+  `RuntimeStatus.vue`'s prompt). Last use lives in `modelStorage.ts` (`markModelUsed`, called on
+  load by AIInference and WebLLMService) to avoid an import cycle.
+- `AIModelManagerModal.vue`: filter chips, "downloaded / used in" line per card, MediaPipe card,
+  "Downloaded models" list with delete and "Free N unused".
+- Verified in Chrome: real cache (2.1 GB over 7 repos), filters, delete. Tests: model-inventory (5).
+- Next: Phase 5 (`@hackbuild/weights`), then the bellows workstation.
+
+## 2026-11-25 (later 150): AI Phase 3: Segment Anything, LFM2-VL, depth data, eased boxes
+
+- **Segment Anything node:** `registry/ai/segment-anything/node.ts`.
+  - Worker: the `mask-generation` task loads `SamModel` and keeps the image embedding on the pipe.
+    The `segment` infer picks the best-IoU mask.
+  - Service: `aiInference.segment()`.
+  - `segmentState` has dispose and gc in shared.ts. `_display` drives the node preview.
+  - The worker gets a copy of the ImageData (pixels are transferred zero-copy; the original builds
+    the cut-out).
+- **LFM2-VL:**
+  - Spec with a GPU-only ladder.
+  - The worker loads it with `AutoModelForImageTextToText` and calls the processor images first.
+  - SmolVLM gets `repetition_penalty: 1.3`.
+  - `commercialOf('lfm…')` returns 'unknown', and its badge reads "commercial use limited".
+- **Depth `depth` data output; `easedBoxes` in `runLiveDetection`.**
+- **Verified in Chrome:** a SlimSAM cut-out on WebGPU, an LFM2-VL caption on WebGPU, and the preview.
+- **Next:**
+  - Phase 4 (one Model Manager: families, filter by capability, storage, flows using each model).
+  - Phase 5 (`@hackbuild/weights` cache once its transformers path checks out).
+  - Then the bellows workstation.
+
+## 2026-11-25 (later 149): AI Phase 2a: generative lane, live cadence; audit fix
+
+- **Audit (quick):**
+  - Missing-dtype 404s classify as `unknown`, so the ladder continues (verified against the
+    transformers error text).
+  - Fixed: a shared VLM reused by its second task now reports its real device (`usedByKey`).
+- **`GenerativeLane`:** a second WorkerFacade over the same `ai.worker.ts`. `sendToWorker` routes by
+  `GENERATIVE_TASKS`. setCache, clearCache and dispose go to both lanes.
+- **Cadence:** `liveRunDue` / `liveRunStarted` / `liveRunFinished` in shared.ts.
+  `tests/unit/executors/live-cadence.test.ts` (3).
+- **Verified in Chrome:** Depth ran at 58 fps while SmolVLM loaded; the caption arrived after.
+- **Next:**
+  - Phase 2b (MediaPipe in a worker) only after profiling.
+  - Otherwise Phase 3 (SlimSAM Segment node, LFM2-VL, depth worker output, detection
+    interpolation), then the weights cache (Phase 5), then the bellows workstation.
+
+## 2026-11-25 (later 148): AI Phase 1: model records, device ladders, fit, licences
+
+- **Packages:** `@hackbuild/models` and `@hackbuild/ai-env` 0.1.1 (exact pins).
+- **Records:** `services/ai/modelRecords.ts`.
+  - `recordOf`, `ladderOf` (from `TASK_LADDERS`; VLM ids use the SmolVLM fp32-encoder ladder; WebLLM
+    uses a webgpu q4f16_1 rung), `parseSizeMB`, `commercialOf`, `licenceBadge`.
+  - `getAiEnv` (probe, cached), `rungsFor`, `fitFor`.
+  - Optional `ladder` / `sizeMB` / `sizeSource` on `defineModel`. The WebLLM specs got licences.
+- **Worker:** `handleLoad` walks `options.ladder` with `walkLadder` and replies `{used, failures}`.
+- **Main thread:**
+  - `loadModel` sends `rungsFor(model, env, cpuOnly)`. ModelInfo gains `precision` and `fallbacks`.
+  - `_useWebGPU` defaults to true and persists as `aiPreferCpu` (the old `aiUseWebGPU` is not read).
+  - `webgpu.ts` and `checkWebGPU` both use the ai-env probe.
+- **UI:**
+  - The Manager shows fit and reason, a licence badge, and "Running on the GPU (WebGPU), fp16." The
+    toggle is now "Use GPU".
+  - The RuntimeStatus prompt shows the licence, badge and a fit warning, and resolves the Manager's
+    default.
+  - New agent tool `latch_list_models` (37 tools).
+- **Tests:** `model-records.test.ts` (6).
+- **Verified in Chrome:**
+  - Depth v2 on webgpu fp16.
+  - SmolVLM on webgpu (vision fp32 / decoder q4) with a better caption.
+  - The probe: webgpu + f16, 16 GB, 7.2 GB budget.
+- **Next:** Phase 2, the hub in the worker and MediaPipe in a worker.
+
+## 2026-11-25 (later 147): AI plan approved, Phase 0 done
+
+- **Decisions** (plan §5):
+  - Depend on `@hackbuild/*`.
+  - MediaPipe stays on 0.10.32.
+  - Offer every model, with licence badges.
+  - Keep Image Captioning and VLA as separate nodes.
+  - Switch to the hackbuild weights cache once it is verified.
+- **Phase 0** (`docs/plans/AI_MODELS_PLAN_2026-11.md` has the result section):
+  - **Captioning:** the image-to-text default is SmolVLM-256M (the BLIP specs are deleted; they
+    return 401).
+    - The worker keys VLMs as `vlm:<model>` with a per-task user set, so captioning and VLA share one
+      load. `captionImage` on a VLM uses `vlmGenerate` with a "describe" prompt.
+    - `derive.ts` now allows one model in several tasks (at most once per task).
+  - **Default model:** `getDefaultModel(task)` follows the Manager pick, stored by catalog entry id.
+    The node select keeps "Default — X", and the control description explains it.
+  - **Manager:** state is keyed by task (fixes VLA).
+  - **Progress:** the broadcast to every loading model is gone; progress is per request.
+  - **Speech Recognition:** now declares `models:`.
+  - **Pill:** RuntimeStatus shows WebLLM loads (`webLLMService.listLoadStates`).
+  - **Depth:** in the catalog (v2 small default, ~27 MB at q4). It is gated through
+    `reportModelNeed`.
+  - **Live detector:** `runLiveDetection` has an optional `need`, used by the live detector, plus a
+    test. D-FINE and RT-DETR are in the catalog. YOLO uses one `DEFAULT_YOLO_URL`.
+  - **VLA:** its select comes from the catalog.
+  - **Upgrades:** transformers 4.3.2 / ORT 1.31.0-dev (pins moved in `ai.worker.ts` and
+    `protocol.ts`), web-llm 0.2.89. The ai-models baseline fixture was rebaselined on purpose.
+  - **Verified in Chrome:**
+    - The SmolVLM caption on a shader: "The image displays a black and green spiral pattern."
+    - Depth v2 renders.
+    - A depth load waited at 0% behind a running WASM caption: single-worker contention, which is
+      the Phase 2 motivation.
+- **Next:**
+  - AI Phase 1: records, ladders and fit with `@hackbuild/models` and `ai-env`.
+  - Then the bellows workstation (see the memory file and the entry below).
+
+## 2026-11-25 (later 146): open fixes closed, AI models plan written
+
+- **Desktop vs in-browser agent calls are now told apart** (`adapters/relay.ts`).
+  - While the relay runs, `executeTool` is wrapped. A call carrying the relay iframe's AbortSignal
+    leaves a 5 s mark under the tool name, which `takeRelayCall` claims in the WebMCP adapter.
+  - Verified live: relay calls are logged `relay`, an in-page `executeTool` call is logged `webmcp`.
+  - The polyfill hands tools its own signal, so a realm check inside the tool can't work.
+  - It is a label only and grants nothing.
+- **Agent Tidy** records as "Agent: Tidy graph" (the `labelPrefix` option on `useAutoArrange`).
+- **The "Controls view hides Main Output" item was a false alarm:** that flow was empty at the time
+  (the lost-edit bug, now fixed). `main-output` is a monitor tile.
+- **AI plan:** `docs/plans/AI_MODELS_PLAN_2026-11.md`.
+  - It covers the current stack, 11 verified bugs, what `@hackbuild/*` offers (with maturity) and
+    phases 0–5.
+  - Phase 0 is the bug fixes plus the transformers 4.3.2 / web-llm 0.2.89 upgrades.
+  - Five decisions for the user are in §5.
+- **Next after the AI work (user request):**
+  - The Generative Festival flow "sucks".
+  - Build a proper **bellows music workstation**: generate music from a seed, with Markov melodies,
+    Euclidean rhythms and multiple instruments, "but better".
+  - Re-read the bellows docs and llmref first.
+
+## 2026-11-25 (later 145): WebMCP audit + fixes, agent-built flows, four app bugs found by driving it
+
+- **Audit (independent review of the agent layer, 13 findings), fixed:**
+  - `registry.execute` re-checks mode, pause and the caller's AbortSignal after consent and queueing.
+  - The consent prompt gets the signal and withdraws when the agent gives up. Verified live: a 60 s
+    relay timeout came back as "Cancelled by the agent".
+  - The queue waits on the tool's own promise (`settling`), so a timeout can't overlap the next call.
+  - `waitsForPerson` tools have no timeout.
+  - `import_flow` uses `importText(json, { untrusted: true })`: code policy is always disable, and
+    there's no Trust-and-run path.
+  - `assertSecretStaysHome`: an agent can't change a url/host/server/broker control or wire on a node
+    that holds a saved secret.
+  - Writing `REDACTED_SECRET` back is a no-op.
+  - Numbers snap only to a declared step (`snapClamp(c, v, true)`). Without that, 0.25 s became 0 and
+    analyser smoothing 0.85 became 1.
+  - Checkpoints are kept only when a call actually changed the flow (`touchesGraph: false` on flow-tab
+    tools), and they survive turning agents Off.
+  - Relay start/stop race (generation counter). `set_transport` never leaves a pending start (checks
+    `navigator.userActivation`).
+  - `schema.ts` uses hasOwnProperty.
+  - `untrustedOutput` on get_app_info and validate_flow.
+  - "Allow for this session" also answers matching prompts already queued.
+  - Tests: 4 new regression tests plus `reg.resetRateLimits()`; 19 agent tests, 3235 total.
+  - **Not fixed:**
+    - Desktop and in-browser calls are indistinguishable (both arrive via `document.modelContext`), so
+      the consent text says "An AI agent".
+    - `auto_arrange` is still labelled "Tidy graph".
+- **Agent tools now install in App.vue** (they used to install only in EditorView). The editor lends
+  `viewCenter`, `frame` and `dimensions` through `setAgentEditorEnv`. `initializeNodeRegistry()` is
+  idempotent and also runs in App.vue.
+- **Shader uniforms:** custom Shader code set by an agent derives `_dynamicInputs` at once
+  (`shaderPortsFor`, the same as the shader editor's save), so build_graph can wire `u_*`.
+- **Smaller agent fixes:**
+  - `auto_arrange` and build_graph get measured sizes.
+  - `get_runtime_state` reports `pageHidden` (the engine pauses on hidden tabs, so values freeze).
+- **App bugs found by driving LATCH through MCP (all fixed):**
+  1. Autosave saved only the active flow when its 2 s debounce fired. An edit followed by a tab switch
+     within 2 s was lost on reload (this happened to an agent-built flow). It now saves every dirty
+     flow, and saves the outgoing flow on switch, with live connections only for that flow.
+  2. Controls-view PLAY/STOP called `runtimeStore.start()/stop()` (a label flip: LIVE at 0 fps).
+     They now use the injected executionControls.
+  3. A direct `/controls` load had no node registry (all types "unknown").
+  4. Audio Analyzer smoothing 1 froze the FFT forever. It is now capped at 0.99 in the definition and
+     the executor.
+- **Still open:**
+  - With zero exposed controls, the Controls view shows only its empty state and hides Main Output.
+- **UI and content:**
+  - Agent dropdown restyled in the app's language: teal header bar, mode cards, switch, terminal
+    command block, offset-shadow buttons.
+  - Frutiger Aero rebuilt:
+    - The 3D bubble mask is blurred into domes and lensed over the sky (`AERO_BUBBLE_GLSL`).
+    - Lake, flare, bokeh, and aurora driven by the pad's level.
+    - 49 fps, up from 17.
+  - `play-the-room` replaces `blob-cam` in `STARTER_FLOW_IDS`, using blob-track `style: 'invert'`.
+- **Flows built by an agent over MCP, verified playing:**
+  - Setup: a real MCP client through the relay against `npm run dev`. They are in the local library
+    only, not in the repo.
+  - **Generative Festival:** 71 nodes, 84 wires, built in one `build_graph` call.
+    - Euclidean drums; progression pad, arp and bell lead; an L-system acid bass.
+    - Voronoi→kaleidoscope with the mirror count per bar; a 32-sphere spectrum ring and a torus.
+    - Kick→RGB split, clap→glitch, chord→hue, chord HUD.
+  - **Art:** Airports (after Eno: seven incommensurable loops), Current (after Riley: op-art shader
+    with uniforms), Test Pattern (after Ikeda).
+  - **Enterprise:**
+    - Line 1 Machine Monitor: MQTT live path with a simulation fallback, threshold alarm, and a webhook
+      behind an "arm" gate.
+    - Store Signage Rotator.
+    - Customer Sentiment Wall: on-device model, which LATCH asks before loading.
+  - All six built first try with zero validate problems. Fixes the agent made while tuning:
+    smoothing, an empty-string coalesce, too much bend, a dark backdrop.
+- **Open:**
+  - Release PR: GitHub kept failing earlier, so `more-examples` has no PR yet.
+  - `capture_output` end to end (needs a person to approve).
+  - Electron.
+  - Better WebGPU/vision models (look at github.com/hackbuild libraries; the user asked for this next).
+
+## 2026-11-25 (later 144): 1.5.0: WebMCP agent tools + relay, 14 example flows
+
+- **Examples** (commit d4fa667): `data/flow-snippets-gallery.ts` (14 flows), nine personas, interest chips in
+  NodeExplorer, Frutiger Aero in `STARTER_FLOW_IDS`. The Image Captioning node's BLIP defaults now 401
+  on Hugging Face and `vit-gpt2` fails to load in onnxruntime-web, so Narrated Camera uses the VLA node
+  (SmolVLM). That default is still broken and needs a fix.
+- **Agent tools** (`services/agentTools/`): `registry.ts` handles mode gate, schema
+  (`schema.ts`), buckets, consent resolver (default deny), FIFO queue, timeout, result cap and audit.
+  Tools are in `tools/read.ts`, `tools/edit.ts` and `tools/flows.ts`. `helpers.ts` covers effective
+  ports incl. `_dynamic*`, strict `checkConnection`, secret masking, `summarizeValue` and
+  `createNodeData` (stamps `_codeDisabled` on code types). `stores/agent.ts` holds the mode and relay
+  flag (sessionStorage), grants, audit ring and per-flow checkpoints. `index.ts`
+  `installAgentTools(env)` is called from EditorView (execution controls, view centre, frame);
+  registration is serialised and re-registers when entering or leaving read-only.
+- Adapters: `adapters/webmcp.ts` (native `document.modelContext` → `navigator.modelContext` → lazy
+  `@w3c/webmcp-polyfill`; abort signal unregisters) and `adapters/relay.ts` (own embed: pinned
+  `public/webmcp/widget.js` from `@mcp-b/webmcp-local-relay` 6.2.0, run from blob: scripts for the
+  Electron CSP; ignores the widget's reload message).
+- UI: `components/agent/AgentAccessMenu.vue` (header) and `AgentConsentModal.vue` (App).
+  `utils/controlValue.ts` is shared with ControlRenderer. `estimateNodeSize` now counts texture
+  previews.
+- `latch_build_graph` suppresses Tidy's own history entry, so one call is one undo step.
+  `latch_set_controls` re-stamps `_codeDisabled` (the `updateNodeData` re-enable trap).
+- Verified with a real MCP client via the relay in Chrome (see the plan's status section). Open:
+  `capture_output` end to end, Electron, Phase 4 polish.
+- Test gotcha: after HMR the engine module can be duplicated, so reads return null. Reload before
+  checking values.
+
 ## 2026-11-25 (later 143): 1.4.3: flow library, close ≠ delete, single-flow share/paste, Assets + EQ fixes
 
 - `FlowState.open` (persisted; missing = open). `openFlows` getter drives tabs; `closeFlow` keeps the

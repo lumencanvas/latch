@@ -31,6 +31,8 @@ export interface AppSettings {
   aiAutoLoadModels?: string[] // List of "task:modelId" keys to auto-load on startup
   aiSelectedModels?: Record<string, string> // Task ID -> selected model ID
   aiUseWebGPU?: boolean
+  /** Run AI models on the CPU only (skip WebGPU rungs). Replaces aiUseWebGPU, whose old default was off. */
+  aiPreferCpu?: boolean
   aiUseBrowserCache?: boolean
 }
 

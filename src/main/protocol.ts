@@ -95,7 +95,7 @@ const MIME: Record<string, string> = {
  */
 export const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net/npm/@mediapipe/ https://cdn.jsdelivr.net/npm/onnxruntime-web@1.26.0-dev.20260416-b7804b056c/ https://cdn.emulatorjs.org",
+  "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net/npm/@mediapipe/ https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/ https://cdn.emulatorjs.org",
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.emulatorjs.org",

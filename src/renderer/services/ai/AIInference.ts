@@ -10,8 +10,10 @@
  * - Memory management and cleanup
  */
 
+import type { Env } from '@hackbuild/ai-env'
+import { aiEnvNow, fitFor, getAiEnv, rungsFor } from './modelRecords'
 import { collectTransferables, type SerializedImage } from './imageTransfer'
-import { requestPersistentStorage } from './modelStorage'
+import { markModelUsed, requestPersistentStorage } from './modelStorage'
 import { WorkerFacade } from '@/services/worker/WorkerFacade'
 import { deriveAiModels } from './models/transformers/derive'
 import { setModelSelectResolver } from '@/engine/defineNode'
@@ -32,6 +34,10 @@ export interface ModelInfo {
   loadedAt?: number
   device?: DeviceType
   dtype?: DType
+  /** The precision it loaded at, readable ("fp16", or "vision fp32 · decoder q4" for split models). */
+  precision?: string
+  /** Devices/precisions tried before the one that loaded (a GPU that fell back to CPU, say). */
+  fallbacks?: Array<{ device: string; dtype: unknown; kind: string; error: string }>
 }
 
 export interface AIState {
@@ -94,15 +100,37 @@ export interface ModelSelectOption {
  * swaps to the model registry once models are co-located; the hand-authored
  * catalog stays authoritative until the sign-off-gated derive.
  */
+/** Said after a model's name in a node's model select when it won't run here, or only slowly. */
+function fitNote(modelId: string, env: Env | null): string {
+  const fit = env ? fitFor(modelId, env) : null
+  if (!fit) return ''
+  if (!fit.ok) return ` · won't run here (${fit.fit})`
+  return fit.fit === 'fits on cpu, slow' ? ' · slow here (CPU)' : ''
+}
+
+/** Options handed out before the device probe finished, relabelled once it has. */
+const issuedOptions: Array<{ option: ModelSelectOption; modelId: string; base: string }> = []
+
 export function getModelSelectOptions(task: string): ModelSelectOption[] {
   const def = AI_MODELS.find((m) => m.task === task)
   if (!def) return []
   const defaultName = def.defaultModel.split('/').pop() ?? def.defaultModel
-  return [
-    { value: '', label: `Default — ${defaultName} (${def.defaultSize})` },
-    ...def.alternateModels.map((m) => ({ value: m.id, label: `${m.name} (${m.size})` })),
+  const env = aiEnvNow()
+  const rows: Array<[string, string, string]> = [
+    ['', def.defaultModel, `Default — ${defaultName} (${def.defaultSize})`],
+    ...def.alternateModels.map((m): [string, string, string] => [m.id, m.id, `${m.name} (${m.size})`]),
   ]
+  return rows.map(([value, modelId, base]) => {
+    const option = { value, label: base + fitNote(modelId, env) }
+    if (!env) issuedOptions.push({ option, modelId, base })
+    return option
+  })
 }
+
+// Node selects are built at startup, before the probe answers: relabel them in place once it does.
+void getAiEnv().then((env) => {
+  for (const { option, modelId, base } of issuedOptions.splice(0)) option.label = base + fitNote(modelId, env)
+}).catch(() => { /* no probe: selects keep their plain labels */ })
 
 // Inject the AI catalog into `defineNode`'s global model-select resolver. This is THE
 // seam that makes the declarative `defineNode({ models: [{ task }] })` path work for any
@@ -121,12 +149,97 @@ type ProgressCallback = (progress: number) => void
 // Default timeout for worker requests (5 minutes for model loading)
 const DEFAULT_REQUEST_TIMEOUT = 5 * 60 * 1000
 
+/** 'fp16' stays 'fp16'; a per-part dtype reads "vision fp32 · decoder q4" (names shortened). */
+function precisionText(dtype: unknown): string {
+  if (typeof dtype === 'string') return dtype
+  if (!dtype || typeof dtype !== 'object') return ''
+  return Object.entries(dtype as Record<string, string>)
+    .map(([part, d]) => `${part.replace(/_model(_merged)?$|_tokens$|_encoder$/, '').replace(/_/g, ' ')} ${d}`)
+    .join(' · ')
+}
+
+type AIWorkerMessage = {
+  type: string
+  id: number
+  progress?: number
+  success?: boolean
+  data?: unknown
+  loaded?: boolean
+  used?: { device: string; dtype: unknown } | null
+  failures?: ModelInfo['fallbacks']
+  error?: string
+}
+type MessageOps = {
+  progress(id: number, p: number): void
+  settle(id: number, v: unknown): void
+  fail(id: number, e: Error): void
+}
+/** One worker's replies → that facade's pending requests (shared by both lanes). */
+function routeAIWorkerMessage(data: unknown, ops: MessageOps): void {
+  const msg = data as AIWorkerMessage
+  switch (msg.type) {
+    case 'progress':
+      // Routed by request id to that load's own callback (loadModel updates its model's info).
+      ops.progress(msg.id, msg.progress ?? 0)
+      break
+    case 'loaded':
+      if (msg.success) ops.settle(msg.id, { used: msg.used ?? null, failures: msg.failures ?? [] })
+      else ops.fail(msg.id, new Error(msg.error || 'Failed to load model'))
+      break
+    case 'result':
+      if (msg.success) ops.settle(msg.id, msg.data)
+      else ops.fail(msg.id, new Error(msg.error || 'Inference failed'))
+      break
+    case 'checkResult':
+      ops.settle(msg.id, msg.loaded)
+      break
+  }
+}
+
+/**
+ * Generative tasks (vision-language captions and answers, text generation) run for seconds per
+ * call. In the one AI worker they blocked everything behind them: a 27 MB depth model sat at 0%
+ * until a caption finished. They get their own worker (same script), spawned on first use, so
+ * depth, detection and the rest never queue behind a generation.
+ */
+const GENERATIVE_TASKS = new Set(['text-generation', 'text2text-generation', 'image-text-to-text', 'image-to-text'])
+
+class GenerativeLane extends WorkerFacade {
+  protected createWorker(): Worker {
+    return new Worker(new URL('./ai.worker.ts', import.meta.url), { type: 'module' })
+  }
+  protected get label(): string {
+    return 'AIInference (generative)'
+  }
+  protected handleMessage(data: unknown): void {
+    routeAIWorkerMessage(data, {
+      progress: (id, p) => this.reportProgress(id, p),
+      settle: (id, v) => this.settle(id, v),
+      fail: (id, e) => this.fail(id, e),
+    })
+  }
+  send<T>(message: Record<string, unknown>, opts: Parameters<WorkerFacade['request']>[1]): Promise<T> {
+    return this.request<T>(message, opts)
+  }
+  post(message: Record<string, unknown>): void {
+    this.notify(message)
+  }
+  get running(): boolean {
+    return this.worker !== null
+  }
+  stop(reason: string): void {
+    this.terminate(reason)
+  }
+}
+
 class AIInferenceService extends WorkerFacade {
+  private generative = new GenerativeLane({ defaultTimeout: DEFAULT_REQUEST_TIMEOUT })
   private _initialized = false
   private _modelInfo = new Map<string, ModelInfo>()
   private _listeners = new Set<() => void>()
   private _webgpuAvailable = false
-  private _useWebGPU = false
+  /** Use the GPU when a model's ladder offers it (default). Off = CPU only. */
+  private _useWebGPU = true
   private _useBrowserCache = true
   private _defaultDType: DType = 'q4'
   private _loadedModels = new Set<string>()
@@ -152,40 +265,11 @@ class AIInferenceService extends WorkerFacade {
 
   // Route worker messages to the shared facade's pending-request bookkeeping.
   protected handleMessage(data: unknown): void {
-    const msg = data as {
-      type: string
-      id: number
-      progress?: number
-      success?: boolean
-      data?: unknown
-      loaded?: boolean
-      error?: string
-    }
-
-    switch (msg.type) {
-      case 'progress': {
-        this.reportProgress(msg.id, msg.progress ?? 0)
-        // Also update model info for the UI (not tied to a single request id).
-        const loadingModels = Array.from(this._modelInfo.entries()).filter(
-          ([, info]) => info.state === 'loading'
-        )
-        for (const [key] of loadingModels) {
-          this.updateModelInfo(key, { progress: msg.progress })
-        }
-        break
-      }
-      case 'loaded':
-        if (msg.success) this.settle(msg.id, true)
-        else this.fail(msg.id, new Error(msg.error || 'Failed to load model'))
-        break
-      case 'result':
-        if (msg.success) this.settle(msg.id, msg.data)
-        else this.fail(msg.id, new Error(msg.error || 'Inference failed'))
-        break
-      case 'checkResult':
-        this.settle(msg.id, msg.loaded)
-        break
-    }
+    routeAIWorkerMessage(data, {
+      progress: (id, p) => this.reportProgress(id, p),
+      settle: (id, v) => this.settle(id, v),
+      fail: (id, e) => this.fail(id, e),
+    })
   }
 
   // Send a request to the worker and await its response. Transfers image pixel
@@ -196,36 +280,25 @@ class AIInferenceService extends WorkerFacade {
     onProgress?: ProgressCallback,
     timeout: number = DEFAULT_REQUEST_TIMEOUT
   ): Promise<T> {
-    return this.request<T>(message, {
+    const opts = {
       transfer: collectTransferables(message.args as readonly unknown[] | undefined),
       onProgress,
       timeout,
-    })
+    }
+    return GENERATIVE_TASKS.has(message.task as string)
+      ? this.generative.send<T>(message, opts)
+      : this.request<T>(message, opts)
   }
 
   // Check WebGPU availability
   private async checkWebGPU(): Promise<void> {
-    if (typeof navigator === 'undefined') {
-      this._webgpuAvailable = false
-      this._initialized = true
-      return
-    }
-
-    if (!('gpu' in navigator)) {
-      this._webgpuAvailable = false
-      this._initialized = true
-      return
-    }
-
+    // One device probe for all of AI (WebGPU, shader-f16, memory…), shared with model fit.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const gpu = (navigator as any).gpu
-      const adapter = await gpu.requestAdapter()
-      this._webgpuAvailable = adapter !== null
+      const env = await getAiEnv()
+      this._webgpuAvailable = env.webgpu
     } catch {
       this._webgpuAvailable = false
     }
-
     this._initialized = true
     this.notifyListeners()
   }
@@ -254,10 +327,17 @@ class AIInferenceService extends WorkerFacade {
     return AI_MODELS.find((m) => m.task === task)
   }
 
-  // Get default model for task
+  /**
+   * The model a node on "Default" uses for a task: the one the person picked for that task in
+   * the AI Models manager, else the catalog default. (Picks are stored by catalog entry id,
+   * which differs from the task for some entries, e.g. VLA's 'vision-language'.)
+   */
   getDefaultModel(task: string): string {
-    const model = AI_MODELS.find((m) => m.task === task)
-    return model?.defaultModel ?? ''
+    const entry = AI_MODELS.find((m) => m.task === task)
+    if (!entry) return ''
+    const picked = this._selectedModels[entry.id] ?? this._selectedModels[task]
+    const offered = picked && (picked === entry.defaultModel || entry.alternateModels.some((a) => a.id === picked))
+    return offered ? picked : entry.defaultModel
   }
 
   // Get model info
@@ -299,10 +379,6 @@ class AIInferenceService extends WorkerFacade {
 
   // Set WebGPU preference
   setUseWebGPU(use: boolean): void {
-    if (use && !this._webgpuAvailable) {
-      console.warn('[AIInference] WebGPU is not available on this device')
-      return
-    }
     this._useWebGPU = use
     this.notifyListeners()
   }
@@ -328,6 +404,7 @@ class AIInferenceService extends WorkerFacade {
     this._useBrowserCache = use
     // Notify worker of the change (no-op if the worker isn't spawned).
     this.notify({ type: 'setCache', enabled: use })
+    this.generative.post({ type: 'setCache', enabled: use })
     this.notifyListeners()
   }
 
@@ -369,7 +446,7 @@ class AIInferenceService extends WorkerFacade {
 
   // Get selected model for a task
   getSelectedModel(task: string): string {
-    return this._selectedModels[task] || this.getDefaultModel(task)
+    return this.getDefaultModel(task)
   }
 
   // Set selected model for a task
@@ -394,12 +471,15 @@ class AIInferenceService extends WorkerFacade {
         if (settings.aiSelectedModels) {
           this._selectedModels = settings.aiSelectedModels
         }
-        if (settings.aiUseWebGPU !== undefined) {
-          this._useWebGPU = settings.aiUseWebGPU && this._webgpuAvailable
+        // The old aiUseWebGPU defaulted to off, so it isn't read: the GPU is on unless the person
+        // chose CPU only (aiPreferCpu) since the switch to per-model ladders.
+        if (settings.aiPreferCpu !== undefined) {
+          this._useWebGPU = !settings.aiPreferCpu
         }
         if (settings.aiUseBrowserCache !== undefined) {
           this._useBrowserCache = settings.aiUseBrowserCache
           this.notify({ type: 'setCache', enabled: this._useBrowserCache })
+          this.generative.post({ type: 'setCache', enabled: this._useBrowserCache })
         }
       }
 
@@ -423,7 +503,7 @@ class AIInferenceService extends WorkerFacade {
         ...existing,
         aiAutoLoadModels: this._autoLoadModels,
         aiSelectedModels: this._selectedModels,
-        aiUseWebGPU: this._useWebGPU,
+        aiPreferCpu: !this._useWebGPU,
         aiUseBrowserCache: this._useBrowserCache,
       })
 
@@ -465,6 +545,7 @@ class AIInferenceService extends WorkerFacade {
     // Clear from worker (this disposes all pipelines)
     if (this.worker) {
       await this.sendToWorker({ type: 'clearCache' }, undefined, 30000)
+      if (this.generative.running) await this.generative.send({ type: 'clearCache' }, { timeout: 30000 }).catch(() => undefined)
     }
 
     // Clear local state since models are now unloaded
@@ -518,15 +599,21 @@ class AIInferenceService extends WorkerFacade {
 
     try {
 
-      const device = options?.device || (this._useWebGPU ? 'webgpu' : undefined)
+      // The model's ladder for this device (records + probe), CPU-only when the person chose that.
+      // An explicit device/dtype (tests, callers that know better) is a one-rung ladder.
+      const env = await getAiEnv().catch(() => null)
+      const ladder = options?.device || options?.dtype
+        ? [{ device: options.device === 'webgpu' ? 'webgpu' as const : 'wasm' as const, ...(options.dtype ? { dtype: options.dtype } : {}) }]
+        : rungsFor(model, env, !this._useWebGPU)
+      const device = options?.device || (this._useWebGPU && this._webgpuAvailable ? 'webgpu' : undefined)
       const dtype = options?.dtype || this._defaultDType
 
-      await this.sendToWorker<boolean>(
+      const loaded = await this.sendToWorker<{ used?: { device: string; dtype: unknown } | null; failures?: ModelInfo['fallbacks'] } | true>(
         {
           type: 'load',
           task,
           model,
-          options: { device, dtype, useBrowserCache: this._useBrowserCache },
+          options: { device, dtype, useBrowserCache: this._useBrowserCache, ...(ladder.length ? { ladder } : {}) },
         },
         (progress) => {
           this.updateModelInfo(key, { progress })
@@ -534,13 +621,21 @@ class AIInferenceService extends WorkerFacade {
         }
       )
 
+      const used = loaded && loaded !== true ? loaded.used : null
+      const fallbacks = loaded && loaded !== true ? loaded.failures ?? [] : []
+      if (fallbacks.length) {
+        console.info(`[AIInference] ${model} loaded on ${used?.device ?? '?'} after: ${fallbacks.map((f) => `${f.device} ${JSON.stringify(f.dtype)} (${f.kind})`).join(', ')}`)
+      }
       this._loadedModels.add(key)
+      markModelUsed(model)
       this.updateModelInfo(key, {
         state: 'ready',
         progress: 100,
         loadedAt: Date.now(),
-        device: device || 'cpu',
-        dtype,
+        device: (used?.device === 'webgpu' ? 'webgpu' : used ? 'wasm' : device || 'cpu') as DeviceType,
+        dtype: (typeof used?.dtype === 'string' ? used.dtype : used?.dtype ? 'mixed' : dtype) as DType,
+        precision: precisionText(used?.dtype ?? dtype),
+        fallbacks,
       })
 
       return true
@@ -574,8 +669,9 @@ class AIInferenceService extends WorkerFacade {
         // Ignore timeout on dispose
       }
     }
-    // Terminate the worker and reject any still-in-flight requests.
+    // Terminate the workers and reject any still-in-flight requests.
     this.terminate('Service disposed')
+    this.generative.stop('Service disposed')
     this._loadedModels.clear()
     this._modelInfo.clear()
     this._initialized = false
@@ -703,6 +799,26 @@ class AIInferenceService extends WorkerFacade {
   }
 
   /**
+   * Segment Anything (SlimSAM): the mask of whatever is under the points (x, y in 0..1, label 1 =
+   * include, 0 = exclude). `reuseEmbedding` skips the image encoder when the image hasn't changed
+   * (moving the point on a still image is then cheap).
+   */
+  async segment(
+    image: ImageData,
+    points: Array<{ x: number; y: number; label?: number }>,
+    options: { modelId?: string; reuseEmbedding?: boolean } = {},
+  ): Promise<{ width: number; height: number; data: Uint8Array; score: number }> {
+    const model = options.modelId || this.getDefaultModel('mask-generation')
+    if (!this._loadedModels.has(`mask-generation:${model}`)) await this.loadModel('mask-generation', model)
+    const imageData = this.imageToSerializable(image)
+    return this.sendToWorker(
+      { type: 'infer', task: 'mask-generation', model, method: 'segment', args: [imageData, points, !!options.reuseEmbedding] },
+      undefined,
+      300000,
+    )
+  }
+
+  /**
    * Monocular depth estimation. Returns the depth map as a normalized 0–255
    * grayscale buffer (`channels` is usually 1). The first call downloads the
    * model (tens of MB), hence the long timeout.
@@ -711,7 +827,7 @@ class AIInferenceService extends WorkerFacade {
     image: ImageData | HTMLCanvasElement | HTMLImageElement | string,
     modelId?: string
   ): Promise<{ width: number; height: number; channels: number; data: number[] }> {
-    const model = modelId || 'Xenova/depth-anything-small-hf'
+    const model = modelId || this.getDefaultModel('depth-estimation')
     const key = `depth-estimation:${model}`
 
     if (!this._loadedModels.has(key)) {

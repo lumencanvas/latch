@@ -264,11 +264,35 @@ export function usePersistence() {
     }
   }
 
-  // Debounced auto-save
-  const debouncedSave = debounce(async () => {
-    if (flowsStore.activeFlow?.dirty) {
-      await saveActiveFlow()
+  /**
+   * Save every flow with unsaved edits. `liveConnectionsFor` is the flow whose connections are
+   * the ones in the live connections store (the active flow, or the one just switched away from);
+   * the others keep their stored connections, as in saveAllFlows.
+   */
+  async function saveDirtyFlows(liveConnectionsFor: string | null = flowsStore.activeFlowId): Promise<void> {
+    for (const flow of flowsStore.flows) {
+      if (!flow.dirty) continue
+      try {
+        const persisted = toPersistedFlow(flow)
+        if (flow.id !== liveConnectionsFor) {
+          const existing = await flowStorage.getById(flow.id)
+          persisted.connections = existing?.connections ?? []
+        }
+        await flowStorage.save(persisted)
+        flowsStore.markFlowSaved(flow.id)
+        lastSaveTime.value = new Date()
+      } catch (error) {
+        saveError.value = error instanceof Error ? error.message : 'Failed to save flow'
+        console.error('Failed to save flow:', flow.id, error)
+      }
     }
+  }
+
+  // Debounced auto-save. Saves every dirty flow, not only the active one: an edit followed by a
+  // tab switch within the debounce (an AI agent building several flows, or a quick person) was
+  // otherwise never written and vanished on reload.
+  const debouncedSave = debounce(async () => {
+    await saveDirtyFlows()
   }, 2000)
 
   /**
@@ -305,6 +329,10 @@ export function usePersistence() {
     watch(
       () => flowsStore.activeFlowId,
       async (newFlowId, oldFlowId) => {
+        // The flow being left may have edits the debounce hasn't written yet: save it now, while
+        // the live connections store still holds its connections.
+        if (oldFlowId && flowsStore.getFlowById(oldFlowId)?.dirty) await saveDirtyFlows(oldFlowId)
+
         // Save settings
         saveSettings()
 

@@ -21,12 +21,12 @@ const definition: NodeDefinition = {
     { id: 'spectrum', type: 'data', label: 'Spectrum (32 bands, 0–1)' },
   ],
   controls: [
-    { id: 'smoothing', type: 'number', label: 'Smoothing', default: 0.8 },
+    { id: 'smoothing', type: 'number', label: 'Smoothing', default: 0.8, props: { min: 0, max: 0.99, step: 0.01 } },
   ],
   info: {
     overview: 'Splits an incoming audio signal into level, bass, mid, and high frequency bands as numeric outputs. Use it to drive visuals, animations, or any parameter that should react to sound.',
     tips: [
-      'Increase smoothing (closer to 1) for slower, more stable readings; decrease it for snappier response.',
+      'Increase smoothing (up to 0.99) for slower, more stable readings; decrease it for snappier response. At 1 the readings would never change, so 0.99 is the limit.',
       'Map the bass output to scale or brightness for kick-driven visual effects.',
       'Place this after a gain node to control the analysis input level independently of the output volume.',
     ],
@@ -52,7 +52,9 @@ export function spectrumBands(fft: ArrayLike<number>, n: number): number[] {
 
 const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
   const audio = ctx.inputs.get('audio') as Tone.ToneAudioNode | null
-  const smoothing = (ctx.controls.get('smoothing') as number) ?? 0.8
+  // 1 would freeze the analyser at its first frame forever: cap it (flows saved with 1 included).
+  const rawSmoothing = Number(ctx.controls.get('smoothing') ?? 0.8)
+  const smoothing = Number.isFinite(rawSmoothing) ? Math.min(0.99, Math.max(0, rawSmoothing)) : 0.8
 
   if (!audio) {
     const outputs = new Map<string, unknown>()

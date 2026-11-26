@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Brain, ChevronDown, ChevronUp, Download, Loader2, X } from 'lucide-vue-next'
-import { aiInference, AI_MODELS } from '@/services/ai/AIInference'
+import { aiInference } from '@/services/ai/AIInference'
+import { webLLMService } from '@/services/ai/WebLLMService'
+import { getAiEnv } from '@/services/ai/modelRecords'
+import { modelFacts } from '@/services/ai/modelInventory'
+import type { Env } from '@hackbuild/ai-env'
+import { deriveWebllmCatalog } from '@/services/ai/models/webllm/derive'
 import { modelNeeds, groupModelNeeds } from '@/services/ai/modelNeeds'
 import { useRuntimeStore } from '@/stores/runtime'
 import { useFlowsStore } from '@/stores/flows'
@@ -20,7 +25,16 @@ const ui = useUIStore()
 // aiInference is a plain service: mirror its change notifications into a reactive tick.
 const aiTick = ref(0)
 let unsubscribe: (() => void) | null = null
-onMounted(() => { unsubscribe = aiInference.subscribe(() => { aiTick.value++ }) })
+let unsubscribeLLM: (() => void) | null = null
+const aiEnv = ref<Env | null>(null)
+void getAiEnv().then((e) => { aiEnv.value = e })
+const webllmCatalog = deriveWebllmCatalog()
+onMounted(() => {
+  unsubscribe = aiInference.subscribe(() => { aiTick.value++ })
+  // WebLLM (the LLM node) loads in its own service; its downloads belong in the pill too.
+  unsubscribeLLM = webLLMService.subscribe(() => { aiTick.value++ })
+})
+onUnmounted(() => { unsubscribeLLM?.() })
 onUnmounted(() => unsubscribe?.())
 
 const nodeLabel = (id: string) => {
@@ -29,17 +43,8 @@ const nodeLabel = (id: string) => {
 }
 const inFlow = (id: string) => !!flows.activeFlow?.nodes.some((n) => n.id === id)
 
-function modelMeta(task: string, modelId: string) {
-  const def = AI_MODELS.find((m) => m.task === task)
-  const id = modelId || def?.defaultModel || ''
-  const alt = def?.alternateModels.find((a) => a.id === id)
-  return {
-    id,
-    name: alt?.name ?? (id.split('/').pop() || def?.name || task),
-    task: def?.name ?? task,
-    size: alt?.size ?? (id === def?.defaultModel ? def?.defaultSize : '') ?? '',
-  }
-}
+// The same facts the AI Models manager shows for a model (size, licence, whether it fits here).
+const modelMeta = (task: string, modelId: string) => modelFacts(task, modelId, aiEnv.value)
 
 // ── Prompt: models the running flow needs ──────────────────────────────────
 const dismissed = ref(new Set<string>())
@@ -93,6 +98,12 @@ const loadingItems = computed<LoadingItem[]>(() => {
     const meta = modelMeta(task, modelId)
     const nodeIds = [...modelNeeds.values()].filter((n) => n.task === task && (n.modelId || meta.id) === modelId && inFlow(n.nodeId)).map((n) => n.nodeId)
     items.push({ key, label: meta.name, detail: `${meta.task} model${meta.size ? ` · ${meta.size}` : ''}`, progress: Math.round(info.progress ?? 0), nodeIds })
+  }
+  for (const [modelId, st] of webLLMService.listLoadStates()) {
+    if (st.status !== 'loading') continue
+    const meta = webllmCatalog.find((m) => m.id === modelId)
+    const nodeIds = (flows.activeFlow?.nodes ?? []).filter((n) => n.data?.nodeType === 'llm').map((n) => n.id)
+    items.push({ key: `webllm:${modelId}`, label: meta?.name ?? modelId, detail: `LLM model${meta?.size ? ` · ${meta.size}` : ''}`, progress: Math.round((st.progress ?? 0) * 100), nodeIds })
   }
   if (runtime.isRunning) {
     for (const n of flows.activeFlow?.nodes ?? []) {
@@ -158,7 +169,7 @@ function focus(id: string | undefined) {
           :key="g.key"
         >
           <span class="model-name">{{ g.meta.name }}</span>
-          <span class="model-meta">{{ g.meta.task }}<template v-if="g.meta.size"> · {{ g.meta.size }}</template></span>
+          <span class="model-meta">{{ g.meta.task }}<template v-if="g.meta.size"> · {{ g.meta.size }}</template><template v-if="g.meta.licence"> · {{ g.meta.licence }}</template><template v-if="g.meta.badge"> · <strong class="model-badge">{{ g.meta.badge }}</strong></template></span>
           <button
             class="node-link"
             :title="`Show ${nodeLabel(g.nodeIds[0])}`"
@@ -166,6 +177,10 @@ function focus(id: string | undefined) {
           >
             {{ g.nodeIds.length === 1 ? nodeLabel(g.nodeIds[0]) : `${g.nodeIds.length} nodes` }}
           </button>
+          <span
+            v-if="g.meta.fitWarning"
+            class="model-error"
+          >{{ g.meta.fitWarning }}</span>
           <span
             v-if="loadErrors.get(g.key)"
             class="model-error"
@@ -447,5 +462,9 @@ function focus(id: string | undefined) {
 
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
+}
+.model-badge {
+  font-weight: var(--font-weight-bold);
+  color: var(--color-warning-700);
 }
 </style>

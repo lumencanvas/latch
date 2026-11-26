@@ -73,7 +73,10 @@ function problems(flow: FlatFlow): string[] {
     const tDef = getDef(t.type)
     if (!sDef || !tDef) continue
     const sType = getPortType(sDef, e.sourceHandle, 'output', s.data)
-    const tType = getPortType(tDef, e.targetHandle, 'input', t.data)
+    // A custom-GLSL Shader declares its uniform ports in data._dynamicInputs (what the shader
+    // editor writes), so those count as real inputs.
+    const dynIn = (t.data._dynamicInputs as Array<{ id: string; type: string }> | undefined)?.find((p) => p.id === e.targetHandle)
+    const tType = getPortType(tDef, e.targetHandle, 'input', t.data) ?? (dynIn?.type as DataType | undefined)
     if (!sType) out.push(`edge ${e.id}: ${s.type} has no output "${e.sourceHandle}" (has ${sDef.outputs.map((p) => p.id).join(', ')})`)
     if (!tType) out.push(`edge ${e.id}: ${t.type} has no input "${e.targetHandle}" (has ${tDef.inputs.map((p) => p.id).join(', ')})`)
     if (sType && tType && !areTypesCompatible(sType as DataType, tType as DataType)) {

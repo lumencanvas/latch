@@ -30,6 +30,7 @@ import {
   Workflow,
 } from 'lucide-vue-next'
 import LatchLogo from '@/components/branding/LatchLogo.vue'
+import AgentAccessMenu from '@/components/agent/AgentAccessMenu.vue'
 import { aiInference } from '@/services/ai/AIInference'
 import { useConnectionsStore } from '@/stores/connections'
 import { useFlowHistory } from '@/composables/useFlowHistory'
@@ -338,6 +339,8 @@ const isMacElectron = computed(() => {
         <GraduationCap />
         <span class="header-examples-label">Examples</span>
       </button>
+
+      <AgentAccessMenu />
 
       <div class="header-secondary">
         <button

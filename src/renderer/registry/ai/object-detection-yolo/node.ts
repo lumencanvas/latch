@@ -29,7 +29,7 @@ const definition: NodeDefinition = {
       id: 'modelUrl',
       type: 'select',
       label: 'Model',
-      default: 'https://huggingface.co/onnx-community/yolov10s/resolve/main/onnx/model.onnx',
+      default: DEFAULT_YOLO_URL,
       props: {
         // Editable so users can point at a lighter local/hosted yolov8n.onnx.
         editable: true,

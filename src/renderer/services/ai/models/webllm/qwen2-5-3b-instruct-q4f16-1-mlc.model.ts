@@ -6,5 +6,6 @@ export default defineModel({
   family: 'webllm',
   task: 'text-generation',
   size: '~2.5 GB',
+  license: 'qwen-research',
   load: { promptFormat: 'chat' },
 })

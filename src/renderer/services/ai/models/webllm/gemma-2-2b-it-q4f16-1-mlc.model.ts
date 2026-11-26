@@ -6,5 +6,6 @@ export default defineModel({
   family: 'webllm',
   task: 'text-generation',
   size: '~1.9 GB',
+  license: 'gemma',
   load: { promptFormat: 'chat' },
 })

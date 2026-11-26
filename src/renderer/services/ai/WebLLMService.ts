@@ -18,6 +18,7 @@
  * WebGPU is mandatory; without it generation resolves to an `unsupported` state
  * with a clear message rather than throwing.
  */
+import { markModelUsed } from './modelStorage'
 import { isWebGPUAvailable } from './webgpu'
 
 // Structural types — deliberately NOT imported from @mlc-ai/web-llm so this module
@@ -170,6 +171,10 @@ export class WebLLMService {
   getLoadState(model: string): ModelLoadState | undefined {
     return this.loadStates.get(model)
   }
+  /** Every model with a load state, as [modelId, state] (for status displays like the loading pill). */
+  listLoadStates(): [string, ModelLoadState][] {
+    return [...this.loadStates.entries()]
+  }
 
   /**
    * Load (and cache) an engine for `model`. Idempotent and serialized per model, so
@@ -203,6 +208,7 @@ export class WebLLMService {
         })
         this.engines.set(model, handle)
         this.loadStates.set(model, { status: 'loaded', progress: 1 })
+        markModelUsed(model)
         this.notify()
         return handle
       } catch (e) {

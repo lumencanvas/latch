@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { guardedStep, snapClamp } from '@/utils/controlValue'
 import { computed, ref, onUnmounted } from 'vue'
 import type { ControlDefinition } from '@/stores/nodes'
 import {
@@ -65,27 +66,11 @@ let scrubStartX = 0
 let scrubStartValue = 0
 let scrubControl: ControlDefinition | null = null
 
-function guardedStep(c: ControlDefinition): number {
-  const s = c.props?.step as number
-  return Number.isFinite(s) && s > 0 ? s : 1
-}
-
 function scrubUnitsPerPx(c: ControlDefinition): number {
   const min = c.props?.min, max = c.props?.max
   // bounded: whole range over ~200px; unbounded (the common case): one step per 4px.
   if (typeof min === 'number' && typeof max === 'number' && max > min) return (max - min) / 200
   return guardedStep(c) / 4
-}
-
-function snapClamp(c: ControlDefinition, v: number): number {
-  const step = guardedStep(c)
-  let nv = Math.round(v / step) * step
-  const decimals = (String(step).split('.')[1] || '').length
-  nv = Number(nv.toFixed(decimals)) // kill float dust so scrub matches typed values
-  const min = c.props?.min, max = c.props?.max
-  if (typeof min === 'number') nv = Math.max(min, nv) // clamp ONLY against finite bounds (min/max optional)
-  if (typeof max === 'number') nv = Math.min(max, nv)
-  return nv
 }
 
 function endScrub() {

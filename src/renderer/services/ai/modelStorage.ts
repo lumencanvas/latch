@@ -104,3 +104,38 @@ export async function getStorageEstimate(): Promise<StorageEstimateInfo | null> 
     return null
   }
 }
+
+/** True when a cached repo is this model (transformers ids are repos; WebLLM ids are repo names). */
+export function repoMatches(repo: string, modelId: string): boolean {
+  return repo === modelId || repo.endsWith(`/${modelId}`)
+}
+
+// ── When each model was last used ──────────────────────────────────────────
+
+const LAST_USED_KEY = 'latch.ai.lastUsed'
+
+function readLastUsed(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(LAST_USED_KEY) || '{}') as Record<string, number> } catch { return {} }
+}
+
+function writeLastUsed(map: Record<string, number>): void {
+  try { localStorage.setItem(LAST_USED_KEY, JSON.stringify(map)) } catch { /* private mode */ }
+}
+
+/** Record that a model just loaded (for "last used" and freeing space oldest first). */
+export function markModelUsed(modelId: string, at = Date.now()): void {
+  if (!modelId) return
+  writeLastUsed({ ...readLastUsed(), [modelId]: at })
+}
+
+export function lastUsedOf(modelId: string): number | null {
+  const map = readLastUsed()
+  const key = Object.keys(map).find((k) => repoMatches(modelId, k) || repoMatches(k, modelId))
+  return key ? map[key] : null
+}
+
+export function forgetModelUse(modelId: string): void {
+  const map = readLastUsed()
+  delete map[modelId]
+  writeLastUsed(map)
+}

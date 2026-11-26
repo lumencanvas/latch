@@ -502,7 +502,8 @@ export function disposeSTTNode(nodeId: string): void {
 export type Detection = { label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }
 
 /** Default YOLOv9/GELAN COCO weights (Xenova mirror; ~102 MB, CORS-enabled). */
-export const DEFAULT_YOLO_URL = 'https://huggingface.co/Xenova/yolov9-onnx/resolve/main/gelan-c.onnx'
+// Same as the YOLO node's control default (they used to disagree: gelan-c vs YOLOv10s).
+export const DEFAULT_YOLO_URL = 'https://huggingface.co/onnx-community/yolov10s/resolve/main/onnx/model.onnx'
 
 export interface LiveOverlayOptions {
   interval: number
@@ -512,6 +513,9 @@ export interface LiveOverlayOptions {
   lineWidth: number
   boxStyle: 'box' | 'corners' | 'filled'
   colorMode: 'class' | 'uniform'
+  /** A catalog model this detector needs: unloaded, it raises the "model needed" prompt
+   *  (and passes the video through) instead of downloading on the first frame. */
+  need?: { task: string; modelId: string }
 }
 
 /**
@@ -600,6 +604,62 @@ export function roundRectPath(
   ctx.roundRect(x, y, w, h, rr)
 }
 
+/**
+ * Frame-aware cadence for live AI nodes (after hackbuild's `detectCadenceMs`). Each run reads the
+ * frame's pixels back from the GPU on the main thread, so running more often than inference can
+ * answer only costs frames. A node waits at least twice its last inference time between runs, and
+ * twice that again while the flow is under 24 fps. `frameDue` is the node's own interval/trigger.
+ */
+export const MIN_LIVE_GAP_FACTOR = 2
+export const SLOW_FPS = 24
+export function liveRunDue(nodeId: string, frameDue: boolean, deltaTime: number, now = performance.now()): boolean {
+  // Smoothed frame time (seconds), so one long frame doesn't count as "slow".
+  const prev = getCached<number>(`${nodeId}:liveDt`, deltaTime)
+  const dt = prev * 0.9 + deltaTime * 0.1
+  setCached(`${nodeId}:liveDt`, dt)
+  if (!frameDue) return false
+  const lastAt = getCached<number>(`${nodeId}:liveLastAt`, -Infinity)
+  const latency = getCached<number>(`${nodeId}:liveLatency`, 0)
+  const slow = dt > 0 && 1 / dt < SLOW_FPS
+  const gap = Math.min(4000, latency * MIN_LIVE_GAP_FACTOR * (slow ? 2 : 1))
+  return now - lastAt >= gap
+}
+/** Record a live run's start (call when it starts) and its latency (call when it ends). */
+export function liveRunStarted(nodeId: string, now = performance.now()): void {
+  setCached(`${nodeId}:liveLastAt`, now)
+}
+export function liveRunFinished(nodeId: string, latencyMs: number): void {
+  setCached(`${nodeId}:liveLatency`, latencyMs)
+}
+
+/** How long a box takes to glide to its new position after a detection run (ms). */
+export const BOX_EASE_MS = 150
+/**
+ * The boxes to draw now: each new detection eases from the nearest previous box with the same
+ * label, so boxes move smoothly between runs instead of jumping (outputs stay the raw result).
+ */
+export function easedBoxes(nodeId: string, current: Detection[], now = performance.now()): Detection[] {
+  const prev = getCached<Detection[]>(`${nodeId}:prevBoxes`, [])
+  const t = Math.min(1, (now - getCached<number>(`${nodeId}:detAt`, 0)) / BOX_EASE_MS)
+  if (t >= 1 || prev.length === 0) return current
+  const centre = (d: Detection) => [(d.box.xmin + d.box.xmax) / 2, (d.box.ymin + d.box.ymax) / 2]
+  return current.map((d) => {
+    const [cx, cy] = centre(d)
+    let best: Detection | null = null
+    let bestD = Infinity
+    for (const p of prev) {
+      if (p.label !== d.label) continue
+      const [px, py] = centre(p)
+      const dist = (px - cx) ** 2 + (py - cy) ** 2
+      if (dist < bestD) { bestD = dist; best = p }
+    }
+    if (!best) return d
+    const e = t * (2 - t) // ease-out
+    const lerp = (a: number, b: number) => a + (b - a) * e
+    return { ...d, box: { xmin: lerp(best.box.xmin, d.box.xmin), ymin: lerp(best.box.ymin, d.box.ymin), xmax: lerp(best.box.xmax, d.box.xmax), ymax: lerp(best.box.ymax, d.box.ymax) } }
+  })
+}
+
 export function runLiveDetection(
   ctx: ExecutionContext,
   detect: (imageData: ImageData) => Promise<Detection[]>,
@@ -651,20 +711,37 @@ export function runLiveDetection(
   const lastFrame = getCached<number>(`${ctx.nodeId}:lastFrame`, -1)
   const due = hasTrigger || lastFrame < 0 || currentFrame - lastFrame >= interval
 
-  if (due && !pendingOperations.has(ctx.nodeId)) {
+  let gatedError = ''
+  if (opts.need) {
+    if (aiInference.isModelLoaded(opts.need.task, opts.need.modelId)) {
+      clearModelNeed(ctx.nodeId)
+    } else {
+      reportModelNeed(ctx.nodeId, opts.need.task, opts.need.modelId)
+      const downloading = aiInference.getModelInfo(opts.need.task, opts.need.modelId)?.state === 'loading'
+      gatedError = downloading ? '' : 'Model not loaded. Open AI Model Manager to load.'
+    }
+  }
+  const gated = !!opts.need && !aiInference.isModelLoaded(opts.need.task, opts.need.modelId)
+
+  if (!gated && !pendingOperations.has(ctx.nodeId) && liveRunDue(ctx.nodeId, due, ctx.deltaTime)) {
     setCached(`${ctx.nodeId}:lastFrame`, currentFrame)
+    liveRunStarted(ctx.nodeId)
     setCached(`${ctx.nodeId}:loading`, true)
     const operation = (async () => {
       const startedAt = performance.now()
       try {
         const detections = await detect(imageData)
         if (isNodeDisposed(ctx.nodeId)) return
+        // Boxes glide from where they were drawn to the new result (see easedBoxes).
+        setCached(`${ctx.nodeId}:prevBoxes`, easedBoxes(ctx.nodeId, getCached<Detection[]>(`${ctx.nodeId}:detections`, [])))
+        setCached(`${ctx.nodeId}:detAt`, performance.now())
         setCached(`${ctx.nodeId}:detections`, detections)
         const top = detections.reduce<Detection | null>((best, d) => (!best || d.score > best.score ? d : best), null)
         setCached(`${ctx.nodeId}:topLabel`, top?.label ?? '')
         // Last inference latency (ms) for the HUD. First call includes the model
         // download, so it reads high until the model is cached.
         setCached(`${ctx.nodeId}:detectMs`, performance.now() - startedAt)
+        liveRunFinished(ctx.nodeId, performance.now() - startedAt)
         setCached(`${ctx.nodeId}:loading`, false)
         setCached(`${ctx.nodeId}:detectError`, null)
       } catch (error) {
@@ -687,7 +764,7 @@ export function runLiveDetection(
     c2d.putImageData(imageData, 0, 0)
 
     if (showBoxes) {
-      for (const det of cachedDetections) {
+      for (const det of easedBoxes(ctx.nodeId, cachedDetections)) {
         const { xmin, ymin, xmax, ymax } = det.box
         drawBoundingBox(
           c2d,
@@ -734,8 +811,8 @@ export function runLiveDetection(
   outputs.set('topLabel', getCached(`${ctx.nodeId}:topLabel`, ''))
   outputs.set('texture', state.texture)
   // Recompute after the possible kickoff above so it reflects the live state.
-  outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false))
-  outputs.set('error', detectError)
+  outputs.set('loading', pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false) || (gated && !gatedError))
+  outputs.set('error', gatedError || detectError)
   return outputs
 }
 
@@ -772,6 +849,26 @@ export function disposeDepthNode(nodeId: string): void {
     state.canvas.height = 0
     depthEstimateState.delete(nodeId)
   }
+}
+
+/** Segment Anything: the mask and the cut-out, each a canvas-backed texture. */
+export interface SegmentState {
+  maskCanvas: HTMLCanvasElement
+  cutCanvas: HTMLCanvasElement
+  mask: THREE.Texture | null
+  cutout: THREE.Texture | null
+  builtFrom: unknown
+}
+export const segmentState = new Map<string, SegmentState>()
+
+export function disposeSegmentNode(nodeId: string): void {
+  const state = segmentState.get(nodeId)
+  if (!state) return
+  state.mask?.dispose()
+  state.cutout?.dispose()
+  state.maskCanvas.width = state.maskCanvas.height = 0
+  state.cutCanvas.width = state.cutCanvas.height = 0
+  segmentState.delete(nodeId)
 }
 
 /** Cheap jet-style colormap (blue→cyan→green→yellow→red) for depth viz. */
@@ -986,6 +1083,9 @@ export function disposeAllAINodes(): void {
   for (const nodeId of depthEstimateState.keys()) {
     disposeDepthNode(nodeId)
   }
+  for (const nodeId of segmentState.keys()) {
+    disposeSegmentNode(nodeId)
+  }
 
   nodeCache.clear()
   pendingOperations.clear()
@@ -1038,6 +1138,10 @@ export function gcAIState(validNodeIds: Set<string>): void {
     if (!validNodeIds.has(nodeId)) {
       disposeTTSNode(nodeId)
     }
+  }
+
+  for (const nodeId of segmentState.keys()) {
+    if (!validNodeIds.has(nodeId)) disposeSegmentNode(nodeId)
   }
 
   // Dispose depth-estimation textures for removed nodes

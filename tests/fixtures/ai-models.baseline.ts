@@ -3,6 +3,7 @@
 // pre-derive catalog. Independent of the per-model *.model.ts generation: this is the
 // whole original object, not reconstructed from split specs. deriveAiModels() must
 // deep-equal this. Do NOT edit by hand except to intentionally rebaseline the catalog.
+// Rebaselined 2026-11-25: SmolVLM replaces dead BLIP for captioning; depth + D-FINE/RT-DETR added.
 /* eslint-disable */
 export const AI_MODELS_BASELINE = [
   {
@@ -75,6 +76,23 @@ export const AI_MODELS_BASELINE = [
     category: 'vision',
     alternateModels: [
       { id: 'Xenova/yolos-tiny', name: 'YOLOS Tiny', size: '~27 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/dfine_s_coco-ONNX', name: 'D-FINE Small (COCO)', size: '~24 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/rtdetr_v2_r18vd-ONNX', name: 'RT-DETR v2 R18', size: '~66 MB', license: 'apache-2.0' },
+    ],
+  },
+  {
+    id: 'depth-estimation',
+    name: 'Depth Estimation',
+    task: 'depth-estimation',
+    description: 'Estimate how far each pixel is from the camera (a depth map) from one image',
+    defaultModel: 'onnx-community/depth-anything-v2-small',
+    defaultSize: '~27 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'vision',
+    alternateModels: [
+      { id: 'Xenova/depth-anything-small-hf', name: 'Depth Anything Small', size: '~28 MB', license: 'apache-2.0' },
+      { id: 'Xenova/dpt-hybrid-midas', name: 'DPT Hybrid MiDaS', size: '~190 MB', license: 'mit' },
     ],
   },
   {
@@ -126,14 +144,15 @@ export const AI_MODELS_BASELINE = [
     id: 'image-to-text',
     name: 'Image Captioning',
     task: 'image-to-text',
-    description: 'Generate captions for images',
-    defaultModel: 'Xenova/blip-image-captioning-base',
-    defaultSize: '~990 MB',
-    defaultLicense: 'bsd-3-clause',
+    description: 'Generate captions for images (a small vision-language model asked to describe the image)',
+    defaultModel: 'HuggingFaceTB/SmolVLM-256M-Instruct',
+    defaultSize: '~300 MB',
+    defaultLicense: 'apache-2.0',
     supportsWebGPU: true,
     category: 'multimodal',
     alternateModels: [
-      { id: 'Xenova/blip-image-captioning-large', name: 'BLIP Large', size: '~1.8 GB', license: 'bsd-3-clause' },
+      { id: 'HuggingFaceTB/SmolVLM-500M-Instruct', name: 'SmolVLM 500M', size: '~600 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/LFM2-VL-450M-ONNX', name: 'LFM2-VL 450M (GPU, fast)', size: '~320 MB', license: 'lfm1.0' },
       { id: 'Xenova/trocr-base-handwritten', name: 'TrOCR Handwritten', size: '~1.2 GB', license: 'mit' },
     ],
   },
@@ -149,7 +168,20 @@ export const AI_MODELS_BASELINE = [
     category: 'multimodal',
     alternateModels: [
       { id: 'HuggingFaceTB/SmolVLM-500M-Instruct', name: 'SmolVLM 500M', size: '~600 MB', license: 'apache-2.0' },
+      { id: 'onnx-community/LFM2-VL-450M-ONNX', name: 'LFM2-VL 450M (GPU, fast)', size: '~320 MB', license: 'lfm1.0' },
     ],
+  },
+  {
+    id: 'segmentation',
+    name: 'Segment Anything',
+    task: 'mask-generation',
+    description: 'Cut out the object under a point: a mask of whatever you point at (SlimSAM)',
+    defaultModel: 'Xenova/slimsam-77-uniform',
+    defaultSize: '~40 MB',
+    defaultLicense: 'apache-2.0',
+    supportsWebGPU: true,
+    category: 'vision',
+    alternateModels: [],
   },
 ]
 

@@ -31,12 +31,14 @@ describe('vlaNode definition', () => {
     expect(vlaNode.outputs.map((o) => o.id)).toEqual(expect.arrayContaining(['action', 'loading', 'done']))
   })
 
-  it('offers SmolVLM models with the 256M default', () => {
+  it('offers the catalog SmolVLM models, defaulting to the catalog/Manager choice (256M)', () => {
     const model = vlaNode.controls.find((c) => c.id === 'model')
-    const options = (model?.props as { options: Array<{ value: string }> }).options
+    const options = (model?.props as { options: Array<{ value: string; label: string }> }).options
     expect(options.length).toBeGreaterThanOrEqual(2)
-    expect(model?.default).toBe('HuggingFaceTB/SmolVLM-256M-Instruct')
-    expect(options.every((o) => /SmolVLM/.test(o.value))).toBe(true)
+    // '' = the task default (SmolVLM-256M unless changed in AI Models).
+    expect(model?.default).toBe('')
+    expect(options[0].label).toMatch(/SmolVLM-256M/)
+    expect(options.slice(1).every((o) => /SmolVLM|LFM2-VL/.test(o.value))).toBe(true)
   })
 })
 

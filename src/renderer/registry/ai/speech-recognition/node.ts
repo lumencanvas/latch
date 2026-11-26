@@ -289,4 +289,4 @@ export const speechRecognitionExecutor: NodeExecutorFn = (ctx: ExecutionContext)
   return outputs
 }
 
-export default defineNode({ definition, executor: speechRecognitionExecutor })
+export default defineNode({ definition, executor: speechRecognitionExecutor, models: [{ task: 'automatic-speech-recognition' }] })

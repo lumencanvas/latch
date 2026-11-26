@@ -42,9 +42,15 @@ export function useFlowLibrary() {
   }
 
   /** Open pasted flow JSON as new flow tab(s). Returns false (and does nothing) if it isn't flow JSON. */
-  async function importText(text: string): Promise<boolean> {
+  /**
+   * Open pasted or supplied flow JSON as new tabs. `untrusted` (text an AI agent wrote) skips the
+   * trust prompt and always imports code nodes disabled: only a person clicking Enable code runs them.
+   */
+  async function importText(text: string, options: { untrusted?: boolean } = {}): Promise<boolean> {
     if (!looksLikeFlowText(text)) return false
-    const result = await flows.importFlowsWithTrustPrompt(text.trim(), { replace: false })
+    const result = options.untrusted
+      ? flows.importFlows(text.trim(), { replace: false, codePolicy: 'disable' })
+      : await flows.importFlowsWithTrustPrompt(text.trim(), { replace: false })
     await finishImport(result)
     return result.success
   }

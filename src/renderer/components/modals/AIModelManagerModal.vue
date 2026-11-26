@@ -7,6 +7,14 @@ import { getStorageEstimate, type StorageEstimateInfo } from '@/services/ai/mode
 import { WEBLLM_MODELS } from '@/registry/ai/llm/node'
 import { webLLMService } from '@/services/ai/WebLLMService'
 import { useDialogA11y } from '@/composables/useDialogA11y'
+import { fitFor, getAiEnv, licenceBadge, modelRecord } from '@/services/ai/modelRecords'
+import type { Env } from '@hackbuild/ai-env'
+import { useFlowsStore } from '@/stores/flows'
+import { mediaPipeService } from '@/services/ai/MediaPipeService'
+import {
+  MEDIAPIPE_MODELS, capabilityOf, deleteStoredModel, formatBytes as formatSize, lastUsedOf, listStoredModels,
+  modelUsage, repoMatches, type Capability, type ModelUse, type StoredModel,
+} from '@/services/ai/modelInventory'
 
 const uiStore = useUIStore()
 
@@ -57,6 +65,30 @@ function unloadWebLLM(id: string): void {
   void webLLMService.unload(id)
 }
 
+// --- Fit and licence (hackbuild model records + the device probe) ---
+const aiEnv = ref<Env | null>(null)
+void getAiEnv().then((e) => { aiEnv.value = e })
+
+/** Will this model run on this device, on what, and if not why ("needs f16", "over memory"…). */
+function fitOfModel(id: string | undefined) {
+  return id && aiEnv.value ? fitFor(id, aiEnv.value) : null
+}
+function badgeOf(id: string | undefined): string | null {
+  return id ? licenceBadge(modelRecord(id)?.licence) : null
+}
+/** Where a loaded model actually runs, and what it fell back from. */
+function loadedOn(taskId: string): string | null {
+  const task = AI_MODELS.find((m) => m.id === taskId)
+  const modelId = selectedModels.value.get(taskId)
+  if (!task || !modelId) return null
+  void modelStates.value
+  const info = aiInference.getModelInfo(task.task, modelId)
+  if (info?.state !== 'ready') return null
+  const where = info.device === 'webgpu' ? 'GPU (WebGPU)' : 'CPU'
+  const fell = info.fallbacks?.length ? ` after ${info.fallbacks.map((f) => `${f.device === 'webgpu' ? 'GPU' : 'CPU'} ${typeof f.dtype === 'string' ? f.dtype : 'mixed'} (${f.kind})`).join(', ')} failed` : ''
+  return `Running on the ${where}, ${info.precision || info.dtype || ''}${fell}.`
+}
+
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 MB'
   const gb = bytes / 1e9
@@ -86,6 +118,7 @@ onMounted(async () => {
 
   updateState()
   void refreshStorageInfo()
+  void refreshStored()
 
   // Subscribe to AI service state changes
   aiUnsubscribe = aiInference.subscribe(() => {
@@ -107,6 +140,7 @@ onUnmounted(() => {
 watch(() => uiStore.aiModelManagerOpen, (isOpen) => {
   if (isOpen) {
     updateState()
+    void refreshStored()
   }
 })
 
@@ -128,9 +162,12 @@ function updateState() {
   autoLoadModels.value = new Set(state.autoLoadModels)
 }
 
+// The service keys models by pipeline task (`image-text-to-text:<model>`), which differs from
+// the catalog entry id for some rows (VLA's entry is 'vision-language'). Key by the task.
 function getTaskModelKey(taskId: string): string {
   const modelId = selectedModels.value.get(taskId)
-  return `${taskId}:${modelId}`
+  const task = AI_MODELS.find(m => m.id === taskId)?.task ?? taskId
+  return `${task}:${modelId}`
 }
 
 function getModelState(taskId: string): ModelLoadState {
@@ -196,6 +233,7 @@ async function loadModel(taskId: string) {
     await aiInference.loadModel(task.task, modelId, () => {
       // Progress handled by subscription
     })
+    void refreshStored()
   } catch (error) {
     console.error(`Failed to load model for ${taskId}:`, error)
   }
@@ -261,6 +299,7 @@ async function clearCache() {
     // Update state after clearing
     updateState()
     void refreshStorageInfo()
+    void refreshStored()
   } catch (error) {
     console.error('Failed to clear cache:', error)
   } finally {
@@ -281,11 +320,86 @@ const loadedModelCount = computed(() => {
   return count
 })
 
-// Check if task supports WebGPU
-function supportsWebGPU(taskId: string): boolean {
-  const task = AI_MODELS.find(m => m.id === taskId)
-  return task?.supportsWebGPU ?? false
+// --- One list over every family: filter, who uses what, what is downloaded (Phase 4) ---
+const flowsStore = useFlowsStore()
+const FILTERS: Array<{ id: 'all' | Capability; label: string }> = [
+  { id: 'all', label: 'All' }, { id: 'vision', label: 'Vision' }, { id: 'audio', label: 'Audio' },
+  { id: 'text', label: 'Text' }, { id: 'chat', label: 'Chat' },
+]
+const filter = ref<'all' | Capability>('all')
+const onlyUsed = ref(false)
+const onlyStored = ref(false)
+const stored = ref<StoredModel[]>([])
+const storageBusy = ref(false)
+
+const usage = computed(() => modelUsage(flowsStore.flows, WEBLLM_MODELS[0]?.id ?? ''))
+function usesOf(ids: readonly string[]): ModelUse[] {
+  return ids.flatMap((id) => usage.value.get(id) ?? [])
 }
+function usedIn(uses: ModelUse[]): string {
+  const names = [...new Set(uses.map((u) => u.flowName))]
+  return names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3}` : names.join(', ')
+}
+function storedBytes(id: string | undefined): number {
+  return id ? stored.value.filter((s) => repoMatches(s.repo, id)).reduce((n, s) => n + s.bytes, 0) : 0
+}
+const taskModelIds = (t: (typeof AI_MODELS)[number]) => [t.defaultModel, ...t.alternateModels.map((a) => a.id)]
+
+const visibleTasks = computed(() => AI_MODELS.filter((t) => {
+  if (filter.value !== 'all' && capabilityOf(t.category) !== filter.value) return false
+  if (onlyUsed.value && !usesOf(taskModelIds(t)).length) return false
+  if (onlyStored.value && !taskModelIds(t).some((id) => storedBytes(id) > 0)) return false
+  return true
+}))
+const webllmIds = WEBLLM_MODELS.map((m) => m.id)
+const showWebLLM = computed(() => (filter.value === 'all' || filter.value === 'chat' || filter.value === 'text')
+  && (!onlyUsed.value || usesOf(webllmIds).length > 0)
+  && (!onlyStored.value || webllmIds.some((id) => storedBytes(id) > 0)))
+const showMediaPipe = computed(() => !onlyStored.value
+  && (filter.value === 'all' || MEDIAPIPE_MODELS.some((m) => m.capability === filter.value))
+  && (!onlyUsed.value || usesOf(MEDIAPIPE_MODELS.map((m) => m.id)).length > 0))
+const mediapipeRows = computed(() => {
+  void modelStates.value
+  return MEDIAPIPE_MODELS.filter((m) => filter.value === 'all' || m.capability === filter.value)
+    .map((m) => ({ ...m, loaded: mediaPipeService.isLoaded(m.task), uses: usage.value.get(m.id) ?? [] }))
+})
+
+/** Is anything with this repo loaded right now (either runtime)? */
+function repoLoaded(repo: string): boolean {
+  void modelStates.value
+  void webllmTick.value
+  for (const [key, info] of aiInference.getState().loadedModels) {
+    if (info.state === 'ready' && repoMatches(repo, key.slice(key.indexOf(':') + 1))) return true
+  }
+  return webLLMService.loadedModels().some((id) => repoMatches(repo, id))
+}
+const storageRows = computed(() => stored.value.map((s) => {
+  const uses = [...usage.value.entries()].filter(([id]) => repoMatches(s.repo, id)).flatMap(([, u]) => u)
+  return { ...s, name: s.repo.split('/').pop() || s.repo, lastUsed: lastUsedOf(s.repo), uses, loaded: repoLoaded(s.repo) }
+}))
+const storedTotal = computed(() => stored.value.reduce((n, s) => n + s.bytes, 0))
+const unusedRows = computed(() => storageRows.value.filter((r) => !r.uses.length && !r.loaded))
+
+async function refreshStored() {
+  stored.value = await listStoredModels()
+}
+async function removeStored(repos: string[]) {
+  if (storageBusy.value) return
+  storageBusy.value = true
+  try {
+    for (const repo of repos) await deleteStoredModel(repo)
+  } finally {
+    storageBusy.value = false
+    await refreshStored()
+    void refreshStorageInfo()
+  }
+}
+function ago(at: number | null): string {
+  if (!at) return 'never loaded here'
+  const days = Math.floor((Date.now() - at) / 86_400_000)
+  return days < 1 ? 'used today' : days === 1 ? 'used yesterday' : `used ${days} days ago`
+}
+
 
 // Get category badge color
 function getCategoryColor(category: string): string {
@@ -372,7 +486,7 @@ function getCategoryColor(category: string): string {
                   >
                   <span class="toggle-switch" />
                   <Zap :size="14" />
-                  <span>WebGPU</span>
+                  <span title="Run models on the GPU (WebGPU) when they can. Off: CPU only, slower.">Use GPU</span>
                 </label>
               </div>
               <!-- Clear cache button -->
@@ -404,11 +518,49 @@ function getCategoryColor(category: string): string {
             </div>
           </div>
 
+          <!-- Filter: what it does, and whether flows use it or it is downloaded -->
+          <div
+            class="filter-bar"
+            role="toolbar"
+            aria-label="Filter models"
+          >
+            <button
+              v-for="f in FILTERS"
+              :key="f.id"
+              class="filter-chip"
+              :class="{ active: filter === f.id }"
+              :aria-pressed="filter === f.id"
+              @click="filter = f.id"
+            >
+              {{ f.label }}
+            </button>
+            <span class="filter-sep" />
+            <button
+              class="filter-chip"
+              :class="{ active: onlyUsed }"
+              :aria-pressed="onlyUsed"
+              title="Only models a flow uses"
+              @click="onlyUsed = !onlyUsed"
+            >
+              Used in flows
+            </button>
+            <button
+              class="filter-chip"
+              :class="{ active: onlyStored }"
+              :aria-pressed="onlyStored"
+              title="Only models already downloaded"
+              @click="onlyStored = !onlyStored"
+            >
+              Downloaded
+            </button>
+          </div>
+
           <!-- Model List -->
           <div class="model-list">
             <!-- Streaming chat LLMs (WebGPU / MLC). Load one or more here; the
                  LLM (Streaming) node uses whichever model it requests. -->
             <div
+              v-if="showWebLLM"
               class="model-card webllm-card"
               :class="{ 'is-loaded': selectedWebLLMLoaded, 'is-loading': selectedWebLLMState?.status === 'loading' }"
             >
@@ -455,6 +607,31 @@ function getCategoryColor(category: string): string {
                     </option>
                   </select>
                   <span class="selected-size">{{ webllmSize(selectedWebLLM) }}</span>
+                  <span
+                    v-if="modelRecord(selectedWebLLM)"
+                    class="model-license"
+                    :class="{ 'is-gated': !!badgeOf(selectedWebLLM) }"
+                    :title="`License: ${modelRecord(selectedWebLLM)?.licence}`"
+                  >
+                    {{ modelRecord(selectedWebLLM)?.licence }}<template v-if="badgeOf(selectedWebLLM)"> · {{ badgeOf(selectedWebLLM) }}</template>
+                  </span>
+                </div>
+                <div
+                  v-if="fitOfModel(selectedWebLLM)"
+                  class="model-fit"
+                  :class="{ 'is-bad': !fitOfModel(selectedWebLLM)?.ok }"
+                >
+                  <strong>{{ fitOfModel(selectedWebLLM)?.fit }}</strong> · {{ fitOfModel(selectedWebLLM)?.reason }}
+                </div>
+                <div
+                  v-if="storedBytes(selectedWebLLM) || usesOf(webllmIds).length"
+                  class="model-meta-line"
+                >
+                  <span v-if="storedBytes(selectedWebLLM)"><HardDrive :size="11" /> downloaded, {{ formatSize(storedBytes(selectedWebLLM)) }}</span>
+                  <span
+                    v-if="usesOf(webllmIds).length"
+                    :title="usesOf(webllmIds).map((u) => `${u.flowName}: ${u.label}`).join('\n')"
+                  >used in {{ usedIn(usesOf(webllmIds)) }}</span>
                 </div>
 
                 <!-- Loaded models (several may be loaded at once) -->
@@ -530,7 +707,7 @@ function getCategoryColor(category: string): string {
             </div>
 
             <div
-              v-for="task in AI_MODELS"
+              v-for="task in visibleTasks"
               :key="task.id"
               class="model-card"
               :class="{
@@ -599,8 +776,34 @@ function getCategoryColor(category: string): string {
                       ? `${getSelectedModelLicense(task.id)} license — requires accepting the model terms on Hugging Face before download`
                       : `License: ${getSelectedModelLicense(task.id)}`"
                   >
-                    {{ getSelectedModelLicense(task.id) }}<template v-if="isGatedLicense(getSelectedModelLicense(task.id))"> · gated</template>
+                    {{ getSelectedModelLicense(task.id) }}<template v-if="isGatedLicense(getSelectedModelLicense(task.id))"> · gated</template><template v-else-if="badgeOf(selectedModels.get(task.id))"> · {{ badgeOf(selectedModels.get(task.id)) }}</template>
                   </span>
+                </div>
+
+                <!-- Will it run here, and where it runs once loaded -->
+                <div
+                  v-if="loadedOn(task.id)"
+                  class="model-fit"
+                >
+                  <Zap :size="12" /> {{ loadedOn(task.id) }}
+                </div>
+                <div
+                  v-else-if="fitOfModel(selectedModels.get(task.id))"
+                  class="model-fit"
+                  :class="{ 'is-bad': !fitOfModel(selectedModels.get(task.id))?.ok }"
+                >
+                  <strong>{{ fitOfModel(selectedModels.get(task.id))?.fit }}</strong> · {{ fitOfModel(selectedModels.get(task.id))?.reason }}
+                </div>
+
+                <div
+                  v-if="storedBytes(selectedModels.get(task.id)) || usesOf(taskModelIds(task)).length"
+                  class="model-meta-line"
+                >
+                  <span v-if="storedBytes(selectedModels.get(task.id))"><HardDrive :size="11" /> downloaded, {{ formatSize(storedBytes(selectedModels.get(task.id))) }}</span>
+                  <span
+                    v-if="usesOf(taskModelIds(task)).length"
+                    :title="usesOf(taskModelIds(task)).map((u) => `${u.flowName}: ${u.label}`).join('\n')"
+                  >used in {{ usedIn(usesOf(taskModelIds(task))) }}</span>
                 </div>
 
                 <!-- Auto-load toggle -->
@@ -616,15 +819,6 @@ function getCategoryColor(category: string): string {
                     <Play :size="12" />
                     <span>Load on startup</span>
                   </label>
-                </div>
-
-                <!-- WebGPU indicator -->
-                <div
-                  v-if="supportsWebGPU(task.id) && useWebGPU"
-                  class="webgpu-badge"
-                >
-                  <Zap :size="12" />
-                  <span>WebGPU</span>
                 </div>
 
                 <!-- Loading progress -->
@@ -670,6 +864,102 @@ function getCategoryColor(category: string): string {
                 </button>
               </div>
             </div>
+
+            <!-- MediaPipe: tracking models that load inside their nodes -->
+            <div
+              v-if="showMediaPipe"
+              class="model-card"
+            >
+              <div class="model-info">
+                <div class="model-header">
+                  <h3 class="model-name">
+                    MediaPipe tracking
+                  </h3>
+                  <span
+                    class="category-badge"
+                    :style="{ background: getCategoryColor('vision') }"
+                  >vision · audio</span>
+                </div>
+                <p class="model-description">
+                  Hands, face, pose, objects, segmentation, gestures and sound classes. Each MediaPipe
+                  node loads its own small model when it first runs, on the GPU. Apache-2.0.
+                </p>
+                <ul class="mp-list">
+                  <li
+                    v-for="m in mediapipeRows"
+                    :key="m.id"
+                    :class="{ loaded: m.loaded }"
+                  >
+                    <span
+                      class="mp-dot"
+                      :title="m.loaded ? 'Loaded' : 'Not loaded'"
+                    />
+                    <span class="mp-name">{{ m.name }}</span>
+                    <span class="mp-size">{{ m.size }}</span>
+                    <span
+                      v-if="m.uses.length"
+                      class="mp-used"
+                      :title="m.uses.map((u) => `${u.flowName}: ${u.label}`).join('\n')"
+                    >used in {{ usedIn(m.uses) }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Downloads: what is on disk, biggest first -->
+            <section
+              class="storage-section"
+              aria-labelledby="ai-storage-title"
+            >
+              <div class="storage-head">
+                <h3
+                  id="ai-storage-title"
+                  class="model-name"
+                >
+                  <HardDrive :size="14" /> Downloaded models
+                </h3>
+                <span class="storage-total">{{ stored.length ? formatSize(storedTotal) : 'none yet' }}</span>
+                <button
+                  v-if="unusedRows.length"
+                  class="btn btn-secondary btn-sm"
+                  :disabled="storageBusy"
+                  :title="`Delete ${unusedRows.length} downloaded model(s) that no flow uses and are not loaded. They download again if needed.`"
+                  @click="removeStored(unusedRows.map((r) => r.repo))"
+                >
+                  <Trash2 :size="13" />
+                  <span>Free {{ formatSize(unusedRows.reduce((n, r) => n + r.bytes, 0)) }} unused</span>
+                </button>
+              </div>
+              <ul
+                v-if="storageRows.length"
+                class="storage-list"
+              >
+                <li
+                  v-for="r in storageRows"
+                  :key="r.repo"
+                >
+                  <span
+                    class="st-name"
+                    :title="r.repo"
+                  >{{ r.name }}</span>
+                  <span class="st-size">{{ formatSize(r.bytes) }}</span>
+                  <span class="st-when">{{ r.loaded ? 'loaded now' : ago(r.lastUsed) }}</span>
+                  <span
+                    class="st-used"
+                    :title="r.uses.map((u) => `${u.flowName}: ${u.label}`).join('\n')"
+                  >{{ r.uses.length ? `used in ${usedIn(r.uses)}` : 'no flow uses it' }}</span>
+                  <button
+                    class="chip-x"
+                    :disabled="storageBusy || r.loaded"
+                    :title="r.loaded ? 'Unload it first' : 'Delete the download (it downloads again if needed)'"
+                    :aria-label="`Delete ${r.name}`"
+                    @click="removeStored([r.repo])"
+                  >
+                    <Trash2 :size="12" />
+                  </button>
+                </li>
+              </ul>
+            </section>
           </div>
 
           <!-- Footer -->
@@ -1280,4 +1570,125 @@ function getCategoryColor(category: string): string {
 .modal-leave-to .ai-modal {
   transform: scale(0.95);
 }
+
+.model-fit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-neutral-600);
+}
+
+.model-fit strong {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-success-700);
+}
+
+.model-fit.is-bad strong { color: var(--color-error); }
+/* Phase 4: filter, usage, MediaPipe and downloads */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.filter-chip {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--color-neutral-600);
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-xs);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+}
+
+.filter-chip:hover { border-color: var(--color-neutral-300); }
+
+.filter-chip.active {
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-500);
+}
+
+.filter-chip:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 1px; }
+
+.filter-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--space-1);
+  background: var(--color-neutral-200);
+}
+
+.model-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-500);
+}
+
+.model-meta-line span { display: inline-flex; align-items: center; gap: 3px; }
+
+.mp-list, .storage-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  font-size: var(--font-size-xs);
+}
+
+.mp-list li, .storage-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px 0;
+  border-top: 1px solid var(--color-neutral-100);
+}
+
+.mp-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-neutral-300);
+}
+
+.mp-list li.loaded .mp-dot { background: var(--color-success); }
+.mp-name, .st-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-neutral-700); }
+.mp-size, .st-size { font-family: var(--font-mono); color: var(--color-neutral-500); }
+.mp-used, .st-used, .st-when { color: var(--color-neutral-500); white-space: nowrap; }
+
+.storage-section {
+  padding: var(--space-3);
+  border: 1px dashed var(--color-neutral-300);
+  border-radius: var(--radius-sm);
+}
+
+.storage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.storage-head .model-name { display: inline-flex; align-items: center; gap: var(--space-1); }
+.storage-total { flex: 1; font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--color-neutral-500); }
+
+.storage-list .chip-x {
+  display: inline-flex;
+  padding: 2px;
+  color: var(--color-neutral-500);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.storage-list .chip-x:hover:not(:disabled) { color: var(--color-error); }
+.storage-list .chip-x:disabled { opacity: 0.4; cursor: default; }
 </style>

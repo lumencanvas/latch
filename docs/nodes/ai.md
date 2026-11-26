@@ -1,11 +1,18 @@
 # AI Category
 
-> Local machine learning inference nodes using Transformers.js in LATCH.
+> Local machine learning inference nodes in LATCH. Everything runs on your device.
 
 **Category Color:** Purple (`#A855F7`)
 **Icon:** `brain`
 
-All AI nodes run models locally in the browser using [Transformers.js](https://huggingface.co/docs/transformers.js). Models are downloaded on first use and cached for subsequent runs.
+AI nodes run models locally in the browser on four runtimes:
+
+- [Transformers.js](https://huggingface.co/docs/transformers.js) in two workers (one for long generative jobs): text, captioning and VLA (SmolVLM, LFM2-VL), depth, detection, Segment Anything (SlimSAM), speech recognition, embeddings.
+- [WebLLM](https://webllm.mlc.ai) (WebGPU only): the LLM node.
+- [MediaPipe](https://ai.google.dev/edge/mediapipe): hands, face, pose, gesture, objects, segmentation, audio classification.
+- Raw ONNX Runtime: the YOLO node.
+
+Catalog models are listed in AI Models, where you can pick which one "Default" means for each task. When a flow needs a model that isn't loaded, LATCH asks before downloading it. Models are cached by the browser after the first download.
 
 ---
 

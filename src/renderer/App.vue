@@ -18,12 +18,15 @@ import NodeExplorerModal from './components/modals/NodeExplorerModal.vue'
 import BluetoothDeviceManagerModal from './components/modals/BluetoothDeviceManagerModal.vue'
 import HelpModal from './components/modals/HelpModal.vue'
 import ImportTrustModal from './components/modals/ImportTrustModal.vue'
+import AgentConsentModal from './components/agent/AgentConsentModal.vue'
 import RuntimeStatus from './components/layout/RuntimeStatus.vue'
 import ElectronDeviceChooser from './components/modals/ElectronDeviceChooser.vue'
 import LoadingScreen from './components/branding/LoadingScreen.vue'
 import NotificationToasts from './components/layout/NotificationToasts.vue'
 import { usePersistence } from './composables/usePersistence'
 import { useExecutionEngine } from './composables/useExecutionEngine'
+import { installAgentTools } from './services/agentTools'
+import { initializeNodeRegistry } from './registry'
 import { aiInference } from './services/ai/AIInference'
 
 const route = useRoute()
@@ -49,13 +52,21 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 const executionEngine = useExecutionEngine()
 
 // Provide execution controls to all child components
-provide('executionControls', {
+const executionControls = {
   start: executionEngine.start,
   stop: executionEngine.stop,
   pause: executionEngine.pause,
   resume: executionEngine.resume,
   toggle: executionEngine.toggle,
-})
+}
+provide('executionControls', executionControls)
+
+// Node catalog first: the Controls view and agent tools need it even on a direct /controls load.
+initializeNodeRegistry()
+
+// AI agent tools (WebMCP), on every route: registered only while the person has agent access on.
+const uninstallAgentTools = installAgentTools({ execution: executionControls })
+onUnmounted(uninstallAgentTools)
 
 const isInitialized = ref(false)
 const isRouterReady = ref(false)
@@ -202,6 +213,7 @@ onUnmounted(() => {
       <BluetoothDeviceManagerModal />
       <HelpModal />
       <ImportTrustModal />
+      <AgentConsentModal />
       <RuntimeStatus v-if="isEditorView" />
     </template>
   </div>
