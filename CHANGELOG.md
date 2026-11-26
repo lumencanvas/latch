@@ -34,6 +34,14 @@
 - **Play the Room** replaces Blob Camera among the empty-canvas starters, with Blob Camera's
   inverted look.
 
+### Music
+- **New node: Bellows Workstation.** A whole piece of music from one seed: a song form (intro,
+  verses, choruses, a break, an outro), Markov chord progressions, melodies built from motifs that
+  repeat, vary and answer, Euclidean drums and bass, and several bellows instruments chosen by
+  style (Lo-fi, House, Synthwave, Ambient, Folk, Techno). The same seed always plays the same song,
+  and it keeps evolving pass after pass. Energy brings parts in and out live; Kick, Snare, Hat,
+  Chord, Section and note outputs follow the music for visuals.
+
 ### AI models
 - **Image Captioning works again:** its old default (BLIP) was removed from Hugging Face. It now
   uses SmolVLM, which it shares with the VLA node, so the model loads once.

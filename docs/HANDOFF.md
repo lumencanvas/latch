@@ -6,6 +6,26 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 153): Bellows Workstation
+
+- Asked for after "Generative Festival sucks": seed → music with Markov melodies, Euclidean rhythm,
+  several instruments, "but better".
+- `services/audio/workstation/composer.ts` (pure, tested in `workstation-composer.test.ts`): seeded
+  streams (mulberry32 per label), Bjorklund `euclid`, order-n `Markov`; `plan()` picks key, mode,
+  tempo and one of three forms; `compose(seed, opts, cycle)` writes every bar: functional-harmony
+  Markov progression per section (B lifts to IV/vi, cadence back home), voice-led chords, melody
+  motifs (Euclidean rhythm + order-2 Markov over scale steps trained on a contour corpus, strong
+  beats snapped to chord tones) in A A' B A phrases, Euclidean kick/hat/ghost/bass grooves, fills,
+  chromatic bass approaches. `cycle` keeps the song and varies details.
+- `workstationManager.ts`: one bellows preset voice per part on the shared kernel, `b.clock.at('16n')`
+  scheduling, energy-gated arrangement (`style.enter`), hits handed to the executor when audible.
+  gc/disposeAll registered; kernel client counted.
+- `registry/audio/bellows-workstation/node.ts`.
+- Verified in Chrome: lofi then house switched live, master −10…−29 dB while playing, kernel
+  released on Stop. Not judged by ear; nobody listened yet.
+- Not done: replace the Generative Festival example with a workstation flow; per-part instrument
+  pickers; render/export of a seed.
+
 ## 2026-11-25 (later 152): AI Phase 5: weights cache
 
 - `services/ai/weightCache.ts`: `weightStore()` (memoized `openWeightStore`), and
