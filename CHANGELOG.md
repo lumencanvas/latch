@@ -59,6 +59,8 @@
 - **AI Models lists every model in one place** (MediaPipe too), filterable by what it does, with
   which flows use each one and what is already downloaded. A "Downloaded models" list shows sizes
   and last use, and frees space from models no flow uses.
+- **Model downloads resume:** an interrupted download picks up where it stopped, and two tabs
+  share one download (`@hackbuild/weights`). Models you already downloaded are kept.
 - **Captions and text generation no longer hold up other models:** they run in their own worker, so
   Depth and object detection load and run while a caption is being written. Live AI nodes also pace
   themselves to how long inference takes, and back off further when the flow drops below 24 fps.

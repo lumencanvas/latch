@@ -17,12 +17,30 @@ import {
 } from '@huggingface/transformers'
 import * as ort from 'onnxruntime-web'
 import { isChatModel } from './textGenFormat'
+import { transformersWeightCache, weightStore, type FileProgress } from './weightCache'
 import { parseYoloOutput, parseYolov10Output, isYolov10Output, nms, COCO_LABELS } from './yolo'
 
 // Configure Transformers.js for browser usage
 env.allowLocalModels = false
 // Browser cache setting - can be toggled at runtime
 env.useBrowserCache = true
+
+// Weights go through @hackbuild/weights (resumable, one download across tabs). Files cached
+// before the switch are still read from transformers.js's own Cache API, so nothing re-downloads.
+// Progress of a store download goes to the load of the model it belongs to.
+const storeProgress = new Map<string, (p: FileProgress) => void>()
+let weightsReady: Promise<void> | null = null
+function useWeightStore(): Promise<void> {
+  weightsReady ??= (async () => {
+    const store = await weightStore()
+    if (!store) return
+    let legacy: Cache | null = null
+    try { legacy = await caches.open(env.cacheKey) } catch { /* no Cache API */ }
+    env.customCache = transformersWeightCache(store, { legacy, onProgress: (p) => storeProgress.get(p.repo)?.(p) })
+    env.useCustomCache = env.useBrowserCache
+  })()
+  return weightsReady
+}
 
 // onnxruntime-web (the raw ORT backing the YOLO sessions — a SEPARATE package from
 // the ORT that transformers.js bundles, so it is NOT configured by the lines above)
@@ -181,6 +199,8 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
     if (msg.options?.useBrowserCache !== undefined) {
       env.useBrowserCache = msg.options.useBrowserCache
     }
+    await useWeightStore()
+    env.useCustomCache = env.useBrowserCache && !!env.customCache
 
     // Track progress across multiple files
     const fileProgress = new Map<string, number>()
@@ -224,6 +244,8 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
         })
       },
     }
+
+    storeProgress.set(msg.model, (p) => pipelineOptions.progress_callback({ status: 'progress', file: p.file, loaded: p.loaded, total: p.total ?? undefined }))
 
     // One attempt on one device and precision. A ladder walks several; without one (old callers),
     // the single device/dtype from the options is used.
@@ -287,6 +309,8 @@ async function handleLoad(msg: LoadModelMessage): Promise<void> {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[AI Worker] Failed to load model: ${message}`)
     respond({ type: 'loaded', id: msg.id, success: false, error: message })
+  } finally {
+    storeProgress.delete(msg.model)
   }
 }
 
@@ -738,6 +762,7 @@ function handleDispose(msg: DisposeMessage): void {
 // Handle cache setting change
 function handleSetCache(msg: SetCacheMessage): void {
   env.useBrowserCache = msg.enabled
+  env.useCustomCache = msg.enabled && !!env.customCache
 }
 
 // Handle cache clear
@@ -760,6 +785,12 @@ async function handleClearCache(msg: ClearCacheMessage): Promise<void> {
     }
   } catch (error) {
     console.warn('[AI Worker] Could not clear Cache API:', error)
+  }
+  try {
+    const store = await weightStore()
+    for (const key of (await store?.keys()) ?? []) await store?.evict(key)
+  } catch (error) {
+    console.warn('[AI Worker] Could not clear the weight store:', error)
   }
 
   respond({ type: 'result', id: msg.id, success: true })

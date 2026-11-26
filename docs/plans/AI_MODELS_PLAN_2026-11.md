@@ -1,6 +1,6 @@
 # AI models plan: better WebGPU and vision models, real model control (2026-11-25)
 
-Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1, 2a, 3 and 4 done** (2026-11-25). Next: Phase 5 (weights cache first); Phase 2b only after profiling.
+Status: **approved 2026-11-25** (decisions in §5). **Phases 0, 1, 2a, 3, 4 and the Phase 5 weights cache done** (2026-11-25). Remaining Phase 5 options (wllama, Prompt API, speech, embed) are optional; Phase 2b only after profiling.
 
 Goal: LATCH's AI nodes should use current models that actually load, run on WebGPU where the
 machine has it (and fall back cleanly where it doesn't), and give the person one honest place to
@@ -198,6 +198,31 @@ Done and verified in Chrome on the upgraded runtime (transformers.js 4.3.2, onnx
     frame.
   - It's worth it only if profiling shows MediaPipe hurting frames. It runs at about 30 Hz with
     results reused between frames, so measure first.
+
+## Phase 5 result: weights cache (2026-11-25)
+
+`@hackbuild/weights` 0.1.1 (pinned) is transformers.js's `env.customCache` in both AI workers
+(`services/ai/weightCache.ts`, tested in `weight-cache.test.ts`).
+- Hub files download through the store on `match`: 128 MB parts, resume with `Range` + `If-Range`,
+  one download per file across tabs and workers (Web Locks), SHA-256 as bytes arrive. Store
+  progress goes to the load of the model it belongs to.
+- Files in transformers.js's old Cache API (`transformers-cache`) are still read from there, so
+  nothing re-downloads. New downloads go to the store only.
+- A 404 (optional file) or any other store failure answers "not cached" so transformers.js fetches
+  as before; a full disk (`quota`) or bad checksum is reported.
+- The manager's download list and delete cover both; "Clear Cache" empties both.
+- **Check 6, verified in Chrome (M1, OPFS backend) with transformers.js 4.3.2:**
+  - SlimSAM downloaded through the store (4 files, 20.7 MB) and ran on WebGPU fp16.
+  - SmolVLM-500M (815 MB) in the generative worker; then its 393 MB vision encoder was
+    interrupted by a page reload with one 134 MB part kept, and the next load resumed and
+    finished. The file's SHA-256 equals the LFS oid from the Hub API (`7ecd8703…`).
+  - Hugging Face answers `Range` + `If-Range` with 206. Its ETag on these files is the Xet hash,
+    not the SHA-256, so `If-Range` uses the ETag only as an opaque validator (fine).
+  - Depth v2, cached before the switch, loaded from the old cache in 0.55 s with nothing added to
+    the store.
+- Not verified: Safari/Firefox, Electron's `app://` (OPFS there; the store falls back to IndexedDB
+  if not), and two tabs downloading one file at once in the app (hackbuild verified it headless).
+- Not yet used: pinned SHA-256 per file (`sha256For`) and measured sizes from the store.
 
 ## Phase 4 result (2026-11-25)
 

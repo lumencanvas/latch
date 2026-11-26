@@ -6,6 +6,16 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 152): AI Phase 5: weights cache
+
+- `services/ai/weightCache.ts`: `weightStore()` (memoized `openWeightStore`), and
+  `transformersWeightCache(store, {legacy, onProgress})` used as `env.customCache` in `ai.worker.ts`
+  (both lanes). Old `transformers-cache` entries are read first; no re-downloads.
+- `modelInventory` lists and deletes store entries too; worker clearCache evicts the store.
+- Verified in Chrome (OPFS): fresh download, interrupted-then-resumed 393 MB file whose SHA-256
+  equals the Hub LFS oid, 206 from HF, old-cache load. Details in the plan's Phase 5 result.
+- Next: the bellows workstation (memory: bellows-workstation-next). Optional AI Phase 5 items remain.
+
 ## 2026-11-25 (later 151): AI Phase 4: one Model Manager
 
 - `services/ai/modelInventory.ts`: `modelUsage(flows)`, `listStoredModels()` / `deleteStoredModel()`

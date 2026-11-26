@@ -3,6 +3,7 @@ import { nodeSpecs } from '@/registry/nodeRegistry'
 import { AI_MODELS, aiInference } from './AIInference'
 import { fitFor, licenceBadge, modelRecord } from './modelRecords'
 import { forgetModelUse, repoMatches } from './modelStorage'
+import { repoOfKey, weightStore } from './weightCache'
 
 export { lastUsedOf, markModelUsed, repoMatches } from './modelStorage'
 
@@ -88,7 +89,6 @@ async function sizeOf(res: Response | undefined): Promise<number> {
  * API), grouped by repo, biggest first. Empty where the Cache API is missing. Never throws.
  */
 export async function listStoredModels(): Promise<StoredModel[]> {
-  if (typeof caches === 'undefined') return []
   const byRepo = new Map<string, StoredModel>()
   try {
     for (const name of await caches.keys()) {
@@ -103,14 +103,26 @@ export async function listStoredModels(): Promise<StoredModel[]> {
       }
     }
   } catch { /* storage blocked: show nothing rather than fail */ }
+  // The weight store (Phase 5): complete files only; a part-downloaded file resumes on next load.
+  try {
+    const store = await weightStore()
+    for (const key of (await store?.keys()) ?? []) {
+      const repo = repoOfKey(key)
+      const meta = repo ? await store!.meta(key) : null
+      if (!repo || !meta) continue
+      const entry = byRepo.get(repo) ?? { repo, bytes: 0, files: 0 }
+      entry.bytes += meta.parts.reduce((n, b) => n + b, 0)
+      entry.files++
+      byRepo.set(repo, entry)
+    }
+  } catch { /* no store */ }
   return [...byRepo.values()].sort((a, b) => b.bytes - a.bytes)
 }
 
 /** Delete one model's downloaded files from every cache. Returns the bytes freed. */
 export async function deleteStoredModel(modelId: string): Promise<number> {
-  if (typeof caches === 'undefined') return 0
   let freed = 0
-  for (const name of await caches.keys()) {
+  for (const name of typeof caches === 'undefined' ? [] : await caches.keys()) {
     const cache = await caches.open(name)
     for (const req of await cache.keys()) {
       const repo = repoOfUrl(req.url)
@@ -119,6 +131,15 @@ export async function deleteStoredModel(modelId: string): Promise<number> {
       await cache.delete(req)
     }
   }
+  try {
+    const store = await weightStore()
+    for (const key of (await store?.keys()) ?? []) {
+      const repo = repoOfKey(key)
+      if (!repo || !repoMatches(repo, modelId)) continue
+      freed += (await store!.meta(key))?.parts.reduce((n, b) => n + b, 0) ?? 0
+      await store!.evict(key)
+    }
+  } catch { /* no store */ }
   forgetModelUse(modelId)
   return freed
 }
