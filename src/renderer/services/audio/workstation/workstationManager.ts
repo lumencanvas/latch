@@ -41,6 +41,9 @@ interface Rec {
   /** Scheduled ahead by the clock; handed to the flow once their time comes. */
   pending: Hit[]
   wired: boolean
+  /** Last bass and lead notes heard, held between notes. */
+  lastBass: number
+  lastLead: number
 }
 
 const recs = new Map<string, Rec>()
@@ -57,7 +60,7 @@ registerKernelClient('bellows-workstation', () => [...recs.values()].filter((r) 
 
 const newRec = (): Rec => ({
   gen: -1, b: null, booting: false, error: null, sounds: '', inst: {}, unsub: null, pieceKey: '', piece: null,
-  cfg: null, cycle: 0, bar: 0, step: 0, pending: [], wired: false,
+  cfg: null, cycle: 0, bar: 0, step: 0, pending: [], wired: false, lastBass: 0, lastLead: 0,
 })
 
 function errText(e: unknown): string {
@@ -198,9 +201,13 @@ export function readWorkstation(nodeId: string, now: number) {
   if (!rec?.piece) return null
   const due = rec.pending.filter((h) => h.t <= now)
   if (due.length) rec.pending = rec.pending.filter((h) => h.t > now)
+  for (const h of due) {
+    if (h.part === 'bass') rec.lastBass = h.midi
+    if (h.part === 'lead') rec.lastLead = h.midi
+  }
   // The clock runs ahead of the speakers, so report the bar that is audible, not scheduled.
   const bar = rec.piece.bars[rec.bar]
-  return { due, piece: rec.piece, bar, barIndex: rec.bar, cycle: rec.cycle, playing: !!rec.unsub, error: rec.error }
+  return { due, piece: rec.piece, bar, barIndex: rec.bar, lastBass: rec.lastBass, lastLead: rec.lastLead, cycle: rec.cycle, playing: !!rec.unsub, error: rec.error }
 }
 
 function retire(id: string, rec: Rec, releaseSeconds: number): void {

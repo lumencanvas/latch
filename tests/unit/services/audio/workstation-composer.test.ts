@@ -63,4 +63,17 @@ describe('workstation composer', () => {
     expect(p.bpm).toBeLessThanOrEqual(126)
     expect(plan('x', { style: 'house', bpm: 99 }).bpm).toBe(99)
   })
+
+  it('includes the bellows workbench moods; Strike keeps its melody pentatonic', () => {
+    for (const id of ['ember', 'draw', 'temper', 'billow', 'quench', 'strike']) expect(STYLES.some((s) => s.id === id), id).toBe(true)
+    const p = compose('strike-check', { style: 'strike', key: 'A' })
+    expect(p.scale).toBe('minor pentatonic')
+    expect(p.bpm).toBe(126)
+    const penta = new Set([9, 0, 2, 4, 7]) // A C D E G
+    const melodic = p.bars.flatMap((b) => b.events).filter((e) => e.part === 'lead' || e.part === 'arp')
+    expect(melodic.length).toBeGreaterThan(50)
+    expect(melodic.every((e) => penta.has(e.midi % 12))).toBe(true)
+    // Draw and Quench have no kit, as in the workbench.
+    expect(compose('x', { style: 'draw' }).bars.some((b) => b.events.some((e) => e.part === 'kick'))).toBe(false)
+  })
 })

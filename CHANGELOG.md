@@ -38,9 +38,12 @@
 - **New node: Bellows Workstation.** A whole piece of music from one seed: a song form (intro,
   verses, choruses, a break, an outro), Markov chord progressions, melodies built from motifs that
   repeat, vary and answer, Euclidean drums and bass, and several bellows instruments chosen by
-  style (Lo-fi, House, Synthwave, Ambient, Folk, Techno). The same seed always plays the same song,
+  style (Lo-fi, House, Synthwave, Ambient, Folk, Techno, plus the bellows workbench moods Ember,
+  Draw, Temper, Billow, Quench and Strike). The same seed always plays the same song,
   and it keeps evolving pass after pass. Energy brings parts in and out live; Kick, Snare, Hat,
   Chord, Section and note outputs follow the music for visuals.
+- **New example: Seed Band.** Type a seed and a song plays, with a synthwave horizon that pumps with
+  the kick, flashes on the snare and takes its colour from the melody.
 
 ### AI models
 - **Image Captioning works again:** its old default (BLIP) was removed from Hugging Face. It now

@@ -6,6 +6,31 @@ and what's open. Detailed analysis lives in the dated docs under `docs/` (esp.
 
 ---
 
+## 2026-11-25 (later 155): Workstation: bellows moods, Seed Band example
+
+- Added the bellows workbench moods (`apps/workbench/src/lib/composer.ts` MOODS: EMBER, DRAW,
+  TEMPER, BILLOW, QUENCH, STRIKE) as styles: their engines, modes, tempos, swing and Euclidean
+  pulses (keys → lead, chime → arp, pad → chords; texture not carried over). New scales
+  `harmonic minor` and `minor pentatonic` (harmonised in natural minor; lead/arp snapped to five
+  notes). New `drums: 'kit'` driven by one pulse count, like the workbench kit.
+- Bass/Lead Note outputs now hold the last note heard.
+- Example `seed-band` (gallery, Music & sound): workstation → audio out; kick/snare → envelopes,
+  lead → hue, intensity → smoothed energy, into `SEED_BAND_GLSL`. Verified playing in Chrome
+  (visual envelopes peak 0.99/0.89; Strike at 126 BPM, −17…−23 dB, no errors).
+
+## 2026-11-25 (later 154): What's left (state of PR #8)
+
+PR #8 (`more-examples`, Release 1.5.0) holds all of this session's work. Do NOT merge; merging
+deploys latch.design.
+- **Workstation:** awaiting the maintainer's listening feedback (Seed Band example added). Optional: per-part instrument pickers, WAV export of a
+  seed (`b.render`).
+- **AI (optional):** fit in node model selects; measured sizes and pinned SHA-256 (`sha256For`)
+  from the weight store; Phase 2b (MediaPipe worker) only after profiling; Phase 5 extras (wllama,
+  Prompt API, Whisper turbo / Moonshine, Kokoro "Speak (neural)", model2vec embed).
+- **Unverified:** Electron app after this session (weights store on `app://`, bellows clock, relay);
+  Safari/Firefox; `capture_output` end to end (needs a person); hardware nodes (Muse, printer,
+  Buzz); two tabs sharing one download in LATCH.
+
 ## 2026-11-25 (later 153): Bellows Workstation
 
 - Asked for after "Generative Festival sucks": seed → music with Markov melodies, Euclidean rhythm,

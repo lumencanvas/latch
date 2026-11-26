@@ -92,7 +92,13 @@ export const SCALES: Record<string, number[]> = {
   mixolydian: [0, 2, 4, 5, 7, 9, 10],
   phrygian: [0, 1, 3, 5, 7, 8, 10],
   lydian: [0, 2, 4, 6, 7, 9, 11],
+  'harmonic minor': [0, 2, 3, 5, 7, 8, 11],
+  // Pentatonic moods harmonise in natural minor; the melody and arpeggio keep to these five notes.
+  'minor pentatonic': [0, 2, 3, 5, 7, 8, 10],
 }
+
+/** Pitch classes (from the tonic) the lead and arpeggio are held to, for scales narrower than seven notes. */
+const MELODY_SUBSET: Record<string, number[]> = { 'minor pentatonic': [0, 3, 5, 7, 10] }
 
 export const KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
 
@@ -153,9 +159,13 @@ export interface Style {
   sound: Record<Part, string>
   bass: 'pulse' | 'euclid' | 'sustain' | 'octaves'
   chords: 'pad' | 'stabs' | 'strum'
-  drums: 'four' | 'boom' | 'break' | 'soft' | 'none'
+  drums: 'four' | 'boom' | 'break' | 'soft' | 'kit' | 'none'
   /** Lead notes per bar (Euclidean pulses), low and high. */
   leadPulses: [number, number]
+  /** Fixed Euclidean pulses (the bellows workbench moods set these per track). */
+  kitPulses?: number
+  bassPulses?: number
+  arpPulses?: number
   /** Energy each part needs before it plays (arrangement). */
   enter: Record<Part, number>
 }
@@ -192,6 +202,38 @@ export const STYLES: Style[] = [
     id: 'techno', name: 'Techno', bpm: [126, 134], swing: 0, scales: ['minor', 'phrygian'], sevenths: false,
     sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'sub-bass', chords: 'motion-pad', lead: 'fm-bell-lead', arp: 'acid-bass' },
     bass: 'euclid', chords: 'stabs', drums: 'four', leadPulses: [2, 5], enter: { ...ENTER_DEFAULT, kick: 0.25, snare: 2, lead: 0.7, arp: 0.6 },
+  },
+  // The bellows workbench's own moods (apps/workbench/src/lib/composer.ts MOODS): their engines,
+  // modes, tempos, swing and Euclidean pulse counts. keys → lead, chime → arpeggio, pad → chords.
+  {
+    id: 'ember', name: 'Ember (bellows)', bpm: [76, 76], swing: 0.14, scales: ['minor'], sevenths: true,
+    sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'va', chords: 'formant', lead: 'pluck', arp: 'pluck' },
+    bass: 'euclid', chords: 'pad', drums: 'kit', leadPulses: [5, 5], kitPulses: 5, bassPulses: 4, arpPulses: 3, enter: { ...ENTER_DEFAULT },
+  },
+  {
+    id: 'draw', name: 'Draw (bellows)', bpm: [62, 62], swing: 0.06, scales: ['dorian'], sevenths: true,
+    sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'harmonic', chords: 'additive', lead: 'fm', arp: 'modal' },
+    bass: 'sustain', chords: 'pad', drums: 'none', leadPulses: [3, 3], bassPulses: 2, arpPulses: 2, enter: { ...ENTER_DEFAULT, arp: 0.5 },
+  },
+  {
+    id: 'temper', name: 'Temper (bellows)', bpm: [112, 112], swing: 0.08, scales: ['dorian'], sevenths: false,
+    sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'va', chords: 'formant', lead: 'fm', arp: 'pluck' },
+    bass: 'euclid', chords: 'pad', drums: 'kit', leadPulses: [6, 6], kitPulses: 9, bassPulses: 7, arpPulses: 4, enter: { ...ENTER_DEFAULT },
+  },
+  {
+    id: 'billow', name: 'Billow (bellows)', bpm: [88, 88], swing: 0.12, scales: ['lydian'], sevenths: true,
+    sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'va', chords: 'additive', lead: 'pluck', arp: 'westcoast' },
+    bass: 'euclid', chords: 'pad', drums: 'kit', leadPulses: [5, 5], kitPulses: 6, bassPulses: 4, arpPulses: 5, enter: { ...ENTER_DEFAULT },
+  },
+  {
+    id: 'quench', name: 'Quench (bellows)', bpm: [70, 70], swing: 0.04, scales: ['harmonic minor'], sevenths: false,
+    sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'fm', chords: 'formant', lead: 'fm', arp: 'modal' },
+    bass: 'euclid', chords: 'pad', drums: 'none', leadPulses: [4, 4], bassPulses: 3, arpPulses: 3, enter: { ...ENTER_DEFAULT, arp: 0.5 },
+  },
+  {
+    id: 'strike', name: 'Strike (bellows)', bpm: [126, 126], swing: 0.16, scales: ['minor pentatonic'], sevenths: false,
+    sound: { kick: 'kick', snare: 'snare', hat: 'hat', clap: 'clap', bass: 'va', chords: 'formant', lead: 'pluck', arp: 'pluck' },
+    bass: 'euclid', chords: 'pad', drums: 'kit', leadPulses: [7, 7], kitPulses: 11, bassPulses: 6, arpPulses: 5, enter: { ...ENTER_DEFAULT, kick: 0.25 },
   },
 ]
 
@@ -294,6 +336,15 @@ function voiceLead(tones: number[], prev: number[] | null): number[] {
   return best
 }
 
+/** The nearest note whose pitch class (from the tonic) is in `subset`; ties go down. */
+function snapTo(midi: number, tonic: number, subset: readonly number[]): number {
+  for (let d = 0; d < 6; d++) {
+    if (subset.includes((((midi - d - tonic) % 12) + 12) % 12)) return midi - d
+    if (subset.includes((((midi + d - tonic) % 12) + 12) % 12)) return midi + d
+  }
+  return midi
+}
+
 /** Roman numeral with its quality: upper case major, lower case minor, ° diminished. */
 function chordName(tones: number[], degree: number): string {
   const third = tones[1] - tones[0]
@@ -350,6 +401,7 @@ export function compose(seed: string, opts: ComposeOptions = {}, cycle = 0): Pie
   const tonic = 60 + KEYS.indexOf(key) // lead register; bass and chords move from here
   const leadTonic = tonic + (tonic < 66 ? 12 : 0) // around C5
   const vary = rngFor(seed, `cycle:${cycle}`)
+  const subset = MELODY_SUBSET[scale]
 
   // Per section type: a progression, a groove and a motif, fixed by the seed.
   const sections = new Map<string, { prog: number[]; motifA: Motif; motifB: Motif; groove: Rng }>()
@@ -366,9 +418,9 @@ export function compose(seed: string, opts: ComposeOptions = {}, cycle = 0): Pie
 
   const g = rngFor(seed, 'groove')
   const kickRot = g.int(3)
-  const hatPulses = 5 + g.int(6)
+  const hatPulses = style.kitPulses ?? 5 + g.int(6)
   const hatRot = g.int(4)
-  const bassPulses = 3 + g.int(3)
+  const bassPulses = style.bassPulses ?? 3 + g.int(3)
   const bassRot = g.int(3)
   const stabRot = 1 + g.int(3)
 
@@ -385,7 +437,8 @@ export function compose(seed: string, opts: ComposeOptions = {}, cycle = 0): Pie
       const root = degreeToMidi(sc, tonic - 24, degree)
       const fifth = degreeToMidi(sc, tonic - 24, degree + 4) // the scale's fifth (diminished on vii)
       const events: NoteEvent[] = []
-      const add = (part: Part, step: number, midi: number, vel: number, len = 1) => events.push({ part, step, midi, vel: Math.max(0.05, Math.min(1, vel)), len })
+      const add = (part: Part, step: number, midi: number, vel: number, len = 1) =>
+        events.push({ part, step, midi: (part === 'lead' || part === 'arp') && subset ? snapTo(midi, tonic, subset) : midi, vel: Math.max(0.05, Math.min(1, vel)), len })
       const lastOfSection = i === length - 1
       const fill = lastOfSection && energy > 0.5 && vary.chance(0.7)
 
@@ -402,6 +455,12 @@ export function compose(seed: string, opts: ComposeOptions = {}, cycle = 0): Pie
         euclid(2, 16, 3).forEach((v, s) => v && s !== 4 && s !== 12 && add('snare', s, 38, 0.25))
         for (let s = 0; s < 16; s += 2) add('hat', s, 42, s % 4 === 0 ? 0.65 : 0.4)
         add('clap', 12, 39, 0.6)
+      } else if (style.drums === 'kit') {
+        // The workbench kit: one Euclidean density drives kick, backbeat and hats together.
+        euclid(Math.max(2, Math.round(hatPulses / 3)), 16, kickRot).forEach((v, s) => v && add('kick', s, 36, s === 0 ? 1 : 0.85))
+        add('kick', 0, 36, 1)
+        for (const s of hatPulses >= 6 ? [4, 12] : [12]) add('snare', s, 38, 0.85)
+        euclid(hatPulses, 16, hatRot).forEach((v, s) => v && add('hat', s, 42, s % 4 === 0 ? 0.7 : 0.42))
       } else if (style.drums === 'soft') {
         add('kick', 0, 36, 0.6)
         if (sec.groove.chance(0.5)) add('kick', 10, 36, 0.45)
@@ -431,7 +490,7 @@ export function compose(seed: string, opts: ComposeOptions = {}, cycle = 0): Pie
 
       // Arpeggio: chord tones climbing over two octaves in 16ths, gated by a Euclidean pattern.
       const arpTones = [...voicing, ...voicing.map((m) => m + 12)]
-      euclid(10 + (hatPulses % 5), 16, 0).forEach((v, s) => v && add('arp', s, arpTones[s % arpTones.length], 0.4 + (s % 4 === 0 ? 0.15 : 0), 1))
+      euclid(style.arpPulses ? style.arpPulses * 2 : 10 + (hatPulses % 5), 16, 0).forEach((v, s) => v && add('arp', s, arpTones[s % arpTones.length], 0.4 + (s % 4 === 0 ? 0.15 : 0), 1))
 
       // Lead: phrases of motifs — A, A refitted, B (an answer), A again ending home.
       if (name === 'A' || name === 'B' || (name === 'outro' && i < 2)) {

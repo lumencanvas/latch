@@ -95,9 +95,10 @@ const executor: NodeExecutorFn = (ctx: ExecutionContext) => {
     for (const h of st.due) {
       if (h.part === 'kick' || h.part === 'snare' || h.part === 'hat') out.set(h.part, 1)
       if (h.part === 'clap') out.set('snare', 1)
-      if (h.part === 'bass') out.set('bass', h.midi)
-      if (h.part === 'lead') { out.set('lead', h.midi); out.set('leadHit', 1) }
+      if (h.part === 'lead') out.set('leadHit', 1)
     }
+    out.set('bass', st.lastBass)
+    out.set('lead', st.lastLead)
     out.set('chord', st.bar.chord.name)
     out.set('chordNotes', st.bar.chord.midi)
     out.set('section', st.bar.section)

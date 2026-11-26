@@ -212,9 +212,82 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = vec4(mix(bg, ink, spot), 1.0);
 }`
 
+const SEED_BAND_GLSL = `// Seed Band: a synthwave horizon that plays along. Kick pumps the sun and grid, snare flashes
+// the scanlines, the lead note sets the hue and the section's intensity opens the sky.
+uniform float u_kick;
+uniform float u_snare;
+uniform float u_hue;
+uniform float u_energy;
+
+vec3 pal(float t) { return 0.5 + 0.5 * cos(6.2831 * (t + vec3(0.0, 0.33, 0.67))); }
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+  float horizon = -0.05;
+  vec3 tint = pal(u_hue * 0.6 + 0.55);
+  // Sky: deep violet to the tint, brighter as the music builds.
+  vec3 col = mix(vec3(0.03, 0.01, 0.08), tint * (0.35 + 0.5 * u_energy), smoothstep(0.6, horizon, uv.y));
+  // Sun with slices; the kick swells it.
+  vec2 sp = uv - vec2(0.0, 0.16);
+  float r = 0.24 + 0.03 * u_kick;
+  float sun = smoothstep(r, r - 0.006, length(sp));
+  float slices = step(0.5, fract((sp.y + iTime * 0.03) * 22.0)) + step(0.06, sp.y);
+  vec3 sunCol = mix(vec3(1.0, 0.85, 0.3), vec3(1.0, 0.2, 0.55), smoothstep(0.2, -0.2, sp.y));
+  col = mix(col, sunCol, sun * clamp(slices, 0.0, 1.0));
+  col += sunCol * 0.25 * exp(-6.0 * max(0.0, length(sp) - r)) * (0.6 + u_kick);
+  // Grid floor rushing toward the viewer; the kick lights the lines.
+  if (uv.y < horizon) {
+    float z = 0.25 / (horizon - uv.y);
+    vec2 g = vec2(uv.x * z, z + iTime * (0.8 + u_energy));
+    vec2 l = abs(fract(g) - 0.5) / fwidth(g);
+    float line = 1.0 - min(min(l.x, l.y), 1.0);
+    col = mix(vec3(0.02, 0.0, 0.05), tint * (0.8 + 1.5 * u_kick), line * smoothstep(12.0, 1.0, z));
+  }
+  // Snare: a quick scanline flash.
+  col += vec3(0.9, 0.7, 1.0) * u_snare * 0.25 * (0.5 + 0.5 * sin(fragCoord.y * 1.5));
+  fragColor = vec4(col, 1.0);
+}`
+
 const YOLO_ONNX = 'https://huggingface.co/onnx-community/yolov10s/resolve/main/onnx/model.onnx'
 
 export const gallerySnippets: FlowSnippet[] = [
+  {
+    id: 'seed-band',
+    name: 'Seed Band',
+    description: 'Type a seed and a whole song plays: the Bellows Workstation writes chords, melodies and grooves from it, and a synthwave horizon moves with the kick, the snare and the melody',
+    category: 'audio',
+    persona: 'Music & sound',
+    relatedNodes: ['bellows-workstation', 'audio-output', 'envelope-visual', 'map-range', 'slider', 'shader', 'main-output'],
+    nodes: [
+      node('sb-1', 'bellows-workstation', 0, 0, { seed: 'night drive', style: 'synthwave' }),
+      node('sb-2', 'audio-output', 380, -160),
+      node('sb-3', 'slider', -320, 120, { value: 0.5 }),
+      node('sb-4', 'map-range', -320, 260, { inMin: 0, inMax: 1, outMin: -1, outMax: 1 }),
+      node('sb-5', 'envelope-visual', 380, 0, { attack: 0.005, decay: 0.28, sustain: 0, release: 0.1 }),
+      node('sb-6', 'envelope-visual', 380, 160, { attack: 0.005, decay: 0.15, sustain: 0, release: 0.05 }),
+      node('sb-7', 'map-range', 380, 320, { inMin: 48, inMax: 96, outMin: 0, outMax: 1 }),
+      node('sb-8', 'smooth', 380, 480, { factor: 0.03 }),
+      node('sb-9', 'shader', 720, 0, {
+        preset: 'custom', code: SEED_BAND_GLSL,
+        _dynamicInputs: floatPorts(['u_kick', 'Kick'], ['u_snare', 'Snare'], ['u_hue', 'Melody hue'], ['u_energy', 'Intensity']),
+      }),
+      node('sb-10', 'main-output', 1060, 0),
+    ],
+    edges: wires(
+      'sb-1.audio > sb-2.audio',
+      'sb-3.value > sb-4.value',
+      'sb-4.result > sb-1.energy',
+      'sb-1.kick > sb-5.trigger',
+      'sb-1.snare > sb-6.trigger',
+      'sb-1.lead > sb-7.value',
+      'sb-1.intensity > sb-8.value',
+      'sb-5.value > sb-9.u_kick',
+      'sb-6.value > sb-9.u_snare',
+      'sb-7.result > sb-9.u_hue',
+      'sb-8.result > sb-9.u_energy',
+      'sb-9.texture > sb-10.texture',
+    ),
+  },
   // ── Showcase ─────────────────────────────────────────────────────────────────
   {
     id: 'inventory-of-a-room',
