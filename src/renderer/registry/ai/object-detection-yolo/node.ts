@@ -93,7 +93,7 @@ export const objectDetectionYoloExecutor: NodeExecutorFn = (ctx: ExecutionContex
   const iou = (ctx.controls.get('iou') as number) ?? 0.45
   return runLiveDetection(
     ctx,
-    (img) => aiInference.detectYolo(img, modelUrl, threshold, iou) as Promise<Detection[]>,
+    (img, onProgress) => aiInference.detectYolo(img, modelUrl, threshold, iou, onProgress) as Promise<Detection[]>,
     overlayOptions(ctx, 30)
   )
 }

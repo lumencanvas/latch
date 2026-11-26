@@ -781,7 +781,8 @@ class AIInferenceService extends WorkerFacade {
     image: ImageData | HTMLCanvasElement | HTMLImageElement | string,
     modelUrl: string,
     threshold = 0.25,
-    iou = 0.45
+    iou = 0.45,
+    onProgress?: ProgressCallback
   ): Promise<Array<{ label: string; score: number; box: { xmin: number; ymin: number; xmax: number; ymax: number } }>> {
     const imageData = this.imageToSerializable(image)
 
@@ -793,7 +794,7 @@ class AIInferenceService extends WorkerFacade {
         method: 'detectYolo',
         args: [imageData, { threshold, iou }],
       },
-      undefined,
+      onProgress,
       300000 // first call downloads the model — allow up to 5 min
     )
   }

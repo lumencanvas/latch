@@ -18,6 +18,7 @@ import {
 import * as ort from 'onnxruntime-web'
 import { isChatModel } from './textGenFormat'
 import { transformersWeightCache, weightStore, type FileProgress } from './weightCache'
+import { WeightError } from '@hackbuild/weights'
 import { parseYoloOutput, parseYolov10Output, isYolov10Output, nms, COCO_LABELS } from './yolo'
 
 // Configure Transformers.js for browser usage
@@ -323,13 +324,34 @@ const YOLO_SIZE = 640
 // One InferenceSession per model URL, lazily created and shared across calls.
 const yoloSessions = new Map<string, Promise<ort.InferenceSession>>()
 
-function getYoloSession(url: string): Promise<ort.InferenceSession> {
+function getYoloSession(url: string, onProgress?: (fraction: number) => void): Promise<ort.InferenceSession> {
   let p = yoloSessions.get(url)
   if (!p) {
-    p = ort.InferenceSession.create(url, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
-    }).catch((e) => {
+    p = (async () => {
+      // WebGPU where the browser has it (the heavy YOLOv9 models are many times faster there and
+      // leave the CPU to the rest of the flow); WASM otherwise or if WebGPU can't take the graph.
+      const gpu = typeof navigator !== 'undefined' && 'gpu' in navigator
+      const opts: ort.InferenceSession.SessionOptions = {
+        executionProviders: gpu ? ['webgpu', 'wasm'] : ['wasm'],
+        graphOptimizationLevel: 'all',
+      }
+      // Weights through the store: cached across restarts, resumable, one download across tabs,
+      // with progress. A URL the store can't fetch goes straight to onnxruntime as before.
+      const store = env.useBrowserCache ? await weightStore() : null
+      if (store) {
+        try {
+          const blob = await store.get(
+            { url, licence: 'see the model card' },
+            { onProgress: (q) => { if (q.total) onProgress?.(q.loaded / q.total) } },
+          )
+          return await ort.InferenceSession.create(new Uint8Array(await blob.arrayBuffer()), opts)
+        } catch (e) {
+          if (e instanceof WeightError && (e.code === 'quota' || e.code === 'sha256')) throw e
+          console.warn('[AI Worker] YOLO weights not from the store, fetching directly:', e)
+        }
+      }
+      return ort.InferenceSession.create(url, opts)
+    })().catch((e) => {
       yoloSessions.delete(url) // don't cache a failed load — allow retry
       throw e
     })
@@ -338,11 +360,23 @@ function getYoloSession(url: string): Promise<ort.InferenceSession> {
   return p
 }
 
+// onnxruntime-web's WASM backend runs one session at a time: a second run() while one is in
+// flight (two YOLO nodes, or a model switched mid-run) fails with "Session already started" /
+// "Session mismatch". Queue every YOLO run behind the last.
+let yoloRunTail: Promise<unknown> = Promise.resolve()
+function runYolo(session: ort.InferenceSession, feeds: Record<string, ort.Tensor>): Promise<ort.InferenceSession.OnnxValueMapType> {
+  const run = yoloRunTail.then(() => session.run(feeds))
+  yoloRunTail = run.catch(() => undefined)
+  return run
+}
+
 // Release a YOLO InferenceSession's WASM heap. The map stores the in-flight
 // create() promise, so await it (swallowing a failed load) before release().
 async function releaseYoloSession(p: Promise<ort.InferenceSession>): Promise<void> {
   try {
-    await (await p).release()
+    const session = await p
+    await yoloRunTail // never release a session mid-run
+    await session.release()
   } catch {
     // load failed or already released — nothing to free
   }
@@ -396,7 +430,13 @@ async function handleYoloInfer(msg: InferenceMessage): Promise<void> {
       { threshold?: number; iou?: number }?,
     ]
     // msg.model carries the model URL.
-    const session = await getYoloSession(msg.model)
+    let lastPct = -1
+    const session = await getYoloSession(msg.model, (f) => {
+      const pct = Math.floor(f * 100)
+      if (pct === lastPct) return
+      lastPct = pct
+      respond({ type: 'progress', id: msg.id, progress: pct, status: 'progress' })
+    })
     const img = new ImageData(toPixels(serialized.data), serialized.width, serialized.height)
     const { tensor, scale, padX, padY } = letterboxToTensor(img)
 
@@ -404,7 +444,7 @@ async function handleYoloInfer(msg: InferenceMessage): Promise<void> {
     const feeds: Record<string, ort.Tensor> = {
       [inputName]: new ort.Tensor('float32', tensor, [1, 3, YOLO_SIZE, YOLO_SIZE]),
     }
-    const result = await session.run(feeds)
+    const result = await runYolo(session, feeds)
     const output = result[session.outputNames[0]]
     const dims = Array.from(output.dims)
     const data = output.data as Float32Array

@@ -554,7 +554,7 @@ export function drawDetectionHud(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  info: { count: number; topLabel: string; detectMs: number; loading: boolean; accent: string }
+  info: { count: number; topLabel: string; detectMs: number; loading: boolean; loadPct?: number; accent: string }
 ): void {
   const fontPx = Math.max(12, Math.round(((width + height) / 2) * 0.022))
   const pad = Math.round(fontPx * 0.55)
@@ -562,7 +562,10 @@ export function drawDetectionHud(
   parts.push(`${info.count} object${info.count === 1 ? '' : 's'}`)
   if (info.topLabel) parts.push(info.topLabel)
   if (info.detectMs > 0) parts.push(`${Math.round(info.detectMs)} ms`)
-  const text = (info.loading ? 'loading…   ·   ' : '') + parts.join('   ·   ')
+  const pct = info.loadPct ?? -1
+  const text = info.loading && pct >= 0 && pct < 100
+    ? `downloading model ${pct}%`
+    : (info.loading ? 'loading…   ·   ' : '') + parts.join('   ·   ')
 
   ctx.save()
   ctx.font = `600 ${fontPx}px ui-sans-serif, system-ui, -apple-system, sans-serif`
@@ -662,7 +665,7 @@ export function easedBoxes(nodeId: string, current: Detection[], now = performan
 
 export function runLiveDetection(
   ctx: ExecutionContext,
-  detect: (imageData: ImageData) => Promise<Detection[]>,
+  detect: (imageData: ImageData, onProgress?: (percent: number) => void) => Promise<Detection[]>,
   opts: LiveOverlayOptions
 ): Map<string, unknown> {
   const outputs = new Map<string, unknown>()
@@ -730,7 +733,8 @@ export function runLiveDetection(
     const operation = (async () => {
       const startedAt = performance.now()
       try {
-        const detections = await detect(imageData)
+        const detections = await detect(imageData, (pct) => setCached(`${ctx.nodeId}:loadPct`, pct))
+        setCached(`${ctx.nodeId}:loadPct`, -1)
         if (isNodeDisposed(ctx.nodeId)) return
         // Boxes glide from where they were drawn to the new result (see easedBoxes).
         setCached(`${ctx.nodeId}:prevBoxes`, easedBoxes(ctx.nodeId, getCached<Detection[]>(`${ctx.nodeId}:detections`, [])))
@@ -747,6 +751,7 @@ export function runLiveDetection(
       } catch (error) {
         console.error('[AI] Live detection error:', error)
         setCached(`${ctx.nodeId}:loading`, false)
+        setCached(`${ctx.nodeId}:loadPct`, -1)
         setCached(`${ctx.nodeId}:detectError`, error instanceof Error ? error.message : String(error))
       } finally {
         pendingOperations.delete(ctx.nodeId)
@@ -794,6 +799,7 @@ export function runLiveDetection(
         topLabel: getCached(`${ctx.nodeId}:topLabel`, ''),
         detectMs: getCached(`${ctx.nodeId}:detectMs`, 0),
         loading: pendingOperations.has(ctx.nodeId) || getCached(`${ctx.nodeId}:loading`, false),
+        loadPct: getCached(`${ctx.nodeId}:loadPct`, -1),
         accent: boxColor,
       })
     }
