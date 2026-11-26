@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.1: YOLO on WebGPU, a constellation for Inventory of a Room
+
+- **YOLO runs on WebGPU** where the browser has it: YOLOv9-C went from 6.5 s to 0.5 s a frame.
+- **YOLO weights download once** through the weight store, resume if interrupted, and show
+  "downloading model n%" on the node. Before, every reload fetched the model again with no
+  progress, which looked like a hang.
+- **Switching YOLO models mid-flow** no longer fails with "Session already started".
+- **Inventory of a Room:** everything named becomes a star in a growing constellation; a new
+  name ripples through the picture, with an aurora and a bloom pass (replaces the 3D ring).
+
 ## 1.5.0: AI agents can build flows (WebMCP), 14 new example flows
 
 ### AI agent access (WebMCP)

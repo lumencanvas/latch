@@ -212,6 +212,58 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   fragColor = vec4(mix(bg, ink, spot), 1.0);
 }`
 
+const CONSTELLATION_GLSL = `// Inventory of a Room, the memory: every thing named becomes a star, joined in the order it
+// was seen, so the room's inventory draws a constellation over the picture. A new name sends a
+// ripple out of its star that bends the image; the bass makes the stars breathe.
+uniform float u_bass;
+uniform float u_count;
+uniform float u_new;
+
+float h(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+vec2 starPos(float i) {
+  vec2 p = vec2(h(i), h(i + 31.7)) * vec2(1.5, 0.75) - vec2(0.75, 0.3);
+  return p + 0.025 * vec2(sin(iTime * 0.11 + i * 1.7), cos(iTime * 0.07 + i * 2.3));
+}
+float seg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0));
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+  vec2 uv = fragCoord / iResolution.xy;
+  vec2 p = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
+  float n = min(u_count, 64.0);
+  vec2 newest = n > 0.0 ? starPos(n - 1.0) : vec2(0.0);
+
+  // The ripple from the newest star refracts the picture, with a chromatic edge.
+  float d0 = length(p - newest);
+  float wave = exp(-pow((d0 - (1.0 - u_new) * 1.1) * 14.0, 2.0)) * u_new;
+  vec2 warp = (p - newest) / max(d0, 1e-3) * wave * 0.025;
+  vec3 col = vec3(texture(iChannel0, uv - warp * 1.6).r, texture(iChannel0, uv - warp).g, texture(iChannel0, uv - warp * 0.5).b);
+
+  // Aurora over the top of the room, swelling with the music.
+  float band = sin(p.x * 2.6 + iTime * 0.15 + sin(p.y * 7.0 - iTime * 0.25) * 0.8);
+  float au = smoothstep(0.05, 0.5, p.y) * (0.5 + 0.5 * band) * (0.05 + 0.12 * u_bass);
+  col += mix(vec3(0.25, 0.5, 0.95), vec3(0.95, 0.55, 0.75), 0.5 + 0.5 * sin(p.x + iTime * 0.05)) * au;
+
+  vec3 stars = vec3(0.0);
+  for (int k = 0; k < 64; k++) {
+    float i = float(k);
+    if (i >= n) break;
+    vec2 s = starPos(i);
+    vec3 tint = mix(vec3(1.0, 0.8, 0.55), vec3(0.62, 0.85, 1.0), h(i + 9.0));
+    float tw = 0.65 + 0.35 * sin(iTime * (0.8 + 2.0 * h(i + 3.0)) + i);
+    float boost = i == n - 1.0 ? 1.0 + 3.0 * u_new : 1.0;
+    float r = length(p - s);
+    stars += tint * (0.00012 / (r * r + 0.0004) + smoothstep(0.005, 0.0, r)) * tw * (0.7 + 0.8 * u_bass) * boost;
+    if (k > 0) stars += tint * 0.18 * smoothstep(0.0025, 0.0, seg(p, starPos(i - 1.0), s)) * tw;
+  }
+  stars += vec3(1.0, 0.9, 0.75) * wave * 0.35;
+  col = col + stars * (1.0 - 0.4 * col);
+  col *= 1.0 - 0.35 * dot(p, p); // vignette
+  fragColor = vec4(col, 1.0);
+}`
+
 const SEED_BAND_GLSL = `// Seed Band: a synthwave horizon that plays along. Kick pumps the sun and grid, snare flashes
 // the scanlines, the lead note sets the hue and the section's intensity opens the sky.
 uniform float u_kick;
@@ -292,11 +344,11 @@ export const gallerySnippets: FlowSnippet[] = [
   {
     id: 'inventory-of-a-room',
     name: 'Inventory of a Room',
-    description: 'A gallery piece. The machine watches the room, names each new thing it sees and sings the name as a hymn, while you are redrawn in points of light and the music breathes through the picture',
+    description: 'A gallery piece. The machine watches the room, names each new thing it sees and sings the name as a hymn, while you are redrawn in points of light. Everything it has named becomes a star in a growing constellation, and each new name ripples through the picture',
     category: 'ai',
     persona: 'Showcase',
     requires: ['camera', 'model'],
-    relatedNodes: ['webcam', 'object-detection-yolo', 'mediapipe-pose', 'shader', 'tracking-overlay', 'text-overlay', 'instances-3d', 'render-3d', 'progression', 'poly-voice', 'melody-walk', 'bellows-singer', 'bellows-reverb', 'audio-analyzer', 'blend'],
+    relatedNodes: ['webcam', 'object-detection-yolo', 'mediapipe-pose', 'shader', 'tracking-overlay', 'text-overlay', 'envelope-visual', 'blur', 'progression', 'poly-voice', 'melody-walk', 'bellows-singer', 'bellows-reverb', 'audio-analyzer', 'blend'],
     nodes: [
       // seeing
       node('sn-1', 'webcam', 0, 0),
@@ -325,19 +377,17 @@ export const gallerySnippets: FlowSnippet[] = [
         glow: '#ffcf8a',
         glowAmount: 0.35,
       }),
-      node('sn-13', 'expression', 320, 1180, { expression: 'a * 10 + 10' }),
-      node('sn-14', 'time', 320, 1380),
-      node('sn-15', 'multiply', 640, 1380),
-      node('sn-16', 'constant', 320, 1540, { value: 0.15 }),
-      node('sn-17', 'instances-3d', 640, 1100, { shape: 'octahedron', layout: 'ring', count: 20, spacing: 0.9, size: 0.18, valueMode: 'none', color: '#ffd9a0', color2: '#9fd8ff', emissive: 1.4 }),
-      node('sn-18', 'point-light-3d', 960, 1360, { color: '#ffcf8a', intensity: 2, posX: 0, posY: 3, posZ: 2 }),
-      node('sn-19', 'scene-3d', 960, 1100, { backgroundColor: '#000000' }),
-      node('sn-20', 'camera-3d', 960, 1560, { posX: 0, posY: 3.5, posZ: 7, targetX: 0, targetY: 0, targetZ: 0 }),
-      node('sn-21', 'render-3d', 1280, 1100, { width: 1280, height: 720 }),
-      node('sn-22', 'blend', 1600, 620, { mode: 'add', mix: 0.8 }),
-      node('sn-23', 'image-fx-rgb-shift', 1920, 620, { u_amount: 0 }),
-      node('sn-24', 'image-fx-scanlines', 2240, 620, { u_count: 480, u_intensity: 0.12, u_speed: 0.3 }),
-      node('sn-25', 'main-output', 2560, 620),
+      node('sn-13', 'envelope-visual', 1280, 860, { attack: 0.01, decay: 2, sustain: 0, release: 0.5 }),
+      node('sn-14', 'shader', 1600, 620, {
+        preset: 'custom',
+        code: CONSTELLATION_GLSL,
+        _dynamicInputs: floatPorts(['u_bass', 'Bass'], ['u_count', 'Things named'], ['u_new', 'Something new']),
+      }),
+      node('sn-15', 'blur', 1600, 860, { radius: 14, passes: 2 }),
+      node('sn-22', 'blend', 1920, 760, { mode: 'screen', mix: 0.55 }),
+      node('sn-23', 'image-fx-rgb-shift', 2240, 760, { u_amount: 0 }),
+      node('sn-24', 'image-fx-scanlines', 2560, 760, { u_count: 480, u_intensity: 0.12, u_speed: 0.3 }),
+      node('sn-25', 'main-output', 2880, 760),
       // the music
       node('sn-26', 'metronome', 0, 1900, { bpm: 54, subdivision: '1/2' }),
       node('sn-27', 'progression', 320, 1800, { root: 'D', scaleName: 'dorian', bars: 8, octave: 3 }),
@@ -372,17 +422,14 @@ export const gallerySnippets: FlowSnippet[] = [
       'sn-11.texture > sn-12.source',
       'sn-5.result > sn-12.value',
       'sn-9.count > sn-12.value2',
-      'sn-2.count > sn-13.a',
-      'sn-13.result > sn-17.count',
-      'sn-14.time > sn-15.a',
-      'sn-16.value > sn-15.b',
-      'sn-15.result > sn-17.spin',
-      'sn-17.object > sn-19.objects',
-      'sn-18.object > sn-19.objects',
-      'sn-19.scene > sn-21.scene',
-      'sn-20.camera > sn-21.camera',
-      'sn-12.texture > sn-22.a',
-      'sn-21.texture > sn-22.b',
+      'sn-7.value > sn-13.trigger',
+      'sn-12.texture > sn-14.iChannel0',
+      'sn-9.count > sn-14.u_count',
+      'sn-13.value > sn-14.u_new',
+      'sn-39.result > sn-14.u_bass',
+      'sn-14.texture > sn-15.texture',
+      'sn-14.texture > sn-22.a',
+      'sn-15.texture > sn-22.b',
       'sn-22.texture > sn-23.source',
       'sn-23.texture > sn-24.source',
       'sn-24.texture > sn-25.texture',
